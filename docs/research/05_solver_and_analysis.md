@@ -1,27 +1,29 @@
-# Solver and Analysis
+# Solverと高度解析
 
-## Solver role
+## 1. Solverの役割
 
-A solver is one evidence source in Review.
+SolverはReview Evidenceの一つです。
 
-It can provide, for a specified model:
-- strategy frequencies
-- action EV
-- equilibrium-oriented baseline
+Solverが扱えるもの:
 
-It does not automatically provide:
-- the opponent's true range
-- what Hero knew at the time
-- live tells
-- unsupported multiway truth
-- missing house-rule context
-- emotional state
+- 指定Range / Stack / Pot / Bet TreeにおけるStrategy Frequency
+- Action EV
+- Equilibrium-oriented Baseline
 
-## Capability envelope
+Solverだけでは自動的に分からないもの:
 
-Every solver adapter must declare capability.
+- 実在相手の真のRange
+- Heroが当時何を知っていたか
+- Live Tell
+- Unsupported Multiway Spot
+- House Rule Mismatch
+- Emotional State
 
-Conceptually:
+## 2. Solver Capability Envelope
+
+各Solver AdapterはCapabilityを明示します。
+
+概念:
 
 ```ts
 type SolverCapability = {
@@ -34,132 +36,170 @@ type SolverCapability = {
 };
 ```
 
-Call `supports(spot)` before solving.
+Solve前に必ず `supports(spot)` を確認します。
 
-Unsupported is a normal result.
+UnsupportedはErrorではなく正常系です。
 
-## Current OSS research direction
+## 3. 現在のOSS調査候補
 
 ### amaster97/poker_solver
-Research notes:
-- MIT-licensed
-- Heads-Up No-Limit Hold'em oriented
-- Python reference + Rust performance core
-- DCFR-related implementation
-- equity / postflop subgame capabilities
 
-Why it is an attractive PoC candidate:
-- permissive license
-- clear HUNL scope
-- reference + optimized implementation
-- suitable for local Linux/WSL experimentation
+公開情報上:
 
-Caution:
-- full-range deep solves may be expensive
-- not a multiway oracle
+- MIT License
+- Heads-Up No-Limit Hold'em向け
+- Python Reference + Rust Performance Core
+- DCFR
+- Equity / Postflop Subgame
+
+利点:
+
+- Licenseが比較的扱いやすい
+- HUNL Scopeが明確
+- Reference実装とOptimized Coreの両方
+- WSL / LinuxでPoCしやすい
+
+注意:
+
+- Deep / Full-range SolveはCompute Intensive
+- Multiway Oracleではない
+
+**初期PoC第一候補。**
 
 ### TexasSolver
-Research notes:
-- C++ / local execution
-- Windows/Linux/macOS-oriented
-- command-line / cross-language integration patterns
-- strategy output suitable for adapter normalization
-- AGPL licensing requires more care
 
-Why it is a useful comparison candidate:
-- cross-platform local use
-- subprocess-style integration can be practical
+公開情報上:
 
-Caution:
-- license/integration/redistribution implications need explicit review
-- capability must be measured in PoC rather than assumed
+- C++
+- Windows / Linux / macOS
+- Console / Cross-language Integration
+- Strategy Output
+- AGPL
+
+利点:
+
+- Cross-platform
+- Subprocess Adapterと相性が良い可能性
+- 実用候補として比較価値がある
+
+注意:
+
+- AGPL / Integration / Redistribution条件の確認が必要
+- Supported SpotはPoCで検証し、推測しない
+
+**比較PoC候補。**
 
 ### noambrown/poker_solver
-Useful mainly as a small/reference CFR/river-solver research point rather than the default production choice.
 
-## Multiway policy
+MIT LicenseのRiver Solver / CFR Referenceとして有用です。
+
+Primary Solverというより、Validation / Reference用途の候補です。
+
+## 4. Multiwayの扱い
+
+原則:
 
 ```text
 if solver.supports(spot):
-    use solver evidence
+    Solver Evidenceを使う
 else:
-    use math + range model + KB + Review AI
+    Math + Range Model + KB + Review AI
 ```
 
-Never force an unsupported multiway spot into a heads-up solver and present it as exact GTO.
+6-max Tableでも、Postflopで2人まで絞られたSpotはHU Solver対象候補になり得ます。
 
-## Solver request/result normalization
+ただし、途中までMultiwayだった場合は:
 
-Solver-specific formats must remain behind the adapter.
+- Prior Action
+- Current Range推定
+- Card Removal
+- Bunching
 
-Normalized request should preserve:
-- street
-- player count
-- board
-- pot
-- effective stack
-- ranges
-- bet tree
-- rake
-- assumptions
+等のAssumptionが必要です。
 
-Normalized result should preserve:
-- support status
-- available actions
-- strategy frequencies
-- EV if available
-- accuracy/convergence metadata
-- warnings
-- assumptions
+ReviewにはAssumptionを表示します。
 
-Do not pass raw solver dump directly to Review AI without normalization.
+## 5. Solver Request / Resultの正規化
 
-## GTO and exploit
+Solver-specificなInput / OutputをReview AIへ直接渡しません。
 
-Solver output is a theoretical baseline.
+Normalized Requestで保持するもの:
 
-If opponent evidence supports a deviation:
+- Street
+- Player Count
+- Board
+- Pot
+- Effective Stack
+- Range
+- Bet Tree
+- Rake
+- Assumptions
+
+Normalized Result:
+
+- Supported
+- Actions
+- Frequencies
+- EV
+- Accuracy / Convergence
+- Warnings
+- Assumptions
+
+## 6. SolverとExploit
+
+Solver ResultはBaselineです。
+
+Opponent Evidenceが十分なら:
 
 ```text
-baseline
- -> observed deviation
- -> exploit hypothesis
+Baseline
+ ↓
+Observed Deviation
+ ↓
+Exploit Hypothesis
 ```
 
-Keep these layers explicit.
+を分けて表示します。
 
-## Deep analysis policy
+Node-locking等は高度解析で有用ですが、MVP通常Reviewの必須要件にはしません。
 
-Normal Hand Review:
-- deterministic math
-- equity/range
-- solver when cheaply supported
+## 7. Deep Analysis Policy
 
-Deep Analysis:
-- richer tree
-- alternative range assumptions
-- sensitivity checks
-- more expensive solving
+通常Hand Review:
+
+- Lightweight Math
+- Equity / Range
+- SupportedならSolver
+
+「詳しく解析」:
+
+- Richer Bet Tree
+- Range Variant
+- Sensitivity Analysis
+- Exploit Assumption
 
 Session Review:
-- choose important/uncertain/high-impact spots
-- run deeper analysis selectively
 
-Do not run an expensive solve for every action.
+- Important / Uncertain / High-impact Spotを選択
+- Selective Deep Analysis
 
-## Solver PoC acceptance
+全Actionに高コストSolveを実行しません。
 
-Before permanent adapter selection, verify:
+## 8. Solver PoC Acceptance Criteria
 
-1. local execution on target dev environment
-2. invocation from TypeScript backend
-3. parseable output
-4. representative river spot
-5. representative turn spot
-6. small flop spot
-7. latency
-8. memory
-9. timeout/cancellation
-10. invalid-input behavior
-11. license/integration constraints
-12. regression tolerance
+永久選定前に実測:
+
+1. WSL / Windows Local Execution
+2. TypeScript BackendからInvocation
+3. Parseable Output
+4. Representative River Spot
+5. Representative Turn Spot
+6. Small Flop Spot
+7. Latency
+8. Memory
+9. Cancellation / Timeout
+10. Invalid Input
+11. License / Integration Constraints
+12. Regression Tolerance
+
+この結果でPrimary Adapterを決定します。
