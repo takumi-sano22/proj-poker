@@ -1,225 +1,293 @@
-# Strategy and Poker Math
+# 戦略とPoker Math
 
-## Decision context
+## 1. Decisionを評価するContext
 
-A poker decision cannot be evaluated from Hero's two cards alone.
+良いDecisionはHeroの2枚だけでは決まりません。
 
-Relevant context includes:
-- Hero holding/range
-- opponent range(s)
-- position
-- action history
-- board
-- pot
-- amount to call
-- effective stack
+最低限考慮するもの:
+
+- Hero Holding / Range
+- Opponent Range
+- Position
+- Action History
+- Board
+- Pot
+- Amount to Call
+- Effective Stack
 - SPR
-- bet sizing
-- player observations
-- rake or payout context
+- Bet Size
+- Player Observation
+- Rake / Payout Context
 
-## Pot odds
+「AJoは強いからCall」のような単純評価を避けます。
 
-If calling costs `C` and the final pot after calling would be `F`, break-even required equity is:
+## 2. Pot Odds
+
+Call Costを `C`、Call後のFinal Potを `F` とすると:
 
 ```text
 Required Equity = C / F
 ```
 
-Example:
-- pot before bet = 100
-- Villain bets 50
-- Hero calls 50
-- final pot = 200
-- required equity = 25%
+例:
 
-The UI should show the components, not just the answer.
-
-## Outs and drawing odds
-
-Outs are unseen cards that can improve a hand enough to win.
-
-Cautions:
-- dirty outs
-- duplicate outs
-- domination
-- opponent range
-
-### Rule of 4 and 2
-Useful live-table HEURISTIC:
-- Flop to River approximation: outs × 4%
-- one street approximation: outs × 2%
-
-The app can calculate exact values but should still teach the mental shortcut.
-
-## Equity
-
-Distinguish:
-- hand vs hand equity
-- hand vs range equity
-- range vs range equity
-
-Decision evaluation should prioritize the range that was reasonable at the time, not the opponent's actual hidden hand.
-
-## Expected Value
-
-For a simplified zero-equity river bluff:
-
-- current pot = P
-- bet = B
-- opponent fold probability = F
+- Bet前Pot = 100
+- Villain Bet = 50
+- Hero Call = 50
+- Final Pot = 200
 
 ```text
-EV = F*P - (1-F)*B
-Break-even F = B / (P+B)
+50 / 200 = 25%
 ```
 
-Example:
+Review UIでは:
+
+- Current Pot
+- Call Amount
+- Final Pot
+- Required Equity
+
+を分解して表示します。
+
+## 3. Outs / Drawing Odds
+
+Outsは、将来StreetでHandを改善し、勝ちにつながり得るUnseen Cardsです。
+
+注意:
+
+- Duplicate Outs
+- Dirty Outs
+- Domination
+- Opponent Range
+
+### Rule of 4 and 2
+
+実卓暗算用 `HEURISTIC`:
+
+- Flop→River概算: Outs × 4%
+- 次の1 Street: Outs × 2%
+
+アプリではExact Probabilityを計算できますが、Mental Shortcutとして教える価値があります。
+
+## 4. Equity
+
+区別:
+
+### Hand vs Hand Equity
+
+既知Holding同士。
+
+### Hand vs Range Equity
+
+Hero HoldingとVillain Range。
+
+### Range vs Range Equity
+
+両者のRange全体。
+
+Decision ReviewではActual Villain Handより、**当時妥当だったRange**を優先します。
+
+## 5. Expected Value
+
+単純化したZero-equity River Bluff:
+
+- Current Pot = `P`
+- Bet = `B`
+- Villain Fold Probability = `F`
+
+```text
+EV = F * P - (1 - F) * B
+```
+
+Break-even Fold Frequency:
+
+```text
+F = B / (P + B)
+```
+
+例:
+
 - P = 100
 - B = 50
-- required fold frequency = 33.3%
+- 必要Fold率 = 33.3%
 
-Important distinction:
-- required fold frequency = math
-- actual opponent fold frequency = inference
+重要:
 
-Do not present both with equal certainty.
+- 必要Fold率 = 数学
+- 「Villainが何%Foldするか」 = 推定
 
-## Implied / reverse implied odds
+同じConfidenceで表示しません。
 
-Current pot odds do not capture all future betting.
+## 6. Implied / Reverse Implied Odds
 
-Review should consider:
-- future value if a draw hits
-- domination / reverse implied odds
-- remaining stack
+Pot Oddsは現在のPriceだけを見ます。
 
-## Effective stack / SPR
+Future Streetで:
 
-Effective stack is the amount that can actually be wagered between Hero and the relevant opponent.
+- Hit後に追加Valueを取れる
+- Hitしてもより強いHandに負ける
+
+等を考えるのがImplied / Reverse Implied Oddsです。
+
+Reviewで「Required Equityを上回ったから必ずCall」と単純化しません。
+
+## 7. Effective Stack / SPR
+
+Effective Stackは、当該Opponentとの間で実際にRiskできる小さい側のStackです。
 
 ```text
 SPR = Effective Stack / Pot
 ```
 
-Multiway spots can have different effective stacks per opponent.
+MultiwayではOpponentごとにEffective Stackが異なる場合があります。
 
-## Position
+## 8. Position
 
-Position affects information and equity realization.
+Positionは情報量とEquity Realizationへ大きく影響します。
 
-General baseline:
-- earlier positions require tighter ranges
-- later positions can enter more pots
-- Button gains postflop information advantage
+一般的なBaseline:
 
-Exact ranges are not RULES; they depend on format, stack, rake, sizing and population.
+- Early PositionほどRangeは狭くなる
+- Late Positionほど参加可能Rangeが広がる
+- ButtonはPostflopで最後にActionできる
 
-## Range thinking
+ただし「UTGは常に上位X%」のような数字は `RULE` ではありません。
 
-Use ranges, not exact-hand guessing.
+Format / Stack / Rake / Open Size等で変わります。
+
+## 9. Range Thinking
+
+相手を1 Handに決め打ちしません。
 
 ```text
-Prior range
- -> preflop action
- -> updated range
- -> flop board/action
- -> updated range
- -> turn
- -> river
+Prior Range
+ ↓
+Preflop Action
+ ↓
+Updated Range
+ ↓
+Flop Board / Action
+ ↓
+Updated Range
+ ↓
+Turn
+ ↓
+River
 ```
 
-Do not score Hero poorly simply because the actual hidden hand happened to be one particular combo.
+「実際KQだったからKQを読むべきだった」という結果論を禁止します。
 
-## Preflop topics
+## 10. Preflop
 
-KB should cover:
-- RFI/open
-- limp
-- iso raise
-- cold call
+KB対象:
+
+- RFI / Open Raise
+- Limp
+- Iso Raise
+- Cold Call
 - 3-bet
 - 4-bet
-- squeeze
-- blind defense
-- push/fold
+- Squeeze
+- Blind Defense
+- Push / Fold
 
-Always contextualize by:
-- position
-- players
-- sizing
-- effective stack
-- rake
-- ante
-- opponent tendencies
+Context:
 
-## Rake
+- Position
+- Player Count
+- Open Size
+- Effective Stack
+- Rake
+- Ante
+- Opponent Tendency
 
-Cash rake can change marginal decisions, especially calls/defenses.
+## 11. Rake
 
-Rake must therefore be explicit analysis context.
+Cash Rakeが高いほどMarginalなPot参加EVは悪化します。
 
-## Postflop concepts
+特に:
 
-Include:
-- range advantage
-- nut advantage
-- positional advantage
-- c-bet
-- value betting
-- bluff/semi-bluff
-- blockers/unblockers
-- bet sizing
+- Cold Call
+- Blind Defense
+- Small-edge Spot
 
-Do not turn generic teaching frequencies into universal rules.
+へ影響します。
 
-## Exploit
+Cash PresetへRake Contextを持たせます。
 
-Flow:
+## 12. Postflop Concept
+
+KB対象:
+
+- Range Advantage
+- Nut Advantage
+- Positional Advantage
+- C-bet
+- Value Bet
+- Bluff
+- Semi-bluff
+- Blocker / Unblocker
+- Bet Size
+
+「Preflop Aggressorだから常にC-bet」のようなif文へ固定しません。
+
+## 13. Exploit
+
+基本:
 
 ```text
-baseline
- -> observed evidence
- -> opponent hypothesis
- -> confidence
- -> adjustment
+Baseline
+ ↓
+Observable Evidence
+ ↓
+Opponent Hypothesis
+ ↓
+Confidence
+ ↓
+Adjustment
 ```
 
-Examples:
-- overcalling evidence -> value wider / bluff less
-- overfolding evidence -> bluff more
-- unusually tight aggression -> adjust opening/defense
+例:
 
-Never use secret CPU persona parameters as Hero-facing evidence.
+- Callしすぎる証拠 → Valueを広げ、Bluffを減らす候補
+- Foldしすぎる証拠 → Bluff拡大候補
+- 3-betが極端にTight → Opening / Defense調整候補
 
-## Multiway
+CPU Secret Personaを根拠にしません。
 
-Multiway is not just heads-up with another player added.
+## 14. Multiway
 
-Expect:
-- lower bluff success
-- more complex ranges
-- different equity realization
-- multiple effective stacks
-- much harder solver requirements
+MultiwayはHeads-Upと同じ助言をそのまま流用できません。
 
-Player count must be a first-class analysis parameter.
+一般に:
 
-## Tilt / human errors
+- Bluff Successが下がる
+- Range Interactionが増える
+- Equity Realizationが変わる
+- Effective Stackが複数
+- Solver Complexityが上がる
 
-CPU irrationality should be state-conditioned.
+`player_count` をFirst-class Parameterにします。
 
-Possible triggers:
-- large pot loss
-- repeated bad outcomes
-- failed bluff
-- overconfidence
+## 15. Tilt / Human Error
 
-Possible temporary effects:
-- wider participation
-- excessive aggression
-- chasing
-- overcalling
-- scared overfolding
+CPUの人間らしい非合理性はState-conditionedにします。
 
-This should not degrade into unconditional random bad play.
+Trigger例:
+
+- Big Pot Loss
+- Repeated Loss
+- Failed Bluff
+- Overconfidence
+
+一部Personaのみ低確率で:
+
+- Wider Participation
+- Excessive Aggression
+- Chasing
+- Overcalling
+- Scared Overfold
+
+へ偏ります。
+
+無条件Random Bad Playにはしません。
