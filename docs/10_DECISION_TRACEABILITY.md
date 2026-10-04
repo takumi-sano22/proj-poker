@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D66の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D69の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -17,6 +17,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D43〜D54 | UI、Live Mechanics、Cash/Tournament Config |
 | D55〜D60 | MVP、Stack、Solver、Research、Test、Asset |
 | D61〜D66 | Single User、Persistence、CPU Pool、Reset、Latency、MVP DoD |
+| D67〜D69 | Web Stack、Repository構成、品質ツール |
 
 ## 特に重要なClosed Decision
 
@@ -43,6 +44,10 @@ Poker Rulesは決定論的Code、LLMは戦略選択のみ。
 ### D55 / D66
 
 Hand ReviewまでがMVP。
+
+### D56 / D67 / D68
+
+TypeScript中心のlocal Web。Vite + ReactのSPA（Local Browser UI）と常駐Node（Fastify）のLocal Runtime。Claude APIとSQLiteはRuntime側だけが扱う。pnpm workspaceで`packages/engine`（I/O・LLM非依存の純粋TypeScript）・`apps/server`・`apps/web`に分ける。
 
 ### D57
 

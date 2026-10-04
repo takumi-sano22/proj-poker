@@ -1,0 +1,18 @@
+{
+  "name": "proj-poker",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ライブ実戦を意識した No-Limit Texas Hold'em 練習 + AI コーチング環境（ローカル単一ユーザー）",
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @proj-poker/server --filter @proj-poker/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

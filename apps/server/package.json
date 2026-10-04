@@ -1,0 +1,20 @@
+{
+  "name": "@proj-poker/server",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ローカル Runtime（常駐 Node / Fastify）。Claude API・SQLite はこちら側だけが扱う（D67）",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "fastify": "5.12.5"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "tsx": "4.23.15"
+  }
+}

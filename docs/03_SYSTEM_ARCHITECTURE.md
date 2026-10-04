@@ -20,6 +20,22 @@ Solver / Equity Engineは必要に応じて:
 
 「一言語に揃えるためだけ」に専門計算をTypeScriptへ再実装しないでください。
 
+### ディレクトリ構成（D67・D68）
+
+上記の想定構成のうち、Web StackはVite + ReactのSPA、Local Application RuntimeはFastifyの常駐Nodeで具体化します（D67）。リポジトリはpnpm workspaceです（D68）。
+
+```text
+packages/
+└─ engine/   Poker Engine（純粋TypeScript。I/O・DB・LLMをimportしない）
+apps/
+├─ server/   Local Application Runtime（Fastify。Claude API・SQLiteはここだけが扱う）
+└─ web/      Local Browser UI（Vite + React。ブラウザへAPI Keyを渡さない）
+```
+
+- `apps/web`はdev時に`/api`を`apps/server`へproxyし、ブラウザは同一originの`/api`だけを呼びます。
+- `apps/server`はlocal専用で`127.0.0.1`にbindします。
+- `packages/engine`はruntime依存を持たず、`apps/*`へも依存しません（D68）。
+
 ## 2. Logical Component
 
 ```text

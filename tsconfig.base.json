@@ -1,0 +1,16 @@
+{
+  // 全パッケージ共通の型検査設定。各パッケージの tsconfig.json が extends する。
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "strict": true,
+    // 配列・Record の添字アクセスを undefined 込みで扱わせ、Engine の境界バグを型で拾う。
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}
