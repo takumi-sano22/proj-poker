@@ -1,5 +1,9 @@
 # proj-poker
 
+![緑のポーカーテーブルとカードを描いたproj-pokerのヒーロー画像](./docs/assets/README-hero-proj-poker.png)
+
+*完成イメージ（実装済みの画面ではありません）。*
+
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
 > 現在の状態: 設計・ドキュメント基準の確定段階 / 実装前
