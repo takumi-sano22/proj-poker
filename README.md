@@ -1,150 +1,178 @@
 # proj-poker
 
-AI-driven **No-Limit Texas Hold'em practice and coaching environment** focused on live-table decision making.
+**ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> Status: design baseline / pre-implementation  
-> This repository currently contains the product requirements, poker-domain research, architecture, and implementation roadmap.
+> 現在の状態: 設計・ドキュメント基準の確定段階 / 実装前
 
-## Why this project exists
+## このプロジェクトを作る理由
 
-Knowing the rules of poker is not the same as being able to play well at a real table.
+ポーカーは、ルールを知っていることと、実際の卓で妥当な判断を続けられることの間に大きな差があります。
 
-This project is designed for a player who understands the basic rules but still needs practical experience with:
+このプロジェクトでは、基本ルールは理解しているものの、以下のような実戦経験が不足しているプレイヤーを主な対象にします。
 
-- incomplete-information decision making
-- ranges, equity, pot odds, EV, value betting, and bluffing
-- opponent adaptation
-- live chip and declaration mechanics
-- post-hand reflection without hindsight bias
+- 不完全情報の中での意思決定
+- レンジ（Range）、エクイティ（Equity）、ポットオッズ（Pot Odds）、期待値（EV）
+- バリューベット、ブラフ、フォールド判断
+- 相手の傾向を観察して戦略を調整すること
+- 実卓でのチップ操作・宣言・裁定
+- 結果論に引きずられない振り返り
 
-The goal is to build a local training environment that can help bridge that gap.
+最終的な目標は、**カジュアルな経験者と実戦で勝負できるレベルまで、実践的な判断力を引き上げること**です。
 
-## Product concept
+## プロダクト概要
 
-The application combines:
+このアプリでは、以下を一つの学習ループとして統合します。
 
-- **2-8 player NLHE tables**
-- **AI opponents** with different skill levels, styles, persistent observations, and human-like leaks
-- **live-style chip interaction** instead of a simple numeric bet box
-- **dealer rulings** for common live-table mistakes
-- **hand review** that separates information available at decision time from learning-only full-card reveal
-- **math + range analysis + solver evidence + AI coaching**
-- **long-term learning analytics and targeted drills**
+- **2〜8人のNLHE卓**
+- **AI CPUプレイヤー**
+  - 実力差
+  - プレイスタイル差
+  - 継続的な観察記憶
+  - 人間らしいリークや一時的なティルト
+- **ライブ卓を意識したチップ操作**
+  - 数字入力だけではなく、実際のチップ額面を扱う
+  - 宣言とチップ操作の組み合わせも練習する
+- **ディーラー裁定**
+  - One-chip rule
+  - String bet
+  - Out of turn
+  - Minimum raise など
+- **ハンドレビュー**
+  - 判断時点で知り得た情報だけを使う評価
+  - ハンド終了後の全手札開示による答え合わせ
+- **数学 + レンジ分析 + Solver + AI解説**
+- **長期的な傾向分析と弱点別ドリル**
 
-## Architecture principles
+## 設計上の重要原則
 
-### Deterministic poker, probabilistic strategy
+### 1. ポーカーのルールは決定論的に処理する
 
-Poker rules, legal actions, pots, side pots, hand ranking, and chip movement are deterministic code.
+カード配布、合法Action、ポット、サイドポット、ハンドランク、チップ移動などは**決定論的なPoker Engine**が担当します。
 
-LLMs choose strategic actions. They do **not** decide whether an action is legal.
+LLMは「どのActionを選ぶか」を判断しますが、**そのActionが合法かどうかは判断しません**。
 
-### Isolated information state
+### 2. 各CPUの情報世界を分離する
 
-Each CPU receives only the information that player is legitimately allowed to know.
+CPUごとに独立した `KnowledgeState` を構築します。
 
-A CPU must never receive:
+CPUへ渡してはいけない情報:
 
-- another player's hidden cards
-- future cards
-- review-only reveals
-- another CPU's private observations
-- the user's hidden learning profile
+- 他プレイヤーの非公開Hole Cards
+- 未来のカード
+- 学習用に特別開示したカード
+- 他CPUだけが知っている情報
+- ユーザーの学習用弱点プロフィール
 
-### Review without hindsight leakage
+### 3. レビューで結果論を混ぜない
 
-Hand review has two distinct passes:
+ハンドレビューは二段階に分けます。
 
-1. **Decision Review** — evaluates the action using only information available at the time.
-2. **Reveal Review** — shows all hole cards afterward for learning and comparison.
+1. **Decision Review**
+   - 判断した時点で知り得た情報だけで評価
+2. **Reveal Review**
+   - ハンド終了後に全手札を開示し、読みと実際を比較
 
-The second pass must not retroactively contaminate the first.
+後から見えたカードを理由に、当時の妥当な判断を誤り扱いしないことを重要なInvariantとします。
 
-### Evidence before explanation
+### 4. AIの文章より先に根拠を構造化する
 
-Review output is built from structured evidence first:
+レビューは概ね次の順に処理します。
 
 ```text
 Hand Events
-  -> decision-time information reconstruction
-  -> deterministic math
-  -> range analysis
-  -> solver evidence when supported
-  -> local poker knowledge
-  -> web fallback only when evidence is insufficient
-  -> Review AI
+  ↓
+判断時点の情報を再構築
+  ↓
+決定論的な数学計算
+  ↓
+Range分析
+  ↓
+対応可能ならSolver
+  ↓
+ローカルKnowledge Base
+  ↓
+根拠不足時のみWeb検索
+  ↓
+Review AI
 ```
 
-## Planned stack
+AIは「もっともらしい答えを作る計算機」ではなく、**複数の根拠を統合して説明するコーチ**として使います。
 
-- TypeScript-centered application core
-- local web UI
+## 想定技術構成
+
+- TypeScript中心のApplication Core
+- ローカルWeb UI
 - SQLite
-- Claude Haiku-class model for frequent opponent actions
-- stronger review model by default, configurable by role
-- local solver behind an adapter
-- specialist Rust/Python/C++ components allowed behind stable interfaces
+- 対戦CPU: Claude Haiku級を初期候補
+- Review: より上位のClaudeモデルを初期候補
+- ローカルSolverをAdapter経由で接続
+- 必要ならRust / Python / C++の専門解析器をAdapter越しに利用
 
-Concrete model and solver choices are intentionally configurable and will be validated with cost/latency/quality PoCs.
+具体的なモデル名・Solverは固定せず、実装時にコスト・速度・品質をPoCで比較します。
 
-## MVP definition
+## MVPの完成条件
 
-The MVP is complete only when a user can:
+MVPは「ポーカーが遊べる」だけでは完成としません。
 
-1. play a complete NLHE Cash session against AI opponents,
-2. interact through a live-style 2D table and chip interface,
-3. persist the hand as an event log,
-4. replay the hand,
-5. review decisions without hidden-information leakage,
-6. inspect learning-only full-card reveal,
-7. receive math / AI / supported-solver analysis,
-8. ask follow-up questions.
+最低限、以下が一気通貫で動くことをMVPとします。
 
-A poker game without the review loop is **not** considered MVP complete.
+1. AI CPU相手にNLHE Cashを1セッション遊べる
+2. 実卓寄り2D UIとチップ操作を使える
+3. Hand Event Logを保存できる
+4. Replayできる
+5. 判断時点の情報だけを使ってReviewできる
+6. ハンド終了後に全Hole Cardsを学習用に確認できる
+7. 数学・AI・対応可能なSolverによる解析を受けられる
+8. 追加質問できる
 
-## Documentation
+**Hand Reviewまで含めてMVPです。**
 
-The implementation specification lives under [`docs/`](./docs).
+## ドキュメント
 
-Start with:
+実装時の正本は [`docs/`](./docs) 配下です。
 
-- [Documentation index](./docs/00_DOCUMENTATION_INDEX.md)
-- [Product requirements](./docs/01_PRODUCT_REQUIREMENTS.md)
-- [Domain rules and policies](./docs/02_DOMAIN_RULES_AND_POLICIES.md)
-- [System architecture](./docs/03_SYSTEM_ARCHITECTURE.md)
-- [MVP and roadmap](./docs/08_MVP_AND_ROADMAP.md)
-- [Decision traceability](./docs/10_DECISION_TRACEABILITY.md)
-- [Research pack](./docs/research/README.md)
+最初に読む順番:
 
-The accepted product decisions are also recorded in machine-readable form in [`docs/decision_log.yaml`](./docs/decision_log.yaml).
+1. [ドキュメント索引](./docs/00_DOCUMENTATION_INDEX.md)
+2. [プロダクト要件](./docs/01_PRODUCT_REQUIREMENTS.md)
+3. [ドメインルールとポリシー](./docs/02_DOMAIN_RULES_AND_POLICIES.md)
+4. [システムアーキテクチャ](./docs/03_SYSTEM_ARCHITECTURE.md)
+5. [MVPとロードマップ](./docs/08_MVP_AND_ROADMAP.md)
+6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
+7. [Research Pack](./docs/research/README.md)
 
-## Development approach
+D01〜D66の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
-The project is intentionally designed for an AI-driven development workflow with strong human decision gates.
+## ドキュメント言語
 
-Before implementation begins:
+**このプロジェクトの人間向け文章は原則として日本語で記述します。**
 
-1. product decisions and poker research are documented,
-2. architecture and invariants are fixed,
-3. deterministic poker tests are treated as executable specification,
-4. unresolved decisions are isolated instead of being invented by coding agents.
+例外:
+- コード識別子
+- API名
+- 型名
+- ライブラリ名
+- 一般的なポーカー専門用語
+- 外部仕様上そのまま保持すべき名称
 
-## Scope notes
+これらは必要に応じて英語を保持し、日本語説明を併記します。
 
-This is a learning / simulation project.
+## 開発方針
 
-Out of scope for the current design:
+AI駆動開発を前提にしていますが、AIに設計判断を丸投げしません。
 
-- real-money gambling
-- online multiplayer
-- SaaS / multi-tenant architecture
-- voice recognition
-- 3D casino simulation
-- perfect deterministic reproduction of LLM outputs
-- pretending a heads-up solver is an exact oracle for unsupported multiway spots
+実装前に:
 
-## Current phase
+- 人間判断をDecision Logへ固定
+- ポーカードメインをResearch Packで調査
+- ArchitectureとInvariantを明示
+- 未確定事項をOpen Itemsへ隔離
+- deterministic testを実行可能な仕様として使う
 
-The repository is currently at the **design and documentation baseline**.
+という順で進めます。
 
-Implementation will begin after the project-specific Claude Code skills and development harness are added.
+## 現在のフェーズ
+
+現在は**設計・ドキュメント基準を確定する段階**です。
+
+ドキュメントPRと実装用Parent Issueを作成した後、他プロジェクトで利用している汎用Claude Code Skills / Harnessを投入してから実装を開始します。
