@@ -1,22 +1,24 @@
-# Data and Event Contract
+# データとEvent設計
 
-## 1. Source of truth
+## 1. 正本
 
-The Hand Event Log is the canonical record of what actually happened.
+Hand Event Logを、実際に何が起きたかを表す**唯一の正本**とします。
 
-Derived data:
-- current state
-- hand summary
-- session summary
-- statistics
-- replay timeline
-- review inputs
+以下は派生データです。
 
-Do not maintain two independent canonical hand representations.
+- Current Game State
+- Hand Summary
+- Session Summary
+- Statistics
+- Replay Timeline
+- Review Input
 
-## 2. Core IDs
+独立した二つの「正しいHand表現」を持たないでください。
 
-Recommended:
+## 2. 主要ID
+
+推奨:
+
 - `session_id`
 - `hand_id`
 - `event_id`
@@ -28,37 +30,40 @@ Recommended:
 - `hypothesis_id`
 - `drill_id`
 
-## 3. Conceptual events
+## 3. Eventカテゴリ
 
-Preserve information equivalent to:
+最低限、以下と同等の情報を復元可能にします。
 
-- SESSION_STARTED / SESSION_ENDED
-- HAND_STARTED / HAND_FINISHED
-- BUTTON_ASSIGNED
-- BLIND_POSTED / ANTE_POSTED
-- HOLE_CARD_DEALT
-- PLAYER_DECLARED
-- PHYSICAL_CHIP_ACTION
-- DEALER_RULING
-- ACTION_TAKEN
-- CHIPS_MOVED
-- CARD_BURNED
-- BOARD_DEALT
-- PLAYER_FOLDED
-- PLAYER_ALL_IN
-- SHOWDOWN_STARTED
-- CARDS_TABLED
-- POT_AWARDED
-- AI_ACTION_INVALID
-- AI_FALLBACK_USED
-- HINT_OPENED
-- USER_READ_RECORDED
+- `SESSION_STARTED`
+- `SESSION_ENDED`
+- `HAND_STARTED`
+- `HAND_FINISHED`
+- `BUTTON_ASSIGNED`
+- `BLIND_POSTED`
+- `ANTE_POSTED`
+- `HOLE_CARD_DEALT`
+- `PLAYER_DECLARED`
+- `PHYSICAL_CHIP_ACTION`
+- `DEALER_RULING`
+- `ACTION_TAKEN`
+- `CHIPS_MOVED`
+- `CARD_BURNED`
+- `BOARD_DEALT`
+- `PLAYER_FOLDED`
+- `PLAYER_ALL_IN`
+- `SHOWDOWN_STARTED`
+- `CARDS_TABLED`
+- `POT_AWARDED`
+- `AI_ACTION_INVALID`
+- `AI_FALLBACK_USED`
+- `HINT_OPENED`
+- `USER_READ_RECORDED`
 
-Implementation granularity may vary, but required information must remain reconstructable.
+内部実装でEventを統合しても構いませんが、必要な情報を後から復元できることが条件です。
 
 ## 4. Visibility
 
-Card/observation events require explicit visibility.
+Card / Observation EventにはVisibilityを明示します。
 
 ```ts
 type Visibility =
@@ -67,23 +72,31 @@ type Visibility =
   | { type: "learning_only" };
 ```
 
-This enables reconstruction of what Hero and every CPU legitimately knew.
+これにより以下を再構築できます。
 
-## 5. KnowledgeState projection
+- Heroが当時何を知っていたか
+- 各CPUが当時何を知っていたか
+- Reviewで何を学習用に開示できるか
 
-A player KnowledgeState contains:
-- current public state
-- own hole cards
-- public action history
-- personally observed showdowns
-- persistent observations/hypotheses acquired by that player
-- own transient/persona state
+## 5. KnowledgeState Projection
 
-It must not be built from learning-only hidden-card reveals.
+`KnowledgeState` はglobal Event Storeそのものではなく、PlayerごとのProjectionです。
 
-## 6. Opponent observation
+含めるもの:
+- Public Table State
+- 自分のHole Cards
+- Public Action History
+- 自分が観察したShowdown
+- 自分が取得した過去Observation / Hypothesis
+- 自分自身のInternal State
 
-Keep evidence separate from interpretation.
+Learning-only Revealを読み込んで構築してはいけません。
+
+## 6. Opponent Observation
+
+Observationの事実と、そこからの解釈を分けます。
+
+例:
 
 ```yaml
 observer_player_id: cpu_ken
@@ -96,7 +109,11 @@ interpretation: bluff_frequency_may_be_high
 confidence: low
 ```
 
-## 7. User learning hypothesis
+AIが過去に書いた自然言語だけを正本にしないでください。
+
+## 7. User Learning Hypothesis
+
+例:
 
 ```yaml
 id: hyp_001
@@ -108,66 +125,81 @@ confidence: medium
 status: improving
 ```
 
-Natural-language Player Profile is derived from this layer.
+自然言語Player ProfileはこのEvidence Layerから派生させます。
 
-## 8. Review record
+## 8. Review Record
 
-Store structured evidence + prose.
+Reviewは「構造化された根拠」と「説明文」の両方を保存します。
 
-Required metadata:
-- review version
-- created_at
-- target hand/action/session
-- model role + concrete model
-- KB version
-- solver adapter/version
-- assumptions
-- math evidence IDs
-- solver evidence IDs
-- user-read IDs
-- assessment
-- confidence
-- explanation
+最低限:
 
-Never overwrite an older review version.
+- Review Version
+- Created At
+- Target Hand / Action / Session
+- Model Role
+- Concrete Model
+- KB Version
+- Solver Adapter / Version
+- Assumptions
+- Math Evidence IDs
+- Solver Evidence IDs
+- User Read IDs
+- Assessment
+- Confidence
+- Explanation
 
-## 9. Replay metadata
+過去Reviewを上書きしてはいけません。
 
-Replay requires saved events only.
+## 9. Replay Metadata
 
-Optional best-effort debugging/re-analysis metadata:
-- RNG seed
-- deck order hash
-- rule profile version
-- app version
-- model role/version
-- AI request/response
-- CPU profile version/snapshot
+Replayそのものは保存済みEventだけで再生します。
 
-This does not guarantee exact re-simulation.
+Best-effortなDebug / Re-analysis用Metadata:
 
-## 10. Auto-save boundary
+- RNG Seed
+- Deck Order Hash
+- Rule Profile Version
+- App Version
+- Model Role / Version
+- AI Request / Response
+- CPU Profile Version / Snapshot
 
-Completed hand is the stable recovery boundary.
+これらを保存しても、完全なRe-simulationを保証するものではありません。
 
-On HAND_FINISHED:
-- persist hand events
-- persist session projection
-- persist stacks
-- persist relevant memory changes
+## 10. Auto Save境界
 
-If the app exits mid-hand, resuming from the last completed hand is acceptable.
+**Completed Hand**を安定したRecovery Boundaryとします。
 
-## 11. Reset semantics
+`HAND_FINISHED` 時に:
 
-### Learning reset
-Clear user hypotheses, ability scores and generated player profile. Keep hand history unless separately deleted.
+- Hand Events保存
+- Session Projection保存
+- Stack保存
+- 必要なMemory Update保存
 
-### Opponent memory reset
-Clear persistent CPU observations/hypotheses.
+アプリがHand途中で終了した場合、直前のCompleted Hand終了時点から再開できればMVPとして十分です。
 
-### Hand history delete
-Delete hand/session history and derived data.
+Action単位の完全Crash RecoveryはMVPで過剰実装しません。
 
-### Factory reset
-Clear all local user data/config.
+## 11. Reset Semantics
+
+### Learning Reset
+
+削除:
+- User Hypothesis
+- Ability Score
+- Generated Player Profile
+
+Hand Historyは別指定がない限り保持します。
+
+### Opponent Memory Reset
+
+CPUのPersistent Observation / Hypothesisを削除します。
+
+### Hand History Delete
+
+Hand / Session Historyと派生Projectionを削除します。
+
+### Factory Reset
+
+アプリ本体・Asset以外のLocal User Data / Configを初期化します。
