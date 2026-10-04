@@ -1,0 +1,8 @@
+# ローカル作業用 worktree（github-workflow skill「作業ツリーの分離」）
+.claude/worktrees/
+# Codex レビューモードのリポジトリ上書き（マシンごとに codex-mode.sh set-repo で設定）
+.claude/codex-mode
+# ローカル専用の Claude 設定・秘密情報
+.claude/settings.local.json
+.env
+.env.*

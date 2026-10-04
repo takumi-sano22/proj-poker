@@ -1,0 +1,19 @@
+# Codex グローバル設定（~/.codex/config.toml）
+# 設定リファレンス: https://developers.openai.com/codex/config-reference
+#
+# 方針: トップレベルの既定値はここでは変更しない。
+#   ~/.codex/config.toml はグローバル設定のため、ここで read-only / never を
+#   既定にすると対話的な codex 利用（コーディング等）まで制限してしまう。
+#   そこでレビュー専用の挙動は [profiles.review] プロファイルに閉じ込める。
+#
+# レビュー実行時は、このプロファイルを選択して呼び出す想定:
+#   codex --profile review exec review --base <base>
+#   （正確なフラグ指定は利用中の codex バージョンで確認すること）
+
+[profiles.review]
+# レビューは解析のみ。ファイルを変更しない。
+sandbox_mode = "read-only"
+# 非対話（ヘッドレス）実行で承認プロンプトを出さない。
+approval_policy = "never"
+# 既定モデルを固定したい場合のみ指定する（利用可能なモデル名は環境で確認）。
+# model = "gpt-5-codex"
