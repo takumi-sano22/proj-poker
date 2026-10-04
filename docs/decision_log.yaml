@@ -1,0 +1,264 @@
+- id: D01
+  choice: "1A"
+  status: accepted
+  decision: "操作ミスは裁定どおり続行し、ハンド終了後に再練習可能。"
+- id: D02
+  choice: "2A"
+  status: accepted
+  decision: "学習モードの戦略ヒントはユーザーが必要時に開く。"
+- id: D03
+  choice: "3A"
+  status: accepted
+  decision: "学習モードと実戦モードを分離。"
+- id: D04
+  choice: "4A+C"
+  status: accepted
+  decision: "Hand Reviewは要点先行を主軸に、一手ずつ進めるReplayも利用可能。"
+- id: D05
+  choice: "5A"
+  status: accepted
+  decision: "個々の判断は段階評価、Sessionは能力別＋総合Score。"
+- id: D06
+  choice: "6A"
+  status: accepted
+  decision: "ヒントは着眼点→計算→候補比較/推奨まで段階的に開く。"
+- id: D07
+  choice: "7A+B+C"
+  status: accepted
+  decision: "基本戦略主軸、理論/GTOを補足、重要な相手対策も扱う。"
+- id: D08
+  choice: "8A"
+  status: accepted
+  decision: "標準Range推定＋重要spotで別Range想定を比較。"
+- id: D09
+  choice: "9A"
+  status: accepted
+  decision: "通常は候補比較、気になるspotだけ追加simulation。"
+- id: D10
+  choice: "10A"
+  status: accepted
+  decision: "CPU卓は自動編成基本＋卓傾向を選択可能。"
+- id: D11
+  choice: "11A"
+  status: accepted
+  decision: "再登場CPUと初対面CPUを混在、再登場CPUは自身の観察を保持。"
+- id: D12
+  choice: "12A"
+  status: accepted
+  decision: "Hero Fold後は観戦継続、任意で早送り。"
+- id: D13
+  choice: "13A"
+  status: accepted
+  decision: "Cash＋Tournament、標準練習はCash。"
+- id: D14
+  choice: "14A"
+  status: accepted
+  decision: "Bet chipは手動、整理/両替はDealer補助可。"
+- id: D15
+  choice: "15A"
+  status: accepted
+  decision: "Dealer進行を一通り再現し速度変更/skip可。"
+- id: D16
+  choice: "16A"
+  status: accepted
+  decision: "Session Reviewは収支より意思決定品質を中心。"
+- id: D17
+  choice: "17A+B"
+  status: accepted
+  decision: "通常は代表統計＋AI傾向、詳細で多くのtracker-style stats。"
+- id: D18
+  choice: "18A+B"
+  status: accepted
+  decision: "弱点は証拠付き仮説として保持しPlayer Profileを高頻度再生成。"
+- id: D19
+  choice: "19A+B要素"
+  status: accepted
+  decision: "通常Reviewは数学＋資料＋AI、長Session/重要spotでは高度解析を強化。"
+- id: D20
+  choice: "20A"
+  status: accepted
+  decision: "GTOは必要局面の理論基準として提示。"
+- id: D21
+  choice: "21B"
+  status: accepted
+  decision: "MVPからSolverを最低1つ実働統合。"
+- id: D22
+  choice: "22A/C候補"
+  status: accepted
+  decision: "Opponent=Haiku級、Review=Sonnet級以上を初期値。コスト次第でrouting変更可。"
+- id: D23
+  choice: "23A"
+  status: accepted
+  decision: "体系化したlocal Knowledge Baseを構築。"
+- id: D24
+  choice: "24A"
+  status: accepted
+  decision: "KB→Math/Solver→Evidence sufficiency→不足時Web Search。"
+- id: D25
+  choice: "25A"
+  status: accepted
+  decision: "CPU personalityは多軸戦略parameter＋限定的人間特徴。"
+- id: D26
+  choice: "26A"
+  status: accepted
+  decision: "弱いCPUは体系的な人間的leakを持つ。"
+- id: D27
+  choice: "27A+"
+  status: accepted
+  decision: "妥当候補内で確率的判断。Tilt等の条件時のみ低確率で非合理行動にも確率配分。"
+- id: D28
+  choice: "28A"
+  status: accepted
+  decision: "CPUごとのKnowledge Stateを厳密分離。"
+- id: D29
+  choice: "29A"
+  status: accepted
+  decision: "CPUは観察事実＋自身の相手仮説を保持/更新。"
+- id: D30
+  choice: "30A"
+  status: accepted
+  decision: "CPU同士にも観察に基づく長期記憶。"
+- id: D31
+  choice: "31B"
+  status: accepted
+  decision: "ユーザーはCPUごとに自由記述Note＋Tag。"
+- id: D32
+  choice: "32A"
+  status: accepted
+  decision: "Play中HUDなし。Reviewで観察可能範囲の統計を照合。"
+- id: D33
+  choice: "33A+"
+  status: accepted
+  decision: "ユーザーReadを任意記録。評価が揺れるspotではReview AIが質問可能。"
+- id: D34
+  choice: "34A"
+  status: accepted
+  decision: "Sessionは能力別Score＋総合Score＋Confidence/Sample。"
+- id: D35
+  choice: "35A"
+  status: accepted
+  decision: "Reviewから弱点に基づく練習メニュー自動提案。"
+- id: D36
+  choice: "36A"
+  status: accepted
+  decision: "Drillは過去Hand由来＋生成類題。"
+- id: D37
+  choice: "37A"
+  status: accepted
+  decision: "Event Logを正本、Summary/Statsは派生。"
+- id: D38
+  choice: "38A"
+  status: accepted
+  decision: "再現情報はbest-effort。完全再現はhard requirementでなくReplayとRe-simulationは別。"
+- id: D39
+  choice: "39A"
+  status: accepted
+  decision: "ReviewはVersion付き保存し上書きしない。"
+- id: D40
+  choice: "40A"
+  status: accepted
+  decision: "Poker Rulesは決定論的Engine、LLMは意思決定のみ。"
+- id: D41
+  choice: "41A"
+  status: accepted
+  decision: "CPU不正出力は1回retry後にdeterministic fallback。"
+- id: D42
+  choice: "42C+A選択可"
+  status: accepted
+  decision: "AI障害時はRetry/Emergency Bot/Session中断をユーザー選択。"
+- id: D43
+  choice: "43A"
+  status: accepted
+  decision: "卓UIは実卓寄り2D。"
+- id: D44
+  choice: "44A"
+  status: accepted
+  decision: "Chipはclick＋drag両対応。"
+- id: D45
+  choice: "45B+A+C"
+  status: accepted
+  decision: "日本語説明＋専門用語併記を基本に、標準用語へ慣れ、詳細で高度情報も閲覧。"
+- id: D46
+  choice: "46A"
+  status: accepted
+  decision: "宣言はbutton。Voice recognitionはscope外。"
+- id: D47
+  choice: "47A"
+  status: accepted
+  decision: "実卓で起こり得る誤操作を受け、Dealer/Rule Engineが裁定。"
+- id: D48
+  choice: "48A"
+  status: accepted
+  decision: "Live MechanicsはPoker Decisionと別Score。"
+- id: D49
+  choice: "49A+"
+  status: accepted
+  decision: "複数実額preset。実額は常時必須、BBは補助表示。"
+- id: D50
+  choice: "50A"
+  status: accepted
+  decision: "SessionはHand数/時間preset＋自由終了。"
+- id: D51
+  choice: "51A"
+  status: accepted
+  decision: "Cash stack持越し、任意Reload/Top-up＋Auto Top-up。"
+- id: D52
+  choice: "52A"
+  status: accepted
+  decision: "Tournament初期scopeはSingle Table。"
+- id: D53
+  choice: "53A"
+  status: accepted
+  decision: "TournamentはPayout＋ICMを扱う。"
+- id: D54
+  choice: "54A"
+  status: accepted
+  decision: "Blind Structureは複数preset＋custom、時間/Hand数base。"
+- id: D55
+  choice: "55B"
+  status: accepted
+  decision: "MVPはHand Reviewまで一気通貫で完成。"
+- id: D56
+  choice: "56A"
+  status: accepted
+  decision: "Application CoreはTypeScript中心local Web。専門解析器はAdapter越し別言語可。"
+- id: D57
+  choice: "57A"
+  status: accepted
+  decision: "MVPでSolver Adapter経由の実解析を最低1つ動作。"
+- id: D58
+  choice: "58A"
+  status: accepted
+  decision: "Research Packを独立成果物として管理。"
+- id: D59
+  choice: "59A"
+  status: accepted
+  decision: "Poker Engineは厚いdeterministic/invariant/scenario tests。"
+- id: D60
+  choice: "60A"
+  status: accepted
+  decision: "Cards/ChipsはSVG/CSS等で構造描画、装飾のみ画像生成。"
+- id: D61
+  choice: "61A"
+  status: accepted
+  decision: "Single User。Auth/Tenant/Multi-userを作らない。"
+- id: D62
+  choice: "62A"
+  status: accepted
+  decision: "Hand間Auto Save。Hand途中の完全復帰は要求しない。"
+- id: D63
+  choice: "63A"
+  status: accepted
+  decision: "固定CPU pool＋一部random Guest。"
+- id: D64
+  choice: "64A"
+  status: accepted
+  decision: "Learning/Opponent Memory/History/Factory等カテゴリ別Reset。"
+- id: D65
+  choice: "65A"
+  status: accepted
+  decision: "AI待ち時間はCPU Thinkingとして自然に見せ、長い時のみ技術状態表示。"
+- id: D66
+  choice: "66A"
+  status: accepted
+  decision: "MVP DoDはCash 2-8、AI CPU、2D/Chip、Event/Replay、Hand Review、Math/Solver、主要testsまで。"
