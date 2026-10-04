@@ -1,127 +1,186 @@
-# Rules and Live Mechanics
+# ルールとライブ実卓操作
 
-## Core flow
+## 1. 基本ゲームフロー
 
-NLHE uses:
-- two private hole cards per player
-- Flop: 3 community cards
-- Turn: 1
-- River: 1
-- betting rounds: Preflop / Flop / Turn / River
+No-Limit Texas Hold'emでは各Playerに2枚のHole Cardsが配られます。
 
-At showdown, the best five-card hand from available cards wins; a player may also win by making all opponents fold.
+Community Cards:
 
-## Position / action
+- Flop: 3枚
+- Turn: 1枚
+- River: 1枚
 
-Typical live structure:
-- SB is left of Button
-- BB is left of SB
-- Preflop action starts left of BB
-- Postflop action starts with the first live player left of Button
-- Button moves clockwise each hand
+Betting Round:
 
-### Heads-up
-Important exception:
-- Button = SB
-- Button/SB acts first preflop
-- Button/SB acts last postflop
+- Preflop
+- Flop
+- Turn
+- River
 
-Transition into heads-up needs explicit regression tests.
+Showdownでは、利用可能なCardからBest Five-card Handを構成します。
 
-## Physical action vs canonical action
+全員をFoldさせてもPotを獲得できます。
 
-Live-style UI must separate what the user physically does from the poker action the rules recognize.
+## 2. Position / Action Order
 
-Example:
+通常:
+
+- Buttonの左がSB
+- さらに左がBB
+- PreflopはBBの左側からAction開始
+- PostflopはButtonの左側にいるLive PlayerからAction開始
+- ButtonはHandごとにClockwiseへ移動
+
+### Heads-Up
+
+重要な例外:
+
+- Button = Small Blind
+- Button / SBがPreflop first to act
+- Button / SBがPostflop last to act
+
+3人以上からHeads-Upへ移行する際のBlind / Button処理はRegression Test対象にします。
+
+## 3. Physical ActionとCanonical Action
+
+UI上の操作とPoker Engineへ適用される正式Actionを分けます。
+
+例:
 
 ```text
-Facing bet 100
-User silently pushes one 500 chip
- -> oversized-chip ruling
- -> CALL 100
- -> change returned
+Facing Bet: 100
+User: Raise宣言なしで500 Chipを1枚投入
+ ↓
+Oversized Chip Rule
+ ↓
+Dealer Ruling: CALL 100
+ ↓
+Poker Engine: CALL
+ ↓
+Change 400
 ```
 
-The Poker Engine receives the canonical CALL, not the user's intended raise.
+この分離により「間違った実卓操作を経験できるが、Game Stateは壊れない」を実現します。
 
-## Verbal declarations and chips
+## 4. 宣言とChip
 
-Relevant live principles from modern TDA-style rules:
-- clear verbal declaration and/or chip movement can define an action
-- when both exist, timing matters
-- common declarations include bet, raise, call, fold, check, all-in
-- a raise should be made clearly, e.g. one motion or prior declaration
-- string betting should be ruled rather than modeled as a legal multi-step raise
+2026 Poker TDAを主要参照の一つとします。
 
-## Oversized chip
+重要ポイント:
 
-Facing a bet, a single oversized chip without prior raise declaration is generally treated as a call under the applicable TDA-style profile.
+- Bet / Raise / Call / Fold / Check / All-in等の明確な用語を使う
+- Verbal DeclarationとChip投入のTimingが裁定へ影響する
+- Raiseは明確な一動作、または事前の明確な宣言を基本とする
+- String Bet / Raiseは認めない
 
-This should be learnable through interaction, not only tutorial text.
+これらはLLMではなくRuling Engineで扱います。
 
-## Multiple chips / 50% threshold
+## 5. Oversized Chip
 
-Silent multiple-chip actions have non-trivial rulings depending on:
-- amount needed to call
-- amount pushed
-- whether a full minimum raise is reached
-- threshold rules
+Facing a Betで、Raise宣言なしにSingle Oversized Chipを出した場合、TDA系Profileでは原則Call扱いになります。
 
-Implement in the deterministic Ruling Engine, not in an LLM.
+例:
 
-## Minimum raise / reopening
+```text
+Bet 100
+Silent 500 Chip × 1
+→ Call 100
+```
 
-Do not confuse:
-- total bet amount
-- raise increment
+Tutorial文章だけではなく、実操作として経験できるようにします。
 
-Short all-ins can create reopening edge cases. Cumulative short all-ins are especially test-worthy.
+## 6. Multiple Chips / 50% Rule
 
-## Out of turn
+複数Chipを無言で出した場合は:
 
-Out-of-turn behavior is not always simply "ignored".
+- Callに全Chipが必要か
+- Minimum Raiseへ達するか
+- Raise量のThresholdを超えるか
 
-Depending on rule profile and intervening action:
-- action may be binding
-- action may return to the proper player
-- options may change
+等で裁定が変わります。
 
-Use a versioned RulingProfile and scenario tests.
+Rule Table / Scenario Testとして決定論的に実装します。
 
-## Showdown
+## 7. Minimum Raise
 
-Distinguish:
-- formal table-visible showdown
-- learning-only full-card reveal
+No-LimitではRaise IncrementとTotal Betを混同しないことが重要です。
 
-Only the former may enter an observing CPU's KnowledgeState.
+現在StreetのLargest Previous Full Bet / Raise等を基準に、Minimum Raiseを計算します。
 
-## Burn/deal presentation
+## 8. Short All-in / Reopening
 
-Dealer UI may visually model:
-- shuffle/cut
-- hole cards
-- burn + flop
-- burn + turn
-- burn + river
+Full Raise未満のAll-inは、既にAction済みPlayerのBettingを必ずしもRe-openしません。
 
-Internal randomness must not depend on animation timing.
+複数Short All-inの累積Caseもあるため、Scenario Testを厚くします。
 
-## Cash house-rule concerns
+## 9. Action Out Of Turn
 
-Configurable concerns include:
-- table stakes
-- buy-in/reload
-- straddle
-- rake
-- run it twice
-- rabbit hunting
+Out-of-Turnは単純な「常に無効」ではありません。
 
-These are HOUSE_RULE concerns, not universal core Hold'em logic.
+Profileによって:
 
-## Feedback categories
+- 正しいPlayerへActionを戻す
+- Intervening Actionが変化しなければBinding
+- Actionが変化した場合はOptionが戻る
+- OOT FoldはBinding
 
-Keep separate:
-- RULING — affects canonical action
-- ETIQUETTE — table behavior
-- COACHING — educational/strategy guidance
+等の規則があります。
+
+MVPで全Edge Caseを再現する必要はありませんが、Ruling Profileで拡張可能にします。
+
+## 10. Showdown
+
+Formal ShowdownとLearning Revealを分離します。
+
+```text
+Table-visible Showdown
+≠
+Learning-only Full Reveal
+```
+
+CPU Knowledge Stateへ入るのは、実際にそのCPUが観察できた前者だけです。
+
+## 11. Burn / Dealing
+
+Dealer UIでは必要に応じて:
+
+- Shuffle
+- Cut
+- Hole Cards
+- Burn + Flop
+- Burn + Turn
+- Burn + River
+
+を表示します。
+
+内部Randomnessの正しさをAnimation Timingへ依存させません。
+
+## 12. Cash House Rule
+
+Live Cashでは以下がHouse Rule依存です。
+
+- Table Stakes
+- Buy-in
+- Reload
+- Straddle
+- Rake
+- Run It Twice
+- Rabbit Hunting
+
+Core Hold'em RuleとHouse Ruleを分離します。
+
+## 13. Feedback分類
+
+### `RULING`
+
+Game Actionへ影響する正式裁定。
+
+### `ETIQUETTE`
+
+進行・マナー。
+
+### `COACHING`
+
+戦略・初心者向け学習補助。
+
+UIでもLogでも分類を維持します。
