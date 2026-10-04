@@ -1,4 +1,4 @@
-# D01〜D66の採用済み人間判断。
+# D01〜D69の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -266,3 +266,15 @@
   choice: "66A"
   status: "採用済み"
   decision: "MVP DoDはCash 2-8、AI CPU、2D/Chip、Event/Replay、Hand Review、Math/Solver、主要testsまで。"
+- id: D67
+  choice: "Vite + React（SPA）+ Fastify（常駐 Node Runtime）"
+  status: "採用済み"
+  decision: "Web StackはVite + ReactのSPA（Local Browser UI）と、常駐Node（Fastify）のLocal Runtimeとする。Claude APIとSQLiteはRuntime側だけが扱い、ブラウザへキーを渡さない。D56の具体化。"
+- id: D68
+  choice: "pnpm workspace（packages/engine・apps/server・apps/web）"
+  status: "採用済み"
+  decision: "リポジトリはpnpm workspaceとし、packages/engine・apps/server・apps/webを置く。EngineはI/O・DB・LLMに依存しない純粋TypeScriptパッケージとする。"
+- id: D69
+  choice: "ESLint（typescript-eslint）+ Prettier（厳密固定）+ Vitest + fast-check、tsc --noEmit、GitHub Actions、pre-commit hookなし、Node 24 LTS"
+  status: "採用済み"
+  decision: "品質ツールはESLint（typescript-eslint）・Prettier（厳密固定）・Vitest・fast-check・tsc --noEmit、CIはGitHub Actionsとする。pre-commit hookは使わない。Nodeは24 LTS。"
