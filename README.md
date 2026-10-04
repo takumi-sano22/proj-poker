@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: 設計・ドキュメント基準の確定段階 / 実装前
+> 現在の状態: Phase 0（Repository / Docs / Tooling）の到達点 / **まだ遊べません**（ポーカーのロジックと卓 UI は Phase 1 から）
 
 ## このプロジェクトを作る理由
 
@@ -102,17 +102,42 @@ Review AI
 
 AIは「もっともらしい答えを作る計算機」ではなく、**複数の根拠を統合して説明するコーチ**として使います。
 
-## 想定技術構成
+## 技術構成
 
-- TypeScript中心のApplication Core
-- ローカルWeb UI
-- SQLite
-- 対戦CPU: Claude Haiku級を初期候補
-- Review: より上位のClaudeモデルを初期候補
-- ローカルSolverをAdapter経由で接続
-- 必要ならRust / Python / C++の専門解析器をAdapter越しに利用
+- **pnpm workspace**（D68）
+  - `packages/engine`: 決定論的Poker Engine（純粋TypeScript。I/O・DB・LLMをimportしない。lintでも禁止）
+  - `apps/server`: Local Runtime（常駐Node / Fastify。`127.0.0.1`だけで待ち受け。Claude APIとSQLiteはここだけが扱う）
+  - `apps/web`: Local Browser UI（Vite + ReactのSPA。SSRなし。ブラウザへAPI Keyを渡さない）
+- **品質ツール**（D69）: ESLint（typescript-eslint）・Prettier（版を厳密固定）・Vitest・fast-check・`tsc --noEmit`。CIはGitHub Actions。pre-commit hookは使いません
+- Node 24 LTS（`.nvmrc`）。pnpmの版は`package.json`の`packageManager`で固定（corepack）
+- SQLite（永続化はPhase 1以降）
+- 対戦CPU: Claude Haiku級を初期候補 / Review: より上位のClaudeモデルを初期候補
+- ローカルSolverをAdapter経由で接続（必要ならRust / Python / C++の専門解析器もAdapter越しに利用）
 
-具体的なモデル名・Solverは固定せず、実装時にコスト・速度・品質をPoCで比較します。
+具体的なモデル名・Solverは固定せず、実装時にコスト・速度・品質をPoCで比較します。構成の詳細は [`docs/03_SYSTEM_ARCHITECTURE.md`](./docs/03_SYSTEM_ARCHITECTURE.md) を参照してください。
+
+## セットアップ
+
+前提: Node 24（`.nvmrc`）。
+
+```bash
+corepack enable          # package.json の packageManager に書いた版の pnpm を使う
+pnpm install
+pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）を同時に起動
+```
+
+ブラウザで Vite が表示するURL（既定は `http://127.0.0.1:5173`）を開きます。現時点の画面は空で、`/api/health` が `{"status":"ok"}` を返す疎通確認だけができます。
+
+## 開発コマンド
+
+リポジトリのルートで実行します。CI（`.github/workflows/ci.yml`）も同じ4つを実行します。
+
+| コマンド | 内容 |
+|---|---|
+| `pnpm lint` | ESLint |
+| `pnpm typecheck` | 全パッケージの `tsc --noEmit` |
+| `pnpm test` | Vitest（現在は `packages/engine` のみ） |
+| `pnpm format:check` | Prettier の整形チェック（適用は `pnpm format`） |
 
 ## MVPの完成条件
 
@@ -145,7 +170,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D66の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D69の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -177,6 +202,18 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-現在は**設計・ドキュメント基準を確定する段階**です。
+**Phase 0 — Repository / Docs / Tooling** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
 
-ドキュメントPRと実装用Parent Issueを作成した後、他プロジェクトで利用している汎用Claude Code Skills / Harnessを投入してから実装を開始します。
+できていること:
+
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D69）
+- Claude Code Skills / Harness（`.claude/`）の投入と、このプロジェクトの開発規約としての確認
+- TypeScriptのプロジェクトスケルトン（`packages/engine`・`apps/server`・`apps/web`）
+- Lint / Typecheck / Test / Format と CI
+
+制約・未実装:
+
+- **まだ遊べません。** Poker Engineのロジック・卓UI・Event Log・AI CPU・Hand Reviewは未実装です
+- MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ1項目も満たしていません
+
+次は **Phase 1 — Vertical Poker Slice**（6-max Cashの1 Hand・Basic UI・Event Log）です。

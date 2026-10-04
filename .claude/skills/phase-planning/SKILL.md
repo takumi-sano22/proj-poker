@@ -46,7 +46,7 @@ description: proj-poker の Phase 着手時に docs/08 の Phase と親 Issue #2
 ## Phase 完了判定
 
 1. 親 #2 の DoD チェックボックスを更新してよいのは、**対応する PR がマージされた後だけ**。マージ前・レビュー中にチェックを入れない。
-2. チェック更新の前に、実出力を引用して根拠を示す（例: `gh pr view <n> --json state,mergedAt,url` の出力、Phase 完了時のテスト実行の実出力。コマンドは Phase 0 で確定後に追記）。引用できなければ完了と言わない。
+2. チェック更新の前に、実出力を引用して根拠を示す（例: `gh pr view <n> --json state,mergedAt,url` の出力、Phase 完了時の `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check` の実出力）。引用できなければ完了と言わない。
 3. DoD の項目が Phase の途中で部分的にしか満たされていない場合はチェックしない。
 4. 子 Issue がすべてクローズされ、対応する DoD 項目が更新されたら Phase 完了。その時点で **`release-readme-sync` skill** に進み、README 等との同期を行う。
 5. 実装開始ゲートの Gate 項目（親 #2 の「開始条件」）のチェックは**人間だけ**が行う。AI は更新しない。

@@ -7,7 +7,7 @@ description: コードを書く前に読む判定基準への導線。触るパ�
 
 **本 skill 自身は規範を持たない。** 持つのは「触る領域からどの reference を読むか」だけで、判定基準は `references/<領域>.md` に、規範の一次情報はさらにその先（`CLAUDE.md`・`docs/03_SYSTEM_ARCHITECTURE.md`（データは `docs/04_DATA_AND_EVENTS.md`）・各 skill）にある。
 
-> **注記**: `references/` は proj-poker（ローカル単一ユーザーの NLHE 練習 + AI コーチング。クラウド・認証・3D は非採用）向けに構成している。実装前のため lint / test 等のコマンドは Phase 0 確定後に追記する。判定基準は `review-distillation` skill で育てる。
+> **注記**: `references/` は proj-poker（ローカル単一ユーザーの NLHE 練習 + AI コーチング。クラウド・認証・3D は非採用）向けに構成している。lint / typecheck / test / format のコマンドは `CLAUDE.md`「品質チェック」が一次情報。判定基準は `review-distillation` skill で育てる。
 
 **なぜ `code-review` の台帳と分けるか**: 台帳は差分をレビューするときに読む資産で、コードを書くときには読まれない。同じ欠陥が「書かれてからレビューで捕まる」往復になり、レビュー 1 往復ぶんのコストを毎回払う。書く前に判定できるものはこちらへ置く。
 

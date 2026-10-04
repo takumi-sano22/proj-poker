@@ -9,7 +9,7 @@
 3. **`decision_log.yaml` の D 番号は、記録の直前に最大使用番号を grep で確認してから採る**（`grep -o "id: D[0-9]*" docs/decision_log.yaml | sort | tail`）。採用済み判断は AI が上書きしない。採番を伴う PR は push 直前とマージ直前に `git fetch` して再確認する（レビュー中に他 PR が消費する）。ローカル Issue 記録は使わない（Issue は GitHub のみ）。
    - **記録の docs PR を委譲した場合、親が累積差分（`git diff origin/main...HEAD`）で既存行の削除が無いかを直読する**。`gh pr diff --patch` は使わない（コミットごとの patch 連結で削除が大量に見えて誤診する）。
 4. **着手前だけでなく push 直前にも `git fetch origin && git log --oneline origin/main -5`** を見る。本体作業ツリーの main は `fetch` では進まないので、「無い」を結論する前に `git show origin/main:<path>` か origin/main 基点の worktree で確認する。
-5. **worktree で commit させる委譲 prompt には symlink 手順（`node_modules`・`.husky/_` 等）を書く**（Node.js 環境と pre-commit hook の構成は Phase 0 確定後。それまでは不要）。無いと pre-commit 整形が黙ってスキップされ、CI の `format:check` が全 PR を赤にする。
+5. **worktree で commit させる委譲 prompt には、`pnpm install --frozen-lockfile` と、push 前に `pnpm lint` / `typecheck` / `test` / `format:check` を通すことを書く**。pre-commit hook は無い（D69）ので、書かないと整形漏れがそのまま push され、CI の `format:check` で赤になる。`node_modules` の symlink は不要（`github-workflow`「worktree の依存」）。
 6. **CI の確認とマージを同じコマンドに書かない**。`gh pr checks` を単独で読んでから、別の呼び出しでマージする。CI が pending のうちはマージしない（docs のみの PR でも例外にしない）。
 7. **長い待ち（デプロイ・CI・バッチ）は Monitor ツールで**。bash のバックグラウンドループは OOM で `killed` され、待っていた処理は動き続けるので「止まった」と誤読して二重 dispatch しかねない。`killed` を受けたら実体を API で読む。
 8. **skill を書く・直すとき**: description は短く（300 字前後・英語トリガー不要・例の羅列不要）。frontmatter は `claude plugin validate <skills dir>` で検証する（YAML が壊れると無言で全フィールドが捨てられる。修正は `>-` の折りたたみブロックスカラー）。**書いた基準を自分の成果物に当ててから PR を出す**（チェックリスト skill が自分の基準を満たしていないと第 2 段レビューに何巡も指摘される）。

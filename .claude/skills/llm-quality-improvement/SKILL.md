@@ -16,7 +16,7 @@ LLM 機能の品質を「感覚」ではなく「測定」で改善するため�
 | **AI Opponent Eval** | Structured Output Valid 率・Illegal Action 率（合法候補外の選択）・Retry 率・Latency・Hidden Information Leakage（他者 Hole Cards 等の言及/利用） | Persona Differentiation・Action Diversity・Strategic Incoherence の有無 |
 | **Review Eval** | Pass A の Hindsight Leak 件数・Math の正しさ（Pot Odds / Equity 等を再計算で照合）・Solver Capability Gate の動作・Source Grounding（KB 引用の実在）・Hidden CPU Setting を Evidence に使っていないか | Uncertainty の表現・Assumption 変更で Recommendation が適切に変わるか |
 
-代表 Spot / Human-reviewed Hand を固定 Regression Case として持つ。Eval の具体的な実装場所・コマンドは Phase 0 で確定後に追記する。
+代表 Spot / Human-reviewed Hand を固定 Regression Case として持つ。Eval の実装場所・コマンドは未確定。Phase 0 には LLM 呼び出しが無いため決めていない。LLM を呼ぶのは `apps/server`（D67）なので、最初の Eval を作る Issue（AI Opponent を入れる Phase 3 の見込み）で置き場と実行コマンドを決め、ここへ追記する。
 
 ## 全体プロセス
 

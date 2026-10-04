@@ -27,7 +27,7 @@ model: haiku
    - 「現在のフェーズ」セクションの Phase 番号・名称を `docs/08_MVP_AND_ROADMAP.md` と一致させる
    - MVP 進捗（「MVPの完成条件」と親 #2 の DoD の達成状況）を更新する
    - 設計書への参照が `docs/`（索引 `docs/00_DOCUMENTATION_INDEX.md`）を指しているか確認する
-   - セットアップ手順は Phase 0 で確定後に追記される想定。確定済みなら最新の手順と一致させる（未確定のコマンドを推測で書かない）
+   - セットアップ手順とコマンドは、ルートの `package.json` の scripts・`.nvmrc`・`CLAUDE.md`「品質チェック」と一致させる（存在しないコマンドを推測で書かない）
 
 3. **チェックリスト**
    - [ ] 「現在のフェーズ」が `docs/08_MVP_AND_ROADMAP.md` の現在地と一致している
