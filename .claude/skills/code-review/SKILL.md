@@ -8,7 +8,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 
 汎用観点（正確性・読みやすさ・保守性・エラーハンドリング・セキュリティ・テスト・余計な変更）に加えて、**そのリポジトリで実際に指摘された欠陥クラスを台帳とチェックリストとして前倒しで当てる**。狙いは第 2 段レビュー（Codex または `reviewer` agent）に出す前に既知のクラスを潰し、9〜20 巡に及んでいたレビュー往復を畳むこと。
 
-> proj-poker は実装前（Phase 0 未着手）のため、下記「差分クラス」のパスは `docs/03_SYSTEM_ARCHITECTURE.md` の想定構成に基づく暫定値。ディレクトリ構成が確定したら書き換える。台帳 `references/learned-checks.md` は他PJ由来の汎用項目を初期値とし、`review-distillation` skill で proj-poker 固有項目を育てる。
+> 下記「差分クラス」のパスは D67・D68 の構成（`packages/engine`・`apps/server`・`apps/web`。`docs/03_SYSTEM_ARCHITECTURE.md`「ディレクトリ構成」）に合わせている。各パッケージの下のディレクトリ分けはまだ無いので、パスだけで決まらないクラスは import と呼び出し先で判定する（表の下の段落）。台帳 `references/learned-checks.md` は他PJ由来の汎用項目を初期値とし、`review-distillation` skill で proj-poker 固有項目を育てる。
 
 ## 資産の位置づけ（2 資産・同じ項目は片方だけ）
 
@@ -33,17 +33,17 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 
 **1 つの差分は複数クラスに属しうる**（該当するクラスの台帳セクション・チェックリストをすべて読む）。特に Local Runtime の API / IPC 境界の差分は、配下の機能領域（`poker-engine` 等）のクラスにも当てる。
 
-| クラス | 主なパス（暫定。構成確定後に書き換える） |
+| クラス | 主なパス（D67・D68 の構成） |
 |---|---|
-| `poker-engine` | Poker Rule・GameState・Hand 進行・Betting・Showdown・Pot/Side Pot・Chip 計算など決定論的コード（例: `packages/engine/**`・`src/engine/**`） |
-| `knowledge-state` | CPU ごとの `KnowledgeState`・Observation 生成・LLM へ渡す入力の組み立て（情報境界。global GameState を渡していないか） |
-| `review-pipeline` | Decision Review / Reveal Review・Solver Adapter・Source Grounding・Hindsight 防止（例: `src/review/**`・`src/solver/**`） |
-| `ai-opponent` | AI Opponent の Persona・合法候補の提示・Structured Output 検証・Fallback（例: `src/opponent/**`） |
-| `ui-table` | Table UI・Action Panel・Review 表示（実額常時表示・BB 補助）・hooks（例: `src/ui/**`・`src/components/**`） |
-| `persistence-event-log` | Event Log（正本）・Projection（Summary / Stats）・SQLite スキーマ・マイグレーション・Replay（例: `src/persistence/**`・`migrations/**`） |
-| `db` | スキーマ・マイグレーション・DB アクセス層・raw SQL を含む差分（`persistence-event-log` と併せて当てる） |
-| `async` | 非同期ジョブ・Solver Subprocess・LLM 呼び出しの並行/タイムアウト/再試行を扱う処理 |
-| `llm` | LLM 呼び出し・オーケストレーション・プロンプト定義・評価ハーネス（例: `src/llm/**`・`prompts/**`・`evals/**`） |
+| `poker-engine` | Poker Rule・GameState・Hand 進行・Betting・Showdown・Pot/Side Pot・Chip 計算など決定論的コード（`packages/engine/**`） |
+| `knowledge-state` | CPU ごとの `KnowledgeState`・Observation 生成（`packages/engine/**` の Projection）と、LLM へ渡す入力の組み立て（`apps/server/**`）。情報境界。global GameState を渡していないか |
+| `review-pipeline` | Decision Review / Reveal Review・Solver Adapter・Source Grounding・Hindsight 防止（`apps/server/**`。使う決定論計算が `packages/engine/**` にあればそれも） |
+| `ai-opponent` | AI Opponent の Persona・Structured Output 検証・Fallback（`apps/server/**`）と、合法候補を返す `packages/engine/**` |
+| `ui-table` | Table UI・Action Panel・Review 表示（実額常時表示・BB 補助）・hooks（`apps/web/**`） |
+| `persistence-event-log` | Event Log（正本）・Projection（Summary / Stats）・SQLite スキーマ・マイグレーション・Replay（SQLite は `apps/server/**` だけが扱う・D67。Event の型や Projection の純粋関数が `packages/engine/**` にあればそれも） |
+| `db` | スキーマ・マイグレーション・DB アクセス層・raw SQL を含む差分（`apps/server/**`。`persistence-event-log` と併せて当てる） |
+| `async` | 非同期ジョブ・Solver Subprocess・LLM 呼び出しの並行/タイムアウト/再試行を扱う処理（主に `apps/server/**`。`apps/web/**` の API 呼び出しも） |
+| `llm` | LLM 呼び出し・オーケストレーション・プロンプト定義・評価ハーネス（`apps/server/**`。LLM を呼ぶのは Runtime だけ・D67。Eval の置き場は未確定） |
 | `docs` | `docs/**`・ルートの `*.md`（下記 `harness` を除く） |
 | `harness` | `.claude/**`・`CLAUDE.md`・`AGENTS.md` |
 
@@ -78,7 +78,9 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 - [ ] 「案 X が機能しなかったら案 Y へエスカレ」と書いた場合、**エスカレ条件と判断者**が明確か
 - [ ] 構造的に解決不能（CSS 仕様等）と判明した場合、**ユーザーに判断を仰ぐ**フロー（AskUserQuestion）が想定されているか
 
-### F. SSR hydration（React/Next.js 等で SSR を使う場合のみ。フレームワークは Phase 0 で確定）
+### F. SSR hydration（現状は対象外）
+
+`apps/web` は SSR なしの Vite + React SPA（D67）なので、hydration 不一致は起きず本節は当てない。SSR を導入する変更が来たときだけ当てる。ただし 1 つ目の項目の括弧内（乱数は Engine で seed 付きに閉じ込め、UI で生成しない）は SPA でも守る。
 
 - [ ] クライアントコンポーネント内でも SSR されることを前提に `Math.random()` / `Date.now()` を `useState` の lazy initializer で使っていないか（山札のシャッフル等の乱数は Engine 側で seed 付きに閉じ込め、UI で生成しない）
 - [ ] 初期値は決定論的にし、useEffect 内で乱数・現在時刻を反映する

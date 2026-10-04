@@ -134,43 +134,32 @@ description: コード/ドキュメント変更を伴うすべての作業で、
 1. **着手前チェック（齟齬確認）**: `git fetch origin` で最新を取得し、着手するIssueの対象ファイル/領域が、進行中PR・他ブランチの未コミット作業と重複しないか確認する。重複や未マージ成果への依存があれば、並行に入らず順次（前PRマージ後）へ切り替える。
 2. worktree を作成する。配置先は **`.claude/worktrees/<branch>`** に統一する（`.gitignore` 対象・ローカルテスト時にアクセスしやすい）:
    - `git worktree add -b <branch> .claude/worktrees/<branch> origin/main`
-3. worktree 内で実装・コミット・push・PR を行う（本体作業ツリーには一切触れない）。依存は下記「共有物の symlink」に従って共有または `npm ci` する。
+3. worktree 内で実装・コミット・push・PR を行う（本体作業ツリーには一切触れない）。依存は下記「worktree の依存」に従って `pnpm install --frozen-lockfile` する。
 4. **第 2 段レビューも worktree から実行する**（Codex の `codex-review.sh` は作業ツリーの差分を見るため、対象ブランチがチェックアウトされた worktree 内で実行）。
 5. **マージ後は必ず後始末する（必須）**: dev サーバーを止めてから `git worktree remove` → `git branch -D`。プロジェクトに後始末スクリプト（例: dev サーバー停止と worktree 削除を一括で行うもの）があればそれを使う。`.claude/worktrees/` に残したままにしない（`.gitignore` 対象だが、不要な worktree を放置しない）。
 
 **禁止**: メイン作業ツリーで `git checkout -b` して作業を始めない（外部の checkout で HEAD を奪われ、コミットが他人のブランチに乗る）。万一乗ってしまったら、**main 基点の新 worktree を作り、該当ファイルだけ `git checkout <commit> -- <files>` で載せ直す**（他人のコミット群を巻き込まないよう、base との差分が自分の変更だけであることを確認する）。
 
-### 共有物の symlink（依存運用の一次情報・Node.js プロジェクトの例）
+### worktree の依存（依存運用の一次情報）
 
-> **proj-poker の状況**: パッケージマネージャ・formatter・pre-commit hook は Phase 0 で確定する。確定までは以下を「他 PJ（npm + Prettier + husky）での実績例」として読み、確定後に実際のツール名へ読み替えてこの節を更新する。
-
-worktree には gitignore 対象ファイル（`.env` 等）はコピーされず、`node_modules` も独立コピーになるため「依存が無い状態」になる。フル再インストール（`npm ci`）は worktree の数だけ N 倍コストになるので、**本体作業ツリー（`npm ci` 済み＝固定版が入っている）から共有できるものは symlink する**。これで固定版 Prettier の判定は本体と一致し、再インストールを省ける。
+proj-poker は pnpm workspace（D68）で、pre-commit hook は使わない（D69）。worktree には gitignore 対象（`node_modules`・`.env` 等）がコピーされないので、**worktree ごとに `pnpm install --frozen-lockfile` する**。pnpm はグローバル store からリンクするため数秒で終わる。`node_modules` は本体から symlink しない（パッケージごとの `node_modules` を本体と共有すると隔離が壊れる）。
 
 ```bash
-# 本体作業ツリーの直下で実行する（$WT は作成した worktree のパス）
-WT=.claude/worktrees/<branch>
+# worktree の直下で実行する。Node は .nvmrc（24）、pnpm の版は package.json の packageManager で固定され corepack が解決する
+pnpm install --frozen-lockfile
 
-# .env（gitignore 済みであることを確認してから。本体のローカル設定を共有）
-[ -f .env ] && ln -s "$(pwd)/.env" "$WT/.env"
-
-# node_modules（本体は npm ci 済み＝固定版。symlink すれば format:check は固定版で判定できる）
-[ -d node_modules ] && ln -s "$(pwd)/node_modules" "$WT/node_modules"
-
-# .husky/_（husky v9 の hook 本体。core.hooksPath=.husky/_ が指す先で、npm ci の prepare が本体ツリーにだけ生成する
-# gitignore 対象のため worktree には無い。symlink しないと pre-commit（lint-staged 整形）が静かにスキップされる）
-[ -d .husky/_ ] && ln -s "$(pwd)/.husky/_" "$WT/.husky/_"
-
-# Python を使うプロジェクトの場合: uv のグローバルキャッシュ前提で、必要時のみ `uv sync`（import 解決が通るなら省略）
+# .env が要るときだけ（gitignore 済み）。本体から symlink し、コミットしない
+[ -f /home/ai/project/proj-poker/.env ] && ln -s /home/ai/project/proj-poker/.env .env
 ```
 
-- **依存も DB スキーマも変えない大半の作業では symlink 共有で足りる。** 整形判定は `npm run format:check`（＝node_modules 経由の固定版）で行い、素の `npx prettier`（版無指定）や `npx prettier@<別版>` で判定しない（別版を都度DLする＝版ずれの直接原因）。
-- **worktree 専用の `npm ci` が必要なのは、依存または生成コードの元（ORM スキーマ・コード生成の定義等）を変える作業のときだけ**:
-  - `package.json` / `package-lock.json` を変更する（依存の追加・更新）場合は、symlink 共有では本体の固定版とズレるため、symlink を張らずにその worktree で `npm ci` する。
-  - **`node_modules` 配下へコードを生成するツール（ORM の Client 生成等）の入力を変える場合も symlink 共有しない**。共有 `node_modules` のままだと生成物が main の古い定義のままで型チェックが不正確になる／再生成すると本体・他 worktree と共有の生成物を書き換えて隔離が壊れる。SQLite のスキーマ変更自体は「必ず人間確認で停止する条件」（スキーマ変更・マイグレーション）にも該当する。
-- **husky の pre-commit hook を worktree で有効化するには `.husky/_` の symlink が必須**（上記 bash 参照）。`core.hooksPath=.husky/_`（相対）は worktree 直下の `.husky/_` を指すが、そこは `npm ci` の prepare で**本体作業ツリーにだけ生成される** gitignore 対象で、worktree には存在しない。**`node_modules` を symlink しても `.husky/_` が無ければ git は hook を見つけられず、pre-commit（lint-staged 整形）が静かにスキップされる**（整形されずコミットされ CI の format:check が赤になる実害が発生した）。`.husky/_` を張ったうえで、hook 本体（`.husky/pre-commit`）は `node_modules/.bin/prettier` を要求するため、**`node_modules` 未解決のまま commit すると hook は「node_modules 未導入」で fail する**（別版 prettier で静かに素通りするのを防ぐ）。
-- **symlink した共有物をコミットしない**。`.env` は gitignore 済みだが、`node_modules` `.husky/_` は **symlink だと gitignore（`node_modules/` 等の末尾スラッシュはディレクトリのみにマッチ）で自動除外されない**。念のため `git add -A` は使わず、変更したファイルのみを明示的に `git add` する。
+- 依存を変える作業は、その worktree で `pnpm add` 等を実行し、`package.json` と `pnpm-lock.yaml` の変更を同じコミットに入れる。CI は `--frozen-lockfile` なので、両者がずれると落ちる。
+- 整形の判定は `pnpm format:check`（固定版 Prettier）で行う。`npx prettier`（版無指定）や別版で判定しない（版ずれの直接原因）。
+- husky と `.husky/_` の symlink は**不採用**（pre-commit hook を使わない・D69）。整形漏れは push 前の `pnpm format:check` と CI で捕まえる（「マージ前のローカル品質チェック」）。
+- symlink した `.env` をコミットしない。`git add -A` は使わず、変更したファイルを明示して `git add` する。
 
 ### dev サーバーの起動と停止（worktree 併用時の注意）
+
+> **proj-poker の状況**: ルートの `pnpm dev` で `apps/server`（Fastify・`127.0.0.1:3001`）と `apps/web`（Vite・既定 5173。`/api` を 3001 へ proxy）を同時に起動する。下記の worktree ごとのポート採番と管理スクリプトはまだ作っていない（Phase 0 には画面が無く不要だった。UI を実測する Issue が並ぶようになった時点で作る）。それまでは dev サーバーを 1 つの worktree でだけ動かし、使い終えたら止めてから `git worktree remove` する。
 
 **`git worktree remove` はディレクトリを消すだけで、そこで動いている dev サーバー（Vite / Next.js の dev 等）までは面倒を見ない。** 削除後もプロセスは cwd が `(deleted)` の孤児として生き続け、誰もアクセスしないまま数百 MB を占有する（実測で稼働 4 本中 3 本が孤児だった例あり。うち 2 本は同一 worktree への二重起動）。そのため worktree の後始末と dev サーバーの停止を分離させず、**1 つのスクリプトに一本化する**ことを推奨する（例: プロジェクトの dev サーバー管理スクリプトに `remove <branch>` を持たせ、dev 停止 → `git worktree remove` → `git branch -D` を一括で行う）。
 
@@ -289,22 +278,16 @@ done
 
 ---
 
-## マージ前のローカル品質チェック（Lint / 型 / Prettier・Node.js プロジェクトの例）
+## マージ前のローカル品質チェック
 
-> **proj-poker の状況**: lint / typecheck / test / format のコマンドと CI は Phase 0 で確定し、`CLAUDE.md`「品質チェック」に追記する。本節は他 PJ での実績例（原則は「CI と同じコマンドをローカルで通す」「formatter は厳密バージョン固定」）。Poker Engine を触る PR は、決定論テスト（`poker-engine-testing` skill）が通ることを必須とする。
+CI（`.github/workflows/ci.yml`）は push / PR ごとに `pnpm install --frozen-lockfile` → `pnpm lint` → `pnpm typecheck` → `pnpm test` → `pnpm format:check` を実行する。**PR を上げる前とマージ前に、同じ 4 つをルートで通す**（一覧は `CLAUDE.md`「品質チェック」）。Poker Engine を触る PR は、決定論テスト（`poker-engine-testing` skill）が通ることを必須とする。
 
-CI（例: `.github/workflows/ci.yml` の `Lint & Type Check`）が push/PR ごとに **ESLint・型チェック・`prettier --check .`（リポジトリ全体走査）** を実行する構成では、`format:check` はリポジトリ全体を見るため、**自分の差分と無関係なファイルの整形崩れでも CI が赤になる**（1ファイルの違反が以後すべての PR を巻き込む）。PR を上げる前・マージ前に、ローカルで以下を確認する。
+- `format:check`（= `prettier --check .`）はリポジトリ全体を見るので、自分の差分と無関係なファイルの崩れでも赤になる。整形の適用は `pnpm format`。対象外（`*.md`・`.claude`・`docs/research`・`pnpm-lock.yaml`・`dist` など）は `.prettierignore` が一次情報。
+- **Prettier は厳密固定版**（`package.json` にキャレット無し）。必ず `pnpm format` / `pnpm format:check` を使う。
+- **pre-commit hook は無い**（D69）。コミット時の自動整形は無いので、上の 4 つを手で通すことがローカルでの唯一の担保になる。
+- **Node / pnpm の版も CI と揃える**: Node は `.nvmrc`（24）と `engines.node`、pnpm は `packageManager`（`corepack enable` で解決）。
 
-- 整形チェック: `npm run format:check`（= `prettier --check .`）
-- 整形適用: `npm run format`（= `prettier --write .`）
-
-**Prettier のバージョンは固定版を使う（重要）**: `package.json` の `prettier` は**キャレット無しの厳密固定**（例 `"3.8.4"`）。CI は `npm ci`（＝lock のピン留め版）で整形判定するため、**`npx prettier`（版無指定）で最新版を直叩きすると整形結果がズレて、ローカルは通っても CI が落ちる／その逆**が起きる。整形は必ず `npm run format` / `npm run format:check`（プロジェクト依存の固定版）で行う。worktree での依存の共有・`npm ci` が必要になる条件は「共有物の symlink」を参照。
-
-**pre-commit hook（husky + lint-staged）で自動整形される**: `git commit` 時に `.husky/pre-commit` が `lint-staged` を起動し、**staged ファイルに `prettier --write --ignore-unknown`** を適用する（`.prettierignore` は尊重）。これによりフォーマット崩れは基本コミット時点で解消される。**worktree では `.husky/_` の symlink が無いと hook は静かにスキップされる**ため、hook の有効化条件（`.husky/_` の symlink・`node_modules` の解決）と worktree での扱いは「共有物の symlink」を参照。クローン直後は一度 `npm ci` する。hook はローカル担保であり CI の `format:check` を置き換えない（多層）。
-
-**Node バージョンも固定する**: 整形/lint 挙動は Node 版にも依存しうるため、`.nvmrc` と `package.json` の `engines.node` で **CI と同じ Node メジャー**に揃える。`nvm use`（`.nvmrc` を読む）でローカルを合わせてから作業する。
-
-> 背景: main に Prettier 違反が到達する事故を防ぐための運用。GitHub のプラン制約で **branch protection（必須チェック）が使えない**場合、CI が赤でもマージを機械的にはブロックできない。そのぶん「マージ前に `npm run format:check` を通す」運用と **Prettier の厳密バージョン固定** で担保する。
+> 背景: branch protection（必須チェック）が使えない場合、CI が赤でもマージを機械的にはブロックできない。そのぶん「マージ前に 4 つを通す」運用と、マージ前の `gh pr checks` の直読で担保する。
 
 ---
 

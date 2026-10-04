@@ -37,7 +37,7 @@
 - **Phase 運用**: Phase 着手時に `phase-planning` skill で子 Issue へ分解する。Phase 最終 PR は `release-readme-sync` skill でルート README を更新する。MVP は Phase 5 完了まで（Scope Creep 防止は `docs/08` §4）。
 - **PR の `## Summary` / `## Test plan` は必須**。作業ログは `docs/taskLog/`（`task-log` skill）。人間向け文章（Issue / PR / docs / コメント）は日本語。
 - **レビュー順序は「自己レビュー（台帳必読）→ Codex レビュー」**。指摘は 4 状態に確定し、same-root sweep → 修正 or P2 accept → 条件付き再レビュー。各ラウンド後とループ出口で `review-learning`。
-- **品質チェック**: lint / typecheck / test / format のコマンドは Phase 0 で確定後にここへ追記する。
+- **品質チェック**（ルートで実行。CI `.github/workflows/ci.yml` と同じ）: `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`。整形の適用は `pnpm format`。pre-commit hook は無い（D69）ので、push 前にこの 4 つを通す。worktree の依存は `pnpm install --frozen-lockfile`（詳細は `github-workflow`）。
 
 ## routing（いつ → どこを読むか）
 

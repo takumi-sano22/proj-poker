@@ -14,18 +14,18 @@ when_to_use: 実装が一段落しコミット/PR前の動作確認をする時�
 
 1. `git diff` で変更差分を確認する。
 2. 変更範囲に応じて確認コマンドを選ぶ。
-3. コード変更なら lint / typecheck / test / format のコマンドを実行する。**コマンドは Phase 0 で確定予定**のため、確定後にここへ追記する（それまでは推測で npm スクリプト名を断定せず、未確定であることを作業ログに明記する）。
+3. コード変更なら、ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check` を実行する（CI と同じ。一覧は `CLAUDE.md`「品質チェック」）。整形が崩れていたら `pnpm format` で直す。
 4. Poker Engine（Rule / GameState / 合法アクション / Pot・Side Pot 等）の変更なら、`poker-engine-testing` skill を参照する。Chip 総量保存・合法アクション・Event Log からの再現を確認する。
 5. LLM に渡すコンテキストや Review に触れる変更なら、`poker-invariant-review` skill の観点（他者 Hole Cards・Future Cards・他 CPU の Private Observation の漏えい、Hindsight Leak）で確認する。
 6. テスト結果を作業ログ（`docs/taskLog/`・`task-log` skill）に記録する。
 7. 未確認の範囲があれば明記する。
 8. 最終報告では、変更内容・作業ログ・テスト結果・残課題を伝える。
 
-現在は実装前のため自動テストスイートは無い。docs のみの変更では、`docs/` 内の相互参照・Decision ID（D01〜D66）・Open Item ID の整合を確認し、`git diff` で意図しない変更が無いことを確認する。動作確認が必要な場合は、確認した範囲と未確認の範囲を作業ログに明記する。
+自動テストは `pnpm test`（Vitest。現在テストがあるのは `packages/engine` だけ。`apps/*` にテストを足すときは、そのパッケージに vitest と `test` script を足す）。docs のみの変更では、`docs/` 内の相互参照・Decision ID（D01〜D69）・Open Item ID の整合を確認し、`git diff` で意図しない変更が無いことを確認する。動作確認が必要な場合は、確認した範囲と未確認の範囲を作業ログに明記する。
 
 ## Lintチェック（コミット前必須）
 
-- コード変更時は Phase 0 で確定した lint コマンドを実行し、**エラー0件**を確認してからコミットへ進む（コマンドは Phase 0 で確定後に追記）。
+- コード変更時は `pnpm lint` を実行し、**エラー0件**を確認してからコミットへ進む（pre-commit hook は無いので手で通す・D69）。
 - 意図的に未使用の引数・変数・catch句は `_` 始まりにする。将来使う拡張ポイントの引数を、lint回避のために実装側から削除しない。
 
 ## 注意点

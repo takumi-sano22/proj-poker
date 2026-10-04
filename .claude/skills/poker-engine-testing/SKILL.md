@@ -7,7 +7,7 @@ description: proj-poker の決定論的 Poker Engine のテスト規約。Invari
 
 `docs/09` §1 にあるとおり、最優先は **Poker Engine の正しさ**。AI の戦略は不完全でもよいが、Chip Accounting・Legal Action・Pot Distribution・Hidden Information Isolation は壊れてはいけない。本 skill は、その「壊れてはいけない」をテストとしてどう書くかを定める。テストの要求範囲（何を最低限テストするか）の一次情報は `docs/09` と `docs/02` §5 で、ここには書き写さない。
 
-> テストランナーとディレクトリ構成は Phase 0 で確定する。下記のパスは想定例で、確定したらこの skill と `CLAUDE.md`「品質チェック」を更新する。
+> **ランナーと配置（D69）**: テストランナーは Vitest、Property / Fuzz は fast-check。テストは `packages/engine/src/**/*.test.ts` に実装と並べて置き（コロケーション）、Property テストは `*.property.test.ts` とする。実行はルートの `pnpm test`（Engine だけなら `pnpm --filter @proj-poker/engine test`）。§4 の Scenario ファイルの置き場は、最初の Scenario ランナーを作る Issue で決めてここへ追記する。
 
 ## 1. Engine を変えたら何を足すか（必須）
 
@@ -47,7 +47,7 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 
 固定ハンドは**データとして記述**し、1 つの汎用ランナーで再生・検証する（ハンドごとに手続き的なテストを書かない）。Scenario は Human-reviewed Hand の回帰ケースにもそのまま使える（`docs/09` §6）。
 
-推奨形式（形式は Phase 0 の実装時に確定する。要素はこれを満たすこと）:
+推奨形式（形式は、最初の Scenario ランナーを作る Issue〔Phase 1 / 2〕で確定する。Phase 0 はツールチェーンだけでランナーを作っていないため。要素はこれを満たすこと）:
 
 ```yaml
 id: SCN-side-pot-3way-001

@@ -11,7 +11,7 @@
 3. **Replay は保存済み Event だけを再生する。Current AI で再生成しない**（docs/02 §9・D38）。Re-simulation（別 Action への仮想分岐）とは API も保存先も分ける。
 4. **可変ルールは Rule Profile（Version 付き）で表す**（docs/02 §3）。Min Raise・Short All-in Reopen・Rake・Straddle 等の分岐をコード内の定数や `if` に散らさない。Profile Version は Event / Metadata に残す。
 5. **乱数（山札のシャッフル）は Engine 内に閉じ、seed を注入できる形にする**。RNG Seed・Deck Order Hash は best-effort の Replay Metadata として保存候補（docs/04 §9・docs/02 §10）。完全再現は Hard Requirement ではない。
-6. **Chip の表現（整数の最小単位で扱い浮動小数を使わない等）は docs に明記が無い**。Phase 0 で決める実装判断なので、決めたら decision-log へ記録する。それまでは Chip 総量保存（INV-TEST-002 / 005）が機械的に検証できる表現を選ぶ。
+6. **Chip の表現（整数の最小単位で扱い浮動小数を使わない等）は docs に明記が無い**。Phase 0 では決めていない（ツールチェーンだけで Engine のロジックが無かったため）。Engine で Chip を最初に扱う Issue（Phase 1）で決め、decision-log へ記録する。それまでは Chip 総量保存（INV-TEST-002 / 005）が機械的に検証できる表現を選ぶ。
 7. **Completed Hand が Recovery 境界**（docs/04 §10）。`HAND_FINISHED` 時に Hand Events・Session Projection・Stack を保存する。Action 単位の完全 Crash Recovery は MVP で作らない。
 8. **Visibility を Event に持たせる**（docs/04 §4）。Hole Cards 等の非公開情報を、誰でも読める Event に混ぜない。
 

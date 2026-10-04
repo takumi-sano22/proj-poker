@@ -30,9 +30,9 @@ effort: high
 
 `github-workflow` skill の SKILL.md（`.claude/skills/github-workflow/SKILL.md`。プロジェクト固有版があればそちらを優先）を Read し、その標準フローの **2〜11 を自分の worktree で実行する**（1〔Issue 選択〕と 12〔マージ〕、マージ後の後始末・メモリ更新は親の持ち分）。手順本文をここへ写さない。要点だけ:
 
-1. **worktree**: `git fetch origin && git worktree add -b <branch> .claude/worktrees/<branch> origin/main`（本体直下で）→ 依存物（`node_modules` 等）が必要になったら、Phase 0 で確定する開発環境手順に従う（現在は実装前で不要）。`.env` 等の秘密情報は symlink してもコミットしない。
-2. **実装前**: Issue 本文と親が渡したガイダンス reference を Read。dev サーバーが要る場合の起動方法は Phase 0 で確定後に追記（worktree ごとにポートを分ける）。
-3. **実装 → 検証**: 静的チェック・型検査・フォーマット確認を実行する（lint / typecheck / test / format のコマンドは Phase 0 で確定予定。確定までは `test-and-review` skill に従い、未確定であることを作業ログに明記）。Poker Engine 変更は `poker-engine-testing`、LLM コンテキスト・Review 変更は `poker-invariant-review`を参照。UI は実測で確認する。
+1. **worktree**: `git fetch origin && git worktree add -b <branch> .claude/worktrees/<branch> origin/main`（本体直下で）→ worktree 直下で `pnpm install --frozen-lockfile`（store 共有で速い。`node_modules` は symlink しない。詳細は同 skill「worktree の依存」）。`.env` 等の秘密情報は symlink してもコミットしない。
+2. **実装前**: Issue 本文と親が渡したガイダンス reference を Read。dev サーバーはルートの `pnpm dev`（server `127.0.0.1:3001` / web Vite 5173）。worktree ごとのポート採番と管理スクリプトはまだ無いので、同時に 1 つの worktree でだけ起動し、使い終えたら止める。
+3. **実装 → 検証**: ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check` を通す（CI と同じ。pre-commit hook は無い）。手順は `test-and-review` skill。Poker Engine 変更は `poker-engine-testing`、LLM コンテキスト・Review 変更は `poker-invariant-review`を参照。UI は実測で確認する。
 4. **作業ログ**: `docs/taskLog/` に `task-log` skill の様式で。
 5. **commit / push / PR**: `git add` は変更ファイルを明示（`-A` 禁止・symlink をコミットしない）。PR 本文は `## Summary` / `## Test plan` 必須、`Closes #N`。
 6. **自己レビュー**: `code-review` skill 手順どおり**まず台帳を読む**。結果を `## 🤖 Claude Code 自己レビュー` で PR コメントへ。

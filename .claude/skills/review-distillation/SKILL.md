@@ -140,7 +140,7 @@ rm "$F"
 
 ## `MECHANIZE` の Issue に書くこと
 
-候補の識別（元 PR 番号）／root failure class／4 条件の判定／検査の置き場の案（CI か husky か `scripts/`）と付随物／退役の条件（欠陥を壊して測る）。
+候補の識別（元 PR 番号）／root failure class／4 条件の判定／検査の置き場の案（CI か lint ルールか `scripts/`。pre-commit hook は不採用・D69）と付随物／退役の条件（欠陥を壊して測る）。
 
 ## 実行結果の出力
 
