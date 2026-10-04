@@ -1,167 +1,217 @@
-# UI / UX Specification
+# UI / UX仕様
 
-## 1. Table direction
+## 1. Table UI
 
-Use a live-style 2D table.
+方向性:
+- ライブ卓寄りの2D Table
+- Casinoゲーム的な演出より、学習しやすい読みやすさを優先
+- 2〜8人でResponsiveにSeat配置
+- Heroは可能なら画面下側に固定
 
-Display:
-- seats / names / lightweight avatars
-- real stack amounts
-- optional BB secondary value
-- dealer button
-- SB/BB
-- community cards
-- pot
-- Hero hole cards
-- active turn
+表示:
 
-Layouts adapt to 2-8 players.
+- Seat / Name / Lightweight Avatar
+- Stack実額
+- Optional BB換算
+- Dealer Button
+- SB / BB
+- Community Cards
+- Pot
+- Hero Hole Cards
+- Current Turn
 
-## 2. Real amounts
+## 2. 実額表示は必須
 
-Real amount is mandatory.
+BBだけを表示してはいけません。
 
-Example:
-`Pot: 37`
+例:
 
-Optional:
-`18.5 BB`
+```text
+Pot: 37
+18.5 BB
+```
 
-Never replace real amount with BB-only presentation.
+上段の実額が正本で、BBは補助です。
 
-## 3. Card / chip rendering
+## 3. Card / Chip Asset
 
-Cards/chips are structural components:
-- SVG/CSS/component rendering
-- scalable
-- consistent
-- deterministic
+Card / Chipは構造描画します。
 
-Generated image assets are for decoration:
-- felt/background
-- table rail
-- card-back artwork
-- icon
-- non-semantic art
+- SVG
+- CSS
+- Component
 
-Do not create 52 unrelated raster card assets.
+要件:
+- Scale可能
+- 52枚で統一
+- State切替容易
+- 高解像度
+- Theme変更可能
 
-## 4. Chip interaction
+画像生成向き:
+- Felt
+- Table Rail
+- Card Back
+- App Icon
+- Decorative Asset
 
-Support:
-- click selection
-- quantity selection
-- drag to betting area
-- visible stack composition
-- dealer-assisted change
+52枚のCardを別々のRaster画像として生成しないでください。
 
-Chip movement generates PhysicalAction.
+## 4. Chip Interaction
 
-No primary numeric bet box.
+対応:
 
-## 5. Declaration
+- Chip Click
+- 枚数選択
+- Drag
+- Betting Areaへの投入
+- Stack Composition表示
+- Dealer Change
 
-Declaration buttons substitute for live verbal declarations.
+Chip操作は `PhysicalAction` を生成します。
 
-Do not force declarations before every chip move; mistakes must remain possible.
+Primary Numeric Bet Boxは作りません。
 
-Voice is out of scope.
+## 5. Declaration UI
 
-## 6. Dealer feedback
+Buttonによって口頭宣言の代替を行います。
 
-**RULING** — changes/defines canonical action.
+ただし、毎回Declarationを強制しません。
 
-**ETIQUETTE** — live-table behavior guidance.
+目的は「宣言しなかったため裁定が変わる」という実卓操作も練習することです。
 
-**COACHING** — strategy/learning guidance.
+Voice RecognitionはScope外です。
 
-Keep them distinct.
+## 6. Dealer Feedback
 
-## 7. Terminology
+### RULING
 
-Default UI combines Japanese explanation + standard poker term.
+Canonical Actionへ影響する裁定。
 
-Examples:
+例:
+
+> 宣言なしで500Chipを1枚出したため、このRule ProfileではCallとして扱います。
+
+### ETIQUETTE
+
+進行・マナーの指摘。
+
+### COACHING
+
+戦略・学習上の助言。
+
+同じWarningとして混ぜないでください。
+
+## 7. 用語表示
+
+基本は:
+
+**日本語説明 + 標準Poker Term**
+
+例:
+
 - ボタン（BTN）
 - 有効スタック（Effective Stack）
 - ポットオッズ（Pot Odds）
 - 3ベット（3-bet）
+- 継続ベット（C-bet）
 
-Use real vocabulary prominently when the concept occurs.
-Hover/click opens definition, current-hand example and advanced detail.
+実際に概念が発生した場面では標準用語を積極的に表示します。
 
-## 8. Folded Hero
+Hover / Clickで:
 
-After Hero folds:
-- continue spectating by default
-- allow Fast Forward
-- do not reveal hidden cards before hand completion
+- Definition
+- Current Hand Example
+- Related Concept
+- Advanced Detail
+
+を見られるようにします。
+
+## 8. Hero Fold後
+
+標準:
+- 観戦継続
+
+Option:
+- Fast Forward
+
+Handが終わるまではLearning-only Hidden Cardsを見せません。
 
 ## 9. Hint UI
 
-Hidden by default.
+標準では非表示。
 
-Progressive controls:
-- 着眼点
-- 計算
-- Range / 相手読み
-- 選択肢比較
-- 推奨
+段階:
 
-Log hint use.
+1. 着眼点
+2. 計算
+3. Range / 相手読み
+4. 選択肢比較
+5. 推奨
+
+開いたLayerをLogします。
 
 ## 10. Review UI
 
-Landing:
-- summary
-- important spots
-- good decisions
-- improvement opportunities
-- full-hand reveal entry
+初期表示:
 
-Spot detail:
-- table state
-- action timeline
-- original user read
-- math
-- range
-- solver evidence if available
-- alternatives
-- AI explanation
-- follow-up Q&A
+- Summary
+- Important Spots
+- Good Decisions
+- Improvement Opportunities
+- Full Hand Reveal Entry
+
+Spot Detail:
+
+- Table State
+- Action Timeline
+- 当時のUser Read
+- Math
+- Range
+- Solver Evidence
+- Alternative Actions
+- AI Explanation
+- Follow-up Chat
 
 Replay:
-- previous/next action
-- play/pause
-- jump to important spot
 
-## 11. CPU latency
+- Previous
+- Next
+- Play / Pause
+- Jump to Important Spot
 
-Normal:
-`Ken's turn...`
+## 11. CPU待ち時間
 
-If unusually long, show a subtle technical delay indicator.
+通常:
 
-Do not normally expose low-level model-call messages.
+> Kenの手番...
 
-## 12. AI outage
+長時間だけ:
 
-Offer:
+> AI応答が遅延しています
+
+のような技術状態を補足します。
+
+通常Play中に「Claude APIをCall中」などの内部実装を前面表示しません。
+
+## 12. AI障害
+
+選択肢:
+
 - Retry
-- Continue with Emergency Bot
-- End/Pause Session
+- Emergency Botで続行
+- Session終了 / Pause
 
-Emergency Bot use is flagged.
+Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと混同しません。
 
-## 13. Settings
+## 13. MVP設定
 
-MVP-relevant:
-- table size
-- cash preset
-- animation speed
-- BB secondary display
-- auto top-up
-- rule profile
-- rake profile
-- model role mapping
-- Learning / Real-Play mode
+- Table Size
+- Cash Preset
+- Animation Speed
+- BB補助表示
+- Auto Top-up
+- Rule Profile
+- Rake Profile
+- Model Role Mapping
+- Learning / Real-Play Mode
