@@ -1,209 +1,334 @@
-# Product Requirements
+# プロダクト要件
 
-## 1. Product goal
+## 1. プロダクト目標
 
-Build a local single-user NLHE training app combining:
+ローカル・Single UserのNLHE練習アプリを構築します。
 
-- 2-8 player live-style poker
-- AI opponents
-- physical chip/declaration practice
-- evidence-based hand review
-- solver/math support
-- long-term learning analytics
+以下を一つの学習環境に統合します。
 
-Primary outcomes:
+- 2〜8人のライブ卓風ポーカー
+- AI CPUプレイヤー
+- 実チップを意識した操作・宣言練習
+- 根拠ベースのHand Review
+- Solver / Poker Math
+- 長期的な傾向分析
+- 弱点別Targeted Drill
 
-1. make good decisions from incomplete information
-2. understand standard poker vocabulary and concepts
-3. become comfortable with live chip/declaration mechanics
-4. learn opponent reading and exploit adjustment
-5. review mistakes without hindsight bias
-6. improve through repeated play/review/drill loops
+主な学習目標:
 
-## 2. Modes
+1. 不完全情報の中で妥当な意思決定をする
+2. 標準的なポーカー用語・考え方を理解する
+3. 実卓のチップ操作・宣言に慣れる
+4. 相手のRange・傾向を読む
+5. Bluff / Value / Foldの価値を理解する
+6. 結果ではなくDecision Qualityから上達する
 
-### Learning Mode
-- user-triggered progressive hints
-- post-hand review
-- learning-only full-hole-card reveal after the hand
+## 2. ゲームモード
 
-### Real-Play Mode
-- no strategic hints during the hand
-- learning reveal/review deferred
-- rule/ruling feedback still applies
+### 学習モード（Learning Mode）
 
-## 3. Game scope
+- プレイ中に任意でHintを開ける
+- Hand終了後にReviewできる
+- 全Hole Cardsを学習用に開示できる
 
-- No-Limit Texas Hold'em
-- 2-8 total players
-- Cash + Single Table Tournament
-- Cash is the default format
+### 実戦モード（Real-Play Mode）
 
-### Cash
-- multiple real-amount presets
-- **real amount is always visible**
-- optional BB secondary display
-- stack persists between hands
-- reload/top-up
-- optional auto top-up
-- explicit `RakePolicy`
-- versioned house-rule profiles
+- Hand中の戦略Hintを抑える
+- 学習用Reveal/ReviewをSession終了後などに回せる
+- ルール裁定・操作ミスの指摘は行う
 
-### Tournament
-Post-MVP product scope:
-- 2-8 player STT
-- blind progression
-- optional ante/BBA
-- elimination
-- heads-up
-- payout
-- ICM-aware review
-- preset + custom blind structures
-- time-based or hand-count-based levels
+## 3. ゲームスコープ
 
-## 4. AI opponents
+### FR-GAME-001 — ゲーム形式
 
-Default model role: `opponent_fast`, initially Haiku-class.
+No-Limit Texas Hold'emを扱います。
 
-Requirements:
-- most CPUs at casual-experienced level or above
-- minority weaker CPUs
-- multi-axis strategy/personality parameters
-- weak CPUs use systematic poker leaks, not random nonsense
-- selected personas may show low-probability state-conditioned irrationality such as tilt
-- fixed recurring CPU pool + occasional Guests
-- recurring CPUs persist only observations they legitimately acquired
-- CPU-to-CPU memory is allowed only when the observing CPU actually saw the evidence
+### FR-GAME-002 — 卓人数
 
-Suggested dimensions:
-- skill
-- preflop looseness
-- aggression
-- bluff tendency
-- risk tolerance
-- discipline
-- adaptability
-- trap tendency
-- opponent-model quality
-- tilt susceptibility/recovery
+Heroを含めて2〜8人。
 
-## 5. Live-style interaction
+### FR-GAME-003 — Cash
 
-### Table
-- live-oriented 2D table
-- dealer button / SB / BB / positions
-- cards, chips, pot and stacks
+Cashを標準練習モードとします。
 
-### Chips
-- click + drag
-- real denominations
-- chip movement itself is a PhysicalAction
-- numeric bet box is not the primary betting interaction
-- dealer-assisted change/color-up/organization
+要件:
+- 複数の実額Preset
+- **実額は常に表示**
+- BB換算は補助表示としてON/OFF可能
+- StackはHand間で持ち越す
+- Reload / Top-up
+- Auto Top-up設定
+- 明示的な `RakePolicy`
+- House Ruleをversioned profileで管理
 
-### Declaration
-Buttons for CHECK/CALL/BET/RAISE/ALL-IN/FOLD where relevant.
+### FR-GAME-004 — Tournament
 
-Voice recognition is out of scope.
+MVP後の正式スコープ:
 
-### Rulings
-Incorrect live-style actions should often be possible.
+- Single Table Tournament
+- 2〜8人
+- Blind上昇
+- Ante / Big Blind Ante
+- 脱落
+- Heads-Up
+- Payout
+- ICM Review
+- 複数Preset + Custom
+- 時間Base / Hand数BaseのBlind Level
 
-`PhysicalAction -> Ruling Engine -> Dealer Ruling -> Canonical Poker Action`
+## 4. AI CPU
 
-Do not simply disable every mistake.
+### FR-CPU-001 — モデル
 
-## 6. Dealer
+初期値:
+- `opponent_fast` = Haiku級
 
-Responsibilities:
-- dealing/shuffle/burn visual flow
-- blind/ante handling
-- action order
-- chip/pot movement
-- rulings
-- etiquette feedback
-- terminology support
+具体モデル名は設定で差し替え可能にします。
 
-Speed:
+### FR-CPU-002 — 卓編成
+
+通常は自動編成。
+
+追加でBroadな卓傾向を選択可能にします。
+
+例:
+- Aggressive多め
+- Calling-heavy
+- Tight
+- Mixed
+
+### FR-CPU-003 — 実力分布
+
+基本:
+- 大半はカジュアル経験者以上
+- 少数の弱いCPUも混ざる
+
+弱いCPUは「ランダムで意味不明な悪手」を打つのではなく、一貫したLeakを持ちます。
+
+### FR-CPU-004 — Personality
+
+多軸Parameterを持ちます。
+
+例:
+- Skill
+- Preflop Looseness
+- Aggression
+- Bluff Tendency
+- Risk Tolerance
+- Discipline
+- Adaptability
+- Trap Tendency
+- Opponent Reading Quality
+- Tilt Susceptibility
+- Recovery Speed
+
+### FR-CPU-005 — 人間的な非合理行動
+
+Tilt等の条件成立時のみ、一部Personaは低確率でStrategically PoorなActionにも確率を割り当てます。
+
+無条件のRandom Errorにはしません。
+
+### FR-CPU-006 — 継続CPU
+
+- 固定CPU Pool
+- 一部Guest
+
+再登場CPUは、自分が以前観察できた情報だけを保持します。
+
+### FR-CPU-007 — CPU同士の記憶
+
+CPU同士も、実際に同卓して観察したShowdown / Actionについてのみ長期記憶を持てます。
+
+## 5. ライブ実卓操作
+
+### FR-LIVE-001 — 卓表示
+
+実卓寄りの2D UI。
+
+### FR-LIVE-002 — Chip
+
+Betは数値入力ではなく、Chip選択を主とします。
+
+- Click
+- Drag
+- 枚数選択
+- DealerによるChange / Color-up / Stack整理
+
+### FR-LIVE-003 — 宣言
+
+以下の宣言Buttonを利用可能にします。
+
+- CHECK
+- CALL
+- BET
+- RAISE
+- ALL-IN
+- FOLD
+
+Voice RecognitionはScope外です。
+
+### FR-LIVE-004 — Physical Action
+
+誤操作も可能な限り受け付けます。
+
+```text
+PhysicalAction
+  ↓
+Ruling Engine
+  ↓
+Dealer Ruling
+  ↓
+Canonical Poker Action
+```
+
+「間違いをできなくする」のではなく「実際に間違えて裁定される」ことで学習します。
+
+### FR-LIVE-005 — Dealer
+
+Dealerの責務:
+- Shuffle / Deal演出
+- Burn / Flop / Turn / River
+- Blind / Ante
+- Action順
+- Pot / Chip移動
+- Ruling
+- Etiquette
+- 初心者向け用語補助
+
+速度:
 - Real Table
 - Normal
 - Fast
 
-## 7. Hints
+### FR-LIVE-006 — Live Mechanics Score
 
-Learning Mode only, user-triggered.
+戦略Skillとは別に評価します。
 
-Progressive levels:
-1. what to consider
-2. relevant math
-3. range/opponent considerations
-4. candidate comparison
-5. recommendation
+## 6. Hint
 
-Hint usage is logged.
+### FR-HINT-001
 
-## 8. Hand review
+学習モードでユーザーが任意に開きます。
 
-Primary flow:
-1. concise summary
-2. important decisions
-3. good decisions
-4. improvement candidates
-5. expandable detail
+### FR-HINT-002
 
-Capabilities:
-- action-by-action Replay
-- Decision Review using only information available at the time
-- separate Reveal Review with all hole cards after hand completion
-- alternative action comparison
-- range analysis
-- deterministic math
-- solver evidence when supported
-- interactive follow-up Q&A
-- Review Interview when Hero's original read/intent matters
-- versioned review records
+段階表示:
 
-Actual hidden cards must not be used as evidence for the first-pass decision evaluation.
+1. 着眼点
+2. Math
+3. Range / Opponent Consideration
+4. Candidate比較
+5. Recommendation
 
-## 9. Opponent reading
+Hint使用履歴を保存します。
 
-- free-form note + tags per CPU
-- optional contemporaneous read capture
-- no HUD during ordinary play
-- review can show statistics derived only from hands the user actually observed
+## 7. Hand Review
 
-## 10. Session learning
+### FR-REVIEW-001 — Review開始
 
-Post-MVP loop:
+Hand全体が終了した後に開けます。
 
-`Play -> Review -> Weakness Hypothesis -> Targeted Practice -> Play`
+### FR-REVIEW-002 — 標準表示
 
-Requirements:
-- decision quality > short-term profit
-- ability scores + confidence + sample size
-- representative stats normally, deeper tracker stats on demand
-- evidence-backed weakness hypotheses
-- frequently regenerated current Player Profile
-- automatic practice recommendations
-- drills from own hands + generated analogous situations
+1. 短い総評
+2. 重要な判断
+3. 良かった判断
+4. 改善候補
+5. 詳細展開
 
-## 11. Persistence
+### FR-REVIEW-003 — Replay
 
-- Event Log is source of truth
-- summaries/stats are derived
-- auto-save at completed-hand boundary
-- mid-hand perfect recovery is not required
-- best-effort reproducibility metadata
-- category reset: learning profile / opponent memories / hand history / factory reset
+Action単位で一手ずつ再生可能。
 
-## 12. Constraints / non-goals
+Replayは保存済みEventを再生するものであり、Re-simulationとは別です。
 
-- local-first
-- single user
-- no auth
-- no tenant model
-- no SaaS hardening
-- no real-money gambling integration
-- no online multiplayer
-- no voice recognition
-- no 3D casino requirement
+### FR-REVIEW-004 — Decision Review
+
+判断時点でHeroが知り得た情報だけを使います。
+
+### FR-REVIEW-005 — Reveal Review
+
+Decision Reviewの後に、学習用に全Hole Cardsを確認できます。
+
+この情報は:
+- Decision Reviewへ逆流させない
+- CPUのKnowledgeへ入れない
+
+### FR-REVIEW-006 — 代替Action
+
+重要なSpotではFold / Call / Raise等を比較します。
+
+### FR-REVIEW-007 — Range
+
+標準Range推定を出し、結論が揺れる場合は別仮定も比較します。
+
+### FR-REVIEW-008 — Review Interview
+
+Heroが当時どう読んでいたかで評価が変わる場合、Review AIが追加質問できます。
+
+### FR-REVIEW-009 — 追加質問
+
+Review結果へ対話的に質問可能。
+
+### FR-REVIEW-010 — Version
+
+Reviewは上書きせず、Version付きで保存します。
+
+## 8. Opponent Reading
+
+- CPUごとの自由記述Note
+- Tag
+- 重要Spotで当時のReadを任意記録
+- Play中はHUDなし
+- Reviewで「Heroが観察可能だったデータ」だけを統計化して照合
+
+## 9. Session Learning
+
+MVP後の学習ループ:
+
+```text
+Play
+ ↓
+Review
+ ↓
+Weakness Hypothesis
+ ↓
+Targeted Practice
+ ↓
+Play
+```
+
+要件:
+- 収支よりDecision Qualityを重視
+- 能力別Score + Confidence + Sample
+- 通常UIは代表統計
+- 詳細UIではTracker-like stats
+- 証拠付きWeakness Hypothesis
+- Player Profileを高頻度再生成
+- 自動練習提案
+- 過去Hand由来 + 生成類題
+
+## 10. Persistence
+
+- Event Logを正本
+- Summary / Statsは派生
+- Completed Hand単位でAuto Save
+- Hand途中からの完全復元は不要
+- 再現情報はBest Effort
+- Reset:
+  - Learning Profile
+  - Opponent Memories
+  - Hand History
+  - Factory Reset
+
+## 11. 制約・非目標
+
+- Local-first
+- Single User
+- Authなし
+- Tenantなし
+- SaaS化前提なし
+- Real Money Gamblingなし
+- Online Multiplayerなし
+- Voice Recognitionなし
+- 3D Casinoなし
