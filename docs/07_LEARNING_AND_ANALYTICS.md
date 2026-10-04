@@ -1,114 +1,166 @@
-# Learning and Analytics
+# 学習とAnalytics設計
 
-## 1. Principle
+## 1. 原則
 
-Do not equate short-term profit with poker skill.
+短期収支をPoker Skillと同一視しません。
 
-Primary signal:
-- decision quality given information available
+主評価:
+- その時点で利用可能な情報に基づくDecision Quality
 
-Secondary:
-- actual profit/loss
-- BB result
-- outcome variance
+補助評価:
+- 実額収支
+- BB収支
+- 結果Variance
 
-## 2. Ability dimensions
+## 2. Ability Dimension
 
-Initial:
+初期候補:
+
 - Preflop
 - Postflop
 - Bet Sizing
-- Pot/Equity Math
+- Pot / Equity Math
 - Range Reading
 - Opponent Adaptation
 - Position
 - Live Mechanics
 
-Each stores:
-- score
-- confidence
-- sample size
-- evidence IDs
-- trend
+各Abilityに持つもの:
 
-## 3. Statistics
+- Score
+- Confidence
+- Sample Size
+- Evidence IDs
+- Trend
 
-Persist enough event data to derive many stats.
+## 3. Detailed Statistics
 
-Normal UI:
+Eventを十分細かく保存し、後から多くのStatを再計算可能にします。
+
+通常UI:
+
 - VPIP
 - PFR
 - 3-bet
-- selected aggression/fold metrics
-- position/street breakdown
+- 一部Aggression / Fold Metrics
+- Position別
+- Street別
 
-Detailed UI:
-- larger tracker-style metric set
+詳細UI:
 
-Always preserve numerator/denominator opportunity counts.
+より多いTracker-style Metrics。
 
-## 4. User profile
+Percentageだけでなく:
 
-Structured evidence is primary.
+- Numerator
+- Denominator
+- Opportunity Count
 
-Natural-language profile is regenerated frequently from:
-- recent evidence
-- long-term evidence
-- improvements
-- unresolved hypotheses
+を必ず保持します。
 
-Do not recursively treat old prose as truth.
+`2 / 3 = 66%` と `200 / 300 = 66%` を同じConfidenceで扱わないでください。
 
-## 5. Hypothesis lifecycle
+## 4. Evidence-backed User Profile
 
-Possible states:
-- suspected
-- supported
-- strong
-- improving
-- resolved
-- insufficient_data
+正本:
+- Structured Evidence
 
-Counter-evidence must be able to weaken a hypothesis.
+派生:
+- Natural Language Player Profile
+
+Profileは以下から高頻度で再生成します。
+
+- Recent Evidence
+- Long-term Evidence
+- Improvement
+- Unresolved Hypothesis
+
+過去の自然言語Summaryを再帰的に「真実」として積み重ねないでください。
+
+## 5. Hypothesis Lifecycle
+
+例:
+
+- Suspected
+- Supported
+- Strong
+- Improving
+- Resolved
+- Insufficient Data
+
+Counter Evidenceによって弱くなる仕組みを持ちます。
 
 ## 6. Session Review
 
-Include:
-- hands / duration
-- actual result in real amount + BB
-- decision-quality summary
-- strengths
-- leaks
-- important hands
-- confidence/sample caveats
-- recommended drills
+表示:
 
-## 7. Targeted drills
+- Hands
+- Duration
+- 実額結果
+- BB結果
+- Decision Quality Summary
+- Strength
+- Leak
+- Important Hands
+- Confidence / Sample Caveat
+- Recommended Drill
 
-Pipeline:
-`real mistake -> underlying concept -> analogous generated spot -> vary one meaningful factor -> re-test`
+「負けたから下手」「勝ったから上手」としません。
 
-Do not merely replay identical cards.
+## 7. Targeted Drill
 
-## 8. Opponent-reading training
+```text
+実際の問題Hand
+ ↓
+Underlying Concept抽出
+ ↓
+Analogous Spot生成
+ ↓
+一要素だけ変える
+ ↓
+新しい判断
+ ↓
+Review
+```
 
-During play:
-- no HUD
-- user notes/tags
-- optional read capture
+同じカードを再提示して答えを暗記させるだけにしません。
 
-During review:
-- compare user's read with evidence they actually could observe
-- show relevant observed stats
-- never use hidden CPU persona as evidence
+例:
+- River Bluff Catch
+- Blind Defense
+- Effective Stack変更
+- Opponent Tendency変更
+- Bet Size変更
 
-## 9. Hints and scoring
+## 8. Opponent Reading Training
 
-Store how much assistance was used.
+Play中:
 
-Future scoring may distinguish:
-- independent decision
-- hint-assisted decision
-- review-only understanding
+- HUDなし
+- User Note
+- Tag
+- Optional Read Capture
 
-Exact weighting remains unresolved until playtesting.
+Review時:
+
+1. User Read
+2. Heroが観察可能だったEvidence
+3. 観察可能範囲のStats
+4. AI Range / Opponent Assessment
+5. Actual Revealは別枠
+
+Hidden CPU PersonaをHero-facing Evidenceとして使わないでください。
+
+## 9. HintとScore
+
+Hint利用量を保存します。
+
+将来、必要なら:
+
+- Independent Decision
+- Hint-assisted Decision
+- Review-only Understanding
+
+を区別できます。
+
+ただしExact WeightはPlaytest前に固定しません。
