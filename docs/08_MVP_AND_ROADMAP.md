@@ -1,152 +1,178 @@
-# MVP and Roadmap
+# MVPとロードマップ
 
-## 1. MVP promise
+## 1. MVPのプロダクト約束
 
-> Play a complete live-style NLHE Cash session against Haiku-class CPU opponents, use real chip mechanics, then review completed hands with math + AI + at least one real solver integration.
+> Haiku級CPU相手に、ライブ実戦を意識したNLHE Cash Sessionを最後まで遊び、実チップ操作を行い、そのHandをMath + AI + 対応可能な実SolverでReviewできる。
 
-A poker game without review is not MVP-complete.
+「ポーカーが遊べる」だけではMVP完成ではありません。
 
 ## 2. MVP Definition of Done
 
 ### Game
+
 - NLHE Cash
-- 2-8 players
-- 6-max / ~100BB standard preset
-- correct button/SB/BB rotation
+- 2〜8人
+- 6-max / 約100BBの標準Preset
+- 正しいButton / SB / BB Rotation
 - Fold / Check / Call / Bet / Raise / All-in
-- minimum raise
-- all-in
-- side pots
-- split pots
-- showdown
-- hand ranking
+- Minimum Raise
+- All-in
+- Side Pot
+- Split Pot
+- Showdown
+- Hand Ranking
+- Heads-Up Transition
 
 ### CPU
-- all non-Hero seats can use AI
-- player-specific KnowledgeState
-- legal-action contract
-- basic skill/personality variation
-- invalid-output retry/fallback
-- outage user choice
+
+- Hero以外をAI CPUにできる
+- Player-specific KnowledgeState
+- Legal Action Contract
+- 基本的なSkill / Persona差
+- Invalid Output Retry / Fallback
+- AI障害時にUser Choice
 
 ### UI
-- live-style 2D table
-- real amount always visible
-- card/chip rendering
-- click + drag chip betting
-- declaration buttons
-- dealer flow
-- basic terminology
 
-### Logging / persistence
+- 実卓寄り2D Table
+- 実額常時表示
+- Card / Chip構造描画
+- Click + Drag Chip Betting
+- Declaration Buttons
+- Dealer Flow
+- 基本Poker用語
+
+### Logging / Persistence
+
 - Hand Event Log
-- Hand Summary projection
-- completed-hand auto-save
+- Hand Summary Projection
+- Completed Hand Auto Save
 - Replay
-- best-effort debug/repro metadata
+- Best-effort Debug / Repro Metadata
 
 ### Hand Review
-- learning reveal after hand
-- no-hindsight Decision Review
-- basic equity / pot-odds math
-- important-decision extraction
-- alternative actions
-- follow-up questions
-- at least one actual solver adapter
-- unsupported-solver fallback
-- versioned review record
+
+- Learning Reveal
+- Hindsight LeakなしのDecision Review
+- Basic Equity / Pot Odds
+- Important Spot抽出
+- Alternative Action比較
+- Range Reasoning
+- Follow-up
+- Local KB Retrieval
+- 実Solver Adapter最低1つ
+- Unsupported Spot Fallback
+- Versioned Review
 
 ### Quality
-- deterministic engine unit tests
-- invariant tests
-- fixed regression hands
-- at least one complete 6-max session can finish and be reviewed successfully
 
-## 3. Recommended implementation sequence
+- Deterministic Poker Engine Unit Test
+- Invariant Test
+- Fixed Regression Hands
+- Information Leakage Test
+- Solver Adapter Test
+- 6-max SessionをPlay→Finish→Review→Replay→Next HandまでE2Eで完走
 
-### Phase 0 — Repo / Docs / Tooling
-- commit docs
-- basic TypeScript project conventions
-- lint/typecheck/test skeleton
-- create documentation PR + parent issue
-- **STOP for human Claude-skill insertion**
+## 3. 推奨実装順
+
+### Phase 0 — Repository / Docs / Tooling
+
+- Docs Merge
+- HumanがClaude Skills / Harness投入
+- TypeScript Project Skeleton
+- Lint / Typecheck / Test
 
 ### Phase 1 — Vertical Poker Slice
-- one 6-max cash hand
-- basic UI
-- event log
+
+- 6-max Cash 1 Hand
+- Basic UI
+- Event Log
 
 ### Phase 2 — Full Poker Engine
-- 2-8
-- all betting states
-- side pots
-- heads-up transition
-- deterministic tests
+
+- 2〜8人
+- Betting State
+- Side Pot
+- Heads-Up
+- Deterministic Tests
 
 ### Phase 3 — AI Opponents
-- model adapter
+
+- Model Adapter
 - KnowledgeState
-- basic personas
-- structured action
-- retry/fallback
+- Basic Persona
+- Structured Action
+- Retry / Fallback
 
 ### Phase 4 — Live Mechanics
-- chip physical actions
-- declarations
-- ruling engine
-- dealer feedback
+
+- Chip Physical Action
+- Declaration
+- Ruling Engine
+- Dealer Feedback
 - Replay
 
 ### Phase 5 — MVP Review
-- decision reconstruction
-- math/equity
+
+- Decision Reconstruction
+- Math / Equity
 - KB
 - Review AI
-- solver adapter
-- reveal review
-- follow-up
+- Solver Adapter
+- Reveal Review
+- Follow-up
 
-**MVP complete here.**
+**ここでMVP完成。**
 
 ### Phase 6 — Session Learning
-- stats
-- user hypotheses/profile
-- scores
-- drills
+
+- Detailed Stats
+- User Hypothesis
+- Player Profile
+- Score
+- Drill
 
 ### Phase 7 — Rich Opponent Simulation
-- persistent CPU memory
-- CPU-to-CPU memory
-- tilt
-- recurring pool + Guests
-- table tendency presets
+
+- Persistent CPU Memory
+- CPU-to-CPU Memory
+- Tilt
+- Fixed Pool + Guest
+- Table Tendency
 
 ### Phase 8 — Tournament
+
 - STT
-- blind/ante
-- payout
+- Blind / Ante
+- Payout
 - ICM
 
-## 4. Anti-scope-creep rules
+## 4. Scope Creep防止
 
-MVP must not be blocked by:
-- full multiway solver coverage
+MVPを以下でBlockしません。
+
+- Full Multiway Solver
 - Tournament
-- advanced persistent CPU relationships
-- perfect replay determinism
-- vector DB
-- voice
+- 高度Persistent CPU Memory
+- 完全LLM再現
+- Vector DB
+- Voice
 - 3D
-- exhaustive live-ruling encyclopedia
-- exhaustive stats dashboard
+- すべてのLive Ruling
+- 完全なTracker Dashboard
 
-## 5. Required process stop
+## 5. 実装開始前の必須停止
 
-After:
-1. docs are in the repository,
-2. documentation PR exists,
-3. implementation parent issue exists,
+以下が終わったら**実装を開始せず停止**します。
 
-**stop implementation work.**
+1. DocsをRepositoryへ入れる
+2. Documentation PRを作る
+3. Parent Issueを作る
 
-The human will add generalized Claude Code skills/harness from other projects before autonomous implementation begins.
+その後:
+
+4. 人間が他PJ由来のClaude Skills / Harnessを投入
+5. その内容を開発規約として確認
+6. Phase 0 / 1実装開始
+
+Claude Codeは4を飛ばしてはいけません。
