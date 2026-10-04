@@ -1,34 +1,55 @@
-# Decision Traceability
+# 人間判断のトレーサビリティ
 
-All accepted human decisions are recorded in `decision_log.yaml`.
+D01〜D66の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
-Claude Code must not silently override them.
+Claude Codeはこれらを自己判断で上書きしてはいけません。
 
-## Decision groups
+## 判断グループ
 
-| IDs | Area |
+| ID | 主な対象 |
 |---|---|
-| D01-D09 | Review, hints, evaluation philosophy |
-| D10-D15 | Table composition, memory, cash/tournament, chips/dealer |
-| D16-D24 | Session learning, GTO/solver/KB/web |
-| D25-D30 | CPU personality, leaks, tilt and information boundaries |
-| D31-D36 | User reads, HUD policy, scoring and drills |
-| D37-D42 | Event log, replay, review versioning, deterministic engine, AI failures |
-| D43-D54 | UI, live mechanics, cash/tournament configuration |
-| D55-D60 | MVP, stack, solver, research, testing, assets |
-| D61-D66 | Single-user persistence, CPU pool, reset, latency, final MVP DoD |
+| D01〜D09 | Review、Hint、評価方針 |
+| D10〜D15 | 卓編成、Memory、Cash/Tournament、Chip、Dealer |
+| D16〜D24 | Session Learning、GTO、Solver、KB、Web |
+| D25〜D30 | CPU Persona、Leak、Tilt、Information Boundary |
+| D31〜D36 | User Read、HUD、Score、Drill |
+| D37〜D42 | Event Log、Replay、Review Version、Engine、AI障害 |
+| D43〜D54 | UI、Live Mechanics、Cash/Tournament Config |
+| D55〜D60 | MVP、Stack、Solver、Research、Test、Asset |
+| D61〜D66 | Single User、Persistence、CPU Pool、Reset、Latency、MVP DoD |
 
-## High-impact closed decisions
+## 特に重要なClosed Decision
 
-These are especially important implementation constraints:
+### D28
 
-- D28: CPU-specific KnowledgeState isolation
-- D37: Event Log is source of truth
-- D38: Replay != Re-simulation; exact reproducibility is not a hard requirement
-- D40: Poker rules are deterministic code; LLM decides strategy only
-- D49: real monetary amount is always visible
-- D55/D66: Hand Review is part of MVP
-- D57: at least one real solver integration is required for supported spots
-- D61: no auth / no multi-user design
+CPUごとに `KnowledgeState` を分離する。
 
-For the exact accepted wording and choice, refer to `decision_log.yaml`.
+### D37
+
+Event Logを正本とする。
+
+### D38
+
+ReplayとRe-simulationは別物。完全再現はHard Requirementではない。
+
+### D40
+
+Poker Rulesは決定論的Code、LLMは戦略選択のみ。
+
+### D49
+
+実額は常に表示する。BBは補助。
+
+### D55 / D66
+
+Hand ReviewまでがMVP。
+
+### D57
+
+Supported Spotについて、実Solver統合をMVPから行う。
+
+### D61
+
+Single User。Auth / Multi-user設計を作らない。
+
+正確な採用文言・選択肢は `decision_log.yaml` を参照してください。
