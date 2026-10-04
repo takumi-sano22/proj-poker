@@ -64,6 +64,8 @@
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
       "Bash(curl * | sh)",
