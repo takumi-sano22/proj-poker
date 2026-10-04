@@ -36,7 +36,7 @@ effort: high
 4. **作業ログ**: `docs/taskLog/` に `task-log` skill の様式で。
 5. **commit / push / PR**: `git add` は変更ファイルを明示（`-A` 禁止・symlink をコミットしない）。PR 本文は `## Summary` / `## Test plan` 必須、`Closes #N`。
 6. **自己レビュー**: `code-review` skill 手順どおり**まず台帳を読む**。結果を `## 🤖 Claude Code 自己レビュー` で PR コメントへ。
-7. **Codex 導入環境の場合**: worktree 内で `~/bin/codex-review.sh` を前景実行（`~/bin/codex-mode.sh get` でモード確認）。`STATUS` に関わらずコメント本文を直読し、結果を `## 🤖 Codex レビュー結果` で投稿。指摘は `references/codex-review.md`「finding の処理」（4 状態・same-root sweep・P2 accept・条件付き再レビュー）に従う。**未導入環境**では、親が用意した差分パッチを reviewer agent に渡す経路（`github-workflow` skill の `references/non-codex-review.md`）に置き換える。
+7. **Codex 導入環境の場合**: worktree 内で `~/bin/codex-review.sh --pr <N>` をバックグラウンド実行し完了通知を待つ（`references/codex-review.md`。モード確認は `~/bin/codex-mode.sh get /home/ai/project/proj-poker`）。`STATUS` に関わらずコメント本文を直読し、結果を `## 🤖 Codex レビュー結果` で投稿。指摘は `references/codex-review.md`「finding の処理」（4 状態・same-root sweep・P2 accept・条件付き再レビュー）に従う。**未導入環境**では、親が用意した差分パッチを reviewer agent に渡す経路（`github-workflow` skill の `references/non-codex-review.md`）に置き換える。
 8. **学習 Capture**: 各ラウンド後とループ出口で `review-learning` skill。
 9. **merge-ready**: Codex（または reviewer agent）clean（P2 は accept 記録済み）・CI 緑・人間確認条件なし、まで確認して止まる。**マージしない**。
 

@@ -11,15 +11,17 @@
   "permissions": {
     "defaultMode": "auto",
     "allow": [
+      "Bash(gh issue view *)",
+      "Bash(gh issue list *)",
+      "Bash(gh issue create *)",
+      "Bash(gh issue comment *)",
+      "Bash(gh issue edit *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "Bash(gh issue *)",
       "Bash(gh pr *)",
       "Bash(gh repo view *)",
       "Bash(gh repo list *)",
       "Bash(gh repo clone *)",
-      "Bash(gh api repos/takumi-sano22/proj-poker/*)",
-      "Bash(rm *)",
       "Read(.claude/skills/**)",
       "Edit(.claude/skills/**)",
       "Read(CLAUDE.md)",
@@ -50,7 +52,14 @@
       "Bash(git reset --hard:*)",
       "Bash(gh repo delete:*)",
       "Bash(gh repo edit:*)",
-      "Bash(gh repo archive:*)"
+      "Bash(gh repo archive:*)",
+      "Bash(gh issue delete*)",
+      "Bash(gh api *-X *)",
+      "Bash(gh api *--method*)",
+      "Bash(gh api -X *)",
+      "Bash(rm -rf *)",
+      "Bash(rm -r *)",
+      "Bash(rm -fr *)"
     ],
     "deny": [
       "Read(./.env)",

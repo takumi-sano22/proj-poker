@@ -1,7 +1,6 @@
 ---
 name: decision-log
 description: proj-poker の人間判断と未確定事項を扱う skill。docs/decision_log.yaml（D01〜の採用済み人間判断）への新規判断の追記、docs/11_OPEN_ITEMS.md（OI-xxx）の暫定値の置き方・確定時の移し替え、実装中に人間判断が必要な論点を見つけたときの止まり方を定める。「判断を記録して」「decision log に追加」「Open Item を確定」「OI を閉じる」「この仕様は決まってる？」「人間判断が要る」で起動する。移設元は adr-log。
-model: haiku
 ---
 
 # decision-log — 人間判断と Open Items の運用

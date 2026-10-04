@@ -79,7 +79,7 @@ ui-design-recipes/
 **1 枚の md** にまとめて `CLAUDE.md` から指す。Claude は reference より先にこれを読む。
 
 置き場所の例: `<repo>/.claude/skills/ui-design-recipes/<project>.md`（global 版には置かない）。
-`.claude/rules/character.md`（UI 方針。対象パスに触れたときだけ読まれる rule）には「UI を作る・直すときは `ui-design-recipes` skill の前に `<path>` を読む」と書く。
+`.claude/rules/<UI 領域>.md`（UI 方針。対象パスに触れたときだけ読まれる rule）には「UI を作る・直すときは `ui-design-recipes` skill の前に `<path>` を読む」と書く。
 
 ```markdown
 # ui-design-recipes: <プロジェクト名> 固有の補強

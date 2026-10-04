@@ -40,7 +40,7 @@ proj-poker は、ライブ実戦を意識した No-Limit Texas Hold'em の練習
 - 合法 Action、Pot / Side Pot、Hand Ranking、Button / Blind、チップ移動の判定を LLM 出力に委ねる変更は **[P0]**（D40）。
 - LLM 出力を Schema → Legal Action → Amount Range の順に検証していない経路、Retry が 1 回を超える経路、Deterministic Fallback が欠けた経路は `[P1]`（docs/03 §5）。Invalid Output をログに残さない場合は `[P2]`。
 - AI 障害時に Emergency Bot へ**自動で**切り替える変更は `[P1]`（docs/03 §6。ユーザーに選ばせる仕様）。
-- Engine 内で乱数・時刻・浮動小数を使っていて決定論やチップ保存が崩れうる箇所は `[P1]`。チップ総量の保存（INV-TEST-002/005）が崩れる変更は **[P0]**。
+- Engine の再現性を崩す箇所（Shuffle 等の乱数が注入された RNG / seed を経由しない、State 遷移が実時刻に依存する）は `[P1]`。チップ総量の保存（INV-TEST-002/005。Rake 等の明示操作を除く）が崩れる変更は **[P0]**。Chip の数値表現は docs で未確定のため、表現の選択自体は指摘せず、保存が崩れうるか（丸め誤差等）で判断する。
 
 ### 3. 秘密情報・ローカル境界（全 Phase 共通）
 

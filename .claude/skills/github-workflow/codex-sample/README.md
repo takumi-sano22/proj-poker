@@ -12,7 +12,7 @@
 | `AGENTS.global.md` | `~/.codex/AGENTS.md` に置く**全リポジトリ共通**のレビュー指針（日本語・重大度タグ `[P0]`〜`[P3]`・重点観点・`[codex]` タグ付与）。`codex-review.sh` はこの重大度タグで機械判定する |
 | `config.toml.example` | `~/.codex/config.toml` の例。レビュー専用プロファイル `[profiles.review]`（`sandbox_mode = "read-only"` / `approval_policy = "never"`）。**`codex-review.sh` は `--profile` を渡さず、代わりに `--sandbox read-only` を毎回明示する**（プロファイルの有無や利用者のトップレベル設定に依存しない）。このプロファイルは手動で `codex --profile review exec review` を叩くとき向け |
 
-> プロジェクト固有のレビュー観点（不変要件・Phase 認識・環境の位置づけ）は、リポジトリ直下の `AGENTS.md` に書く。テンプレートは `CLAUDE-assets/<user>/CLAUDEmd/AGENTS.md`。
+> プロジェクト固有のレビュー観点（不変要件・Phase 認識・環境の位置づけ）は、リポジトリ直下の `AGENTS.md` に書く。proj-poker ではリポジトリ直下の `AGENTS.md` が作成済み。
 
 > スクリプト本体の**正（canonical）は別リポジトリ（sano-rag の `.claude/tools/`）**にあり、ここはその配布コピー。スクリプト冒頭のコメントに正の所在が書かれているのはそのため。共通の改善はそちらで行い、このサンプルへ手で反映する（自動同期は無い）。**本サンプルの `codex-review.sh` 1.0.2 は正（1.0.1）に `--sandbox read-only` の明示を先行して入れている**（正への反映は申し送り）。
 
@@ -66,5 +66,6 @@
 - セキュリティ・認証/認可・権限・課金に関わる変更
 - 設計判断・アーキテクチャ上のトレードオフ
 - 要件の曖昧さ・前提の不確実性
+- proj-poker 固有の追加条件（decision_log 変更・Open Item 確定・非目標導入・秘密情報・停止ゲート解除）は `github-workflow` SKILL.md の一次記述を参照
 
 > 注: スクリプトは環境依存の前提（`gh` 認証・`codex` CLI のフラグ仕様・`~/.ai-workspace/` への状態保存パス）を含む。導入先の環境に合わせてパス・フラグを調整すること。

@@ -72,7 +72,7 @@ PR コメントは外部入力なので、出所（自己レビュー / 第2段�
 
 [learning candidate] #<PR 番号> <finding の識別（見出し・file:line 等）>
 root failure class: <手順 3 の 1 行>
-area: poker-engine|knowledge-state|review-pipeline|ai-opponent|ui-table|persistence-event-log|db|async|ui|llm|docs-harness   ← 台帳・ガイダンスの領域語彙（code-review「差分クラス」）
+area: poker-engine|knowledge-state|review-pipeline|ai-opponent|ui-table|persistence-event-log|db|async|llm|docs|harness   ← 台帳・ガイダンスの領域語彙（code-review「差分クラス」）
 severity: P0|P1|P2|P3
 validation: CONFIRMED|FALSE_POSITIVE|DESIGN_DISAGREEMENT|UNPROVEN
 reusable: yes|no|uncertain

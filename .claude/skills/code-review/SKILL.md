@@ -95,7 +95,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 - [ ] **合法性を LLM に判断させていないか**（合法候補の列挙は決定論的コード、LLM は選択のみ・D40）。LLM 出力は候補集合への所属を検証し、不正なら Fallback する
 - [ ] **Decision Review が判断時点の情報だけで生成されるか**（Hindsight Leak 禁止。Reveal Review は別 Pass）
 - [ ] **Event Log が正本か**（Summary / Stats は Projection で再構築可能・D37）。Replay が Re-simulation になっていないか（D38）
-- [ ] **Chip 総量が保存されるか**（Pot / Side Pot / Rake 無し前提の合計一致）。実額は常時表示で BB は補助（D49）
+- [ ] **Chip 総量が保存されるか**（Rake / Rebuy / Top-up 等の明示操作を除き増減しない。配分 Pot 総額 = Rake 等控除後の Distributable Pot。INV-TEST-002 / 005・RakePolicy は docs/02）。実額は常時表示で BB は補助（D49）
 - [ ] **Unsupported Solver Spot を正常 Fallback として扱い**、HU Solver の結果を Multiway Exact GTO と表示していないか
 
 ## 出力形式（日本語）

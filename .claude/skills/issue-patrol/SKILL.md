@@ -8,7 +8,7 @@ description: "プロジェクトのオープン issue を巡回し、優先度�
 ## 概要
 
 オープンな GitHub Issue を巡回し、優先度を整理・親 Issue #2 への sub-issue 紐付けを確認・進捗コメントを投稿し、着手候補を選定する。本スキルの責務は **巡回・状況判定・優先度整理・選定・コメント・ディスパッチ**まで。
-**実装そのものは `/github-workflow` が担当する**（worktree による並列実装）。本スキルは着手候補を確認したうえで `/github-workflow` にディスパッチする。
+**実装そのものは `/github-workflow` が担当する**（worktree で隔離し、原則順次。並行は独立した作業のみ）。本スキルは着手候補を確認したうえで `/github-workflow` にディスパッチする。
 docs/ 正本・`decision_log.yaml`・`11_OPEN_ITEMS` などの**一括最新化**は `/sync-check` が担当する。
 
 ## 使い方
@@ -86,9 +86,9 @@ gh pr view <PR> --json body --jq .body | sed -n '/^## Review learning/,/^## /p'
 - ドキュメント更新・誤記修正
 - 小規模な機能追加・リファクタリング
 
-大規模な機能追加・アーキテクチャ変更、および `decision_log.yaml` の既存判断の上書きや Open Item の確定を要するものは着手候補に含めない。ユーザーに報告して判断を委ねること。
+`phase-planning`（#4 で追加）で分解済みの Phase Issue は規模によらず候補に含めてよい。分解されていない大規模な機能追加・アーキテクチャ変更、`decision_log.yaml` の既存判断の上書きや Open Item の確定を要するもの、docs の停止ゲート（親 #2 の実装開始 Gate 等）が未解除の実装は候補に含めず、セッション冒頭の質問か Issue コメントで人間に返す。
 
-着手候補群について「対象 issue・想定作業内容・影響範囲」をまとめて提示し、**「これらの issue を実装します。よろしいですか？」と1回確認する**。
+着手候補群について「対象 issue・想定作業内容・影響範囲」をまとめる。proj-poker は自走が既定のため、**確認はセッション冒頭の `AskUserQuestion` に含める**（冒頭で承認済みなら確認せず着手する。作業途中で追加確認しない）。
 未アサインの issue を含む場合は `gh issue edit {number} --add-assignee @me` で割り当てる。
 
 ### 4. github-workflow へのディスパッチ

@@ -30,7 +30,7 @@ read -r -d '' CONTEXT <<EOF || true
   → コミット/ブランチ操作の前に、ここが意図した worktree かを必ず確認すること。
 
 1. Codex ツールは ~/bin にあり非対話シェルの PATH に無い。
-   ~/bin/codex-mode.sh / ~/bin/codex-review.sh は必ずフルパスで呼ぶ（このリポジトリの既定モードは autonomous）。
+   ~/bin/codex-mode.sh / ~/bin/codex-review.sh は必ずフルパスで呼ぶ（既定モードは autonomous。worktree 内では get /home/ai/project/proj-poker と本体パスを渡す）。
    which で拾えなくても未導入と誤結論しない。未導入なら github-workflow の reviewer agent 経路を使う。
 2. 実装は原則 worktree（.claude/worktrees/<branch>・main 基点）で行う。
    本体作業ツリーで git checkout -b しない。着手前に cwd を確認する。

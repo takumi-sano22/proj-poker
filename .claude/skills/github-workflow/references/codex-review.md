@@ -2,7 +2,7 @@
 
 `github-workflow` skill「PR作成後のレビューフロー / Step 2-A: Codex レビュー（Codex 導入環境）」の詳細メカニクス。本文（SKILL.md）はマージ判断に直結する骨子だけを持ち、実行・監視・判定・打ち切りの手順はここを一次情報とする。
 
-> **前提（SKILL.md と共通）**: Codex ツールは `~/bin`（`codex-sample/install.sh` の配置先）に置かれ **PATH に無い**のが普通。`codex-mode.sh` / `codex-review.sh` は必ずフルパス（`~/bin/...`）で呼ぶ（名前だけでは `which`/`find` でも拾えない）。**マージ判断の前に必ず `~/bin/codex-mode.sh get` でモードを確認する**（省略禁止）。Codex 未導入環境の手順は [`non-codex-review.md`](non-codex-review.md)。
+> **前提（SKILL.md と共通）**: Codex ツールは `~/bin`（`codex-sample/install.sh` の配置先）に置かれ **PATH に無い**のが普通。`codex-mode.sh` / `codex-review.sh` は必ずフルパス（`~/bin/...`）で呼ぶ（名前だけでは `which`/`find` でも拾えない）。**マージ判断の前に必ず `~/bin/codex-mode.sh get /home/ai/project/proj-poker` でモードを確認する**（本体パスを渡す。worktree 内で省くとグローバル既定になる）（省略禁止）。Codex 未導入環境の手順は [`non-codex-review.md`](non-codex-review.md)。
 
 ---
 
