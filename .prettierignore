@@ -1,0 +1,17 @@
+# 依存・生成物・機械生成ファイル
+node_modules
+dist
+pnpm-lock.yaml
+*.tsbuildinfo
+
+# 根拠資料・画像アセット・ローカル worktree は整形対象外
+docs/research
+apps/web/public
+.claude/worktrees
+
+# Markdown は対象外にする。既存の docs / skill 文書は Prettier 既定で 57 ファイルが差分になり、
+# 一括整形すると本 Issue の差分が文書の整形で埋もれるため（表セルの `*` / `|` を壊す既知の事故もある）。
+*.md
+
+# 統制面（harness）は整形対象にしない。編集は harness 専用の Issue / PR で行う。
+.claude

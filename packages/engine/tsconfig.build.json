@@ -1,0 +1,5 @@
+{
+  // build 専用。テストを dist へ出さない（tsconfig.json は typecheck 用でテストも含む）。
+  "extends": "./tsconfig.json",
+  "exclude": ["src/**/*.test.ts"]
+}
