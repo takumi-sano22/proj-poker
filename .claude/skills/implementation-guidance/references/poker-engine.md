@@ -1,6 +1,6 @@
 # poker-engine — Poker Engine・Event Log を書く前の判定基準（poker-engine / persistence-event-log 向け）
 
-**本書が一次情報である範囲**: 実装時の確認動作と、docs から導ける実装上の判断への導線。**一次情報が別にある範囲**: ルール・Rule Profile・Replay の定義は `docs/02_DOMAIN_RULES_AND_POLICIES.md`、Event・正本・Auto Save は `docs/04_DATA_AND_EVENTS.md`、テスト要件は `docs/09_TEST_STRATEGY.md`、判断の根拠は `docs/decision_log.yaml`（D37 / D38 / D40）。不変条件の詳細レビュー・テスト手順は `poker-invariant-review` / `poker-engine-testing` skill（#4 で作成予定。未作成の間は `code-review` の H 節）へ寄せる。
+**本書が一次情報である範囲**: 実装時の確認動作と、docs から導ける実装上の判断への導線。**一次情報が別にある範囲**: ルール・Rule Profile・Replay の定義は `docs/02_DOMAIN_RULES_AND_POLICIES.md`、Event・正本・Auto Save は `docs/04_DATA_AND_EVENTS.md`、テスト要件は `docs/09_TEST_STRATEGY.md`、判断の根拠は `docs/decision_log.yaml`（D37 / D38 / D40）。不変条件の詳細レビュー・テスト手順は `poker-invariant-review` / `poker-engine-testing` skillへ寄せる。
 
 ## 書く前に決めること
 

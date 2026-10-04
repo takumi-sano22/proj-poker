@@ -27,7 +27,7 @@ SKILL.md「実装作業は subagent に委譲する」の渡し方に加え、**
 1. **第 2 段レビューの経路**: Codex 導入環境なら `codex-review.sh` のフルパス（`~/bin/codex-review.sh`。**`~/bin` は PATH に無い**ため、名前だけでは `which`/`find` でも拾えず実行できない）を明示。明記しないと subagent が「見つからない」と判定して Codex をスキップする事故が起きる。未導入環境なら `reviewer` agent 経路（`references/non-codex-review.md`）であることを明示
 2. **直前 Stage の改修点**: 「どのファイルの実装方針・定数値をどう変えたか」など、後続 Stage が踏まえるべき差分前提を必ず明示
 3. **採用方針（壁打ち確定値）**: 数値・色・配置を全て prompt 内に書く
-4. **ドメイン不変条件の継承**: 情報境界（KnowledgeState）・決定論（乱数は注入された RNG 経由・チップ保存）・Hindsight Leak 防止を各 Stage の Worker briefing に明記する（`AGENTS.md` 1〜2 節・`code-review` H 節）
+4. **ドメイン不変条件の継承**: 情報境界（KnowledgeState）・決定論（乱数は注入された RNG 経由・チップ保存）・Hindsight Leak 防止を各 Stage の Worker briefing に明記する（`AGENTS.md` 1〜2 節・`.claude/skills/poker-invariant-review/SKILL.md`）
 5. **完了報告フォーマット**: PR 番号・マージ状態・第 2 段レビュー結果（`REVIEW2=`）・残課題
 
 ## 並列起動の実例パターン

@@ -34,7 +34,7 @@ wc -l "$PATCH"    # 0 行なら取得失敗。reviewer に渡さない
 | ① パッチ | 手順 1 の絶対パス |
 | ② 対象ルート | リポジトリまたは worktree の絶対パス |
 | ③ 差分クラス | `code-review` skill「差分クラス」の語彙（複数可） |
-| ④ 台帳・チェックリスト | `code-review/references/learned-checks.md` の絶対パス（常に）＋ 該当クラスのチェックリスト（ドメイン差分なら `poker-invariant-review` skill〔#4 で追加〕。未作成の間は `code-review` の H 節） |
+| ④ 台帳・チェックリスト | `code-review/references/learned-checks.md` の絶対パス（常に）＋ 該当クラスのチェックリスト（ドメイン差分なら `.claude/skills/poker-invariant-review/SKILL.md` の絶対パス） |
 
 任意: 「特に見てほしい観点」「base ブランチ」「設計書・Issue の絶対パス（整合確認用）」。
 

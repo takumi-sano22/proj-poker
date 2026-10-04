@@ -34,7 +34,7 @@
 ## 開発フローの固有ルール（手順の一次情報は `github-workflow`。**タイトル規約はここが一次情報**）
 
 - **Issue・PR タイトルは `[PhaseN]` で始める**（N は `docs/08_MVP_AND_ROADMAP.md` の Phase 0〜8）。Phase に属さない横断作業は `[横断]`。親 Issue は `[Parent]`。
-- **Phase 運用**: Phase 着手時に `phase-planning` skill（#4 で追加）で子 Issue へ分解する。Phase 最終 PR は `release-readme-sync` skill でルート README を更新する。MVP は Phase 5 完了まで（Scope Creep 防止は `docs/08` §4）。
+- **Phase 運用**: Phase 着手時に `phase-planning` skill で子 Issue へ分解する。Phase 最終 PR は `release-readme-sync` skill でルート README を更新する。MVP は Phase 5 完了まで（Scope Creep 防止は `docs/08` §4）。
 - **PR の `## Summary` / `## Test plan` は必須**。作業ログは `docs/taskLog/`（`task-log` skill）。人間向け文章（Issue / PR / docs / コメント）は日本語。
 - **レビュー順序は「自己レビュー（台帳必読）→ Codex レビュー」**。指摘は 4 状態に確定し、same-root sweep → 修正 or P2 accept → 条件付き再レビュー。各ラウンド後とループ出口で `review-learning`。
 - **品質チェック**: lint / typecheck / test / format のコマンドは Phase 0 で確定後にここへ追記する。
@@ -42,12 +42,12 @@
 ## routing（いつ → どこを読むか）
 
 - **実装に入る前** → `implementation-guidance` skill（触る領域の reference だけ）
-- **Poker Engine・テスト** → `poker-engine-testing` skill / **情報境界・ドメイン不変条件の点検** → `poker-invariant-review` skill（いずれも #4 で追加）
+- **Poker Engine・テスト** → `poker-engine-testing` skill / **情報境界・ドメイン不変条件の点検** → `poker-invariant-review` skill
 - **自己レビュー** → `code-review` skill（台帳 `references/learned-checks.md` を先に読む）。Codex 用観点は `AGENTS.md`
 - **レビュー指摘の学習** → `review-learning`（Capture）/ `review-distillation`（別 PR で台帳へ）
 - **subagent へ委譲** → `model-selection`（ティア）→ `subagent-briefing`（渡し方）。agents は `.claude/agents/`（共通契約: マージ禁止・範囲外に書かない・統制面を触らない）
-- **Issue の起票・巡回・Phase 分解** → `create-issue` / `issue-patrol` / `phase-planning`（#4 で追加）
-- **人間判断の記録・Open Items** → `decision-log` skill / **Solver 選定 PoC（OI-002）** → `solver-poc` skill（#4 で追加）
+- **Issue の起票・巡回・Phase 分解** → `create-issue` / `issue-patrol` / `phase-planning`
+- **人間判断の記録・Open Items** → `decision-log` skill / **Solver 選定 PoC（OI-002）** → `solver-poc` skill
 - **AI Opponent / Review の品質評価** → `llm-quality-improvement` skill
 - **実装・設計書・Issue の整合 / skill 追加** → `sync-check` / `add-skill`
 - **UI** → `ui-design-recipes`（卓 UI 向けの改良は #5 で予定。現状は汎用版）

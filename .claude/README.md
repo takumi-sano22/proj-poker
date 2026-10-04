@@ -90,7 +90,7 @@ github-workflow（標準フロー・手順の一次情報）
 | `ui-design-recipes` | UI の実装値レシピ集。**現状は汎用版**（卓 UI 向けの改良は #5） |
 | `add-skill` | skill の新規追加・管理。**skill 品質チェックリストの一次情報** |
 
-### proj-poker 固有（#4 で追加）
+### proj-poker 固有
 
 | skill | 用途・トリガー |
 | --- | --- |

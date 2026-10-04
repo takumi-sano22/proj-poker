@@ -9,7 +9,7 @@ LLM 機能の品質を「感覚」ではなく「測定」で改善するため�
 
 ## proj-poker での適用対象
 
-プロバイダは Claude API（Opponent = Haiku 級 / Review = 上位モデル。具体的な Model 名は role-based config で、未確定は OI-001。モデル ID をコードへ直書きしない）。評価対象は 2 つ（一次情報は `docs/09_TEST_STRATEGY.md` §5・§6、設計は `docs/05_AI_OPPONENTS_AND_REVIEW.md`）。Poker Engine の正しさはこの skill の対象外（決定論テストで担保。`poker-engine-testing`（#4 で作成予定））。
+プロバイダは Claude API（Opponent = Haiku 級 / Review = 上位モデル。具体的な Model 名は role-based config で、未確定は OI-001。モデル ID をコードへ直書きしない）。評価対象は 2 つ（一次情報は `docs/09_TEST_STRATEGY.md` §5・§6、設計は `docs/05_AI_OPPONENTS_AND_REVIEW.md`）。Poker Engine の正しさはこの skill の対象外（決定論テストで担保。`poker-engine-testing`）。
 
 | 評価 | 測定する指標（決定論で測れるものは決定論で） | 判定の軸（Judge を使う場合） |
 |---|---|---|
