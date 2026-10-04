@@ -1,129 +1,143 @@
-# Open Items / Intentionally Unresolved
+# 未確定事項 / Open Items
 
-These items are intentionally **not fixed**.
+このファイルの項目は、**意図的に未確定**です。
 
-Claude Code may implement a reversible configuration default where necessary, but must not silently turn it into permanent product policy.
+Claude Codeは必要なら可逆なDefaultを置いて構いませんが、それを永久仕様として勝手に確定してはいけません。
 
-## OI-001 — Exact Anthropic models
+## OI-001 — 具体的なAnthropic Model
 
-Fixed:
-- opponent default = Haiku-class
-- review default = stronger model
+確定:
+- OpponentはHaiku級を初期値
+- Reviewはより上位Modelを初期値
 
-Open:
-- concrete model names
-- routing thresholds
-- exact cost/latency policy
+未確定:
+- 正確なModel名
+- Routing Threshold
+- Cost / Latency Policy
 
-Implement by role-based configuration.
+Role-based Configで実装します。
 
-## OI-002 — Primary solver
+## OI-002 — Primary Solver
 
-MVP requires one real solver integration.
+MVPで実Solver統合は必須です。
 
-Research candidates include:
-- MIT-licensed HUNL solver implementations
-- TexasSolver as a comparison candidate
+候補:
+- MIT LicenseのHUNL Solver
+- TexasSolver比較PoC
 
-Before permanent selection:
-- local PoC
-- supported-spot verification
-- latency/memory benchmark
-- invocation/output validation
-- license review
+永久選定前に:
 
-Do not assume multiway support.
+- Local PoC
+- Supported Spot
+- Latency / Memory
+- Invocation / Output
+- License
 
-## OI-003 — Exact rake presets
+を確認します。
 
-`RakePolicy` is required.
+Multiway Supportを推測で決めないでください。
 
-Open:
-- exact initial live presets
-- percentage/cap values
+## OI-003 — Rake Preset
 
-## OI-004 — Exact chip presets
+`RakePolicy` は必須。
 
-Multiple common real-amount presets are required.
+未確定:
+- 初期Live Preset
+- Percentage
+- Cap
 
-Open:
-- exact denominations/colors shipped first
+## OI-004 — Chip Preset
 
-## OI-005 — Exact CPU pool
+複数の実額Presetは必須。
 
-Direction is fixed:
-- recurring pool
-- Guests
+未確定:
+- 初期Denomination
+- Color
 
-Open:
-- count
-- names
-- avatars
-- initial persona distribution
+## OI-005 — CPU Pool
 
-Do not couple the schema to a fixed number of CPU profiles.
+確定:
+- Recurring CPU
+- Guest
 
-## OI-006 — Session score formula
+未確定:
+- 人数
+- Name
+- Avatar
+- Persona Distribution
 
-Fixed:
-- ability scores
-- overall score
-- confidence/sample size
-- decision quality prioritized
+DB Schemaを固定人数へCoupleしないでください。
 
-Open:
-- exact weights
-- hint-assisted weighting
-- confidence aggregation
+## OI-006 — Session Score Formula
 
-Requires playtesting.
+確定:
+- Ability Score
+- Overall Score
+- Confidence
+- Sample Size
+- Decision Quality重視
 
-## OI-007 — Tournament presets
+未確定:
+- Weight
+- Hint-assisted補正
+- Confidence Aggregation
 
-STT/ICM is fixed scope.
+Playtest後に決定します。
 
-Open:
-- exact starting stacks
-- blind levels
-- payout defaults
+## OI-007 — Tournament Preset
 
-## OI-008 — Full live-ruling coverage
+確定:
+- STT
+- ICM
 
-MVP needs representative core rulings, not every casino edge case.
+未確定:
+- Starting Stack
+- Blind Level
+- Payout Default
 
-Use extensible versioned Rule Profiles.
+## OI-008 — Live Ruling完全範囲
 
-## OI-009 — Multiway deep solving
+MVPでは代表的なCore Rulingを扱います。
 
-Not an MVP blocker.
+すべてのCasino Edge CaseをMVP要件にしません。
 
-Fallback:
-- deterministic math
-- range analysis
+Versioned Rule Profileで拡張可能にします。
+
+## OI-009 — Multiway Deep Solver
+
+MVP Blockerではありません。
+
+Unsupported時:
+
+- Math
+- Range Analysis
 - KB
 - Review AI
 
-Never label HU approximation as exact multiway GTO.
+へFallbackします。
 
-## OI-010 — Runtime web-search provider
+HU ApproximationをExact Multiway GTOとして表示してはいけません。
 
-The evidence gate is fixed; the concrete provider/integration is open.
+## OI-010 — Runtime Web Search Provider
 
-# Explicitly closed
+Evidence Gateの振る舞いは確定。
 
-Do not reopen during routine implementation:
+具体的Provider / Integrationは未確定です。
 
-- local single-user
-- no auth/tenant
-- TypeScript-centered core
-- Event Log source of truth
-- deterministic poker engine
-- isolated KnowledgeState
-- learning-reveal isolation
-- real amount always visible
-- chip-based live interaction
-- voice recognition out of scope
-- Hand Review required for MVP
-- real solver integration required for supported spots
+## すでに確定しており、Routine Implementationで再検討しない項目
+
+- Local Single User
+- Authなし
+- Tenantなし
+- TypeScript中心
+- Event Log正本
+- Deterministic Poker Engine
+- CPU KnowledgeState分離
+- Learning Reveal Isolation
+- 実額常時表示
+- Chip-based Live Interaction
+- Voice Recognition Scope外
+- Hand ReviewはMVP
+- Supported Spotで実Solver統合
 - Replay != Re-simulation
-- reproducibility is best-effort
+- ReproducibilityはBest Effort
