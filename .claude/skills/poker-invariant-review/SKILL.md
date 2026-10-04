@@ -1,6 +1,6 @@
 ---
 name: poker-invariant-review
-description: proj-poker のドメイン不変条件（情報境界 KnowledgeState・Hindsight Leak・Learning-only Reveal 隔離・LLM に合法性を判定させない・Event Log 正本・Chip 保存・実額表示・Solver の誠実さ）を設計・実装・レビューで点検するチェックリスト。Poker Engine / KnowledgeState / Opponent Agent / Review Pipeline / Solver Adapter / Event Store / Table UI に触れる差分の自己レビュー、reviewer agent への委譲、設計の壁打ちで使う。「情報漏れがないか確認」「不変条件をチェック」「Hindsight Leak」「KnowledgeState をレビュー」「ドメインレビュー」でトリガーする。
+description: proj-poker のドメイン不変条件（情報境界 KnowledgeState・Hindsight Leak・Learning-only Reveal 隔離・LLM に合法性を判定させない・Event Log 正本・Chip 保存・実額表示・Solver の誠実さ）を点検するチェックリスト。Engine・KnowledgeState・Opponent・Review・Solver・Event Store・Table UI に触れる差分のレビューや設計で使う。「情報漏れがないか確認」「不変条件をチェック」「Hindsight Leak」「KnowledgeState をレビュー」「ドメインレビュー」でトリガーする。
 ---
 
 # poker-invariant-review — ドメイン不変条件の点検
@@ -62,16 +62,16 @@ proj-poker の最悪の欠陥は、コードが落ちることではなく、**�
 
 ## E. Chip・表示（poker-engine / ui-table）
 
-- [ ] Rake / Rebuy / Top-up などの明示操作を除き、Chip の総量が変わらないか。配分した Pot の総額が、Rake 等を控除した後の Distributable Pot と一致するか（INV-TEST-002 / 005）。Odd Chip の扱いが Rule Profile に従っているか。
+- [ ] Rake / Rebuy / Top-up などの明示操作を除き、Chip の総量が変わらないか。配分した Pot の総額が、Rake 等を控除した後の Distributable Pot と一致するか（INV-TEST-002 / 005）。Odd Chip Split が Scenario で検証されているか（`docs/02` §5・`docs/09` §4）。
 - [ ] Stack を超える Commit を許していないか（INV-TEST-004）。
 - [ ] UI で実額が常時表示され、BB は補助になっているか（D49）。
 
 ## F. Solver（review-pipeline）
 
-- [ ] `supports()` で Capability を判定してから `analyze()` を呼んでいるか。Unsupported・Timeout・Parse Failure を正常系の Fallback（Math / Range / KB / Review AI）に流しているか（`docs/09` §7）。
+- [ ] `supports()` で Capability を判定してから `analyze()` を呼んでいるか。Unsupported を正常系の Fallback（Math / Range / KB / Review AI）に流しているか（`docs/03` §8・`docs/05` §10）。Timeout / Parse Failure などの異常系もテストされ、Review 全体を落とさないか（`docs/09` §7）。
 - [ ] HU Solver の結果を Multiway の Exact GTO として表示・説明していないか。Range Assumption と Solver の Version を Evidence に残しているか。
 - [ ] Model 名・Solver 名を Domain Logic にハードコードしていないか（role-based config）。
 
 ## 出力
 
-指摘ごとに `[Pn] file:line — 観点（A〜F の項目）— 何が漏れる / 崩れるか — 根拠の docs 節` を返す。該当する節が無い差分なら「該当なし（差分クラス: …）」と明記する（黙って省略しない）。繰り返し出る指摘は `review-learning` で Capture する。
+指摘の様式は**呼び出し元の様式に従う**（`reviewer` agent なら reviewer.md の「出力」、自己レビューなら `code-review` の出力形式）。各指摘には、該当する観点（A〜F の項目）と根拠の docs 節を含める。該当する節が無い差分なら「該当なし（差分クラス: …）」と明記する（黙って省略しない）。繰り返し出る指摘は `review-learning` で Capture する。

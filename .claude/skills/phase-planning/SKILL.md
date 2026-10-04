@@ -10,7 +10,7 @@ description: proj-poker の Phase 着手時に docs/08 の Phase と親 Issue #2
 ## 前提ゲート（最初に確認する）
 
 - **実装開始ゲート**（`CLAUDE.md`「自走ルール」・`docs/00` §7・`docs/08` §5）: 親 #2 の Gate「追加された Skills / Harness をこの PJ の開発規約として確認する」に人間がチェックを入れるまで、Phase 0 / 1 のプロダクト実装は始めない。`gh issue view 2` でチェック状態を確認する。
-- **未解除の場合**: Phase 1 以降の分解は「**起票まで可・着手不可**」。子 Issue は作ってよいが、worktree 作成・実装・PR 作成には進まない。Issue 本文にも「実装開始ゲート未解除のため着手不可」と明記する。**AI がゲートを自己判断で解除しない。**
+- **未解除の場合**: **Phase 0 のうち実装を伴う項目（TypeScript Project Skeleton / Lint / Typecheck / Test 等）と Phase 1 以降**は「**起票まで可・着手不可**」。子 Issue は作ってよいが、worktree 作成・実装・PR 作成には進まない。Issue 本文にも「実装開始ゲート未解除のため着手不可」と明記する。ゲートが解除されたら、着手時にこの注記を本文から消し、解除を確認した旨をコメントする。**AI がゲートを自己判断で解除しない。**
 - harness・docs の整備（Phase 0 のうち実装を伴わない部分）はゲート対象外。
 
 ## 手順
@@ -61,6 +61,6 @@ description: proj-poker の Phase 着手時に docs/08 の Phase と親 Issue #2
 
 ## 完了条件
 
-- 全子 Issue が `[PhaseN]` タイトル・ラベル・assignee・親 #2 sub-issue 紐付け・`Depends on` を持つ。
+- 全子 Issue が `[PhaseN]` タイトル・ラベル・assignee・親 #2 sub-issue 紐付け・（依存がある Issue は）`Depends on` を持つ。
 - 人間確認が冒頭の AskUserQuestion 1 回で済んでいる。
 - ゲート未解除なら、Issue 本文に「着手不可」が明記されている。

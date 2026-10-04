@@ -18,7 +18,7 @@ tools: Read, Grep, Glob
 
 ## 入力（親が渡す。これだけが判断材料）
 
-- **必須入力**: ①差分パッチファイルの絶対パス ②レビュー対象ルート（リポジトリまたは worktree）の絶対パス ③差分クラス（`code-review` skill「差分クラス」の語彙） ④**読む学習台帳・チェックリストの絶対パス一覧**（`code-review/references/learned-checks.md` は常に、ドメイン差分なら `poker-invariant-review`も）。「特に見てほしい観点」「base ブランチ」は任意。
+- **必須入力**: ①差分パッチファイルの絶対パス ②レビュー対象ルート（リポジトリまたは worktree）の絶対パス ③差分クラス（`code-review` skill「差分クラス」の語彙） ④**読む学習台帳・チェックリストの絶対パス一覧**（`code-review/references/learned-checks.md` は常に、ドメイン差分なら `.claude/skills/poker-invariant-review/SKILL.md`も）。「特に見てほしい観点」「base ブランチ」は任意。
 - **必須入力が 1 つでも欠けていたらレビューしない（fail-closed）** —— 欠けている項目名だけを返して終える（所感・分析を添えない。未検証の指摘が親のコンテキストへ入るのを防ぐ）。パッチが 0 行なら「取得失敗」として返す。
 - 親の会話履歴・skill は引き継がない。**差分は親が用意する**（`git diff <base>...HEAD > <path>.patch` を保存してパスを渡す。Bash で `git diff` を叩かない）。
 - レビュー観点は `code-review` skill 準拠（正確性・整合性・読みやすさ・保守性・セキュリティ・破壊的変更/マイグレーション＋固有チェックリスト）。ドキュメント差分では採番・リンク・矛盾も点検する。**台帳へは書き込まない**（追記は `review-distillation` skill が別 PR で行う）。

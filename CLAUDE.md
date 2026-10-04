@@ -34,7 +34,7 @@
 ## 開発フローの固有ルール（手順の一次情報は `github-workflow`。**タイトル規約はここが一次情報**）
 
 - **Issue・PR タイトルは `[PhaseN]` で始める**（N は `docs/08_MVP_AND_ROADMAP.md` の Phase 0〜8）。Phase に属さない横断作業は `[横断]`。親 Issue は `[Parent]`。
-- **Phase 運用**: Phase 着手時に `phase-planning` skillで子 Issue へ分解する。Phase 最終 PR は `release-readme-sync` skill でルート README を更新する。MVP は Phase 5 完了まで（Scope Creep 防止は `docs/08` §4）。
+- **Phase 運用**: Phase 着手時に `phase-planning` skill で子 Issue へ分解する。Phase 最終 PR は `release-readme-sync` skill でルート README を更新する。MVP は Phase 5 完了まで（Scope Creep 防止は `docs/08` §4）。
 - **PR の `## Summary` / `## Test plan` は必須**。作業ログは `docs/taskLog/`（`task-log` skill）。人間向け文章（Issue / PR / docs / コメント）は日本語。
 - **レビュー順序は「自己レビュー（台帳必読）→ Codex レビュー」**。指摘は 4 状態に確定し、same-root sweep → 修正 or P2 accept → 条件付き再レビュー。各ラウンド後とループ出口で `review-learning`。
 - **品質チェック**: lint / typecheck / test / format のコマンドは Phase 0 で確定後にここへ追記する。

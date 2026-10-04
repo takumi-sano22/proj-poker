@@ -86,7 +86,7 @@ gh pr view <PR> --json body --jq .body | sed -n '/^## Review learning/,/^## /p'
 - ドキュメント更新・誤記修正
 - 小規模な機能追加・リファクタリング
 
-`phase-planning`で分解済みの Phase Issue は規模によらず候補に含めてよい。分解されていない大規模な機能追加・アーキテクチャ変更、`decision_log.yaml` の既存判断の上書きや Open Item の確定を要するもの、docs の停止ゲート（親 #2 の実装開始 Gate 等）が未解除の実装は候補に含めず、セッション冒頭の質問か Issue コメントで人間に返す。
+`phase-planning` で分解済みの Phase Issue は規模によらず候補に含めてよい。分解されていない大規模な機能追加・アーキテクチャ変更、`decision_log.yaml` の既存判断の上書きや Open Item の確定を要するもの、docs の停止ゲート（親 #2 の実装開始 Gate 等）が未解除の実装は候補に含めず、セッション冒頭の質問か Issue コメントで人間に返す。
 
 着手候補群について「対象 issue・想定作業内容・影響範囲」をまとめる。proj-poker は自走が既定のため、**確認はセッション冒頭の `AskUserQuestion` に含める**（冒頭で承認済みなら確認せず着手する。作業途中で追加確認しない）。
 未アサインの issue を含む場合は `gh issue edit {number} --add-assignee @me` で割り当てる。

@@ -46,7 +46,7 @@ description: "スキルを新規追加・管理するスキル。既存の指示
 
 配置は `.claude/skills/<skill-name>/SKILL.md`（プロジェクト）または `~/.claude/skills/<skill-name>/SKILL.md`（global）。判定の一次情報は上の品質チェックリスト #2。
 
-proj-poker の既存 skill は `.claude/skills/` 直下（`ls .claude/skills`）が一次情報。新規作成前に同名・類似 skill がないか確認する。ドメイン固有の skill（`poker-invariant-review` など）の作成予定は Issue #4。
+proj-poker の既存 skill は `.claude/skills/` 直下（`ls .claude/skills`）が一次情報。新規作成前に同名・類似 skill がないか確認する。ドメイン固有の skill（`poker-invariant-review` / `poker-engine-testing` / `phase-planning` / `solver-poc`）は既存の観点と重複させない。
 
 ---
 

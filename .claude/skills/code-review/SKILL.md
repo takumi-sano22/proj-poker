@@ -47,7 +47,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 | `docs` | `docs/**`・ルートの `*.md`（下記 `harness` を除く） |
 | `harness` | `.claude/**`・`CLAUDE.md`・`AGENTS.md` |
 
-**ドメイン差分**（`poker-engine` / `knowledge-state` / `review-pipeline` / `ai-opponent` / `persistence-event-log`）には、本 SKILL.md の汎用チェックに加えて `poker-invariant-review` skillを当てる。正本の不変条件は `docs/02`・`03`・`04`・`05`・`09` と `docs/decision_log.yaml`（採用済み判断の上書きは禁止）。
+**ドメイン差分**（`poker-engine` / `knowledge-state` / `review-pipeline` / `ai-opponent` / `persistence-event-log` / `ui-table`〔実額表示・Hidden Card の表示経路〕）には、本 SKILL.md の汎用チェックに加えて `poker-invariant-review` skill を当てる。正本の不変条件は `docs/02`・`03`・`04`・`05`・`09` と `docs/decision_log.yaml`（採用済み判断の上書きは禁止）。
 
 パスで判定しきれないとき（例: API Route が LLM を呼ぶか）は、差分の import・呼び出し先（LLM プロバイダ・キュー投入・raw SQL の関数）で当てる。迷ったら広く読む（削る方向に裁量は使わない）。
 

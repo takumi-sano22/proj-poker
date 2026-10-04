@@ -10,10 +10,10 @@ MVP では実 Solver 統合が必須（`docs/11` OI-002、`docs/03` §8）。本
 ## 大原則
 
 - **Multiway の対応可否を推測で決めない**（OI-002）。supported の根拠は PoC の実測だけ。
-- **結論は「推奨」として PR / Issue に記録する。確定ではない。** Primary Solver の永久選定は人間判断で、`decision-log` skill 経由で D 番号に記録する（AI が `decision_log.yaml` に追記しない・OI-002 を勝手に閉じない）。
-- **PoC コードは使い捨て**。本体（`src/` 等）に混ぜない。置き場は `scratchpad` や `poc/` 配下の別ディレクトリ・別ブランチとし、本体へ取り込むのは選定確定後に Adapter として別 PR で書き直す。
+- **結論は「推奨」として PR / Issue に記録する。確定ではない。** Primary Solver の永久選定は人間判断。**人間が判断した後に** `decision-log` skill の手順で D 番号に記録する（人間の判断前に AI が `decision_log.yaml` へ追記したり、OI-002 を閉じたりしない）。
+- **PoC コードは使い捨て**。本体（`src/` 等）に混ぜない。置き場は未確定（docs に規定なし）。決めるまでは本体と分離した別ブランチ / 別ディレクトリに置く。**固定 Spot の入力・計測条件・生ログは、人間が判断する根拠なので消えない場所（PoC の PR / Issue のコメント、またはリポジトリ内の記録）に残す**（セッションの一時領域には置かない）。本体へ取り込むのは選定確定後で、Adapter として別 PR で書き直す。
 - 実装開始ゲート（`CLAUDE.md`「自走ルール」）が未解除の間は PoC のコード実装に入らない。Phase 5 の Solver Adapter 実装は本 PoC の人間確定後。
-- PoC 後に Primary を確定するまで、Adapter の外から見えるのは `docs/03` §8 の interface だけにする（Solver 固有の入出力を Review AI へ直接渡さない・`research/05` §5）。
+- Adapter の外から見えるのは常に `docs/03` §8 の interface だけにする（Solver 固有の入出力を Review AI へ直接渡さない・`research/05` §5）。
 
 ## 候補
 
@@ -43,6 +43,9 @@ PoC の PR / Issue コメントに、候補ごとに下表を埋める。**未�
 | Version Metadata | バージョン・commit hash の取得方法（`docs/09` §7 の Version Metadata テスト対象） |
 | Timeout / Cancel / Invalid Input | 実際に試した結果（§8-9, 10） |
 | 実行環境 | WSL / Windows のどちらで動いたか（§8-1） |
+| Regression Tolerance | 同じ入力で再実行したときの出力のばらつきと、回帰テストで許容する幅（§8-12） |
+
+> 比較表は `research/05` §8 の Acceptance Criteria 12 項目をすべて覆うこと。上表に無い項目があれば行を足す（判定基準の正本はそちら）。
 
 ## 実測手順
 
@@ -66,7 +69,7 @@ PoC の PR / Issue コメントに、候補ごとに下表を埋める。**未�
 
 ## Unsupported の扱い
 
-- Unsupported Spot は**エラーではなく正常系**。`supports()` が false なら Math + Range Analysis + KB + Review AI へ Fallback し、Review に Assumption を表示する（`research/05` §4、`docs/03` §8）。
+- Unsupported Spot は**エラーではなく正常系**。`supports()` の `SupportResult` が非対応なら Math + Range Analysis + KB + Review AI へ Fallback し、Review に Assumption を表示する（`research/05` §4、`docs/03` §8）。
 - **HU Solver の結果を Multiway の Exact GTO として表示しない。** 途中まで Multiway だった Spot を HU として解く場合は、Prior Action・Range 推定・Card Removal 等の Assumption を表示する。
 - Multiway Deep Solver（OI-009）は MVP Blocker ではない。PoC の成否で Multiway 対応を MVP に引き込まない（`phase-planning` の Scope Creep 防止）。
 

@@ -22,8 +22,16 @@
 ## 実行した確認
 
 - 4 skill すべてで、frontmatter の `name` がディレクトリ名と一致していることを確認した。
-- 「#4 で」「予定」「未作成の間」の注記が 0 件になったことを grep で確認した。
+- 「#4 で」「作成予定」「未作成の間」「（予定）」の注記が 0 件になったことを grep で確認した。初回は `add-skill` に「作成予定は Issue #4」という言い回しが残っていて、自己レビューで検出・修正した。そのため検索パターンを広げて再確認した。
 - 参照先の実在を確認した: `docs/research/05` §8（PoC Acceptance Criteria）、`create-issue` 手順 7（sub-issue 紐付け）。
+
+## 自己レビューでの修正
+
+- INV-TEST-003 / 006 の対象を Canonical Action に限定した。Out of Turn などの Physical Action は Rule Profile の裁定を経るため、Invariant ではなく Scenario で検証する。
+- Odd Chip を Rule Profile の対象と断定していたのを撤回した。
+- solver-poc: decision-log との矛盾を解消し、Regression Tolerance（§8-12）を追加し、PoC 記録の置き場を「消えない場所」に限定した。
+- phase-planning: ゲートの対象に「Phase 0 の実装部分」を追加し、ゲート解除後に注記を消す手順を追加した。
+- 参照を絶対パスに統一し、出力様式は呼び出し元に従うようにした。ドメイン差分に ui-table を追加した。
 
 ## 残課題
 

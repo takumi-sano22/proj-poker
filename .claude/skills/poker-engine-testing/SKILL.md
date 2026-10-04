@@ -1,6 +1,6 @@
 ---
 name: poker-engine-testing
-description: proj-poker の決定論的 Poker Engine のテスト規約。Unit / Invariant（INV-TEST-001〜008）/ 固定 Scenario Regression / Property・Fuzz の使い分け、Scenario（固定ハンド）の記述形式、seed 注入と Chip 保存の assert、Engine 変更時に何を足すかを定める。Poker Engine・Betting・Pot / Side Pot・Showdown・Hand Ranking・Ruling（Oversized Chip 等）・KnowledgeState Projection を実装・修正するとき、「テストを書いて」「Scenario を追加」「回帰テスト」「property test」「エンジンのテスト」でトリガーする。
+description: proj-poker の決定論的 Poker Engine のテスト規約。Invariant（INV-TEST-001〜008）・固定 Scenario Regression・Property / Fuzz の使い分け、Scenario の記述形式、seed 注入と Chip 保存の assert を定める。Poker Engine・Betting・Pot / Side Pot・Showdown・Hand Ranking・Ruling（Oversized Chip 等）・KnowledgeState Projection を実装・修正するとき、「エンジンのテスト」「Scenario を追加」「Poker の回帰テスト」「property test」でトリガーする。
 ---
 
 # poker-engine-testing — 決定論エンジンのテスト規約
@@ -24,7 +24,7 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 ## 2. 決定論の前提
 
 - Engine は RNG を**注入**で受け取る。テストは固定 seed、または **Deck を明示的に積んだ（stacked deck）RNG** を使う。`Math.random()` や実時刻に依存するテストを書かない。
-- 同じ seed と同じ Action 列から、同じ Event 列と同じ最終 State が得られることを、少なくとも 1 本のテストで assert する（Projection の再構築可能性。`docs/04` §1）。
+- 同じ seed と同じ Action 列から、同じ Event 列と同じ最終 State が得られることを、少なくとも 1 本のテストで assert する（再現性の保存候補は `docs/02` §10。Projection が Event から再構築できることは `docs/04` §1）。
 - Chip の数値表現（整数の最小単位など）は docs で未確定。決めたら `decision-log` で記録し、ここに追記する。それまでは assert を**完全一致**で書く（誤差を許容する比較で保存則の破れを隠さない）。
 
 ## 3. Invariant テスト（INV-TEST-001〜008）
@@ -39,7 +39,7 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 |---|---|
 | 001 | 全 Card の所在（Deck / 各 Hand / Board / Burn / Muck）を集計し、52 枚が重複も欠落もないこと |
 | 002 / 005 | Σ Stack + Σ Pot + Rake 控除累計 = 初期総量 + 明示的な追加（Rebuy / Top-up）。配分の後は Σ 配分 = Distributable Pot |
-| 003 / 006 | Engine が要求する Actor は、Active（Fold・All-in していない）かつ手番の Player に限られる。それ以外の Action 入力は Reject されて State が不変 |
+| 003 / 006 | Engine が **Canonical Action** を受け付ける Actor は、Active（Fold・All-in していない）かつ手番の Player に限られる。合法でない Actor の Canonical Action は Reject されて State が不変。Out of Turn などの **Physical Action** は Rule Profile の裁定（`DEALER_RULING`）を経るので、State が変わりうる。これは Invariant 違反ではなく Scenario で検証する（`docs/02` §3〜4） |
 | 004 | どの Commit も、その時点の Stack 以下 |
 | 007 / 008 | KnowledgeState や CPU Memory をシリアライズし、他者の Hidden Card や Learning-only Reveal のマーカーが含まれないこと |
 
@@ -51,7 +51,7 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 
 ```yaml
 id: SCN-side-pot-3way-001
-title: 3-way All-in で Side Pot が 2 つできる
+title: 3-way All-in で Main Pot と Side Pot が 1 つずつできる
 rule_profile: live_cash_training_v1
 source: docs/09 §4 3-way Side Pot           # 根拠（docs 節 / 実バグの Issue 番号）
 table: { players: 3, button: 0, sb: 1, bb: 2, blinds: [1, 2] }
@@ -63,9 +63,11 @@ actions:                                    # Canonical Action または Physica
   ...
 expect:
   events_include: [POT_AWARDED]
+  # 手計算: seat1 の 40 × 3 人 = Main 120 / 残りの seat0・seat2 の超過分 = Side（値は例）
   pots: [{ amount: 120, eligible: [0,1,2] }, { amount: 120, eligible: [0,2] }]
   final_stacks: [..]
-  rejected_actions: []                      # Out of Turn などで拒否されるべき入力
+  rejected_actions: []                      # 合法でない Actor の Canonical Action など、Reject されるべき入力
+  rulings: []                               # Physical Action の裁定結果（Rule Profile 依存。例: Out of Turn・Oversized Chip）
 ```
 
 - **命名**: `SCN-<領域>-<内容>-<連番>`。`docs/09` §4 と `docs/02` §5 の必須 Scenario を、それぞれ最低 1 本ずつ用意する（一覧との対応は Scenario の `source` で追える）。
@@ -83,7 +85,7 @@ expect:
 
 - AI Opponent Eval と Review Eval は Engine の正しさとは別に評価する（`docs/09` §5〜6 → `llm-quality-improvement` skill）。Engine のテストに LLM 呼び出しを混ぜない。
 - Solver Adapter は Capability / Unsupported / Timeout / Cancellation / Invalid Input / Parse Failure / Version Metadata を、外部 Solver を Fake / Stub にしてテストする（`docs/09` §7）。実 Solver との結合テストは別系統にする。
-- E2E（`docs/09` §8）は Phase 5 で整える。Engine の Unit / Scenario を置き換えない。
+- E2E（`docs/09` §8）は MVP DoD の Quality 項目（`docs/08` §2）。Engine の Unit / Scenario を置き換えない。
 
 ## 7. レビュー時の確認
 

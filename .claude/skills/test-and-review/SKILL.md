@@ -15,8 +15,8 @@ when_to_use: 実装が一段落しコミット/PR前の動作確認をする時�
 1. `git diff` で変更差分を確認する。
 2. 変更範囲に応じて確認コマンドを選ぶ。
 3. コード変更なら lint / typecheck / test / format のコマンドを実行する。**コマンドは Phase 0 で確定予定**のため、確定後にここへ追記する（それまでは推測で npm スクリプト名を断定せず、未確定であることを作業ログに明記する）。
-4. Poker Engine（Rule / GameState / 合法アクション / Pot・Side Pot 等）の変更なら、`poker-engine-testing` skillを参照する。Chip 総量保存・合法アクション・Event Log からの再現を確認する。
-5. LLM に渡すコンテキストや Review に触れる変更なら、`poker-invariant-review` skillの観点（他者 Hole Cards・Future Cards・他 CPU の Private Observation の漏えい、Hindsight Leak）で確認する。
+4. Poker Engine（Rule / GameState / 合法アクション / Pot・Side Pot 等）の変更なら、`poker-engine-testing` skill を参照する。Chip 総量保存・合法アクション・Event Log からの再現を確認する。
+5. LLM に渡すコンテキストや Review に触れる変更なら、`poker-invariant-review` skill の観点（他者 Hole Cards・Future Cards・他 CPU の Private Observation の漏えい、Hindsight Leak）で確認する。
 6. テスト結果を作業ログ（`docs/taskLog/`・`task-log` skill）に記録する。
 7. 未確認の範囲があれば明記する。
 8. 最終報告では、変更内容・作業ログ・テスト結果・残課題を伝える。
