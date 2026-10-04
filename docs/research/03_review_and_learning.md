@@ -1,142 +1,233 @@
-# Review and Learning Model
+# Reviewと学習モデル
 
-## Goal
+## 1. 中心価値
 
-The app should teach a reusable decision process under incomplete information, not merely reveal whether a hand happened to win.
+目的は「結果を当てること」ではありません。
 
-## Two-pass Hand Review
+**限られた情報から再現可能な判断プロセスを身につけること**を中心にします。
+
+短期収支にはVarianceが大きいため、Winning HandだったかだけではDecision Qualityを測れません。
+
+## 2. Two-pass Hand Review
 
 ### Pass A — Decision Review
 
-Allowed:
-- Hero hole cards
-- public board at that point
-- pot/stacks/positions
-- public actions
-- Hero notes/read at that time
-- observed history available to Hero
+利用可能:
 
-Forbidden:
-- folded CPU hole cards
-- future board cards
-- CPU secret persona
-- review-only learning profile data
-- information only another CPU had
+- Hero Hole Cards
+- その時点までに公開されたBoard
+- Pot / Stack / Position
+- Public Action
+- Heroが当時持っていたNote
+- Heroが実際に観察したShowdown / History
+- 観察可能なEvidenceから作ったOpponent Model
 
-Output should include:
-- assessment
-- confidence
-- alternatives
-- key factors
-- range assumptions
-- math evidence
-- supported solver evidence
+利用禁止:
+
+- Fold済みCPU Hole Cards
+- Future Board
+- CPU Secret Persona
+- Review-only User Profile
+- 他CPUだけが知っている情報
+
+出力:
+
+- Assessment
+- Confidence
+- Alternative Actions
+- Key Factors
+- Range Assumption
+- Math Evidence
+- Solver Evidence
 
 ### Pass B — Reveal Review
 
-After the hand:
-- all hole cards may be shown for learning
-- actual-hand equity may be shown
-- Hero read can be compared with reality
+Hand終了後のみ:
 
-Pass B must not rewrite Pass A simply because the hidden cards became known.
+- 全Player Hole Cards
+- Actual Hand Equity
+- Bluff / Valueの答え合わせ
+- Hero Readとの比較
 
-## Review Interview
+Actual Cardを理由にPass Aを自動変更しません。
 
-When action quality depends on Hero's contemporaneous read or intention, Review AI may ask a focused question.
+## 3. Review Interview
 
-Examples:
-- Did you believe Villain was value-heavy?
-- What worse hands were you targeting with this bet?
-- Were you calling because of pot odds or because of a player read?
+ログだけで評価が揺れる場合、Review AIからUserへ質問します。
 
-The answer is stored as UserDecisionContext.
+例:
 
-## Review UI
+- 当時VillainをValue-heavyと見ていたか
+- Bluff候補を何と考えたか
+- Bet Sizeの目的は何だったか
+- Pot OddsでCallしたのか、Player Readだったのか
 
-Initial:
-1. overall summary
-2. important spots
-3. good decisions
-4. improvement candidates
+回答は `UserDecisionContext` として保存します。
 
-Expandable:
-- timeline
-- replay
-- per-action review
-- ranges
-- math
-- solver
-- reveal
-- chat
+すべてのHandで質問しません。
 
-## Evaluation
+## 4. Hand Review UI
 
-Prefer categorical per-action assessment:
-- strong
-- reasonable
-- mixed/marginal
-- improvement suggested
-- major leak
-- insufficient evidence
+初期:
 
-Session-level categories:
+1. 全体Summary
+2. Important Spot
+3. Good Decision
+4. Improvement Candidate
+
+詳細:
+
+- Timeline
+- Replay
+- Per-action Review
+- Range View
+- Math
+- Solver
+- Reveal
+- Chat
+
+Replayは保存Eventの再生であり、Re-simulationとは別です。
+
+## 5. Evaluation Category
+
+各Action:
+
+- Strong
+- Reasonable
+- Mixed / Marginal
+- Improvement Suggested
+- Major Leak
+- Insufficient Evidence
+
+Session:
+
 - Preflop
 - Postflop
 - Bet Sizing
-- Pot/Equity Math
+- Pot / Equity Math
 - Range Reading
 - Opponent Adaptation
 - Position
 - Live Mechanics
 
-Attach confidence + sample size.
+ScoreにはConfidence / Sample Sizeを併記します。
 
-## Evidence-backed weaknesses
+## 6. Evidence Model
 
-Do not store permanent labels such as "bad river player".
+弱点を永久Labelにしません。
 
-Store hypotheses with:
-- supporting actions
-- counter-evidence
-- sample size
-- confidence
-- status/trend
+例:
 
-The natural-language user profile is derived and regenerated.
-
-## Opponent-reading review
-
-During play:
-- no HUD
-- notes/tags
-- optional read capture
-
-During review:
-- compare read to evidence Hero could actually observe
-- show observed statistics
-- keep hidden CPU parameters hidden
-
-## Targeted drills
-
-```text
-problem hand
- -> identify concept
- -> generate analogous spot
- -> vary one factor
- -> new decision
- -> review
+```yaml
+hypothesis: river_bluff_catch_overcall
+supporting_hands:
+  - hand_122
+  - hand_147
+counter_evidence:
+  - hand_231
+sample_size: 6
+confidence: medium
+status: improving
 ```
 
-The goal is transfer, not memorization.
+AI Player ProfileはこのEvidence Layerから再生成します。
 
-## Hints
+## 7. Session Review
 
-Learning Mode hints:
-1. consideration
-2. math
-3. range/opponent evidence
-4. alternatives
-5. recommendation
+最低限:
 
-Hint use should be recorded.
+- Hands Played
+- 実額Result
+- BB Result
+- Decision Quality Summary
+- Positive Pattern
+- Key Leak
+- Confidence
+- Evidence Hand
+- Recommended Practice
+
+収支を主評価にしません。
+
+## 8. Statistics
+
+内部には詳細Eventを保存し、UIではProgressive Disclosureします。
+
+通常:
+
+- VPIP
+- PFR
+- 3-bet
+- Aggression系
+- Showdown系
+- Position別
+- Street別
+
+詳細:
+
+- より多くのTracker-style Stats
+
+`2/3 = 66%` を大量Sampleと同じConfidenceで扱いません。
+
+## 9. Opponent Reading Review
+
+Play中:
+- HUDなし
+- Free Note
+- Hypothesis Tag
+- Optional Read Capture
+
+Review:
+
+1. User Read
+2. Heroが観察可能だった実データ
+3. AI Range / Opponent Assessment
+4. Actual Revealは別Pass
+
+「Aggressiveだと思った」が、Observed VPIP/PFRから見るとLoose-passiveだった、というように**人読みそのもの**をレビューします。
+
+## 10. Targeted Drill
+
+```text
+Bad / Uncertain Spot
+ ↓
+Underlying Concept
+ ↓
+Structurally Similar Scenario
+ ↓
+One Factor Variation
+ ↓
+New Decision
+ ↓
+Review
+```
+
+同じHandを暗記させません。
+
+## 11. Play中のHint
+
+学習モードのみ。
+
+Layer:
+
+1. 着眼点
+2. Math
+3. Range
+4. Candidate Comparison
+5. Recommendation
+
+Hint使用履歴を保存します。
+
+## 12. Review Versioning
+
+保存:
+
+- Review Version
+- Model Role / Version
+- KB Version
+- Solver Adapter / Version
+- Assumptions
+- Calculated Metrics
+- Assessment
+- Explanation
+
+過去Reviewは上書きしません。
