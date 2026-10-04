@@ -1,85 +1,111 @@
-# Tournament and ICM
+# TournamentとICM
 
-## Scope
+## 1. 初期Tournament Scope
 
-Initial tournament product scope is **Single Table Tournament**:
+最初のTournamentはSingle Table Tournamentに限定します。
 
-- 2-8 players
-- blinds increase
-- optional ante / Big Blind Ante
-- elimination
-- heads-up
-- payouts
-- ICM-aware review
+- 2〜8人
+- Blind上昇
+- Optional Ante / Big Blind Ante
+- Elimination
+- Heads-Up
+- Payout
+- ICM
 
-Multi-table tournament simulation is outside the initial scope.
+Multi Table Tournamentは初期Scope外です。
 
-## Chip EV vs prize equity
+## 2. Chip EVとPrize Equity
 
-In Cash, chips are approximately linear in value aside from rake and related house effects.
+CashではChip Valueは概ねLinearです。
+ただしRake等の影響は別途考慮します。
 
-In tournaments:
-- chips cannot simply be cashed out
-- payouts are nonlinear
-- losing a stack and gaining the same number of chips do not necessarily have symmetric prize-value effects
+Tournamentでは:
 
-ICM models tournament equity from stack distribution and payout structure.
+- ChipをそのままCash Outできない
+- Payout Structureがある
+- 同じChip増減でもPrize EVへの影響が対称ではない
 
-## Where ICM matters most
+ICM（Independent Chip Model）は、Stack DistributionとPayoutからTournament Equityを推定するModelです。
 
-Especially important around:
-- bubble
-- large pay jumps
-- final table
-- satellite bubble
+## 3. ICMが重要なSpot
 
-Review should distinguish:
+特に:
+
+- Bubble
+- Large Pay Jump
+- Final Table
+- Satellite Bubble
+
+で影響が大きくなります。
+
+Reviewでは:
+
 - Chip EV
-- ICM / prize EV
+- ICM / Prize EV
 
-The app must be able to explain a spot where a call can be attractive in chip EV but unattractive under ICM.
+を分離して表示します。
 
-## ICM limitations
+例:
 
-ICM does not directly model everything, including:
-- future skill edge
-- exact future position
-- all table dynamics
+> Chip EVではCall寄りだが、ICMではFold寄り
 
-Review should present ICM as a model with explicit inputs/scope, not universal truth.
+という説明を可能にします。
 
-## Tournament engine state
+## 4. ICMの限界
 
-Required concepts:
-- blind level
-- level progression
-- ante type
-- payout
-- remaining players
-- stack distribution
-- elimination order
-- button movement
-- heads-up transition
+ICMは以下を直接すべてModel化するものではありません。
 
-Blind progression:
-- time-based
-- hand-count-based
+- Player Skill
+- Future Position
+- Future Edge
+- Table Dynamics
 
-Both are allowed.
+Review AIはICM Resultを絶対的な唯一の正解として説明せず、InputとScopeを明示します。
 
-## Heads-up transition
+## 5. Tournament Engine State
 
-Regression-test:
+必要なState:
+
+- Blind Level
+- Level Progression
+- Ante Type
+- Payout
+- Remaining Players
+- Stack Distribution
+- Elimination Order
+- Button Movement
+- Heads-Up Transition
+
+Blind Level Progression:
+
+- Time-based
+- Hand-count-based
+
+両方に対応します。
+
+## 6. Heads-Up Transition
+
+Regression Test必須:
+
 - Button = SB
-- Button/SB first preflop
-- Button/SB last postflop
-- avoid incorrect consecutive blind behavior during transition
+- Button/SBはPreflop first to act
+- Button/SBはPostflop last to act
+- 3人以上からHeads-Upへ移行した際にBlind / Buttonが不正にならない
 
-## Presets
+## 7. Preset
 
-Planned categories:
-- Standard
-- Deep
-- Turbo
+将来の標準Preset候補:
 
-Exact starting stacks, blind levels, and payout defaults are intentionally left open until playtesting.
+### Standard
+
+標準的なStack / Level。
+
+### Deep
+
+Deep Stack + Slow Blind。
+
+### Turbo
+
+Shallow / Fast Level。
+
+具体数値はRequirementsやPlaytestで決定し、このResearch Packでは固定しません。
