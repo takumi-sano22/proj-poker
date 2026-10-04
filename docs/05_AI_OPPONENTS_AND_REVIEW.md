@@ -1,175 +1,226 @@
-# AI Opponents and Review
+# AI CPUとReview設計
 
-## 1. Opponent contract
+## 1. Opponent Agent Contract
 
-Opponent AI decides **strategy**, not rules.
+Opponent AIは**戦略を決めますが、ルールを決めません**。
 
-Input:
-- own hole cards
-- public board
-- pot/stacks
-- position
-- legal actions and legal amount ranges
-- personally available observations
-- persona/state
-- selected deterministic math
+入力:
 
-Forbidden:
-- hidden opponent cards
-- deck future
-- learning reveal
-- Hero weakness database
-- another CPU's private observations
-- another CPU's secret persona
+- 自分のHole Cards
+- 公開済みBoard
+- Pot / Stack
+- Position
+- Legal Actions
+- Legal Amount Range
+- 自分が観察可能な履歴
+- Persona / State
+- 必要な決定論的Math
 
-Output:
-- action
-- amount if needed
-- optional compact rationale/debug metadata
+渡してはいけないもの:
 
-## 2. Persona model
+- 他PlayerのHidden Cards
+- Future Deck
+- Learning-only Reveal
+- Hero Weakness Database
+- 他CPUのPrivate Observation
+- 他CPUのSecret Persona
 
-Recommended dimensions:
-- skill
-- preflop looseness
-- aggression
-- bluff tendency
-- risk tolerance
-- discipline
-- adaptability
-- trap tendency
-- opponent-reading quality
-- tilt susceptibility
-- recovery speed
+出力:
 
-Do not reduce opponent variety to a single `difficulty` value.
+- Action
+- 必要ならAmount
+- 任意のCompactなRationale / Debug Metadata
 
-## 3. Weak opponents
+## 2. Persona Model
 
-Model weakness as coherent poker leaks:
-- call too wide
-- under-3-bet
-- overfold rivers
-- overcall
-- chase poor draws
-- positional insensitivity
-- underbluff
-- overbluff
+推奨Parameter:
 
-Do not use random illegal/absurd actions merely to make a CPU weak.
+- Skill
+- Preflop Looseness
+- Aggression
+- Bluff Tendency
+- Risk Tolerance
+- Discipline
+- Adaptability
+- Trap Tendency
+- Opponent Reading Quality
+- Tilt Susceptibility
+- Recovery Speed
 
-## 4. Tilt / irrationality
+すべてを一つの `difficulty` に縮約しないでください。
 
-Transient state may react to:
-- large pot loss
-- repeated losses
-- failed bluff
-- overconfidence after a large win
+## 3. 弱いCPU
 
-Effects are persona-dependent and probabilistic.
+弱さは「人間にありがちな一貫したLeak」として作ります。
 
-Only when such conditions hold may strategically poor actions receive low probability mass.
+例:
 
-## 5. Opponent models
+- Call Rangeが広すぎる
+- Cold Callしすぎる
+- 3-bet不足
+- Drawを追いすぎる
+- RiverでOverfold
+- RiverでOvercall
+- Underbluff
+- Overbluff
+- Position軽視
 
-Each CPU stores:
-1. observations
-2. hypotheses
-3. confidence
+弱くするために、Illegal / 意味不明なRandom Actionを混ぜないでください。
 
-Skill affects modeling quality:
-- stronger CPUs wait for evidence
-- weaker CPUs may overgeneralize from small samples
+## 4. Tilt / 非合理行動
 
-CPU secret hypotheses are never presented to Hero as facts.
+Transient Stateを持てます。
 
-## 6. Review evidence
+Trigger例:
 
-Review AI consumes normalized evidence:
+- 大きいPotを失った
+- 連続で負けた
+- Bluff失敗
+- 大勝ち後のOverconfidence
+
+影響はPersona依存とします。
+
+例:
+
+```text
+Tilt上昇
+ ↓
+参加Rangeが少し広がる
+Aggression上昇
+Discipline低下
+```
+
+このような条件成立時のみ、Strategically PoorなActionへ低確率を割り当てられます。
+
+## 5. Opponent Modeling
+
+各CPUは以下を分離して保持します。
+
+1. Observation
+2. Hypothesis
+3. Confidence
+
+SkillはOpponent Modelの質にも影響します。
+
+強いCPU:
+- Sample不足なら保留しやすい
+
+弱いCPU:
+- 少数Sampleから早合点する場合がある
+
+CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけません。
+
+## 6. Review Evidence Model
+
+Review AIへ渡す前に、以下を構造化します。
 
 - Decision Context
 - Math Evidence
 - Range Evidence
 - Opponent Observation Evidence
-- Solver Evidence when supported
+- Solver Evidence
 - Knowledge Evidence
-- User Read/Intent when available
+- User Read / Intent
 
-AI prose is generated after evidence assembly.
+AI文章はこの後に生成します。
 
-## 7. Two-pass review
+## 7. Two-pass Review
 
 ### Pass A — Decision Review
-Use only information available at the time.
+
+判断時点で利用可能だった情報だけを使います。
 
 ### Pass B — Reveal Review
-Show actual hole cards and compare reality with the user's read.
 
-Pass B must not silently change Pass A.
+Hand終了後にActual Hole Cardsを見せます。
 
-## 8. Assessment style
+用途:
+- 読みと実際の比較
+- Actual Hand Equity
+- Bluff / Valueの答え合わせ
 
-Prefer categorical evaluation:
-- strong
-- reasonable
-- mixed/marginal
-- improvement suggested
-- major leak
-- insufficient evidence
+Pass Bの情報を理由にPass Aを勝手に変更しないでください。
 
-Include:
-- confidence
-- assumptions
-- what would change the answer
+## 8. Assessment Style
 
-Avoid fake precision on single decisions.
+一つのActionにFake Precisionな点数をつけるより、段階評価を基本にします。
 
-## 9. Practical / GTO / exploit ordering
+例:
 
-Default explanation:
-1. practical baseline
-2. theoretical/GTO background when relevant
-3. exploit adjustment when observation evidence supports it
+- Strong
+- Reasonable
+- Mixed / Marginal
+- Improvement Suggested
+- Major Leak
+- Insufficient Evidence
 
-Never teach "GTO says X, therefore X is always correct."
+併記:
 
-## 10. Solver use
+- Confidence
+- Assumptions
+- 何が変わると結論も変わるか
 
-MVP requires real solver integration.
+## 9. Practical / GTO / Exploitの順序
 
-Rules:
-- capability-match before use
-- unsupported is normal
-- range assumptions are visible
-- multiway must not be silently converted to HU "truth"
-- solver output is evidence, not the sole oracle
+標準説明:
 
-Long-session/deep analysis may use more expensive solving.
+1. 実戦的なBaseline
+2. 必要に応じてGTO / Theory
+3. EvidenceがあればExploit Adjustment
 
-## 11. Web fallback
+「GTOでXだから常にXが正しい」と教えないでください。
 
-Do not web-search every hand.
+## 10. Solver利用
 
-Use only after:
-`KB -> Math/Solver -> Evidence sufficiency`
+MVPから実Solverを組み込みます。
 
-If web evidence materially changes a recommendation, preserve provenance.
+原則:
+
+- Capability Matchしてから使用
+- Unsupportedは正常系
+- Range Assumptionを明示
+- MultiwayをHUのExact Truthとして扱わない
+- SolverはEvidenceの一つ
+
+Session Deep Analysisでは通常Reviewより重いSolveを使っても構いません。
+
+## 11. Web Fallback
+
+毎HandでWeb検索しません。
+
+順序:
+
+```text
+Local KB
+ ↓
+Math / Solver
+ ↓
+Evidence Sufficiency
+ ├─ Enough → Review
+ └─ Insufficient → Web
+```
+
+Web EvidenceでRecommendationが大きく変わる場合、Source / Provenanceを保持します。
 
 ## 12. Review Interview
 
-When assessment depends on Hero's contemporaneous read/intent:
-- ask a compact question
-- allow options/free text
-- store the answer
-- continue evaluation
+ログだけでは評価が揺れる場合、Heroへ質問できます。
 
-Do not interrupt every hand.
+例:
 
-## 13. Model routing
+- 当時VillainをValue-heavyと見ていたか
+- Bluffがどの程度含まれると考えたか
+- BetのTarget Handは何だったか
+- Pot OddsでCallしたのか、Player Readだったのか
 
-Initial roles:
-- `opponent_fast`: Haiku-class
-- `review_standard`: Sonnet-class+
-- `review_deep`: strongest cost-acceptable review model
+すべてのHandで質問しないでください。
 
-Concrete models remain configuration.
+## 13. Model Routing
+
+初期Role:
+
+- `opponent_fast`: Haiku級
+- `review_standard`: Sonnet級以上
+- `review_deep`: コスト許容範囲の高性能Model
+
+Concrete ModelはConfigで変更可能とします。
