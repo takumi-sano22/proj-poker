@@ -59,5 +59,5 @@ description: コードを書く前に読む判定基準への導線。触るパ�
 | `subagent-briefing` | 子へ渡す入力の作り方（パスだけを渡し、内容は貼らない） |
 | `review-distillation` | **唯一の書き手**。IMPLEMENTATION_GUIDANCE と判定した候補をここへ落とす |
 | `code-review` | 対になる資産（レビュー時に読む台帳）。同じ項目を両方へ置かない |
-| `poker-engine-testing` / `poker-invariant-review`（#4 で作成予定） | ドメイン不変条件のテスト・レビュー手順の一次情報。reference はそこへの導線と確認動作だけを持つ |
+| `poker-engine-testing` / `poker-invariant-review` | ドメイン不変条件のテスト・レビュー手順の一次情報。reference はそこへの導線と確認動作だけを持つ |
 | `decision-log` | `docs/decision_log.yaml` の D 番号の記録・追記手順 |

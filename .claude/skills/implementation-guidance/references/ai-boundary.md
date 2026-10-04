@@ -1,6 +1,6 @@
 # ai-boundary — LLM への情報境界・出力検証・Review を書く前の判定基準（knowledge-state / ai-opponent / review-pipeline 向け）
 
-**本書が一次情報である範囲**: 実装時の確認動作と、実装上の判断への導線。**一次情報が別にある範囲**: 情報境界は `docs/02_DOMAIN_RULES_AND_POLICIES.md` §2（INV-INFO-001〜003）、Opponent 入出力の検証・AI 障害・Solver Adapter・Model Role は `docs/03_SYSTEM_ARCHITECTURE.md` §3 / §5 / §6 / §8、Persona・Two-pass Review・Solver 利用は `docs/05_AI_OPPONENTS_AND_REVIEW.md`、KnowledgeState Projection は `docs/04_DATA_AND_EVENTS.md` §5、判断の根拠は `docs/decision_log.yaml`（D28 / D40 / D57）。不変条件のレビュー・テスト手順は `poker-invariant-review` / `poker-engine-testing` skill（#4 で作成予定。未作成の間は `code-review` の H 節）へ寄せる。
+**本書が一次情報である範囲**: 実装時の確認動作と、実装上の判断への導線。**一次情報が別にある範囲**: 情報境界は `docs/02_DOMAIN_RULES_AND_POLICIES.md` §2（INV-INFO-001〜003）、Opponent 入出力の検証・AI 障害・Solver Adapter・Model Role は `docs/03_SYSTEM_ARCHITECTURE.md` §3 / §5 / §6 / §8、Persona・Two-pass Review・Solver 利用は `docs/05_AI_OPPONENTS_AND_REVIEW.md`、KnowledgeState Projection は `docs/04_DATA_AND_EVENTS.md` §5、判断の根拠は `docs/decision_log.yaml`（D28 / D40 / D57）。不変条件のレビュー・テスト手順は `poker-invariant-review` / `poker-engine-testing` skillへ寄せる。
 
 ## 書く前に決めること
 

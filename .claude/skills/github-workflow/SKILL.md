@@ -114,7 +114,7 @@ description: コード/ドキュメント変更を伴うすべての作業で、
 
 - **入力（`subagent-briefing` 準拠で最小化）**: タイトル案・WHY/WHAT の要点・対象 repo・親 Issue 番号（MVP は #2）・タイトル規約（`CLAUDE.md`）・**希望ラベル**・**アサイン方針**（担当確定ならその GitHub ユーザー名／未定なら `@me`。アサイン無しで作らせない）・**relationship**（親 Stage/トラッキング Issue 番号があれば sub-issue 紐付け対象／依存・ブロック Issue 番号があれば本文 `Depends on`・`Blocked by`・`Refs` 用）・使う skill 名（`create-issue`）。
 - **出力**: 作成した Issue URL/番号・付与したラベル・アサイン結果・**張った relationship**・親 Issue への sub-issue 紐付け結果。（proj-poker はローカル Issue 記録台帳を採用しない）
-- **直列が既定**: 依存関係（`Depends on` / `Blocked by`）を本文に書くため、後続 Issue が先行 Issue の番号を参照できるよう直列に起票する。独立した多数の Issue だけは並列起票してよい（Phase 分解は `phase-planning` skill〔#4 で追加〕）。
+- **直列が既定**: 依存関係（`Depends on` / `Blocked by`）を本文に書くため、後続 Issue が先行 Issue の番号を参照できるよう直列に起票する。独立した多数の Issue だけは並列起票してよい（Phase 分解は `phase-planning` skill）。
 - **例外**: ごく軽微な単発 Issue で委譲コストが上回るなら親で直接起票してよい（過剰委譲はしない）。
 
 ### 大規模 Issue の Stage 分割並列運用（reference 参照）
@@ -215,7 +215,7 @@ done
 - **対象**は当該 PR の差分（`git diff <base>...HEAD`）。`code-review` skill の観点（正確性・整合性・読みやすさ・保守性・セキュリティ・破壊的変更/マイグレーションの有無）で見る。ドキュメント PR でも整合性・採番・リンク・矛盾を点検する。
 - **マージ権限は与えない**。マージは第 2 段レビューの経路（Codex モード／人間確認）に従う。
 
-1. **まず学習台帳を読む**（`code-review` skill 手順 1。`references/learned-checks.md` の「共通」＋差分クラスの節、ドメイン差分なら `poker-invariant-review` skill〔#4 で追加〕）。差分を読む前に読まないと前回と同じ見落とし方を再現する。`reviewer` へ委譲するなら台帳の絶対パスを必須入力で渡す。
+1. **まず学習台帳を読む**（`code-review` skill 手順 1。`references/learned-checks.md` の「共通」＋差分クラスの節、ドメイン差分なら `poker-invariant-review` skill）。差分を読む前に読まないと前回と同じ見落とし方を再現する。`reviewer` へ委譲するなら台帳の絶対パスを必須入力で渡す。
 2. `git diff <base>...HEAD` で差分を確認する。
 3. PRコメント（`## 🤖 Claude Code 自己レビュー`）に **以下の順序** で記述する:
    1. **作業内容**: レビュー結果より前に、このPRで何を変更・修正したかを簡潔に記載する（読み手がレビュー内容を理解する文脈として必要）。
@@ -291,7 +291,7 @@ done
 
 ## マージ前のローカル品質チェック（Lint / 型 / Prettier・Node.js プロジェクトの例）
 
-> **proj-poker の状況**: lint / typecheck / test / format のコマンドと CI は Phase 0 で確定し、`CLAUDE.md`「品質チェック」に追記する。本節は他 PJ での実績例（原則は「CI と同じコマンドをローカルで通す」「formatter は厳密バージョン固定」）。Poker Engine を触る PR は、決定論テスト（`poker-engine-testing` skill〔#4 で追加〕）が通ることを必須とする。
+> **proj-poker の状況**: lint / typecheck / test / format のコマンドと CI は Phase 0 で確定し、`CLAUDE.md`「品質チェック」に追記する。本節は他 PJ での実績例（原則は「CI と同じコマンドをローカルで通す」「formatter は厳密バージョン固定」）。Poker Engine を触る PR は、決定論テスト（`poker-engine-testing` skill）が通ることを必須とする。
 
 CI（例: `.github/workflows/ci.yml` の `Lint & Type Check`）が push/PR ごとに **ESLint・型チェック・`prettier --check .`（リポジトリ全体走査）** を実行する構成では、`format:check` はリポジトリ全体を見るため、**自分の差分と無関係なファイルの整形崩れでも CI が赤になる**（1ファイルの違反が以後すべての PR を巻き込む）。PR を上げる前・マージ前に、ローカルで以下を確認する。
 

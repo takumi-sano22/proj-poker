@@ -28,6 +28,8 @@ proj-poker は、ライブ実戦を意識した No-Limit Texas Hold'em の練習
 
 ## Review guidelines
 
+各観点の確認動作（何を grep・assert すれば漏れを確認できるか）は `.claude/skills/poker-invariant-review/SKILL.md`（情報境界・決定論・Review・Event Log・Chip・Solver）と `.claude/skills/poker-engine-testing/SKILL.md`（Engine のテスト規約）にある。重大度は本ファイルが正。
+
 ### 1. 情報境界・Hidden Information（全 Phase 共通・最重要）
 
 - Opponent Model（LLM）への入力に、global `GameState`、他 Player の Hole Cards、Future Cards（デッキの残り順を含む）、Learning-only Reveal、他 CPU の Private Observation、ユーザーの弱点プロフィールが入りうる経路は **[P0]**（D28）。入力は CPU ごとの `KnowledgeState` を whitelist で組み立てるのが原則で、blacklist 方式で除外しているだけなら `[P1]`。

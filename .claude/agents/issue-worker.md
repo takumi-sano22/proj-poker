@@ -32,7 +32,7 @@ effort: high
 
 1. **worktree**: `git fetch origin && git worktree add -b <branch> .claude/worktrees/<branch> origin/main`（本体直下で）→ 依存物（`node_modules` 等）が必要になったら、Phase 0 で確定する開発環境手順に従う（現在は実装前で不要）。`.env` 等の秘密情報は symlink してもコミットしない。
 2. **実装前**: Issue 本文と親が渡したガイダンス reference を Read。dev サーバーが要る場合の起動方法は Phase 0 で確定後に追記（worktree ごとにポートを分ける）。
-3. **実装 → 検証**: 静的チェック・型検査・フォーマット確認を実行する（lint / typecheck / test / format のコマンドは Phase 0 で確定予定。確定までは `test-and-review` skill に従い、未確定であることを作業ログに明記）。Poker Engine 変更は `poker-engine-testing`（#4 で作成予定）、LLM コンテキスト・Review 変更は `poker-invariant-review`（#4 で作成予定）を参照。UI は実測で確認する。
+3. **実装 → 検証**: 静的チェック・型検査・フォーマット確認を実行する（lint / typecheck / test / format のコマンドは Phase 0 で確定予定。確定までは `test-and-review` skill に従い、未確定であることを作業ログに明記）。Poker Engine 変更は `poker-engine-testing`、LLM コンテキスト・Review 変更は `poker-invariant-review`を参照。UI は実測で確認する。
 4. **作業ログ**: `docs/taskLog/` に `task-log` skill の様式で。
 5. **commit / push / PR**: `git add` は変更ファイルを明示（`-A` 禁止・symlink をコミットしない）。PR 本文は `## Summary` / `## Test plan` 必須、`Closes #N`。
 6. **自己レビュー**: `code-review` skill 手順どおり**まず台帳を読む**。結果を `## 🤖 Claude Code 自己レビュー` で PR コメントへ。

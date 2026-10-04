@@ -26,7 +26,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 
 1. 差分を確定させる（レビュー中に実装を並行しない）。
 2. **差分クラスを判定する**（下表）。変更ファイルの一覧は `git diff --name-only $(git merge-base HEAD origin/main)..HEAD`（未コミット分も見るなら `git add -N . && git diff --name-only origin/main`）。
-3. **読むファイルを確定する**: 本 SKILL.md ＋ 台帳（常に）＋ 該当クラスのチェックリスト（ドメイン差分は `poker-invariant-review` skill（#4 で作成予定。未作成の間は `docs/02_DOMAIN_RULES_AND_POLICIES.md`・`docs/05_AI_OPPONENTS_AND_REVIEW.md` の該当節と下記 H で代替））。
+3. **読むファイルを確定する**: 本 SKILL.md ＋ 台帳（常に）＋ 該当クラスのチェックリスト（ドメイン差分は `poker-invariant-review` skill）。
 4. `reviewer` agent へ委譲する場合は、`.claude/agents/reviewer.md`「入力」が定める**必須入力**（パッチ・対象ルート・差分クラス・台帳/チェックリストの絶対パス）をすべて渡す（列挙の一次情報はそちら。1 つでも欠けると reviewer は停止する）。
 
 ### 差分クラス（パス → クラス。判定できないパスがあれば全クラスを読む）
@@ -47,7 +47,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 | `docs` | `docs/**`・ルートの `*.md`（下記 `harness` を除く） |
 | `harness` | `.claude/**`・`CLAUDE.md`・`AGENTS.md` |
 
-**ドメイン差分**（`poker-engine` / `knowledge-state` / `review-pipeline` / `ai-opponent` / `persistence-event-log`）には、本 SKILL.md の汎用チェックに加えて `poker-invariant-review` skill（#4 で作成予定）を当てる。正本の不変条件は `docs/02`・`03`・`04`・`05`・`09` と `docs/decision_log.yaml`（採用済み判断の上書きは禁止）。
+**ドメイン差分**（`poker-engine` / `knowledge-state` / `review-pipeline` / `ai-opponent` / `persistence-event-log`）には、本 SKILL.md の汎用チェックに加えて `poker-invariant-review` skillを当てる。正本の不変条件は `docs/02`・`03`・`04`・`05`・`09` と `docs/decision_log.yaml`（採用済み判断の上書きは禁止）。
 
 パスで判定しきれないとき（例: API Route が LLM を呼ぶか）は、差分の import・呼び出し先（LLM プロバイダ・キュー投入・raw SQL の関数）で当てる。迷ったら広く読む（削る方向に裁量は使わない）。
 
@@ -127,7 +127,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 ## 関連
 
 - `implementation-guidance` skill（対になる資産。実装前に読む）
-- `poker-invariant-review` skill（#4 で作成予定。ドメイン不変条件の詳細）
+- `poker-invariant-review` skill
 - `decision-log` skill（`docs/decision_log.yaml` の参照・追記）
 - `review-learning` / `review-distillation` skill（台帳の育て方）
 - グローバル版 `code-review` skill（基本観点）
