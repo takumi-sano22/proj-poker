@@ -71,6 +71,7 @@ Profile対象:
 - Multiple Chip
 - Minimum Raise
 - Short All-in / Reopen
+- Button Movement（Bust した席の扱い・Dead Button の有無）
 - Out of Turn
 - Showdown Order
 - Straddle
