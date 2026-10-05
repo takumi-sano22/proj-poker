@@ -24,3 +24,55 @@ export type { Rng } from "./rng.js";
 
 export { HandCategory, compareHands, evaluateHand } from "./hand-evaluator.js";
 export type { HandValue } from "./hand-evaluator.js";
+
+export {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  PHASE1_CASH_PRESET,
+  isChipAmount,
+} from "./table-config.js";
+export type { TableConfig } from "./table-config.js";
+
+export { isVisibleTo, visibilityOf } from "./hand-events.js";
+export type {
+  ActionType,
+  HandEvent,
+  HandEventBody,
+  HandEventType,
+  PlayerChips,
+  SeatInit,
+  Street,
+  Visibility,
+} from "./hand-events.js";
+
+export { foldHandEvents } from "./hand-state.js";
+export type { HandState, PlayerState } from "./hand-state.js";
+
+export { getLegalActions } from "./legal-actions.js";
+export type {
+  ActionRejection,
+  LegalAction,
+  LegalActionSet,
+  PlayerAction,
+} from "./legal-actions.js";
+
+export { applyAction, startHand } from "./hand-engine.js";
+export type {
+  EngineError,
+  EngineResult,
+  HandProgress,
+  StartHandInput,
+} from "./hand-engine.js";
+
+export {
+  projectBotView,
+  projectHeroView,
+  visibleEvents,
+} from "./projection.js";
+export type {
+  BotView,
+  HeroView,
+  PublicActionRecord,
+  SeatView,
+  TableView,
+} from "./projection.js";

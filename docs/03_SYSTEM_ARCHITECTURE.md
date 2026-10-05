@@ -36,12 +36,13 @@ apps/
 - `apps/server`はlocal専用で`127.0.0.1`にbindします。
 - `packages/engine`はruntime依存を持たず、`apps/*`へも依存しません（D68）。
 
-### Phase 1の実装方針（D70〜D73）
+### Phase 1の実装方針（D70〜D74）
 
 - **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Side Pot・Short All-in Reopen・Split Potの端数はPhase 2で、未対応の状態はEngineが明示エラーにします。
 - **暫定CPU（D71）**: seed付きの決定論ルールBotです。合法Actionから選び、そのPlayerに見える情報だけを受け取ります。将来D41 / D42のFallback / Emergency Botに流用します。
 - **永続化（D72）**: `node:sqlite`（Node 24内蔵）を`apps/server`だけが使います。ORMなし・生SQL・自前の小さなマイグレーションで、EventはJSON列にappend-onlyで保存します。
 - **通信（D73）**: HeroのActionはREST（POST）、卓の状態はSSEでPushします。PushするのはHeroに見えるProjectionだけです。
+- **Engine の入口（Issue #17）**: `packages/engine` は純粋関数で、`startHand`（Hand開始）→ `getLegalActions`（現在のActorの合法Action）→ `applyAction`（Actionの適用。Streetの進行・Showdown・Potの配分まで自動で進める）を持ちます。各Commandは新しいEventと畳み込み後のStateを返し、Event Logへの追記は呼び出し側が行います。Playerごとの可視Projectionは `projectHeroView`（Hero表示用）/ `projectBotView`（暫定CPU用）です。Event構成は `docs/04` §3。Chipは最小単位の整数です（D74）。
 
 ## 2. Logical Component
 
