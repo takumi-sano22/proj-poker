@@ -103,6 +103,8 @@ MVPでは代表的なCore Rulingを扱います。
 
 Versioned Rule Profileで拡張可能にします。
 
+暫定値（永久仕様ではない。確定は人間判断を経て D 番号で行う）: Split Potの端数の配り方（D75）、Short All-inのReopenは累積Full Raise（D79）、BustしたCPUの退席とButtonの移動（D80）。
+
 ## OI-009 — Multiway Deep Solver
 
 MVP Blockerではありません。

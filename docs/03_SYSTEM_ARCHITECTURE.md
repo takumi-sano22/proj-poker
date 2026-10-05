@@ -40,11 +40,11 @@ apps/
 
 ### Phase 1の実装方針（D70〜D75）
 
-- **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Side Pot・Short All-in ReopenはPhase 2で、未対応の状態はEngineが明示エラーにします。Split Potの端数はD75でPhase 1に前倒しして実装しました。
+- **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Split Potの端数はD75でPhase 1に前倒しして実装しました。Side Pot（不均等Stack）はPhase 2の#31で実装し、未対応の明示エラー（`unsupported_state`）は無くなりました（D78）。Short All-in ReopenはPhase 2（#32・D79）です。
 - **暫定CPU（D71）**: seed付きの決定論ルールBotです。合法Actionから選び、そのPlayerに見える情報だけを受け取ります。将来D41 / D42のFallback / Emergency Botに流用します。
 - **永続化（D72）**: `node:sqlite`（Node 24内蔵）を`apps/server`だけが使います。ORMなし・生SQL・自前の小さなマイグレーションで、EventはJSON列にappend-onlyで保存します。保存の単位はCompleted Hand（D62）で、テーブル・マイグレーション・Eventの版（`schema_version`。D76）は`docs/04` §3・§10です。
 - **通信（D73）**: HeroのActionはREST（POST）、卓の状態はSSEでPushします。PushするのはHeroに見えるProjectionだけです。
-- **Engine の入口（Issue #17）**: `packages/engine` は純粋関数で、`startHand`（Hand開始）→ `getLegalActions`（現在のActorの合法Action）→ `applyAction`（Actionの適用。Streetの進行・Showdown・Potの配分まで自動で進める）を持ちます。各Commandは新しいEventと畳み込み後のStateを返し、Event Logへの追記は呼び出し側が行います。Playerごとの可視Projectionは `projectHeroView`（Hero表示用）/ `projectBotView`（暫定CPU用）です。Event構成は `docs/04` §3。Chipは最小単位の整数です（D74）。Split Potの端数（Odd Chip）は、Rule Profileの設定値 `oddChipRule`（暫定値 `first_left_of_button`: Buttonの左から時計回りで最初の勝者へ1 Chipずつ。OI-008の暫定値）に従って `splitPot` が配ります（D75）。
+- **Engine の入口（Issue #17）**: `packages/engine` は純粋関数で、`startHand`（Hand開始）→ `getLegalActions`（現在のActorの合法Action）→ `applyAction`（Actionの適用。Streetの進行・Showdown・Potの配分まで自動で進める）を持ちます。各Commandは新しいEventと畳み込み後のStateを返し、Event Logへの追記は呼び出し側が行います。Playerごとの可視Projectionは `projectHeroView`（Hero表示用）/ `projectBotView`（暫定CPU用）です。Event構成は `docs/04` §3。Chipは最小単位の整数です（D74）。Split Potの端数（Odd Chip）は、Rule Profileの設定値 `oddChipRule`（暫定値 `first_left_of_button`: Buttonの左から時計回りで最初の勝者へ1 Chipずつ。OI-008の暫定値）に従って `splitPot` が配ります（D75）。Side Potは `buildPots`（`side-pots.ts`）がFoldしていないPlayerのCommit額ごとに段を切ってMain / Side Potを組み立て、Potごとに勝者を決めて配ります（D78）。Betting Roundの終わりに誰もCallしていない超過分（Uncalled Bet）を返してからPotを組み立てます。
 - **Hand Orchestrator・暫定CPU・API（Issue #18）**: `apps/server`の構成は次のとおりです（§4の流れを実装したもの）。
   - `hand-orchestrator.ts`（Hand Orchestrator）: Stateは毎回Event Store（Event Log）から`foldHandEvents`で作り、別のStateを持ちません（D37）。`startHand` → Hero の手番か Hand の終了まで CPU を進める → Hero の Action を`applyAction`で検証して適用 → また CPU を進める、を繰り返します。CPUの手番はserver側で進め、Heroの入力待ちで止まります。CPUの思考待ち（演出）はConfig値`BOT_THINK_DELAY_MS`（既定600ms・テストは0）で、待ちの間に Log が進んでいたら予約した手番を捨てます。
   - `opponents/`（Opponent Agent Adapter）: `OpponentAgent.decide({ view, legal })`のInterfaceで、Domainの外に置いた差し替え口です。入力は`projectBotView`の結果とLegal Actionだけです。暫定CPU（D71）の`RuleBot`は、自分の札と公開Boardから手の強さを3段階で見積もり、seed付きの乱数で合法Actionから選びます（CPUのseedはHandのseedから席ごとに導きます）。CPUの出力は`applyAction`で検証し、拒否・例外ならDeterministic Safe Fallback（Check、できなければFold）にして、Fallbackの記録（seq・Player・理由）をHandの運用Metadataとして残します（§5。Retryと`AI_FALLBACK_USED` EventはLLMのOpponentを入れるときに足します）。
@@ -56,7 +56,7 @@ apps/
 | Method・Path | 入力 | 成功時の応答 | 主な失敗 |
 |---|---|---|---|
 | `POST /api/hands` | なし | 201 `{ handId, players: [{ playerId, displayName, kind }], view: HeroView }`（Heroの手番かHandの終了までCPUを進めた時点） | — |
-| `POST /api/hands/:handId/actions` | `{ lastSeq, action }`。`lastSeq`はclientが見ていた`view.log`の最後の`seq`、`action`は`{ type: fold / check / call / all_in }`か`{ type: bet / raise, amount }`（`amount`はそのStreetの累計＝to額） | 200 `{ view: HeroView }` | 400 形の不正（schema）／404 Handが無い／409 `stale_view`（`lastSeq`より Log が進んでいる＝二重送信・古い画面）・`not_actor`・`hand_complete`／422 `illegal_action`・`unsupported_state` |
+| `POST /api/hands/:handId/actions` | `{ lastSeq, action }`。`lastSeq`はclientが見ていた`view.log`の最後の`seq`、`action`は`{ type: fold / check / call / all_in }`か`{ type: bet / raise, amount }`（`amount`はそのStreetの累計＝to額） | 200 `{ view: HeroView }` | 400 形の不正（schema）／404 Handが無い／409 `stale_view`（`lastSeq`より Log が進んでいる＝二重送信・古い画面）・`not_actor`・`hand_complete`／422 `illegal_action` |
 | `GET /api/hands/:handId/stream` | なし | SSE（`text/event-stream`）。メッセージは`event: view`で、`data`は`HeroView`のJSONです。接続時に現在のViewを1回送り、以後はLogが進むたびに送ります。`status`が`complete`のViewを送ったらserverが閉じます（clientは再接続しない） | 404 Handが無い |
 
 失敗の応答は`{ error: { kind, message } }`です。

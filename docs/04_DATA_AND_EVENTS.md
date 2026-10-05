@@ -61,9 +61,9 @@ Hand Event Logを、実際に何が起きたかを表す**唯一の正本**と�
 
 内部実装でEventを統合しても構いませんが、必要な情報を後から復元できることが条件です。
 
-### Phase 1 Engine の Event 構成（`packages/engine/src/hand-events.ts`）
+### Engine の Event 構成（`packages/engine/src/hand-events.ts`）
 
-Phase 1（D70）の1 Hand進行で発行するEventです。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
+Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED` をPot単位にした、1 Hand進行で発行するEventです。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
 
 | Event | 主な項目 | Visibility | 統合元・備考 |
 |---|---|---|---|
@@ -74,8 +74,8 @@ Phase 1（D70）の1 Hand進行で発行するEventです。上の一覧のう�
 | `ACTION_TAKEN` | `playerId`・`street`・`action`（fold / check / call / bet / raise / all_in）・`amount`（出した額）・`toAmount`（そのStreetの累計）・`allIn` | public | `PLAYER_FOLDED`・`PLAYER_ALL_IN`・`CHIPS_MOVED`（Bet分） |
 | `BOARD_DEALT` | `street`（flop / turn / river）・`cards` | public | Burn は省く（`CARD_BURNED` は発行しない） |
 | `CARDS_TABLED` | `playerId`・`cards` | public | `SHOWDOWN_STARTED`。River後か、All-inでBettingが終わった時点で、Foldしていない全員が公開する |
-| `UNCALLED_BET_RETURNED` | `playerId`・`amount` | public | `CHIPS_MOVED`（返却分） |
-| `POT_AWARDED` | `potTotal`・`awards`（`playerId` / `amount`）・`showdown` | public | 単一Potのみ。同着の端数は `oddChipRule` に従って配分済みの額が入る（D75） |
+| `UNCALLED_BET_RETURNED` | `playerId`・`amount` | public | `CHIPS_MOVED`（返却分）。Betting Roundの終わりに、そのStreetで最も多く出したPlayerの2番目を超える分（Fold決着のBet・Short All-inを超えたBet・Stack不足のBlindを超えたBlind）を返す |
+| `POT_AWARDED` | `potIndex`（0がMain Pot、1以降がSide Pot）・`potTotal`・`eligible`（そのPotを争えるplayerId。Buttonの左から時計回りの順）・`awards`（`playerId` / `amount`）・`showdown`（札を比べたか。争えるPlayerが1人のPotはfalse） | public | Potごとに1つ、Main Potから順に発行する（D78）。Σ`awards` = `potTotal`。同着の端数は `oddChipRule` に従って配分済みの額が入る（D75） |
 | `HAND_FINISHED` | `stacks`（`playerId` / `amount`） | public | §10のRecovery境界 |
 
 Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの出力が使えずSafe Fallbackした記録（seq・Player・理由）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_FALLBACK_USED`はLLMのOpponentを入れるときにEventへ足します）。
@@ -84,11 +84,13 @@ Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Stor
 
 保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。方針は次のとおりです（D76）。
 
-- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `1`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
-- 読み出しは現在の版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。
+- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `2`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
+  - 版 1: Phase 1（単一Pot）。`POT_AWARDED` に `potIndex`・`eligible` が無い
+  - 版 2: `POT_AWARDED` をPotごとに発行し、`potIndex`・`eligible` を持つ（D78）。版 1 の行は読み込み時に `apps/server/src/event-upcast.ts` の `upcastV1ToV2` で補います（`potIndex` は 0、`eligible` はその時点でFoldしていないPlayer。版 1 は単一Potなので、Main Potとして読めば版 2 のEngineが発行する形と一致します）
+- 読み出しは現在の版と upcast を持つ旧版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。
 - 互換の無い形の変更（必須項目の追加・意味の変更）をするときは版を上げ、旧版の行を読み込み時に新しい形へそろえる変換（upcast）を同じ PR で足します。保存済みの行は書き換えません（append-only）。任意項目の追加など、旧版の読み手が誤らない変更は版を上げません。
 
-Phase 1で扱えない状態（D70）は、Eventを発行せずにEngineが `unsupported_state` エラーを返します（`side_pot`: All-inした額を他のPlayerのCommitが超える）。Split Potの端数はD75で実装したため、エラーにしない。
+Phase 1で扱えなかった状態（D70）は、Eventを発行せずにEngineが `unsupported_state` エラーを返していました（`side_pot`: All-inした額を他のPlayerのCommitが超える）。Side Potを#31で実装したため、このエラーは無くなりました（D78）。Split Potの端数もD75で実装済みです。
 
 ## 4. Visibility
 
