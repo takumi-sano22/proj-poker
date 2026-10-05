@@ -657,6 +657,15 @@ input {
   text-align: center;
 }
 
+/* Session 終了の案内（D80）。結果の一覧より強く、1 行で読める大きさにする。 */
+.result__session {
+  max-width: 28ch;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+
 /* ───────── 進行ログ ───────── */
 
 .hand-log {

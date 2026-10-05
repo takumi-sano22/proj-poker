@@ -179,6 +179,46 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
+  it("Hand の最初の追記で渡した Session に Hand を保存し、Session の行は最初の Hand の開始時刻で 1 回だけ作る", () => {
+    let minute = 0;
+    // 追記のたびに 1 分進む時計（Session の開始時刻がどの Hand から来たかを見分ける）。
+    const store = open({
+      now: () => new Date(Date.UTC(2026, 9, 6, 0, minute++)),
+      sessionId: "fallback",
+    });
+    for (const [handId, sessionId] of [
+      ["h1", "s1"],
+      ["h2", "s1"],
+      ["h3", "s2"],
+    ] as const) {
+      const { started, rest } = finishedHandEvents(handId);
+      store.append(handId, started, { sessionId });
+      // 2 回目以降の追記の Session は見ない（Hand の Session は最初の追記で決まる）。
+      store.append(handId, rest, { sessionId: "ignored" });
+    }
+
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db
+          .prepare("SELECT hand_id, session_id FROM hands ORDER BY hand_id")
+          .all(),
+      ).toEqual([
+        { hand_id: "h1", session_id: "s1" },
+        { hand_id: "h2", session_id: "s1" },
+        { hand_id: "h3", session_id: "s2" },
+      ]);
+      expect(
+        db.prepare("SELECT * FROM sessions ORDER BY session_id").all(),
+      ).toEqual([
+        { session_id: "s1", started_at: "2026-10-06T00:00:00.000Z" },
+        { session_id: "s2", started_at: "2026-10-06T00:04:00.000Z" },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("HAND_FINISHED 前の Hand は保存せず、開き直すと残らない（Completed Hand が保存境界。D62）", () => {
     const store = open();
     const { started } = finishedHandEvents("h1");

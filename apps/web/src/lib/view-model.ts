@@ -7,6 +7,7 @@ import type {
   LegalAction,
   SeatView,
 } from "@proj-poker/engine";
+import type { SessionStatus } from "./api.js";
 import {
   ACTION_TERMS,
   STREET_TERMS,
@@ -59,6 +60,52 @@ export function parseHeroView(raw: string): HeroView | null {
     Array.isArray(v["board"]) &&
     Array.isArray(v["log"]);
   return ok ? (value as HeroView) : null;
+}
+
+/** どの Hand から見た Session の状態か。 */
+export interface HandSessionStatus {
+  readonly handId: string;
+  readonly status: SessionStatus;
+}
+
+/**
+ * REST の応答と SSE の session イベントのどちらが先に届いても、Hand 終了後の状態を残す。
+ * - 別の Hand の状態（前の Hand の遅れて届いた応答）は捨てる
+ * - 同じ Hand で Hand 終了後の状態（ready_for_next_hand / ended）を受け取った後は、遅れて届いた in_hand で戻さない
+ */
+export function selectSessionStatus(
+  current: HandSessionStatus | null,
+  incoming: HandSessionStatus,
+  activeHandId: string | null,
+): HandSessionStatus | null {
+  if (incoming.handId !== activeHandId) return current;
+  if (current === null || current.handId !== activeHandId) return incoming;
+  return current.status.state === "in_hand" ? incoming : current;
+}
+
+/** SSE の session イベントの data を受け取ってよいかの検査（受け側の whitelist）。知っている項目だけで組み直す。 */
+export function parseSessionStatus(raw: string): SessionStatus | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  switch (v["state"]) {
+    case "in_hand":
+      return { state: "in_hand" };
+    case "ready_for_next_hand":
+      return { state: "ready_for_next_hand" };
+    case "ended":
+      return v["reason"] === "hero_busted" ||
+        v["reason"] === "hero_last_standing"
+        ? { state: "ended", reason: v["reason"] }
+        : null;
+    default:
+      return null;
+  }
 }
 
 /** Blind を払った Player（公開 Event の BLIND_POSTED から読む。位置を自前で計算しない）。 */

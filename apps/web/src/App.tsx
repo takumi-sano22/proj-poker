@@ -1,5 +1,6 @@
-// Basic UI（Phase 1）: Hero として 1 Hand を最後まで遊ぶ画面。
-// 表示はすべてサーバーの HeroView に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
+// Basic UI: Hero として Hand を続けて遊ぶ画面。Stack は Hand をまたいで持ち越し、Hero の Bust か
+// CPU の全員 Bust で Session が終わる（D80）。
+// 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback } from "react";
 import { ActionBar } from "./components/ActionBar.js";
@@ -8,6 +9,7 @@ import { HandLog } from "./components/HandLog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
 import { Table } from "./components/Table.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
+import type { SessionStatus } from "./lib/api.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
 import { heroSeatOf, lastSeqOf } from "./lib/view-model.js";
 
@@ -107,7 +109,13 @@ function HeroDock({ view, nameOf, session }: ViewProps) {
 
 function DockBody({ view, nameOf, session }: ViewProps) {
   if (view.status === "complete") {
-    return <p className="dock__message">Hand が終了しました。</p>;
+    return (
+      <p className="dock__message">
+        {session.sessionStatus?.state === "ended"
+          ? "Session が終了しました。"
+          : "Hand が終了しました。"}
+      </p>
+    );
   }
   if (view.legalActions !== null) {
     return (
@@ -135,8 +143,22 @@ function DockBody({ view, nameOf, session }: ViewProps) {
   return <p className="dock__message">{waiting}</p>;
 }
 
-/** Hand の結果（卓の中央）。獲得額は実額で出す。 */
+/** Session が終わった理由の案内（D80）。 */
+function sessionEndMessage(
+  status: Extract<SessionStatus, { state: "ended" }>,
+): string {
+  return status.reason === "hero_busted"
+    ? "Hero の Stack がなくなりました（Bust）。この Session は終了です。"
+    : "CPU が全員 Bust し、Hero が勝ち残りました。この Session は終了です。";
+}
+
+/**
+ * Hand の結果（卓の中央）。獲得額は実額で出す。
+ * 次 Hand のボタンは Session が続くときだけ出し、Session が終わったら理由と、新しい Session を始めるボタンを出す。
+ * Session の状態がまだ届いていなければ、どちらのボタンも出さない（終わった Session で次 Hand を押させない）。
+ */
 function HandResult({ view, nameOf, session }: ViewProps) {
+  const status = session.sessionStatus;
   return (
     <div className="result" role="status">
       <ul className="result__list">
@@ -147,14 +169,29 @@ function HandResult({ view, nameOf, session }: ViewProps) {
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        className="btn btn--primary btn--md"
-        disabled={session.pending}
-        onClick={session.start}
-      >
-        次の Hand へ
-      </button>
+      {status?.state === "ended" && (
+        <p className="result__session">{sessionEndMessage(status)}</p>
+      )}
+      {status?.state === "ready_for_next_hand" && (
+        <button
+          type="button"
+          className="btn btn--primary btn--md"
+          disabled={session.pending}
+          onClick={session.start}
+        >
+          次の Hand へ
+        </button>
+      )}
+      {status?.state === "ended" && (
+        <button
+          type="button"
+          className="btn btn--primary btn--md"
+          disabled={session.pending}
+          onClick={session.start}
+        >
+          新しい Session を始める
+        </button>
+      )}
     </div>
   );
 }
@@ -168,7 +205,7 @@ function Notice({ session }: { readonly session: HandSession }) {
       : connection === "reconnecting"
         ? "サーバーとの接続を再開しています…"
         : connection === "lost"
-          ? "サーバーとの接続が切れました。新しい Hand を始めてください。"
+          ? "サーバーとの接続が切れました。新しい Session を始めてください。"
           : null;
   if (notice === null && connectionText === null) return null;
   return (
@@ -192,7 +229,7 @@ function Notice({ session }: { readonly session: HandSession }) {
           disabled={session.pending}
           onClick={session.start}
         >
-          新しい Hand を始める
+          新しい Session を始める
         </button>
       )}
     </div>

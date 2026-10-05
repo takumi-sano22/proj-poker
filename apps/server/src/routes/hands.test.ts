@@ -45,6 +45,15 @@ function lastSeq(view: HeroView): number {
   return view.log.at(-1)?.seq ?? -1;
 }
 
+/** Session の状態は View と食い違わない: Hand の途中なら in_hand、終わっていれば次 Hand があるか Session 終了。 */
+function expectSessionMatches(view: HeroView, session: { state: string }) {
+  if (view.status === "complete") {
+    expect(["ready_for_next_hand", "ended"]).toContain(session.state);
+  } else {
+    expect(session).toEqual({ state: "in_hand" });
+  }
+}
+
 /** 受け取った Payload（View を含む）に、その時点の Hero が知り得ない札や Deck が無いことを確かめる。 */
 function expectNoLeak(payload: unknown, view: HeroView, log: HandEvent[]) {
   expect(leakedCards(payload, log, HERO, lastSeq(view))).toEqual([]);
@@ -61,8 +70,10 @@ describe("Hand API（REST）", () => {
         handId: string;
         players: { playerId: string; kind: string }[];
         view: HeroView;
+        session: { state: string };
       }>();
       expect(body.players.filter((p) => p.kind === "hero")).toHaveLength(1);
+      expectSessionMatches(body.view, body.session);
       const payloads: { payload: unknown; view: HeroView }[] = [
         { payload: body, view: body.view },
       ];
@@ -77,7 +88,8 @@ describe("Hand API（REST）", () => {
           payload: { lastSeq: lastSeq(view), action: passiveHero(view) },
         });
         expect(res.statusCode).toBe(200);
-        const json = res.json<{ view: HeroView }>();
+        const json = res.json<{ view: HeroView; session: { state: string } }>();
+        expectSessionMatches(json.view, json.session);
         payloads.push({ payload: json, view: json.view });
         view = json.view;
       }
@@ -145,18 +157,29 @@ describe("Hand API（REST）", () => {
   });
 });
 
-/** SSE の本文から view イベントの data を取り出す。 */
-function parseSse(text: string): HeroView[] {
+/** SSE の本文を、イベント名と data の組の列にする。 */
+function parseSseEvents(text: string): { name: string; data: unknown }[] {
   return text
     .split("\n\n")
-    .filter((block) => block.includes("event: view"))
+    .filter((block) => block.trim() !== "")
     .map((block) => {
-      const data = block
-        .split("\n")
-        .find((line) => line.startsWith("data: "))
-        ?.slice("data: ".length);
-      return JSON.parse(data ?? "null") as HeroView;
+      const lines = block.split("\n");
+      const field = (key: string) =>
+        lines
+          .find((line) => line.startsWith(`${key}: `))
+          ?.slice(key.length + 2);
+      return {
+        name: field("event") ?? "",
+        data: JSON.parse(field("data") ?? "null") as unknown,
+      };
     });
+}
+
+/** SSE の本文から view イベントの data を取り出す。 */
+function parseSse(text: string): HeroView[] {
+  return parseSseEvents(text)
+    .filter((e) => e.name === "view")
+    .map((e) => e.data as HeroView);
 }
 
 describe("Hand API（SSE）", () => {
@@ -195,10 +218,21 @@ describe("Hand API（SSE）", () => {
       view = ((await res.json()) as { view: HeroView }).view;
     }
 
-    const pushed = parseSse(await bodyPromise);
+    const body = await bodyPromise;
+    const pushed = parseSse(body);
     const log = events(handId);
     expect(pushed.length).toBeGreaterThan(1);
     expect(pushed.at(-1)?.status).toBe("complete");
+    // Session の状態は complete の View の直前に 1 回だけ届き、Hero に見えない札・Deck を含まない。
+    const names = parseSseEvents(body).map((e) => e.name);
+    expect(names.filter((n) => n === "session")).toHaveLength(1);
+    expect(names.slice(-2)).toEqual(["session", "view"]);
+    const session = parseSseEvents(body).find((e) => e.name === "session");
+    expectSessionMatches(
+      pushed.at(-1) as HeroView,
+      session?.data as { state: string },
+    );
+    expectNoLeak(session?.data, pushed.at(-1) as HeroView, log);
     // Push された View は Log の進行どおりに並ぶ（同じ時点を重複して送らない）。
     const seqs = pushed.map(lastSeq);
     expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
@@ -228,5 +262,13 @@ describe("Hand API（SSE）", () => {
     const pushed = parseSse(res.body);
     expect(pushed).toHaveLength(1);
     expect(pushed[0]?.status).toBe("complete");
+    // complete の View の直前に Session の状態を送る（6 人卓で Hero が Fold しただけなので Session は続く）。
+    expect(parseSseEvents(res.body).map((e) => e.name)).toEqual([
+      "session",
+      "view",
+    ]);
+    expect(parseSseEvents(res.body)[0]?.data).toEqual({
+      state: "ready_for_next_hand",
+    });
   });
 });

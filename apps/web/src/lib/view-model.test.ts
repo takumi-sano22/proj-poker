@@ -6,8 +6,10 @@ import {
   describeEvent,
   lastSeqOf,
   parseHeroView,
+  parseSessionStatus,
   seatDirections,
   selectLatestView,
+  selectSessionStatus,
   sizingPresets,
 } from "./view-model.js";
 
@@ -60,6 +62,59 @@ describe("parseHeroView（SSE の data の受け側 whitelist）", () => {
     expect(parseHeroView(JSON.stringify({ handId: "h1" }))).toBeNull();
     expect(
       parseHeroView(JSON.stringify({ ...preflopHeroToAct(), status: "x" })),
+    ).toBeNull();
+  });
+});
+
+describe("selectSessionStatus（Hand 終了後の Session の状態を残す）", () => {
+  const inHand = { handId: "h1", status: { state: "in_hand" } } as const;
+  const ready = {
+    handId: "h1",
+    status: { state: "ready_for_next_hand" },
+  } as const;
+  const ended = {
+    handId: "h1",
+    status: { state: "ended", reason: "hero_busted" },
+  } as const;
+
+  it("Hand 終了後の状態を採り、遅れて届いた in_hand では戻さない", () => {
+    expect(selectSessionStatus(inHand, ended, "h1")).toBe(ended);
+    expect(selectSessionStatus(ended, inHand, "h1")).toBe(ended);
+    expect(selectSessionStatus(ready, inHand, "h1")).toBe(ready);
+  });
+
+  it("別の Hand の状態は捨て、新しい Hand に切り替わったらその Hand の状態を採る", () => {
+    const other = { ...ended, handId: "h0" };
+    expect(selectSessionStatus(inHand, other, "h1")).toBe(inHand);
+    expect(selectSessionStatus(null, other, "h1")).toBeNull();
+    expect(selectSessionStatus(other, inHand, "h1")).toBe(inHand);
+  });
+});
+
+describe("parseSessionStatus（SSE の session イベントの受け側 whitelist）", () => {
+  it("知っている状態と理由だけを通し、余分な項目は落とす", () => {
+    expect(parseSessionStatus(JSON.stringify({ state: "in_hand" }))).toEqual({
+      state: "in_hand",
+    });
+    expect(
+      parseSessionStatus(
+        JSON.stringify({ state: "ready_for_next_hand", extra: 1 }),
+      ),
+    ).toEqual({ state: "ready_for_next_hand" });
+    expect(
+      parseSessionStatus(
+        JSON.stringify({ state: "ended", reason: "hero_last_standing" }),
+      ),
+    ).toEqual({ state: "ended", reason: "hero_last_standing" });
+  });
+
+  it("JSON でない・知らない状態・理由の無い終了は null にする", () => {
+    expect(parseSessionStatus("not json")).toBeNull();
+    expect(parseSessionStatus("null")).toBeNull();
+    expect(parseSessionStatus(JSON.stringify({ state: "paused" }))).toBeNull();
+    expect(parseSessionStatus(JSON.stringify({ state: "ended" }))).toBeNull();
+    expect(
+      parseSessionStatus(JSON.stringify({ state: "ended", reason: "x" })),
     ).toBeNull();
   });
 });
