@@ -119,8 +119,8 @@ export function registerHandRoutes(
   app.post<{ Body: StartHandBody }>(
     "/api/hands",
     { schema: { body: startHandBodySchema } },
-    (request, reply) => {
-      const result = orchestrator.startHand(request.body.afterHandId);
+    async (request, reply) => {
+      const result = await orchestrator.startHand(request.body.afterHandId);
       if (!result.ok) return sendError(reply, result.error);
       const { handId, view, created } = result.value;
       return reply.code(created ? 201 : 200).send({
@@ -137,10 +137,10 @@ export function registerHandRoutes(
   app.post<{ Params: HandParams; Body: HeroActionBody }>(
     "/api/hands/:handId/actions",
     { schema: { params: handParamsSchema, body: heroActionBodySchema } },
-    (request, reply) => {
+    async (request, reply) => {
       const { handId } = request.params;
       const { lastSeq, action } = request.body;
-      const result = orchestrator.heroAction(handId, lastSeq, action);
+      const result = await orchestrator.heroAction(handId, lastSeq, action);
       if (!result.ok) return sendError(reply, result.error);
       return reply.send({
         view: result.value,

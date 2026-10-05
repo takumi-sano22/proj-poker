@@ -34,7 +34,7 @@ describe("RuleBot", () => {
     const decide = (botSeed: number): PlayerAction[] => {
       const bot = new RuleBot(botSeed);
       return Array.from({ length: 30 }, (_, i) =>
-        bot.decide(firstDecisionInput(i + 1)),
+        bot.choose(firstDecisionInput(i + 1)),
       );
     };
     expect(decide(7)).toEqual(decide(7));
@@ -44,7 +44,7 @@ describe("RuleBot", () => {
     const bot = new RuleBot(3);
     for (let seed = 1; seed <= 200; seed++) {
       const input = firstDecisionInput(seed);
-      const action = bot.decide(input);
+      const action = bot.choose(input);
       const option = input.legal.actions.find((a) => a.type === action.type);
       expect(option).toBeDefined();
       if (
@@ -55,6 +55,19 @@ describe("RuleBot", () => {
         expect(action.amount).toBeLessThanOrEqual(option.max);
         expect(Number.isSafeInteger(action.amount)).toBe(true);
       }
+    }
+  });
+
+  it("decide は choose と同じ判断を OpponentOutput の形（action・bet / raise だけ amount）で返す", async () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const input = firstDecisionInput(seed);
+      const expected = new RuleBot(seed).choose(input);
+      const output = await new RuleBot(seed).decide(input);
+      expect(output).toEqual(
+        "amount" in expected
+          ? { action: expected.type, amount: expected.amount }
+          : { action: expected.type },
+      );
     }
   });
 });

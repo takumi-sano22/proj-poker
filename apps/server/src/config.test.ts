@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 import {
   DEFAULT_BOT_THINK_DELAY_MS,
   DEFAULT_DB_PATH,
+  DEFAULT_OPPONENT_TIMEOUT_MS,
   DEFAULT_TABLE_SIZE,
   PHASE1_TABLE_SETUP,
   buildTableSetup,
   parseBotDelayMs,
+  parseOpponentTimeoutMs,
   parseTableSize,
   resolveDbPath,
 } from "./config.js";
@@ -19,6 +21,16 @@ describe("parseBotDelayMs", () => {
     expect(parseBotDelayMs("250")).toBe(250);
     for (const raw of [undefined, "", " ", "-1", "1.5", "abc", "1e400"]) {
       expect(parseBotDelayMs(raw)).toBe(DEFAULT_BOT_THINK_DELAY_MS);
+    }
+  });
+});
+
+describe("parseOpponentTimeoutMs", () => {
+  it("1 以上の整数だけを受け付け、未設定・不正なら既定値（暫定値）に戻す", () => {
+    expect(parseOpponentTimeoutMs("1")).toBe(1);
+    expect(parseOpponentTimeoutMs("8000")).toBe(8000);
+    for (const raw of [undefined, "", " ", "0", "-1", "1.5", "abc", "1e400"]) {
+      expect(parseOpponentTimeoutMs(raw)).toBe(DEFAULT_OPPONENT_TIMEOUT_MS);
     }
   });
 });
