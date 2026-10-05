@@ -73,7 +73,7 @@ function sendError(reply: FastifyReply, error: OrchestratorError) {
 }
 
 /** SSE の 1 メッセージ。event 名は view だけで、data は HeroView の JSON（改行を含まない）。 */
-export function formatViewEvent(view: HeroView): string {
+function formatViewEvent(view: HeroView): string {
   return `event: view\ndata: ${JSON.stringify(view)}\n\n`;
 }
 
@@ -147,7 +147,8 @@ export function registerHandRoutes(
         if (!res.writableEnded) res.end();
       };
       const send = (view: HeroView) => {
-        if (res.writableEnded) return;
+        // 切断済みの接続へは書かない（close の通知より先に配信が来ることがある）。
+        if (res.writableEnded || res.destroyed) return;
         res.write(formatViewEvent(view));
         if (view.status === "complete") end();
       };

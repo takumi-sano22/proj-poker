@@ -28,14 +28,14 @@
 ## 変更ファイル
 
 - `apps/server/src/config.ts`・`event-store.ts`・`hand-orchestrator.ts`・`opponents/opponent-agent.ts`・`opponents/rule-bot.ts`・`routes/hands.ts`・`testing/leaks.ts`（新規）、`app.ts`・`index.ts`
-- テスト: `apps/server/src/event-store.test.ts`・`hand-orchestrator.test.ts`・`opponents/rule-bot.test.ts`・`routes/hands.test.ts`
+- テスト: `apps/server/src/config.test.ts`・`event-store.test.ts`・`hand-orchestrator.test.ts`・`opponents/rule-bot.test.ts`・`routes/hands.test.ts`
 - `apps/server/package.json`（`@proj-poker/engine`・`vitest` の追加、`test`・`dev`・`build` script）・`tsconfig.json`・`tsconfig.build.json`（新規）・`vitest.config.mjs`（新規）・`pnpm-lock.yaml`
 - `packages/engine/package.json`（`exports` に `@proj-poker/source` 条件を 1 行）
 - `docs/03_SYSTEM_ARCHITECTURE.md`・`docs/04_DATA_AND_EVENTS.md`（実装との同期）
 
 ## 実行した確認
 
-- ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test`（Engine 109・Server 19 テスト）/ `pnpm format:check`（結果は PR の Test plan）。
+- ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test`（Engine 109・Server 20 テスト）/ `pnpm format:check`（結果は PR の Test plan）。
 - `pnpm build` → `node apps/server/dist/index.js` で `/api/health` と `POST /api/hands` を確認（`dist` にテストと `testing/` が出ないことも確認）。確認後にプロセスを止め、`dist` を削除した。
 - `pnpm dev` 相当（server だけ・`BOT_THINK_DELAY_MS=300`・別ポート）で、CPU の行動が 1 手ずつ SSE で届き Hero の手番で止まることを `curl -N` で確認。確認後にプロセスを止めた。
 
