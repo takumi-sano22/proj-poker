@@ -82,6 +82,30 @@ describe("seatDirections", () => {
     // 真上は Hero の向かい
     expect(dirs[5]).toEqual({ x: 0, y: -1 });
   });
+
+  it.each([2, 3, 4, 5, 6, 7, 8])(
+    "%i 席: Hero がどの席でも真下に来て、全席が単位円上の別の位置に並ぶ",
+    (n) => {
+      for (let hero = 0; hero < n; hero++) {
+        const dirs = seatDirections(n, hero);
+        expect(dirs).toHaveLength(n);
+        expect(dirs[hero]).toEqual({ x: 0, y: 1 });
+        for (const d of dirs) expect(Math.hypot(d.x, d.y)).toBeCloseTo(1, 2);
+        expect(new Set(dirs.map((d) => `${d.x},${d.y}`)).size).toBe(n);
+      }
+    },
+  );
+
+  it("2 人卓は相手が真上、8 人卓は Hero の次の席が左下・向かいが真上", () => {
+    expect(seatDirections(2, 0)[1]).toEqual({ x: 0, y: -1 });
+    const eight = seatDirections(8, 0);
+    expect(eight[1]?.x).toBeLessThan(0);
+    expect(eight[1]?.y).toBeGreaterThan(0);
+    expect(eight[4]).toEqual({ x: 0, y: -1 });
+    // 時計回り: 下 → 左 → 上 → 右 の順に x が減ってから増える
+    expect(eight[2]?.x).toBe(-1);
+    expect(eight[6]?.x).toBe(1);
+  });
 });
 
 describe("sizingPresets（Bet / Raise の Preset。to 額）", () => {

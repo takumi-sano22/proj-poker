@@ -41,9 +41,9 @@ export const PHASE1_CASH_PRESET: TableConfig & {
   startingStack: 200,
 };
 
-/** 1 Hand に座れる人数。Phase 1 は 6-max（docs/08 §3）で、Heads-Up も同じ規則で扱う。 */
+/** 1 Hand に座れる人数。NLHE Cash の 2〜8 人（#33）で、Heads-Up も同じ規則で扱う。標準 Preset は 6-max（docs/08 §3）。 */
 export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 6;
+export const MAX_PLAYERS = 8;
 
 /** Chip 金額として妥当か（0 以上の安全な整数。D74）。 */
 export function isChipAmount(value: number): boolean {

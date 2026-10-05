@@ -1,6 +1,11 @@
 // Runtime の卓設定。値は Open Item の暫定値で、永久仕様ではない（Config に置いて差し替えられるようにする）。
 import { fileURLToPath } from "node:url";
-import { PHASE1_CASH_PRESET, type TableConfig } from "@proj-poker/engine";
+import {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  PHASE1_CASH_PRESET,
+  type TableConfig,
+} from "@proj-poker/engine";
 
 /** 卓に座る Player。kind は Hero（ユーザー）か CPU か。displayName は表示用で、Engine は playerId だけを使う。 */
 export interface SeatPlayer {
@@ -11,28 +16,59 @@ export interface SeatPlayer {
 
 export interface TableSetup {
   readonly table: TableConfig;
-  /** 全員の Hand 開始時の Stack（Phase 1 は均等 Stack。D70）。 */
+  /** 全員の Hand 開始時の Stack（均等 Stack。D70）。 */
   readonly startingStack: number;
   /** 席順（時計回り）。Hero はちょうど 1 人。 */
   readonly players: readonly SeatPlayer[];
 }
 
+/** 卓の既定の人数（6-max。Hero 1 人 + CPU 5 人）。 */
+export const DEFAULT_TABLE_SIZE = 6;
+
 /**
- * Phase 1 の卓: Hero 1 人 + CPU 5 人（6-max）。
- * CPU の人数・名前は OI-005（CPU Pool）の暫定値。Chip Preset は OI-004 の暫定値（PHASE1_CASH_PRESET）。
+ * Hero 1 人 + CPU（人数 - 1）人の卓を作る。人数は Engine が扱える 2〜8（MIN_PLAYERS〜MAX_PLAYERS）。
+ * CPU の人数・名前は OI-005（CPU Pool）の暫定値で、永久仕様ではない。Chip Preset は OI-004 の暫定値（PHASE1_CASH_PRESET）。
+ * 席順は Hero → CPU 1 → CPU 2 …（時計回り）。Button の決め方は Session の Issue で変わる前提で、ここでは触らない。
  */
-export const PHASE1_TABLE_SETUP: TableSetup = {
-  table: PHASE1_CASH_PRESET,
-  startingStack: PHASE1_CASH_PRESET.startingStack,
-  players: [
-    { playerId: "hero", displayName: "Hero", kind: "hero" },
-    { playerId: "cpu1", displayName: "CPU 1", kind: "cpu" },
-    { playerId: "cpu2", displayName: "CPU 2", kind: "cpu" },
-    { playerId: "cpu3", displayName: "CPU 3", kind: "cpu" },
-    { playerId: "cpu4", displayName: "CPU 4", kind: "cpu" },
-    { playerId: "cpu5", displayName: "CPU 5", kind: "cpu" },
-  ],
-};
+export function buildTableSetup(tableSize: number): TableSetup {
+  if (
+    !Number.isSafeInteger(tableSize) ||
+    tableSize < MIN_PLAYERS ||
+    tableSize > MAX_PLAYERS
+  ) {
+    throw new RangeError(
+      `卓の人数は ${MIN_PLAYERS}〜${MAX_PLAYERS}: ${tableSize}`,
+    );
+  }
+  const cpus: SeatPlayer[] = Array.from({ length: tableSize - 1 }, (_, i) => ({
+    playerId: `cpu${i + 1}`,
+    displayName: `CPU ${i + 1}`,
+    kind: "cpu",
+  }));
+  return {
+    table: PHASE1_CASH_PRESET,
+    startingStack: PHASE1_CASH_PRESET.startingStack,
+    players: [{ playerId: "hero", displayName: "Hero", kind: "hero" }, ...cpus],
+  };
+}
+
+/** 既定の卓: 6-max（Hero 1 人 + CPU 5 人）。 */
+export const PHASE1_TABLE_SETUP: TableSetup =
+  buildTableSetup(DEFAULT_TABLE_SIZE);
+
+/**
+ * 環境変数 TABLE_SIZE の値を卓の人数として読む。未設定・不正（範囲外・小数・文字列）なら既定の 6 人に戻す
+ * （parseBotDelayMs と同じ作法）。UI での人数選択は作らず、起動時の設定だけで選ぶ。
+ */
+export function parseTableSize(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_TABLE_SIZE;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) &&
+    value >= MIN_PLAYERS &&
+    value <= MAX_PLAYERS
+    ? value
+    : DEFAULT_TABLE_SIZE;
+}
 
 /**
  * CPU の思考に見せる待ち時間（ミリ秒）の既定値。演出のためだけの値で、ルールには影響しない。

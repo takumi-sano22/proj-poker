@@ -51,6 +51,31 @@ describe("startHand", () => {
     expect(getLegalActions(state)?.playerId).toBe("p3");
   });
 
+  it("8 人卓（上限）: Hole Cards は 8 人分 16 枚で重複せず、Button の左が SB・その次が BB・先手は BB の左（UTG）", () => {
+    const result = startHand(input({ seats: seats(8) }));
+    if (!result.ok) throw new Error(result.error.message);
+    const { events, state } = result.value;
+    const dealt = events.filter((e) => e.type === "HOLE_CARD_DEALT");
+    expect(dealt).toHaveLength(8); // 1 Event に 2 枚
+    const cards = state.players.flatMap((p) =>
+      (p.holeCards ?? []).map(cardToString),
+    );
+    expect(new Set(cards).size).toBe(16);
+    expect(state.players.map((p) => p.stack)).toEqual([
+      200, 199, 198, 200, 200, 200, 200, 200,
+    ]);
+    expect(state.pot).toBe(3);
+    expect(getLegalActions(state)?.playerId).toBe("p3");
+  });
+
+  it("2 人卓（Heads-Up）: Button が SB、先手は Button（Preflop）", () => {
+    const result = startHand(input({ seats: seats(2) }));
+    if (!result.ok) throw new Error(result.error.message);
+    const { state } = result.value;
+    expect(state.players.map((p) => p.stack)).toEqual([199, 198]);
+    expect(getLegalActions(state)?.playerId).toBe("p0");
+  });
+
   it("seed が同じなら同じ Deck を使い、DECK_SHUFFLED に seed を残す", () => {
     const a = startHand(input());
     const b = startHand(input());
@@ -76,7 +101,7 @@ describe("startHand", () => {
 
   it.each([
     ["人数が 1", { seats: seats(1) }],
-    ["人数が 7", { seats: seats(7) }],
+    ["人数が 9", { seats: seats(9) }],
     [
       "playerId の重複",
       { seats: [...seats(2), { playerId: "p0", stack: 200 }] },

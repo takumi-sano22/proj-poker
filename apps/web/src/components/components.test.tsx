@@ -123,6 +123,29 @@ describe("Table（他者の札はサーバーが公開したものだけを表�
     expect(html).not.toContain('aria-label="スペードの A"');
   });
 
+  it.each([2, 8])(
+    "%i 席でも全席を 1 回ずつ描き、Hero の席を持ち、人数を data 属性で示す",
+    (n) => {
+      const ids = [
+        "hero",
+        ...Array.from({ length: n - 1 }, (_, i) => `cpu${i + 1}`),
+      ];
+      const base = preflopHeroToAct();
+      const view = preflopHeroToAct({
+        seats: ids.map((id, i) => seat(id, { isButton: i === 0 })),
+        actorId: "hero",
+        log: base.log.filter((e) => e.type !== "BLIND_POSTED"),
+      });
+      const html = renderToStaticMarkup(<Table view={view} nameOf={nameOf} />);
+      expect(html.match(/data-player-id=/g)).toHaveLength(n);
+      for (const id of ids) expect(html).toContain(`data-player-id="${id}"`);
+      expect(html).toContain(`data-seat-count="${n}"`);
+      // Hero の席は 1 つだけで、Hero の札は卓の上に描かない（他者の裏向き札だけ）
+      expect(html.match(/seat--hero/g)).toHaveLength(1);
+      expect(html.match(/aria-label="伏せた札"/g)).toHaveLength((n - 1) * 2);
+    },
+  );
+
   it("Stack・Pot・Bet を実額で出し、Dealer Button と SB / BB と手番を示す", () => {
     const html = renderToStaticMarkup(
       <Table view={preflopHeroToAct()} nameOf={nameOf} />,

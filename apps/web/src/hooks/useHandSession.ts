@@ -64,12 +64,6 @@ function noticeOf(error: unknown): SessionNotice {
           "この Hand はサーバーに見つかりませんでした（サーバーが再起動した可能性があります）。新しい Hand を始めてください。",
         retryable: false,
       };
-    case "unsupported_state":
-      return {
-        message:
-          "この局面は Phase 1 ではまだ扱えません（Side Pot など）。新しい Hand を始めてください。",
-        retryable: false,
-      };
     case "illegal_action":
       return {
         message: "その操作は今は選べません。表示中のボタンから選んでください。",

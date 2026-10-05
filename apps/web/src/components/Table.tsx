@@ -29,7 +29,11 @@ export function Table({ view, nameOf, center }: TableProps) {
   const blinds = blindsOf(view);
 
   return (
-    <section className="table" aria-label="卓">
+    <section
+      className="table"
+      aria-label="卓"
+      data-seat-count={view.seats.length}
+    >
       <div className="table__felt">
         <div className="table__center">
           <p className="table__street">

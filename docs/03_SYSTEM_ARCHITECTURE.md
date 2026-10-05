@@ -40,7 +40,7 @@ apps/
 
 ### Phase 1の実装方針（D70〜D75）
 
-- **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Split Potの端数はD75でPhase 1に前倒しして実装しました。Side Pot（不均等Stack）はPhase 2の#31で実装し、未対応の明示エラー（`unsupported_state`）は無くなりました（D78）。Short All-inによるActionの再開（Reopen。累積Short All-inを含む）はPhase 2の#32で実装しました（D79）。
+- **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Split Potの端数はD75でPhase 1に前倒しして実装しました。Side Pot（不均等Stack）はPhase 2の#31で実装し、未対応の明示エラー（`unsupported_state`）は無くなりました（D78）。Short All-inによるActionの再開（Reopen。累積Short All-inを含む）はPhase 2の#32で実装しました（D79）。人数は#33で2〜8人に広げました（Engineの`MAX_PLAYERS`＝8。標準Presetは6-max）。
 - **暫定CPU（D71）**: seed付きの決定論ルールBotです。合法Actionから選び、そのPlayerに見える情報だけを受け取ります。将来D41 / D42のFallback / Emergency Botに流用します。
 - **永続化（D72）**: `node:sqlite`（Node 24内蔵）を`apps/server`だけが使います。ORMなし・生SQL・自前の小さなマイグレーションで、EventはJSON列にappend-onlyで保存します。保存の単位はCompleted Hand（D62）で、テーブル・マイグレーション・Eventの版（`schema_version`。D76）は`docs/04` §3・§10です。
 - **通信（D73）**: HeroのActionはREST（POST）、卓の状態はSSEでPushします。PushするのはHeroに見えるProjectionだけです。
@@ -51,7 +51,7 @@ apps/
   - `event-store.ts`（Event Store）: §2 Persistence の Event Store の Interface（`append` / `read`）と、メモリ内の実装です。append-onlyで、seqが連続しない追記（二重追記・抜け）と`HAND_FINISHED`の後ろへの追記は何も書かずに拒否します。保存時にEventを複製して配下まで凍結し、呼び出し側の参照から書き換えられないようにします。起動時（`index.ts`）は同じInterfaceのSQLite実装（下記）を渡し、メモリ内の実装はテスト用です。
   - `sqlite-event-store.ts`・`db/database.ts`（Event StoreのSQLite実装。Issue #20・D72）: `db/database.ts`がDBファイルを開いてマイグレーションを当て、`SqliteEventStore`が`HAND_FINISHED`の時点でHandの全Eventを1トランザクションで書きます。Hand途中のEventはメモリに持ちます（D62）。DBの場所は環境変数`POKER_DB_PATH`（既定`apps/server/data/poker.sqlite`。gitignore済み）。詳細は`docs/04` §10。
   - `routes/hands.ts`（API。D73）: 下表。入力の形はJSON Schemaで検証し（型の自動変換・余分な項目の黙った削除はしない）、合法性はEngineが判定します。返す・PushするのはHeroに見えるProjection（`projectHeroView`）だけで、Hand のseedはclientから受け取らず、返しません。
-  - 卓の人数・CPUの名前は`config.ts`の`PHASE1_TABLE_SETUP`（Hero 1人 + CPU 5人。OI-005の暫定値）で、ButtonはHandごとに時計回りに1席ずつ動かします。
+  - 卓の人数・CPUの名前は`config.ts`の`buildTableSetup(人数)`（Hero 1人 + CPU（人数 − 1）人。人数はEngineの`MIN_PLAYERS`〜`MAX_PLAYERS`＝2〜8。CPUの人数・名前はOI-005の暫定値）で作ります。起動時は環境変数`TABLE_SIZE`（2〜8の整数。未設定・不正値は既定の6人に戻す）で選び、既定の`PHASE1_TABLE_SETUP`は6-maxです。人数を選ぶ画面は作りません。ButtonはHandごとに時計回りに1席ずつ動かします（Sessionでの決め方は後続Issue）。
 
 | Method・Path | 入力 | 成功時の応答 | 主な失敗 |
 |---|---|---|---|
