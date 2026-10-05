@@ -15,6 +15,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PHASE1_TABLE_SETUP } from "./config.js";
 import { EventSeqConflictError } from "./event-store.js";
+import type { HandEventV2 } from "./event-upcast.js";
 import { HandOrchestrator } from "./hand-orchestrator.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
 import {
@@ -241,9 +242,9 @@ describe("SqliteEventStore（保存の経路）", () => {
     (_, make) => {
       const { started, rest } = make();
       const current = [...started, ...rest];
-      // 単一 Pot の Hand では、版 1 の形（potIndex・eligible なし）に戻して保存したものを upcast すると、
-      // 版 2 の Engine が発行した Event と一致する。
-      const v1 = current.map((e) => {
+      // 単一 Pot の Hand では、版 1 の形（potIndex・eligible・reopenRule なし）に戻して保存したものを upcast すると、
+      // 現在の Engine が発行した Event と一致する。
+      const v1 = toV2(current).map((e) => {
         if (e.type !== "POT_AWARDED") return e;
         const v1Award: Record<string, unknown> = { ...e };
         delete v1Award.potIndex;
@@ -272,6 +273,30 @@ describe("SqliteEventStore（保存の経路）", () => {
       }
     },
   );
+
+  it("版 2 の行は読み込み時に upcast し、HAND_STARTED の reopenRule を補う。行は書き換えない（D76・D79）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const current = [...started, ...rest];
+    insertRows("h1", 2, toV2(current));
+
+    expect(
+      open()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(current);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 2 }]);
+      const head = db
+        .prepare("SELECT payload FROM events WHERE type = 'HAND_STARTED'")
+        .get() as { payload: string };
+      expect(JSON.parse(head.payload)).not.toHaveProperty("reopenRule");
+    } finally {
+      db.close();
+    }
+  });
 
   it("Orchestrator で 1 Hand を最後まで進めると、再起動後に同じ Event Log を読み出せる", () => {
     const store = open();
@@ -307,6 +332,16 @@ describe("SqliteEventStore（保存の経路）", () => {
     ).toEqual(before);
   });
 });
+
+/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。 */
+function toV2(events: readonly HandEvent[]): HandEventV2[] {
+  return events.map((e): HandEventV2 => {
+    if (e.type !== "HAND_STARTED") return e;
+    const v2: Record<string, unknown> = { ...e };
+    delete v2.reopenRule;
+    return v2 as HandEventV2;
+  });
+}
 
 /** Call できれば Call、できなければ Check、どちらも無ければ Fold。 */
 function passive(view: HeroView): PlayerAction {
