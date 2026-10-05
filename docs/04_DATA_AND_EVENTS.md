@@ -82,7 +82,7 @@ Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Stor
 
 #### Event の形の版（schema_version）
 
-保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。Phase 1（Issue #20）では次の最小の方針を置きます（Issue #20 で置いた暫定の方針。人間の確認を経て確定する）。
+保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。方針は次のとおりです（D76）。
 
 - `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `1`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
 - 読み出しは現在の版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。

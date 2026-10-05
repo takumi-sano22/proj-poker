@@ -1,4 +1,4 @@
-# D01〜D75の採用済み人間判断。
+# D01〜D76の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -302,3 +302,7 @@
   choice: "Phase 1 で Odd Chip Split を実装する（AskUserQuestion）"
   status: "採用済み"
   decision: "Split Potで割り切れない端数（Odd Chip）をPhase 1で実装する。端数はButtonの左から時計回りで最初の勝者に1 Chipずつ配り、配り方はRule Profileの設定値とする（OI-008の暫定値。永久仕様にしない）。D70のうち「Split Potの端数はPhase 2」の部分を変更する。Side Pot・Short All-in ReopenはD70のままPhase 2。"
+- id: D76
+  choice: "行ごとに版を持つ（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "保存するEventの行ごとにschema_versionを持たせ、読み出しは知っている版だけを受け付け、知らない版はエラーにする。互換の無い形の変更をするときは版を上げ、旧版を新しい形へそろえる読み込み時のupcastを同じPRで足す。保存済みの行は書き換えない（D37）。"

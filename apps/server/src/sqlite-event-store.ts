@@ -17,7 +17,7 @@ import {
 
 /**
  * 保存する Event（payload）の形の版。Engine の HandEvent の形を互換の無い形で変えたら上げる。
- * 読み出しはこの版だけを受け付け、知らない版は UnsupportedEventSchemaError にする（docs/04 §3）。
+ * 読み出しはこの版だけを受け付け、知らない版は UnsupportedEventSchemaError にする（D76・docs/04 §3）。
  */
 export const EVENT_SCHEMA_VERSION = 1;
 

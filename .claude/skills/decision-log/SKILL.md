@@ -38,7 +38,7 @@ proj-poker の仕様の最上位は `docs/decision_log.yaml`（採用済みの�
 
    - 既存 D の内容を変える判断なら、既存行は消さずに新しい D を足し、`decision` に「D28 を変更」のように書く。旧 D の `status` を `"D67 で変更"` に更新する（履歴を残すため）。
 3. 判断が影響する正本 docs（`01`〜`09`）と `10_DECISION_TRACEABILITY.md` の判断グループ表を同じ PR で更新する。Open Item を解消した場合は `11_OPEN_ITEMS.md` の該当節に `→ D67 で確定` と追記する（節は削除しない）。
-4. 範囲表記（例: `D01〜D75`）を更新する。対象は `decision_log.yaml` 先頭のコメント・`docs/00_DOCUMENTATION_INDEX.md` の文書一覧（`decision_log.yaml` と `10_DECISION_TRACEABILITY.md` の行）・`docs/10_DECISION_TRACEABILITY.md` の冒頭文。最後に `grep -rn "D01〜D" --include=*.md --include=*.yaml .` で、ルート README・skill を含む残りの範囲表記が最新の D 番号にそろっていることを確かめる。
+4. 範囲表記（例: `D01〜D76`）を更新する。対象は `decision_log.yaml` 先頭のコメント・`docs/00_DOCUMENTATION_INDEX.md` の文書一覧（`decision_log.yaml` と `10_DECISION_TRACEABILITY.md` の行）・`docs/10_DECISION_TRACEABILITY.md` の冒頭文。最後に `grep -rn "D01〜D" --include=*.md --include=*.yaml .` で、ルート README・skill を含む残りの範囲表記が最新の D 番号にそろっていることを確かめる。
 
 ## やってはいけないこと
 
