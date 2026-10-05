@@ -40,7 +40,8 @@ export interface TableConfig {
 }
 
 /**
- * Phase 1 の暫定 Preset。全員 100BB の均等 Stack を前提にする（D70）。
+ * 暫定の Cash Preset。startingStack は Session 開始時に全員へ配る Stack（100BB）で、
+ * 2 Hand 目以降は前 Hand の Stack を持ち越す（Bust した Player は退席。D80）。
  * 値は OI-004（Chip Preset）・OI-008（Rule Profile の範囲）の暫定値で、永久仕様ではない（Chip を整数で持つこと自体は D74）。
  */
 export const PHASE1_CASH_PRESET: TableConfig & {
