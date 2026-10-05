@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D81の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D86の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -20,6 +20,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D67〜D69 | Web Stack、Repository構成、品質ツール |
 | D70〜D76 | Phase 1 のBetting範囲、暫定CPU、永続化、通信、Chipの数値表現、Odd Chip Split、Eventの版（schema_version） |
 | D77〜D81 | Phase 2 の分解、Side PotのEvent（POT_AWARDEDのPot単位化・schema_version 2）、Short All-inのReopen、Bust・Buttonの移動、Reopen規則のEvent化（HAND_STARTEDのreopenRule・schema_version 3） |
+| D82〜D86 | Phase 3 の分解、AIのEvent（AI_ACTION_INVALID / AI_FALLBACK_USED・schema_version 4）、APIキーの置き場所と実API呼び出しの扱い、opponent_fastのModelとPersonaの暫定値、AI障害時のUser Choice |
 
 ## 特に重要なClosed Decision
 

@@ -1,4 +1,4 @@
-# D01〜D81の採用済み人間判断。
+# D01〜D86の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -326,3 +326,23 @@
   choice: "版 3 に上げる（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "Reopen規則をHAND_STARTEDのreopenRule（必須項目）としてEventに残し、Eventのschema_versionを3に上げる。版1・2は読み込み時のupcastで補い、保存済みの行は書き換えない（D76）。実装は#32。"
+- id: D82
+  choice: "Phase 3 を 8 つの子 Issue に分解（AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 3（AI Opponents）を #46〜#53 の8つの子Issueに分解する（1 KnowledgeState / 2 OpponentAgentの非同期化とValidation・Retry・Fallback / 3 AIのEvent（版4）/ 4 Claude APIキーの置き場所と手順 / 5 Model Adapter / 6 Persona / 7 AI障害時のUser Choice / 8 AI Opponent EvalとREADME）。4はユーザーの依頼で切り出した。"
+- id: D83
+  choice: "AI_ACTION_INVALID / AI_FALLBACK_USED を Event Log に残し版 4 に上げる（AskUserQuestion）"
+  status: "採用済み"
+  decision: "CPUの不正出力とFallbackの利用をAI_ACTION_INVALID / AI_FALLBACK_USEDとしてEvent Logに残し、Eventのschema_versionを4に上げる。版1〜3は読み込めるままにし、保存済みの行は書き換えない（D76）。Orchestratorの運用Metadataとして持つPhase 1の扱いを置き換える。実装は#48。"
+- id: D84
+  choice: "API キーはルートの .env・server だけが読む・開発中の実 API 呼び出しは制限しない（AskUserQuestion）"
+  status: "採用済み"
+  decision: "ANTHROPIC_API_KEYはリポジトリ直下の.env（gitignore済み）に置き、ローカルのapps/serverだけが読む（ブラウザへ渡さない）。既定のCPUはRuleBotで、設定で切り替えたときだけ実APIを使う。CIとpnpm testはFakeと録画済み応答だけで検証し実APIを呼ばない。開発中の実API呼び出しは制限しない。手順の文書化は#49。"
+- id: D85
+  choice: "opponent_fast は claude-haiku-4-5・Persona は 6 種（AskUserQuestion）"
+  status: "採用済み"
+  decision: "opponent_fastの暫定値をclaude-haiku-4-5としrole-based configに置く（OI-001の暫定値）。PersonaはTAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreationalの6つを、docs/05 §2の多軸パラメータのPresetとしてConfigに置く（OI-005の暫定値）。どちらも永久仕様にしない。"
+- id: D86
+  choice: "AI 障害時は 3 択ダイアログと遅延表示（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "APIエラー・タイムアウト・キー無しでCPUが判断できないときはHandを一時停止し、卓上のダイアログでRetry（同じ手番を再試行）/ Emergency Botで続行（そのCPUをSessionの終わりまでRuleBotにしFlagを残す）/ Session終了を選ばせる。Pauseはダイアログを出したまま止める形で表し、再起動後のResumeはPhase 5。長く待つときは遅延を表示する。Invalid OutputはD41の自動Fallbackでこの対象外。実装は#52。"
