@@ -73,17 +73,27 @@ export function getLegalActions(state: HandState): LegalActionSet | null {
 
 /**
  * Raise（Bet を含む）してよいか。
- * - この Street で未行動、または自分の行動の後に Full Raise があった（Short All-in だけでは再開しない）
+ * - この Street で未行動、または Rule Profile の再開規則（reopenRule）で Raise が再開している
  * - 自分以外に、まだ Chip を出せる相手が残っている
- * 累積 Short All-in による再開は Phase 2（D70）。
  */
 function canRaise(state: HandState, p: PlayerState): boolean {
-  const reopened =
-    p.actedAtRaiseCount === null || p.actedAtRaiseCount < state.fullRaiseCount;
   const opponentCanAct = state.players.some(
     (q) => q.playerId !== p.playerId && !q.folded && !q.allIn,
   );
-  return reopened && opponentCanAct;
+  return (
+    (p.actedAtBet === null || isReopened(state, p.actedAtBet)) && opponentCanAct
+  );
+}
+
+/** 行動済みの Player に Raise が再開しているか。actedAtBet は最後に行動した直後の最高額。 */
+function isReopened(state: HandState, actedAtBet: number): boolean {
+  switch (state.reopenRule) {
+    case "cumulative_full_raise":
+      // TDA 準拠（D79・OI-008 の暫定値）。最後の行動以降の上乗せの合計が直近の Full Raise 幅以上なら再開する。
+      // Full Raise が 1 回でもあれば、その増分（= 新しい Raise 幅）だけで条件を満たす。
+      // Short All-in は 1 回では満たさないが、複数の合計で満たせば再開する（累積 Short All-in）。
+      return state.currentBet - actedAtBet >= state.lastRaiseSize;
+  }
 }
 
 export type ActionRejection =

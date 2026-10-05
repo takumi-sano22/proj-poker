@@ -32,6 +32,7 @@ export function preflopHeroToAct(overrides: Partial<HeroView> = {}): HeroView {
       smallBlind: 1,
       bigBlind: 2,
       oddChipRule: "first_left_of_button",
+      reopenRule: "cumulative_full_raise",
       seats: ["hero", "cpu1", "cpu2", "cpu3", "cpu4", "cpu5"].map((id) => ({
         playerId: id,
         stack: 200,

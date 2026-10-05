@@ -1,7 +1,7 @@
 // Hand の Event 型と Visibility。Event Log が唯一の正本で、State は Event の畳み込みで作る（D37・docs/04 §1）。
 // Event 種別は docs/04 §3 のうち Phase 1 で必要なものだけを持つ（統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
-import type { OddChipRule } from "./table-config.js";
+import type { OddChipRule, ReopenRule } from "./table-config.js";
 
 /**
  * 誰がその Event を読めるか（docs/04 §4）。
@@ -41,6 +41,8 @@ export type HandEventBody =
       readonly bigBlind: number;
       /** Split Pot の端数の配り方。Event Log だけで配分を再現できるよう Rule Profile の設定値を残す。 */
       readonly oddChipRule: OddChipRule;
+      /** Short All-in の後の Raise の再開規則。Event Log だけで Legal Action を再現できるよう残す（D79）。 */
+      readonly reopenRule: ReopenRule;
       /** 席順（時計回り）。Button の位置もここで決まる（BUTTON_ASSIGNED を統合）。 */
       readonly seats: readonly SeatInit[];
       readonly buttonPlayerId: string;

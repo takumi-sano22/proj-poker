@@ -2,6 +2,16 @@
 // 保存済みの行は書き換えない（events は append-only。D37）。読むたびに同じ変換をする。
 import type { HandEvent } from "@proj-poker/engine";
 
+/** 版 1・2 の HAND_STARTED（reopenRule が無い）。 */
+type HandStartedV2 = Omit<
+  Extract<HandEvent, { type: "HAND_STARTED" }>,
+  "reopenRule"
+>;
+
+/** 版 2 の Event。HAND_STARTED 以外の形は版 3 と同じ。 */
+export type HandEventV2 =
+  Exclude<HandEvent, { type: "HAND_STARTED" }> | HandStartedV2;
+
 /** 版 1 の POT_AWARDED（Phase 1 の単一 Pot。potIndex と eligible が無い）。 */
 type PotAwardedV1 = Omit<
   Extract<HandEvent, { type: "POT_AWARDED" }>,
@@ -10,7 +20,7 @@ type PotAwardedV1 = Omit<
 
 /** 版 1 の Event。POT_AWARDED 以外の形は版 2 と同じ。 */
 export type HandEventV1 =
-  Exclude<HandEvent, { type: "POT_AWARDED" }> | PotAwardedV1;
+  Exclude<HandEventV2, { type: "POT_AWARDED" }> | PotAwardedV1;
 
 /**
  * 版 1 → 版 2（D78）。版 1 は単一 Pot なので、POT_AWARDED を Main Pot（potIndex 0）とし、
@@ -18,10 +28,10 @@ export type HandEventV1 =
  * Fold で決着した Hand では勝者 1 人、Showdown ではその Hand に残った全員になる。
  * events は 1 Hand 分を seq 順に渡す（Fold の有無を前の Event から数えるため）。
  */
-export function upcastV1ToV2(events: readonly HandEventV1[]): HandEvent[] {
+export function upcastV1ToV2(events: readonly HandEventV1[]): HandEventV2[] {
   const folded = new Set<string>();
   let seatsFromButton: readonly string[] = [];
-  return events.map((event): HandEvent => {
+  return events.map((event): HandEventV2 => {
     switch (event.type) {
       case "HAND_STARTED": {
         const ids = event.seats.map((s) => s.playerId);
@@ -44,4 +54,20 @@ export function upcastV1ToV2(events: readonly HandEventV1[]): HandEvent[] {
         return event;
     }
   });
+}
+
+/**
+ * 版 2 → 版 3（D79）。HAND_STARTED に reopenRule（Short All-in の後の Raise の再開規則）を補う。
+ * 補う値は版 3 の暫定値 cumulative_full_raise。版 2 までの Engine は「Full Raise があったか」だけで再開を判定したが、
+ * 次の 2 点から、版 2 までの保存済み Hand をこの値で読んでも結果は変わらない。
+ * - reopenRule は Reducer の State 遷移に使わず、Legal Action の計算（canRaise）だけに使う。保存済み Event の再生は同じ
+ * - 版 2 までの Server は全員同じ Stack で Hand を始める（PHASE1_TABLE_SETUP）。Fold していない Player の
+ *   「この Street で出せる上限」は全員同じなので、最高額を上げる All-in は 1 Street に 1 回までになり、
+ *   Short All-in の累積と単発が一致する（Legal Action も同じになる）
+ * 1 Event ずつ変換できるので、版 1 の行は upcastV1ToV2 の後にこれを通す。
+ */
+export function upcastV2ToV3(event: HandEventV2): HandEvent {
+  return event.type === "HAND_STARTED"
+    ? { ...event, reopenRule: "cumulative_full_raise" }
+    : event;
 }

@@ -3,7 +3,7 @@
 // 他者の Hole Cards と Deck は最初から State に入らない（docs/04 §5 の whitelist）。
 import type { Card } from "./card.js";
 import type { HandEvent, PlayerChips, Street } from "./hand-events.js";
-import type { OddChipRule } from "./table-config.js";
+import type { OddChipRule, ReopenRule } from "./table-config.js";
 
 export interface PlayerState {
   readonly playerId: string;
@@ -19,10 +19,10 @@ export interface PlayerState {
   /** Showdown などで Hole Cards を公開済みか。 */
   readonly shown: boolean;
   /**
-   * この Street で最後に行動した時点の fullRaiseCount。未行動なら null。
-   * 「自分の行動の後に Full Raise があったか」で Raise の再開（Reopen）を判定する。
+   * この Street で最後に行動した直後の最高 Commit 額（currentBet）。未行動なら null。
+   * そこからの上乗せの合計で Raise の再開（Reopen）を判定する（legal-actions.ts の canRaise）。
    */
-  readonly actedAtRaiseCount: number | null;
+  readonly actedAtBet: number | null;
 }
 
 export interface HandState {
@@ -31,6 +31,7 @@ export interface HandState {
   readonly smallBlind: number;
   readonly bigBlind: number;
   readonly oddChipRule: OddChipRule;
+  readonly reopenRule: ReopenRule;
   /** 席順（時計回り）。 */
   readonly players: readonly PlayerState[];
   readonly buttonIndex: number;
@@ -42,10 +43,8 @@ export interface HandState {
   readonly pot: number;
   /** この Street の最高 Commit 額。 */
   readonly currentBet: number;
-  /** 直近の Full Bet / Raise の増分。Minimum Raise は currentBet + lastRaiseSize。 */
+  /** 直近の Full Bet / Raise の増分（Short All-in では変わらない）。Minimum Raise は currentBet + lastRaiseSize。 */
   readonly lastRaiseSize: number;
-  /** この Street の Full Bet / Raise の回数（Short All-in は数えない）。 */
-  readonly fullRaiseCount: number;
   /** 次に行動する Player の添字。誰も行動できない（Street 終了・Hand 終了）なら null。 */
   readonly actorIndex: number | null;
   readonly status: "in_progress" | "complete";
@@ -80,6 +79,7 @@ export function initialState(event: HandEvent): HandState {
     smallBlind: event.smallBlind,
     bigBlind: event.bigBlind,
     oddChipRule: event.oddChipRule,
+    reopenRule: event.reopenRule,
     players: event.seats.map((s) => ({
       playerId: s.playerId,
       stack: s.stack,
@@ -89,7 +89,7 @@ export function initialState(event: HandEvent): HandState {
       folded: false,
       allIn: false,
       shown: false,
-      actedAtRaiseCount: null,
+      actedAtBet: null,
     })),
     buttonIndex,
     deck: [],
@@ -98,7 +98,6 @@ export function initialState(event: HandEvent): HandState {
     pot: 0,
     currentBet: 0,
     lastRaiseSize: event.bigBlind,
-    fullRaiseCount: 0,
     actorIndex: null,
     status: "in_progress",
     awards: [],
@@ -146,19 +145,18 @@ function applyBody(state: HandState, event: HandEvent): HandState {
     case "ACTION_TAKEN": {
       const index = indexOf(state, event.playerId);
       const increment = event.toAmount - state.currentBet;
-      // Full Bet / Raise は増分が直近の Raise 幅以上のとき。未満の All-in（Short All-in）は Raise を再開しない。
+      // Full Bet / Raise は増分が直近の Raise 幅以上のとき。未満の All-in（Short All-in）は Raise 幅を変えない。
       const isFullRaise = increment > 0 && increment >= state.lastRaiseSize;
-      const fullRaiseCount = state.fullRaiseCount + (isFullRaise ? 1 : 0);
+      const currentBet = Math.max(state.currentBet, event.toAmount);
       const acted = updatePlayer(state, index, (p) => ({
         ...commit(p, event.amount),
         folded: p.folded || event.action === "fold",
-        actedAtRaiseCount: fullRaiseCount,
+        actedAtBet: currentBet,
       }));
       const after: HandState = {
         ...acted,
-        currentBet: Math.max(state.currentBet, event.toAmount),
+        currentBet,
         lastRaiseSize: isFullRaise ? increment : state.lastRaiseSize,
-        fullRaiseCount,
       };
       return { ...after, actorIndex: nextActorAfter(after, index) };
     }
@@ -171,11 +169,10 @@ function applyBody(state: HandState, event: HandEvent): HandState {
         street: event.street,
         currentBet: 0,
         lastRaiseSize: state.bigBlind,
-        fullRaiseCount: 0,
         players: state.players.map((p) => ({
           ...p,
           streetCommitted: 0,
-          actedAtRaiseCount: null,
+          actedAtBet: null,
         })),
       };
       // Postflop は Button の次（左）から行動する。
@@ -295,7 +292,7 @@ export function countNotFolded(state: HandState): number {
 function needsToAct(state: HandState, p: PlayerState): boolean {
   if (p.folded || p.allIn) return false;
   if (p.streetCommitted < state.currentBet) return true;
-  return p.actedAtRaiseCount === null && countCanAct(state) >= 2;
+  return p.actedAtBet === null && countCanAct(state) >= 2;
 }
 
 /** from の次（時計回り）から、行動が要る最初の Player を探す。 */

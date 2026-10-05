@@ -9,12 +9,21 @@
  */
 export type OddChipRule = "first_left_of_button";
 
+/**
+ * Short All-in の後に、行動済みの Player へ Raise を再開（Reopen）する規則（Rule Profile の設定値。docs/02 §3・§5）。
+ * - cumulative_full_raise: TDA 準拠。Full Raise 未満の All-in だけでは再開しない。ただし、その Player が最後に
+ *   行動した時点の最高額からの上乗せの合計が、直近の Full Raise 幅以上になったら再開する（累積 Short All-in）
+ * 値は OI-008（Live Ruling の範囲）の暫定値で、永久仕様ではない（D79）。
+ */
+export type ReopenRule = "cumulative_full_raise";
+
 /** 卓の Betting 設定。Rule Profile は ID と、Engine が分岐に使う設定値を持ち、HAND_STARTED に残す（docs/02 §3）。 */
 export interface TableConfig {
   readonly ruleProfile: string;
   readonly smallBlind: number;
   readonly bigBlind: number;
   readonly oddChipRule: OddChipRule;
+  readonly reopenRule: ReopenRule;
 }
 
 /**
@@ -28,6 +37,7 @@ export const PHASE1_CASH_PRESET: TableConfig & {
   smallBlind: 1,
   bigBlind: 2,
   oddChipRule: "first_left_of_button",
+  reopenRule: "cumulative_full_raise",
   startingStack: 200,
 };
 
