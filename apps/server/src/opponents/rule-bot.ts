@@ -1,6 +1,6 @@
 // 暫定 CPU（D71）: seed 付きの決定論ルール Bot。
 // 戦略の質は求めない（Phase 1 は 1 Hand を最後まで進められることが目的）。将来の Fallback / Emergency Bot（D41・D42）の土台。
-// 入力は OpponentInput（自分に見える Projection と Legal Action）だけで、乱数は seed から作る（Math.random を使わない）。
+// 入力は OpponentInput（自分の KnowledgeState と Legal Action）だけで、乱数は seed から作る（Math.random を使わない）。
 import {
   HandCategory,
   createRng,
@@ -38,9 +38,8 @@ export class RuleBot implements OpponentAgent {
     this.rng = createRng(seed);
   }
 
-  decide({ view, legal }: OpponentInput): PlayerAction {
-    const me = view.seats.find((s) => s.playerId === view.viewerId);
-    const strength = rateStrength(me?.holeCards ?? null, view.board);
+  decide({ knowledge, legal }: OpponentInput): PlayerAction {
+    const strength = rateStrength(knowledge.holeCards, knowledge.board);
     const r = this.rng();
     const find = <T extends LegalAction["type"]>(type: T) =>
       legal.actions.find(
@@ -56,7 +55,10 @@ export class RuleBot implements OpponentAgent {
     switch (strength) {
       case "strong":
         if (bet !== undefined && r < STRONG_AGGRESSION) {
-          return { type: "bet", amount: betSize(view.pot, bet.min, bet.max) };
+          return {
+            type: "bet",
+            amount: betSize(knowledge.pot, bet.min, bet.max),
+          };
         }
         if (raise !== undefined && r < STRONG_AGGRESSION) {
           return { type: "raise", amount: raise.min };
@@ -70,7 +72,7 @@ export class RuleBot implements OpponentAgent {
         }
         if (
           call !== undefined &&
-          (call.amount <= view.pot * MEDIUM_CALL_POT_FRACTION ||
+          (call.amount <= knowledge.pot * MEDIUM_CALL_POT_FRACTION ||
             r < MEDIUM_LOOSE_CALL)
         ) {
           return { type: "call" };
@@ -84,7 +86,7 @@ export class RuleBot implements OpponentAgent {
         }
         if (
           call !== undefined &&
-          call.amount <= view.bigBlind &&
+          call.amount <= knowledge.bigBlind &&
           r < WEAK_LIMP_FREQUENCY
         ) {
           return { type: "call" };

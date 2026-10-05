@@ -2,6 +2,7 @@
 // View を丸ごと走査して Card を全部拾い、「viewer が知ってよい Card」以外が 1 枚でもあれば違反とする。
 // フィールド名に頼らず値を走査するので、View に項目が増えても漏れを見逃さない。
 import { cardToString, type Card } from "../card.js";
+import { isVisibleTo, type HandEvent } from "../hand-events.js";
 import type { HandState } from "../hand-state.js";
 
 /** viewer が知ってよい Card: 自分の札・公開済み Board・Showdown で公開された札。 */
@@ -39,4 +40,33 @@ export function leakedCards(
   return collectCards(view)
     .map(cardToString)
     .filter((c) => !allowed.has(c));
+}
+
+/** Deck・seed・engine Visibility の Event を指す語が JSON に含まれていないか（Card 以外の経路の漏れ）。 */
+export function hiddenMarkers(view: unknown): string[] {
+  const json = JSON.stringify(view);
+  return ['"deck"', '"seed"', "DECK_SHUFFLED", '"engine"'].filter((k) =>
+    json.includes(k),
+  );
+}
+
+/**
+ * viewer に見えない Event（engine の Deck・他者宛ての Hole Cards）の中身だけを別の値に差し替える。
+ * 見えない Event の中身が出力に届く経路が無ければ、差し替える前と同じ結果になる。
+ */
+export function tamperHiddenEvents(
+  events: readonly HandEvent[],
+  viewerId: string,
+): HandEvent[] {
+  return events.map((e) => {
+    if (isVisibleTo(e, viewerId)) return e;
+    switch (e.type) {
+      case "DECK_SHUFFLED":
+        return { ...e, seed: -1, deck: [...e.deck].reverse() };
+      case "HOLE_CARD_DEALT":
+        return { ...e, cards: [...e.cards].reverse() };
+      default:
+        return e;
+    }
+  });
 }

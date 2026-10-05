@@ -225,8 +225,8 @@ describe("HandOrchestrator", () => {
       expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
       expect(orchestrator.fallbacksOf(currentHand)).toEqual([]);
       for (const { playerId, input, upto } of inputs) {
-        expect(Object.keys(input).sort()).toEqual(["legal", "view"]);
-        expect(input.view.viewerId).toBe(playerId);
+        expect(Object.keys(input).sort()).toEqual(["knowledge", "legal"]);
+        expect(input.knowledge.viewerId).toBe(playerId);
         expect(leakedCards(input, log, playerId, upto)).toEqual([]);
         expect(forbiddenKeys(input)).toEqual([]);
       }

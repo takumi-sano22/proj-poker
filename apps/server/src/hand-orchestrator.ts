@@ -3,15 +3,15 @@
 // - Session（D80）も同じ: Orchestrator が持つのは「今の Session の ID と最後の Hand の ID」だけで、
 //   次 Hand の席・Button・持ち越す Stack は、最後の Hand の HAND_STARTED と HAND_FINISHED から Position Engine で決める。
 // - 合法性は Engine だけが判定する。CPU の出力も Hero の入力も applyAction で検証する（D40）。
-// - CPU に渡すのは projectBotView と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
+// - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
 import { randomUUID } from "node:crypto";
 import {
   applyAction,
   foldHandEvents,
   getLegalActions,
   nextHandSeating,
-  projectBotView,
   projectHeroView,
+  projectKnowledgeState,
   startHand,
   type EngineError,
   type HandEvent,
@@ -438,9 +438,9 @@ export class HandOrchestrator {
     let reason: string | null = null;
     let result: ReturnType<typeof applyAction> | null = null;
     try {
-      // CPU に渡すのはその CPU に見える Projection と Legal Action だけ（global State・他者の札・Deck を渡さない）。
+      // CPU に渡すのはその CPU の KnowledgeState と Legal Action だけ（global State・他者の札・Deck を渡さない）。
       const decided = agent.decide({
-        view: projectBotView(events, legal.playerId),
+        knowledge: projectKnowledgeState(events, legal.playerId),
         legal,
       });
       result = applyAction(state, legal.playerId, decided);

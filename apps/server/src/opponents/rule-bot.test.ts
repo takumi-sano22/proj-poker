@@ -1,7 +1,7 @@
 import {
   PHASE1_CASH_PRESET,
   getLegalActions,
-  projectBotView,
+  projectKnowledgeState,
   startHand,
   type PlayerAction,
 } from "@proj-poker/engine";
@@ -24,7 +24,7 @@ function firstDecisionInput(seed: number) {
   const legal = getLegalActions(result.value.state);
   if (legal === null) throw new Error("Actor がいない");
   return {
-    view: projectBotView(result.value.events, legal.playerId),
+    knowledge: projectKnowledgeState(result.value.events, legal.playerId),
     legal,
   };
 }

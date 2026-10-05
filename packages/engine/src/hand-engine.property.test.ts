@@ -12,7 +12,7 @@ import {
   type PlayerAction,
 } from "./legal-actions.js";
 import { nextHandSeating } from "./position.js";
-import { projectBotView, projectHeroView } from "./projection.js";
+import { projectHeroView, projectKnowledgeState } from "./projection.js";
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -24,7 +24,11 @@ import {
   checkPotAwards,
   initialChipTotal,
 } from "./testing/invariants.js";
-import { leakedCards } from "./testing/view-leaks.js";
+import {
+  hiddenMarkers,
+  leakedCards,
+  tamperHiddenEvents,
+} from "./testing/view-leaks.js";
 
 const MAX_STEPS = 500;
 
@@ -106,18 +110,30 @@ function checkStep(total: number) {
       expect(r.ok).toBe(false);
     }
 
-    // INV-TEST-007（Engine 側）: どの Player の View にも、知ってはいけない Card が無い。
+    // INV-TEST-007（Engine 側）: 全席・全手番で、どの Player の View / KnowledgeState にも、
+    // 他者の Hidden Cards・Deck（未来の Card）・engine Visibility の Event が入らない。
+    const legal = getLegalActions(state);
     for (const p of state.players) {
       const hero = projectHeroView(events, p.playerId);
-      const bot = projectBotView(events, p.playerId);
+      const knowledge = projectKnowledgeState(events, p.playerId);
       expect(leakedCards(hero, state, p.playerId)).toEqual([]);
-      expect(leakedCards(bot, state, p.playerId)).toEqual([]);
-      // 見える Event だけから計算した Legal Action が、全情報の State と一致する。
-      const legal = getLegalActions(state);
-      expect(bot.legalActions).toEqual(
-        legal?.playerId === p.playerId ? legal : null,
-      );
-      expect(bot.pot).toBe(state.pot);
+      expect(leakedCards(knowledge, state, p.playerId)).toEqual([]);
+      expect(hiddenMarkers(knowledge)).toEqual([]);
+      // 見えない Event の中身を差し替えても KnowledgeState は変わらない（中身が出力に届く経路が無い）。
+      expect(
+        projectKnowledgeState(
+          tamperHiddenEvents(events, p.playerId),
+          p.playerId,
+        ),
+      ).toEqual(knowledge);
+      // 見える Event だけから計算した Legal Action・Pot・Call 額が、全情報の State と一致する。
+      const isActor = legal?.playerId === p.playerId;
+      expect(knowledge.legalActions).toEqual(isActor ? legal : null);
+      expect(knowledge.pot).toBe(state.pot);
+      if (isActor) {
+        const call = legal.actions.find((a) => a.type === "call");
+        expect(knowledge.math.callAmount).toBe(call?.amount ?? 0);
+      }
     }
   };
 }

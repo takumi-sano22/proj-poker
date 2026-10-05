@@ -17,6 +17,8 @@ Claude Codeは必要なら可逆なDefaultを置いて構いませんが、そ�
 
 Role-based Configで実装します。
 
+暫定値は D85（確定ではない）: `opponent_fast` は `claude-haiku-4-5`。
+
 ## OI-002 — Primary Solver
 
 MVPで実Solver統合は必須です。
@@ -67,6 +69,8 @@ Multiway Supportを推測で決めないでください。
 - Persona Distribution
 
 DB Schemaを固定人数へCoupleしないでください。
+
+暫定値は D85（確定ではない）: Persona は TAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreational の 6 Preset。
 
 ## OI-006 — Session Score Formula
 
