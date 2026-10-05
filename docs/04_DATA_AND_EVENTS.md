@@ -225,8 +225,8 @@ Action単位の完全Crash RecoveryはMVPで過剰実装しません。
 - 保存先は SQLite（`node:sqlite`）で、`apps/server` だけが扱います。DB ファイルは環境変数 `POKER_DB_PATH`（`:memory:` も可）で変えられ、既定は `apps/server/data/poker.sqlite`（gitignore 済み）です。
 - テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only。削除は §11 の Reset と一緒に設計する）。
 - マイグレーションは自前の小さな仕組みで、SQL の配列（`apps/server/src/db/database.ts` の `MIGRATIONS`）を `PRAGMA user_version` より新しい分だけ 1 版ずつトランザクションで当てます。アプリより新しい版の DB は開きません。
-- Hand 途中の Event はメモリに持ち、`HAND_FINISHED` を追記した時点で、その Hand の全 Event と `hands` の行（最初の Hand なら `sessions` の行も）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。
-- Session は起動ごとに 1 つです。Session Projection・Stack の持ち越し・Memory Update はまだ保存しません（Phase 1 は毎 Hand 均等 Stack で始める。D70）。Stack は `HAND_FINISHED` の `stacks` から読めます。
+- Hand 途中の Event はメモリに持ち、`HAND_FINISHED` を追記した時点で、その Hand の全 Event と `hands` の行（その Session の最初の Hand なら `sessions` の行も。`started_at` はその Hand の開始時刻）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。
+- Session（#35・D80）は Hand Orchestrator が決め、Hand の最初の追記で Event Store へ渡した Session ID が `hands.session_id` に入ります（テーブル・列・Event の形は変えていない）。Session の最初の Hand は均等 Stack で始め、2 Hand 目以降は前 Hand の `HAND_FINISHED` の `stacks` を持ち越します（席と Button は `HAND_STARTED` に残る）。Hero の Bust か、残りが Hero だけになったら Session を終え、次の Hand は新しい Session になります。Session の終了を表す Event（`SESSION_ENDED` 等）・Session Projection・Memory Update はまだ保存しません。Session の状態は最後の Hand の `HAND_STARTED`・`HAND_FINISHED` から作り直せます。再起動後の Session の再開（Resume）は Phase 5 の範囲で、再起動すると新しい Session から始まります。
 
 ## 11. Reset Semantics
 
