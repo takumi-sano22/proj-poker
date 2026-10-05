@@ -17,13 +17,26 @@ export type OddChipRule = "first_left_of_button";
  */
 export type ReopenRule = "cumulative_full_raise";
 
-/** 卓の Betting 設定。Rule Profile は ID と、Engine が分岐に使う設定値を持ち、HAND_STARTED に残す（docs/02 §3）。 */
+/**
+ * Hand と Hand の間で Button を進める規則（Rule Profile の設定値。docs/02 §3）。
+ * - simple_moving: 前 Hand の Button から時計回りで、次 Hand に座っている（Stack が残った）最初の Player へ進める。
+ *   Bust した席は飛ばし、Dead Button は使わない（前 Button 本人が Bust したときも同じ規則）
+ * 値は OI-008（Live Ruling の範囲）の暫定値で、永久仕様ではない（D80）。
+ */
+export type ButtonRule = "simple_moving";
+
+/**
+ * 卓の Betting 設定。Rule Profile は ID と、Engine が分岐に使う設定値を持つ（docs/02 §3）。
+ * Hand の中で使う設定値（Blind・oddChipRule・reopenRule）は HAND_STARTED に残す。buttonRule は Hand と Hand の間
+ * （nextHandSeating）でだけ使い、その結果は次 Hand の HAND_STARTED の席順・buttonPlayerId に残るので Event には持たせない。
+ */
 export interface TableConfig {
   readonly ruleProfile: string;
   readonly smallBlind: number;
   readonly bigBlind: number;
   readonly oddChipRule: OddChipRule;
   readonly reopenRule: ReopenRule;
+  readonly buttonRule: ButtonRule;
 }
 
 /**
@@ -38,6 +51,7 @@ export const PHASE1_CASH_PRESET: TableConfig & {
   bigBlind: 2,
   oddChipRule: "first_left_of_button",
   reopenRule: "cumulative_full_raise",
+  buttonRule: "simple_moving",
   startingStack: 200,
 };
 

@@ -31,7 +31,12 @@ export {
   PHASE1_CASH_PRESET,
   isChipAmount,
 } from "./table-config.js";
-export type { OddChipRule, ReopenRule, TableConfig } from "./table-config.js";
+export type {
+  ButtonRule,
+  OddChipRule,
+  ReopenRule,
+  TableConfig,
+} from "./table-config.js";
 
 export { splitPot } from "./pot-split.js";
 
@@ -68,6 +73,9 @@ export type {
   HandProgress,
   StartHandInput,
 } from "./hand-engine.js";
+
+export { nextHandSeating } from "./position.js";
+export type { NextHandSeating, PreviousHandResult } from "./position.js";
 
 export {
   projectBotView,
