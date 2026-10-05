@@ -1,0 +1,776 @@
+/*
+ * Basic UI のスタイル（Phase 1）。値はトークン（:root の custom property）経由で書き、部品では直書きしない
+ * （ui-design-recipes: 色は役割名・影は rest / raise / overlay の 3 段・角丸は層ごと）。
+ * Card / Chip は SVG / CSS で構造描画し、色はここで差し替えられる（D60・docs/06 §3）。
+ * 卓 UI 向けの体系は #5 で整える。ここでは暫定の値を役割名で置く。
+ */
+
+:root {
+  /* 地と面（暗い地の上に、明るさの段で面を重ねる） */
+  --color-bg: #0e1317;
+  --color-surface: #161d23;
+  --color-surface-raised: #1f2830;
+  --color-surface-sunken: #0b1014;
+  --color-border: #2b363f;
+  --color-border-strong: #3e4c57;
+  --color-border-interactive: #5a6b78;
+
+  /* 文字 */
+  --color-on-surface: #e9eef2;
+  --color-on-surface-muted: #a9b5bf;
+
+  /* 主操作・手番の強調（金）。塗りの上には暗い文字を載せる */
+  --color-brand-400: #ecc068;
+  --color-brand-500: #e0aa3e;
+  --color-brand-600: #c99230;
+  --color-on-brand: #1b1405;
+
+  /* 取り消しにくい操作（All-in）の塗り */
+  --color-danger-600: #b8473a;
+  --color-danger-700: #9c3a2f;
+  --color-on-danger: #ffffff;
+
+  /* 卓 */
+  --color-felt-center: #23774d;
+  --color-felt-edge: #134a30;
+  --color-rail: #3b2a1d;
+  --color-on-felt: #f3f8f4;
+  --color-on-felt-muted: #cfe3d6;
+
+  /* Card / Chip */
+  --color-card-face: #fbfaf6;
+  --color-card-edge: #c9c4b8;
+  --color-card-back: #7a1f2b;
+  --color-card-back-mark: #e6c7a0;
+  --color-suit-red: #c62828;
+  --color-suit-black: #1b1f23;
+  --color-chip: #c8373b;
+  --color-chip-edge: #f5efe6;
+  --color-dealer-button: #f7f5ef;
+  --color-on-dealer-button: #1b1f23;
+
+  --color-focus: #8cc8ff;
+
+  /* 影の 3 段（contact / key / ambient）と上向き */
+  --ink: 0, 0, 0;
+  --shadow-rest:
+    0 1px 1px rgba(var(--ink), 0.2), 0 2px 6px rgba(var(--ink), 0.25),
+    0 8px 16px rgba(var(--ink), 0.2);
+  --shadow-raise:
+    0 1px 2px rgba(var(--ink), 0.25), 0 4px 10px rgba(var(--ink), 0.3),
+    0 16px 32px rgba(var(--ink), 0.3);
+  --shadow-overlay:
+    0 2px 4px rgba(var(--ink), 0.3), 0 12px 24px rgba(var(--ink), 0.4),
+    0 32px 64px rgba(var(--ink), 0.45);
+  --shadow-raise-up:
+    0 -1px 2px rgba(var(--ink), 0.25), 0 -4px 10px rgba(var(--ink), 0.3),
+    0 -16px 32px rgba(var(--ink), 0.25);
+  --inset-shadow-edge-brand: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  --shadow-turn:
+    0 0 0 2px var(--color-brand-400), 0 0 18px rgba(236, 192, 104, 0.45);
+
+  /* 角丸（操作 10 / 脇役 12 / 読む対象 16 / 別レイヤー 20） */
+  --radius-control: 10px;
+  --radius-aside: 12px;
+  --radius-panel: 16px;
+  --radius-layer: 20px;
+
+  /* 動き */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* 寸法。席と Bet は卓の中心から --dir-x / --dir-y（単位円）の向きに、ここで決めた半径だけ離す */
+  --seat-rx: 45%;
+  --seat-ry: 44%;
+  --bet-rx: 27%;
+  --bet-ry: 25%;
+  --card-sm-w: 30px;
+  --card-md-w: 46px;
+  --card-lg-w: 64px;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-on-surface);
+  font-family:
+    "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ───────── アプリの骨組み ───────── */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 0 16px;
+}
+
+.app__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.app__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.app__meta {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.app__empty {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  padding: 64px 0;
+  text-align: center;
+}
+
+.app__main {
+  flex: 1;
+  display: grid;
+  padding-bottom: 16px;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1024px) {
+  .app__main {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    align-items: start;
+  }
+}
+
+/* ───────── ボタン（主 / 副 / 控えめ / 取り消しにくい操作） ───────── */
+
+.btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  font-weight: 600;
+  transition:
+    box-shadow var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  box-shadow: none;
+}
+
+.btn--sm {
+  padding: 6px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.btn--md {
+  padding: 8px 16px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.btn--lg {
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.btn--primary {
+  background: var(--color-brand-500);
+  color: var(--color-on-brand);
+  box-shadow: var(--shadow-rest), var(--inset-shadow-edge-brand);
+}
+
+.btn--danger {
+  background: var(--color-danger-600);
+  color: var(--color-on-danger);
+  box-shadow: var(--shadow-rest), var(--inset-shadow-edge-brand);
+}
+
+.btn--secondary {
+  background: var(--color-surface-raised);
+  border-color: var(--color-border-interactive);
+  color: var(--color-on-surface);
+  box-shadow: var(--shadow-rest);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: var(--color-border);
+  color: var(--color-on-surface-muted);
+}
+
+/* 状態は影の段で示す（hover で 1 段上げ、押下で影を消す） */
+@media (hover: hover) {
+  .btn--primary:hover:not(:disabled) {
+    background: var(--color-brand-400);
+    box-shadow: var(--shadow-raise), var(--inset-shadow-edge-brand);
+  }
+  .btn--danger:hover:not(:disabled) {
+    background: var(--color-danger-700);
+    box-shadow: var(--shadow-raise), var(--inset-shadow-edge-brand);
+  }
+  .btn--secondary:hover:not(:disabled) {
+    box-shadow: var(--shadow-raise);
+  }
+  .btn--ghost:hover:not(:disabled) {
+    background: var(--color-surface-sunken);
+    color: var(--color-on-surface);
+  }
+}
+
+.btn:active:not(:disabled) {
+  box-shadow: none;
+  transform: translateY(1px);
+}
+
+/* 選んだ Preset は色だけでなく枠の太さでも示す */
+.btn--ghost[aria-pressed="true"] {
+  background: var(--color-surface-raised);
+  border-color: var(--color-brand-400);
+  box-shadow: inset 0 0 0 1px var(--color-brand-400);
+  color: var(--color-on-surface);
+}
+
+.btn__sub {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ───────── 金額（実額が正本、BB は補助） ───────── */
+
+.amount {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.amount--inline {
+  flex-direction: row;
+  white-space: nowrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.amount__real {
+  font-weight: 700;
+}
+
+.amount__bb {
+  font-size: 0.78em;
+  opacity: 0.85;
+}
+
+/* ───────── 卓 ───────── */
+
+.table {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  max-height: 70vh;
+  margin: 0 auto;
+}
+
+@media (min-width: 720px) {
+  .table {
+    aspect-ratio: 16 / 10;
+  }
+}
+
+.table__felt {
+  position: absolute;
+  inset: 9% 9%;
+  display: grid;
+  place-items: center;
+  border: 10px solid var(--color-rail);
+  border-radius: 999px;
+  background: radial-gradient(
+    ellipse at center,
+    var(--color-felt-center) 0%,
+    var(--color-felt-edge) 100%
+  );
+  box-shadow: var(--shadow-overlay);
+  color: var(--color-on-felt);
+}
+
+.table__center {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+
+.table__street {
+  margin: 0;
+  /* フェルトの最も明るい中心に直接載るので、補助色ではなく主の文字色にする（4.5:1 を保つ） */
+  color: var(--color-on-felt);
+  font-size: 12px;
+}
+
+.board {
+  display: flex;
+  gap: 4px;
+}
+
+.pot {
+  display: grid;
+  justify-items: center;
+  padding: 4px 12px;
+  border-radius: var(--radius-aside);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.pot__label {
+  color: var(--color-on-felt-muted);
+  font-size: 12px;
+}
+
+.pot .amount__real {
+  font-size: 18px;
+}
+
+/* ───────── 席 ───────── */
+
+.seat {
+  position: absolute;
+  z-index: 1;
+  left: calc(50% + var(--dir-x) * var(--seat-rx));
+  top: calc(50% + var(--dir-y) * var(--seat-ry));
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  transform: translate(-50%, -50%);
+}
+
+.seat__cards {
+  display: flex;
+  gap: 2px;
+  min-height: calc(var(--card-sm-w) * 1.4);
+}
+
+.seat__plate {
+  display: grid;
+  justify-items: center;
+  min-width: 96px;
+  padding: 4px 10px 6px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-rest);
+  transition: box-shadow var(--duration-base) var(--ease-out);
+}
+
+.seat--hero .seat__plate {
+  border-color: var(--color-border-interactive);
+}
+
+/* 手番は色だけでなく発光の輪と「手番」の文字でも示す */
+.seat--actor .seat__plate {
+  border-color: var(--color-brand-400);
+  box-shadow: var(--shadow-turn);
+}
+
+/* Fold 済みの席は透過で薄めず（実額の読みやすさを保つ）、沈んだ面と破線の縁で退かせる。文字でも「フォールド」と出す */
+.seat--folded .seat__plate {
+  border-style: dashed;
+  background: var(--color-surface-sunken);
+  box-shadow: none;
+}
+
+.seat--folded .seat__name {
+  color: var(--color-on-surface-muted);
+}
+
+.seat__name-row {
+  display: flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.seat__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.seat__stack {
+  font-size: 14px;
+}
+
+.seat__status {
+  color: var(--color-on-surface-muted);
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.seat__status--strong {
+  color: var(--color-on-surface);
+  font-weight: 700;
+}
+
+.seat__status--turn {
+  color: var(--color-brand-400);
+  font-weight: 700;
+}
+
+.dealer-button {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-dealer-button);
+  color: var(--color-on-dealer-button);
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: var(--shadow-rest);
+}
+
+.badge {
+  padding: 0 6px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: 999px;
+  color: var(--color-on-surface-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bet {
+  position: absolute;
+  z-index: 1;
+  left: calc(50% + var(--dir-x) * var(--bet-rx));
+  top: calc(50% + var(--dir-y) * var(--bet-ry));
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--color-on-felt);
+  font-size: 13px;
+  transform: translate(-50%, -50%);
+}
+
+.chip {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 3px dashed var(--color-chip-edge);
+  border-radius: 50%;
+  background: var(--color-chip);
+  box-shadow: 0 0 0 1px var(--color-chip);
+}
+
+/* ───────── Card ───────── */
+
+.card {
+  display: block;
+  height: auto;
+  filter: drop-shadow(0 1px 1px rgba(var(--ink), 0.35));
+}
+
+.card--sm {
+  width: var(--card-sm-w);
+}
+
+.card--md {
+  width: var(--card-md-w);
+}
+
+.card--lg {
+  width: var(--card-lg-w);
+}
+
+.card--muted {
+  opacity: 0.45;
+}
+
+.card__face {
+  fill: var(--color-card-face);
+  stroke: var(--color-card-edge);
+}
+
+.card__back {
+  fill: var(--color-card-back);
+  stroke: var(--color-card-edge);
+}
+
+.card__back-inner {
+  fill: none;
+  stroke: var(--color-card-back-mark);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.card__back-mark {
+  fill: var(--color-card-back-mark);
+  opacity: 0.8;
+}
+
+.card__ink--red {
+  fill: var(--color-suit-red);
+}
+
+.card__ink--black {
+  fill: var(--color-suit-black);
+}
+
+.card__rank {
+  font-size: 15px;
+  font-weight: 800;
+  font-family: system-ui, sans-serif;
+}
+
+.card__pip {
+  font-size: 11px;
+}
+
+.card__center {
+  font-size: 30px;
+}
+
+.card-slot {
+  display: block;
+  aspect-ratio: 5 / 7;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border-radius: 5px;
+}
+
+@media (max-width: 719px) {
+  :root {
+    /* 縦長の卓では左右の席が画面外へ出ないよう横の半径を詰め、縦に広げる */
+    --seat-rx: 36%;
+    --seat-ry: 45%;
+    --bet-rx: 20%;
+    --bet-ry: 29%;
+    --card-sm-w: 24px;
+    --card-md-w: 34px;
+    --card-lg-w: 52px;
+  }
+  .seat__plate {
+    min-width: 76px;
+    padding: 2px 6px 4px;
+  }
+  .seat__name {
+    font-size: 12px;
+  }
+  .seat__stack {
+    font-size: 12px;
+  }
+  .bet {
+    font-size: 11px;
+  }
+}
+
+/* ───────── 結果（卓の中央） ───────── */
+
+.result {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raise);
+  color: var(--color-on-surface);
+}
+
+.result__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ───────── 進行ログ ───────── */
+
+.hand-log {
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-aside);
+  background: var(--color-surface-sunken);
+}
+
+.hand-log__title {
+  margin: 0 0 8px;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hand-log__list {
+  max-height: 50vh;
+  margin: 0;
+  padding-left: 28px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+/* ───────── 画面下の Hero 欄 ───────── */
+
+.dock {
+  /* 画面下に固定するが、文書の末尾では通常の位置に戻るので卓の下端を覆わない */
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin: 0 -16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raise-up);
+}
+
+.dock__hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dock__cards {
+  display: flex;
+  gap: 4px;
+}
+
+.dock__stack {
+  display: grid;
+  justify-items: start;
+}
+
+.dock__label {
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.dock__controls {
+  display: grid;
+  flex: 1 1 320px;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dock__message {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+}
+
+.action-bar {
+  display: grid;
+  gap: 8px;
+}
+
+.action-bar__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.declaration {
+  flex: 1 1 120px;
+}
+
+.declaration__amount {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.declaration__bb {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.sizing {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.sizing__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.sizing__slider {
+  width: 100%;
+  accent-color: var(--color-brand-500);
+}
+
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  font-size: 13px;
+}
+
+.notice p {
+  margin: 0;
+}
