@@ -11,6 +11,7 @@ import {
 } from "./legal-actions.js";
 import { PHASE1_CASH_PRESET, type TableConfig } from "./table-config.js";
 import {
+  checkHandFinished,
   checkInvariants,
   checkPotAwards,
   initialChipTotal,
@@ -234,6 +235,71 @@ const SCENARIOS: readonly HandScenario[] = [
     },
   },
   {
+    id: "SCN-fold-order-001",
+    title:
+      "Fold 後の Action 順: Fold した Player は飛ばし、Postflop は Button の左で残っている Player から始める",
+    source: "docs/02 §5 Fold後のAction順 / INV-TEST-003・006",
+    seats: sixMax(),
+    button: "btn",
+    holes: { bb: "As Ad", hj: "Kh Kd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "utg", action: raise(6) },
+      { player: "hj", action: call },
+      { player: "co", action: fold },
+      { player: "btn", action: fold },
+      { player: "sb", action: call },
+      { player: "bb", action: call },
+      // Pot = 6 × 4 = 24。Flop は Button の左で残っている SB から（Fold した BTN・CO には回らない）。
+      { player: "bb", action: check, reject: { kind: "not_actor" } },
+      { player: "btn", action: check, reject: { kind: "not_actor" } },
+      {
+        player: "sb",
+        action: check,
+        legal: [
+          { type: "fold" },
+          { type: "check" },
+          { type: "bet", min: 2, max: 194 },
+          { type: "all_in", amount: 194 },
+        ],
+      },
+      { player: "bb", action: bet(10) },
+      { player: "utg", action: fold },
+      // Preflop で Fold した CO は飛ばして HJ。
+      { player: "co", action: fold, reject: { kind: "not_actor" } },
+      { player: "hj", action: raise(30) },
+      { player: "sb", action: fold },
+      // この Street で Fold した UTG には Raise の後も回らない。
+      { player: "utg", action: call, reject: { kind: "not_actor" } },
+      { player: "bb", action: call },
+      // Pot = 24 + 30 + 30 = 84。Turn は Button の左の SB が Fold 済みなので BB から。
+      { player: "hj", action: check, reject: { kind: "not_actor" } },
+      ...checkDown("bb", "hj").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // BB の AA が勝つ。BB: 200 − 6 − 30 + 84 = 248 / HJ: 200 − 36 = 164 / SB・UTG: 194
+      stacks: { btn: 200, sb: 194, bb: 248, utg: 194, hj: 164, co: 200 },
+      pot: 0,
+      awards: { bb: 84 },
+      // 争えるのは Fold していない 2 人（Button の左から BB → HJ）。
+      pots: [
+        {
+          total: 84,
+          eligible: ["bb", "hj"],
+          awards: { bb: 84 },
+          showdown: true,
+        },
+      ],
+      tailEvents: [
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "POT_AWARDED",
+        "HAND_FINISHED",
+      ],
+    },
+  },
+  {
     id: "SCN-min-raise-001",
     title: "Minimum Raise の Total と Increment（直前の Raise 幅を引き継ぐ）",
     source: "docs/02 §5 Minimum RaiseのTotalとIncrement",
@@ -288,6 +354,102 @@ const SCENARIOS: readonly HandScenario[] = [
       stacks: { btn: 200, sb: 199, bb: 198, utg: 194, hj: 190, co: 219 },
       pot: 0,
       awards: { co: 29 },
+    },
+  },
+  {
+    id: "SCN-min-raise-postflop-001",
+    title:
+      "Minimum Raise（Postflop）: 最小 Bet は BB、Raise の Increment は Street ごとに BB から数え直す",
+    source: "docs/02 §5 Minimum RaiseのTotalとIncrement・§7 Heads-Up",
+    seats: [
+      { playerId: "btn", stack: 200 },
+      { playerId: "bb", stack: 200 },
+    ],
+    button: "btn",
+    holes: { btn: "Ah Kh", bb: "Qs Qc" },
+    board: "2d 5c 9h Js 3d",
+    steps: [
+      { player: "btn", action: call },
+      { player: "bb", action: check },
+      // Pot = 4。Flop の最小 Bet は BB の 2。1 は拒否。
+      { player: "bb", action: bet(1), reject: { kind: "illegal_action" } },
+      {
+        player: "bb",
+        action: bet(10),
+        legal: [
+          { type: "fold" },
+          { type: "check" },
+          { type: "bet", min: 2, max: 198 },
+          { type: "all_in", amount: 198 },
+        ],
+      },
+      // Bet 10 の増分は 10 → 最小 Raise は 10 + 10 = 20。19 は拒否。
+      { player: "btn", action: raise(19), reject: { kind: "illegal_action" } },
+      {
+        player: "btn",
+        action: raise(25),
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 10 },
+          { type: "raise", min: 20, max: 198 },
+          { type: "all_in", amount: 198 },
+        ],
+      },
+      {
+        // 増分 15 → 25 + 15 = 40。Call は 25 − 10 = 15。
+        player: "bb",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 15 },
+          { type: "raise", min: 40, max: 198 },
+          { type: "all_in", amount: 198 },
+        ],
+      },
+      // Pot = 4 + 25 × 2 = 54。Turn は増分を引き継がず、最小 Bet は再び BB の 2（Stack は各 173）。
+      {
+        player: "bb",
+        action: check,
+        legal: [
+          { type: "fold" },
+          { type: "check" },
+          { type: "bet", min: 2, max: 173 },
+          { type: "all_in", amount: 173 },
+        ],
+      },
+      { player: "btn", action: bet(2) },
+      {
+        // 増分 2 → 2 + 2 = 4。
+        player: "bb",
+        action: raise(4),
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 2 },
+          { type: "raise", min: 4, max: 173 },
+          { type: "all_in", amount: 173 },
+        ],
+      },
+      {
+        // 増分 2 → 4 + 2 = 6。
+        player: "btn",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 2 },
+          { type: "raise", min: 6, max: 173 },
+          { type: "all_in", amount: 173 },
+        ],
+      },
+      // Pot = 54 + 4 × 2 = 62。River は Check / Check。
+      { player: "bb", action: check },
+      { player: "btn", action: check },
+    ],
+    expect: {
+      status: "complete",
+      // 各 200 − 2 − 25 − 4 = 169。BB の QQ が勝つ → BB: 169 + 62 = 231
+      stacks: { btn: 169, bb: 231 },
+      pot: 0,
+      awards: { bb: 62 },
     },
   },
   {
@@ -1116,6 +1278,9 @@ function runScenario(s: HandScenario): void {
 
   expect(state.status).toBe(s.expect.status);
   expect(checkPotAwards(events)).toEqual([]);
+  if (state.status === "complete") {
+    expect(checkHandFinished(events, total)).toEqual([]);
+  }
   expect(
     Object.fromEntries(state.players.map((p) => [p.playerId, p.stack])),
   ).toEqual(s.expect.stacks);

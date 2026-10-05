@@ -11,9 +11,15 @@ import {
   type LegalAction,
   type PlayerAction,
 } from "./legal-actions.js";
+import { nextHandSeating } from "./position.js";
 import { projectBotView, projectHeroView } from "./projection.js";
-import { PHASE1_CASH_PRESET } from "./table-config.js";
 import {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  PHASE1_CASH_PRESET,
+} from "./table-config.js";
+import {
+  checkHandFinished,
   checkInvariants,
   checkPotAwards,
   initialChipTotal,
@@ -27,17 +33,21 @@ interface PlayedHand {
   readonly events: readonly HandEvent[];
 }
 
-/** choices を順に使って Legal Action と額を選ぶ。各ステップで check を呼ぶ。 */
+/**
+ * choices を順に使って Legal Action と額を選ぶ。各ステップで check を呼ぶ。
+ * Button は指定が無ければ seed から選ぶ（Session では nextHandSeating の結果を渡す）。
+ */
 function playHand(
   seats: readonly SeatInit[],
   seed: number,
   choices: readonly number[],
   check: (state: HandState, events: readonly HandEvent[]) => void,
+  buttonPlayerId: string = (seats[seed % seats.length] as SeatInit).playerId,
 ): PlayedHand {
   const started = startHand({
     handId: "prop",
     seats,
-    buttonPlayerId: (seats[seed % seats.length] as SeatInit).playerId,
+    buttonPlayerId,
     config: PHASE1_CASH_PRESET,
     deal: { seed },
   });
@@ -112,11 +122,24 @@ function checkStep(total: number) {
   };
 }
 
-const playerCount = fc.integer({ min: 2, max: 8 });
+/** Invariant と畳み込みだけを確かめる（Projection の検査を省いた軽い版。Session の多数 Hand 用）。 */
+function checkChips(total: number) {
+  return (state: HandState, events: readonly HandEvent[]) => {
+    expect(checkInvariants(state, total)).toEqual([]);
+    expect(foldHandEvents(events)).toEqual(state);
+  };
+}
+
+const playerCount = fc.integer({ min: MIN_PLAYERS, max: MAX_PLAYERS });
 const seed = fc.integer({ min: 0, max: 2 ** 31 - 1 });
 const choices = fc.array(fc.nat({ max: 10_000 }), {
   minLength: 1,
   maxLength: 64,
+});
+/** 2〜8 人の不均等 Stack（Blind に満たない 1〜2 を含む）。 */
+const unevenStacks = fc.array(fc.integer({ min: 1, max: 400 }), {
+  minLength: MIN_PLAYERS,
+  maxLength: MAX_PLAYERS,
 });
 
 describe("Hand 進行: Property", () => {
@@ -136,26 +159,89 @@ describe("Hand 進行: Property", () => {
         // 同着の端数も配られ、Pot は空になる（D75）。
         expect(played.state.status).toBe("complete");
         expect(played.state.pot).toBe(0);
+        expect(
+          checkHandFinished(played.events, initialChipTotal(seats)),
+        ).toEqual([]);
       }),
       { numRuns: 150 },
     );
   });
 
-  it("不均等 Stack（Blind に満たない Stack を含む）でも Hand は最後まで進み、Side Pot ごとの配分で Chip が保存され、情報が漏れない", () => {
-    const stacks = fc.array(fc.integer({ min: 1, max: 400 }), {
-      minLength: 2,
-      maxLength: 6,
-    });
+  it("不均等 Stack（Blind に満たない Stack を含む）・2〜8 人でも Hand は最後まで進み、Side Pot ごとの配分で Chip が保存され、情報が漏れない", () => {
     fc.assert(
-      fc.property(stacks, seed, choices, (ss, s, cs) => {
+      fc.property(unevenStacks, seed, choices, (ss, s, cs) => {
         const seats = ss.map((stack, i) => ({ playerId: `p${i}`, stack }));
         const total = initialChipTotal(seats);
         const played = playHand(seats, s, cs, checkStep(total));
         expect(played.state.status).toBe("complete");
         expect(played.state.pot).toBe(0);
         expect(checkPotAwards(played.events)).toEqual([]);
+        // Σ potTotal = Σ Commit、各 Player の終了時 Stack = 開始 − Commit + 配分（Event だけで数え直す）。
+        expect(checkHandFinished(played.events, total)).toEqual([]);
       }),
       { numRuns: 200 },
+    );
+  });
+
+  it("Session: nextHandSeating で Stack を持ち越して Hand を続けても Chip 総量は変わらず、Bust した Player だけが抜ける（D80）", () => {
+    const hands = fc.integer({ min: 1, max: 12 });
+    fc.assert(
+      fc.property(unevenStacks, seed, choices, hands, (ss, s, cs, n) => {
+        let seats: readonly SeatInit[] = ss.map((stack, i) => ({
+          playerId: `p${i}`,
+          stack,
+        }));
+        let button = (seats[s % seats.length] as SeatInit).playerId;
+        const total = initialChipTotal(seats);
+        for (let h = 0; h < n; h++) {
+          // Hand ごとに Action の選び方をずらす。
+          const rotated = cs.map((_, i) => cs[(i + h) % cs.length] as number);
+          const played = playHand(
+            seats,
+            s + h,
+            rotated,
+            checkChips(total),
+            button,
+          );
+          expect(checkPotAwards(played.events)).toEqual([]);
+          expect(checkHandFinished(played.events, total)).toEqual([]);
+
+          // 次 Hand の席は、この Hand の Event（HAND_STARTED の席順・Button と HAND_FINISHED の Stack）だけから作る。
+          const first = played.events[0];
+          const last = played.events.at(-1);
+          if (
+            first?.type !== "HAND_STARTED" ||
+            last?.type !== "HAND_FINISHED"
+          ) {
+            throw new Error("Event Log の始まりか終わりが無い");
+          }
+          const next = nextHandSeating(
+            {
+              seatOrder: first.seats.map((x) => x.playerId),
+              stacks: last.stacks,
+              buttonPlayerId: first.buttonPlayerId,
+            },
+            PHASE1_CASH_PRESET,
+          );
+          if (!next.ok) throw new Error(next.error.message);
+          const alive = last.stacks.flatMap((x) =>
+            x.amount > 0 ? [{ playerId: x.playerId, stack: x.amount }] : [],
+          );
+          if (next.value.kind === "no_next_hand") {
+            // Chip が残っている限り、勝ち残った 1 人が全部を持つ。
+            expect(next.value.remaining).toEqual(alive);
+            expect(alive).toHaveLength(1);
+            expect(initialChipTotal(alive)).toBe(total);
+            return;
+          }
+          // 席順を保って Bust だけが抜け、持ち越した Stack の合計は開始時の総量のまま。
+          expect(next.value.seats).toEqual(alive);
+          expect(initialChipTotal(next.value.seats)).toBe(total);
+          seats = next.value.seats;
+          button = next.value.buttonPlayerId;
+        }
+      }),
+      { numRuns: 100 },
     );
   });
 

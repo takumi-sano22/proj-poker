@@ -152,3 +152,68 @@ export function checkPotAwards(events: readonly HandEvent[]): string[] {
   }
   return errors;
 }
+
+/**
+ * 終わった Hand の Event Log だけで Chip の動きを数え直す（INV-TEST-002 / 005 の Hand 終了版。D37）。
+ * - 最後の Event が HAND_FINISHED で、HAND_STARTED の席の全員の Stack を同じ順で持つ
+ * - Σ HAND_FINISHED の Stack = 開始時の Chip 総量（Rake・Rebuy は無い）
+ * - Σ POT_AWARDED の potTotal = Σ Commit（Blind + Action − 返却された Uncalled Bet）
+ * - 各 Player の終了時 Stack = 開始時 Stack − Commit + 受け取った額
+ * State を見ずに Event だけで確かめるので、Event Log から Stack を持ち越す Session の前提も確かめられる。
+ */
+export function checkHandFinished(
+  events: readonly HandEvent[],
+  initialTotal: number,
+): string[] {
+  const errors: string[] = [];
+  const started = events[0];
+  const finished = events.at(-1);
+  if (started?.type !== "HAND_STARTED" || finished?.type !== "HAND_FINISHED") {
+    return [
+      "Event Log が HAND_STARTED で始まり HAND_FINISHED で終わっていない",
+    ];
+  }
+  const ids = started.seats.map((s) => s.playerId);
+  const finishedIds = finished.stacks.map((s) => s.playerId);
+  if (finishedIds.join(",") !== ids.join(",")) {
+    errors.push(
+      `HAND_FINISHED の Player ${finishedIds.join(",")} ≠ 席 ${ids.join(",")}`,
+    );
+  }
+  const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
+  const finalTotal = sum(finished.stacks.map((s) => s.amount));
+  if (finalTotal !== initialTotal) {
+    errors.push(`Σ 終了時 Stack ${finalTotal} ≠ 開始時の総量 ${initialTotal}`);
+  }
+
+  const commits = new Map<string, number>();
+  const won = new Map<string, number>();
+  const add = (m: Map<string, number>, id: string, amount: number) =>
+    m.set(id, (m.get(id) ?? 0) + amount);
+  let potTotal = 0;
+  for (const e of events) {
+    if (e.type === "BLIND_POSTED" || e.type === "ACTION_TAKEN") {
+      add(commits, e.playerId, e.amount);
+    } else if (e.type === "UNCALLED_BET_RETURNED") {
+      add(commits, e.playerId, -e.amount);
+    } else if (e.type === "POT_AWARDED") {
+      potTotal += e.potTotal;
+      for (const a of e.awards) add(won, a.playerId, a.amount);
+    }
+  }
+  const committed = sum([...commits.values()]);
+  if (potTotal !== committed) {
+    errors.push(`Σ potTotal ${potTotal} ≠ Σ Commit ${committed}`);
+  }
+  for (const seat of started.seats) {
+    const id = seat.playerId;
+    const expected = seat.stack - (commits.get(id) ?? 0) + (won.get(id) ?? 0);
+    const actual = finished.stacks.find((s) => s.playerId === id)?.amount;
+    if (actual !== expected) {
+      errors.push(
+        `${id} の終了時 Stack ${actual} ≠ 開始 ${seat.stack} − Commit + 配分 = ${expected}`,
+      );
+    }
+  }
+  return errors;
+}
