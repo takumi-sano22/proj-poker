@@ -1,4 +1,4 @@
-# D01〜D80の採用済み人間判断。
+# D01〜D81の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -322,3 +322,7 @@
   choice: "Bust した CPU は退席・Button は次の生存席へ（AskUserQuestion）"
   status: "採用済み"
   decision: "BustしたCPUは退席し、HeroがBustするか残りがHeroだけになったらSessionを終了する。Buttonは次の生存席へ単純に進める（Dead Buttonは使わない。OI-008の暫定値。永久仕様にしない）。実装は#34・#35。"
+- id: D81
+  choice: "版 3 に上げる（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Reopen規則をHAND_STARTEDのreopenRule（必須項目）としてEventに残し、Eventのschema_versionを3に上げる。版1・2は読み込み時のupcastで補い、保存済みの行は書き換えない（D76）。実装は#32。"
