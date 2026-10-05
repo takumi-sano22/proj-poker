@@ -15,7 +15,7 @@
   - `side_pot`: All-in した Player の Commit を他の Player の Commit が超える
   - `odd_chip_split`: Split Pot が人数で割り切れない
   - 均等 Stack では `side_pot` は起きない（All-in 額＝全員の上限）。`odd_chip_split` は起きうる（ランダムな Action で約 0.5%。下記「残課題」）。
-- **Chip の表現**: 最小単位の整数（`Number.isSafeInteger`）。人間判断ではないので D は付けず、`docs/11` に OI-011 として暫定値を置いた。Preset は `PHASE1_CASH_PRESET`（SB 1 / BB 2 / Stack 200。OI-004 / OI-008 / OI-011 の暫定値）。
+- **Chip の表現**: 最小単位の整数（`number`・`Number.isSafeInteger` で検証・浮動小数なし。Blind / Stack / Bet / Pot は同じ単位）。当初は OI として暫定値を置く方針だったが、作業中に人間が AskUserQuestion で確定したため `decision_log.yaml` に **D74** として記録し、範囲表記（`decision_log.yaml` 先頭・`docs/00`・`docs/10`）と `docs/10` の判断グループ表を同期した（`docs/11` には OI を追加していない）。Preset は `PHASE1_CASH_PRESET`（SB 1 / BB 2 / Stack 200。OI-004 / OI-008 の暫定値）。
 - **進行の細部**: Heads-Up は Button = SB（Preflop 先手・Postflop 後手）。配布は Button の左から 1 枚ずつ 2 周。Burn は省いた（`CARD_BURNED` は発行しない）。Showdown は Fold していない全員が Button の左から公開する（Muck・Showdown 順の Rule Profile 化は OI-008）。All-in で Betting が終わったら、Board を配る前に公開する。全員 Fold なら Call されなかった額を返してから Pot を渡す。BB が Stack 不足で短く出しても、Call 額は BB の全額。
 
 ## 公開 API（`packages/engine/src/index.ts`）
@@ -39,8 +39,8 @@
 - 新規: `packages/engine/src/{table-config,hand-events,hand-state,legal-actions,hand-engine,projection}.ts`
 - 新規（テスト）: `packages/engine/src/{hand-scenarios,hand-engine,hand-engine.property,projection}.test.ts`、`packages/engine/src/testing/{invariants,stacked-deck,view-leaks}.ts`（テスト補助）
 - 変更: `packages/engine/src/index.ts`（export 追加）、`packages/engine/tsconfig.build.json`（`src/testing/**` を dist から除外）
-- 変更（docs）: `docs/04_DATA_AND_EVENTS.md`（§3 Phase 1 の Event 構成表、§4 `engine` Visibility、§5 Projection の作り方）、`docs/03_SYSTEM_ARCHITECTURE.md`（Engine の入口）、`docs/11_OPEN_ITEMS.md`（OI-011 追加）
-- 触っていない: `apps/**`・`.claude/**`・`CLAUDE.md`・`AGENTS.md`・`README.md`・`docs/decision_log.yaml`
+- 変更（docs）: `docs/04_DATA_AND_EVENTS.md`（§3 Phase 1 の Event 構成表、§4 `engine` Visibility、§5 Projection の作り方）、`docs/03_SYSTEM_ARCHITECTURE.md`（Engine の入口・見出しの範囲 D70〜D74）、`docs/decision_log.yaml`（D74 追記・範囲表記）、`docs/00_DOCUMENTATION_INDEX.md` / `docs/10_DECISION_TRACEABILITY.md`（範囲表記・判断グループ表）
+- 触っていない: `apps/**`・`.claude/**`・`CLAUDE.md`・`AGENTS.md`・`README.md`・`docs/11_OPEN_ITEMS.md`
 
 ## 実行した確認
 
@@ -52,4 +52,5 @@
 
 - **端数の出る Split は Phase 1 では止まる**（D70）。#18 の Hand ループは `unsupported_state`（`odd_chip_split`）を受け取ったときの扱い（その Action を別の合法 Action に差し替える等）が要る。実装は Phase 2（Odd Chip Split）。
 - `poker-engine-testing` skill §4 の「Scenario ファイルの置き場」を追記する（`.claude/**` は本 Issue の担当外のため、親へ内容を返す）: Scenario は `packages/engine/src/hand-scenarios.test.ts` に TS のデータとして置き、同ファイルのランナーで再生する。テスト補助は `packages/engine/src/testing/`（build 対象外）。
-- `implementation-guidance/references/poker-engine.md` 項目 6（Chip 表現は decision-log へ記録）は、OI-011 として暫定値を置いた形に合わせて更新が要る（同上、親の担当）。
+- `implementation-guidance/references/poker-engine.md` 項目 6 と `poker-engine-testing` §2（Chip 表現は未確定）は、D74 で確定した内容へ更新が要る（同上、親の担当）。
+- 範囲表記 `D01〜D7x` が統制面と README に古いまま残っている: `README.md`、`.claude/skills/{sync-check,decision-log,test-and-review}/SKILL.md`（担当外のため親が更新する）。

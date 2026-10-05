@@ -21,7 +21,7 @@ export type ActionType = "fold" | "check" | "call" | "bet" | "raise" | "all_in";
 
 export interface SeatInit {
   readonly playerId: string;
-  /** Hand 開始時の Stack（Chip の最小単位の整数。OI-011）。 */
+  /** Hand 開始時の Stack（Chip の最小単位の整数。D74）。 */
   readonly stack: number;
 }
 

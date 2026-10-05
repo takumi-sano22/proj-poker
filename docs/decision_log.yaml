@@ -1,4 +1,4 @@
-# D01〜D73の採用済み人間判断。
+# D01〜D74の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -294,3 +294,7 @@
   choice: "通信はREST（POST）+ SSE（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "Phase 1のHeroのActionはREST（POST）で送り、卓の状態はSSEでPushする。PushするのはHeroに見えるProjectionだけとする。"
+- id: D74
+  choice: "整数の最小単位・D で確定（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Chipは最小単位の整数（number。Number.isSafeInteger で検証）で表し、浮動小数は使わない。Blind・Stack・Bet・Potはすべて同じ単位で持つ。"

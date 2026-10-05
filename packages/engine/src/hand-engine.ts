@@ -343,7 +343,7 @@ function validateStartInput(input: StartHandInput): string | null {
   if (!ids.has(input.buttonPlayerId)) {
     return `Button が卓にいない: ${input.buttonPlayerId}`;
   }
-  // Chip はすべて最小単位の整数（OI-011）。
+  // Chip はすべて最小単位の整数（D74）。
   if (
     !isChipAmount(config.smallBlind) ||
     !isChipAmount(config.bigBlind) ||
