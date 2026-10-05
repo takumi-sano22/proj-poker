@@ -36,6 +36,13 @@ apps/
 - `apps/server`はlocal専用で`127.0.0.1`にbindします。
 - `packages/engine`はruntime依存を持たず、`apps/*`へも依存しません（D68）。
 
+### Phase 1の実装方針（D70〜D73）
+
+- **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Side Pot・Short All-in Reopen・Split Potの端数はPhase 2で、未対応の状態はEngineが明示エラーにします。
+- **暫定CPU（D71）**: seed付きの決定論ルールBotです。合法Actionから選び、そのPlayerに見える情報だけを受け取ります。将来D41 / D42のFallback / Emergency Botに流用します。
+- **永続化（D72）**: `node:sqlite`（Node 24内蔵）を`apps/server`だけが使います。ORMなし・生SQL・自前の小さなマイグレーションで、EventはJSON列にappend-onlyで保存します。
+- **通信（D73）**: HeroのActionはREST（POST）、卓の状態はSSEでPushします。PushするのはHeroに見えるProjectionだけです。
+
 ## 2. Logical Component
 
 ```text

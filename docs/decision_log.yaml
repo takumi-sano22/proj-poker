@@ -1,4 +1,4 @@
-# D01〜D69の採用済み人間判断。
+# D01〜D73の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -278,3 +278,19 @@
   choice: "ESLint（typescript-eslint）+ Prettier（厳密固定）+ Vitest + fast-check、tsc --noEmit、GitHub Actions、pre-commit hookなし、Node 24 LTS"
   status: "採用済み"
   decision: "品質ツールはESLint（typescript-eslint）・Prettier（厳密固定）・Vitest・fast-check・tsc --noEmit、CIはGitHub Actionsとする。pre-commit hookは使わない。Nodeは24 LTS。"
+- id: D70
+  choice: "Phase 1 のBetting範囲を限定（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 1は全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装する。Side Pot・Short All-in Reopen・Split Potの端数はPhase 2とし、未対応の状態はEngineが明示エラーにする。"
+- id: D71
+  choice: "暫定CPUは決定論ルールBot（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 1の暫定CPUはseed付きの決定論ルールBotとし、合法Actionから選ぶ。入力はそのPlayerに見える情報だけとし、将来D41 / D42のFallback / Emergency Botに流用する。"
+- id: D72
+  choice: "永続化はnode:sqlite・生SQL・自前マイグレーション（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 1の永続化はNode 24内蔵のnode:sqliteを使い、ORMなし・生SQL・自前の小さなマイグレーションとする。EventはJSON列でappend-onlyに保存する。"
+- id: D73
+  choice: "通信はREST（POST）+ SSE（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 1のHeroのActionはREST（POST）で送り、卓の状態はSSEでPushする。PushするのはHeroに見えるProjectionだけとする。"
