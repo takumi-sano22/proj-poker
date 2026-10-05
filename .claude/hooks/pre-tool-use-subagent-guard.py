@@ -6,7 +6,7 @@
       コマンド文字列に単語 `gh` と単語 `merge` が共に現れる、または REST の `pulls/<n>/merge` を含む」だけ。
       形の列挙ではなく共起で判定する（列挙は必ず抜ける）。この hook は協力的な subagent の誤操作を止める安全弁で、
       意図的な迂回（シェルの引用符分割等）は契約文（agents の「共通契約」）と親だけがマージ権限を持つ運用が受ける。
-      `git push origin HEAD:main` 等の他経路は permissions（ask 化）と契約文が受ける。
+      `git push origin HEAD:main` 等の他経路は permissions（deny）と契約文が受ける。
       それ以外は何も出力せず exit 0（pass）。判定不能・例外は pass（fail-open。止めるのはこの 1 形だけ）。
       親セッションからの merge には影響しない。承認プロンプトは増やさない。
 """

@@ -21,7 +21,7 @@
 4. **Event Log が正本**（D37）。Summary / Statistics は派生 Projection。Replay は過去 Event の再生で Re-simulation ではない（D38）。実額は常時表示し BB は補助（D49）。Chip 総量は明示操作以外で増減しない。
 5. **Solver の誠実さ**: Unsupported Spot は正常 Fallback。HU Solver の結果を Multiway の Exact GTO として扱わない。モデル名・Solver を Domain Logic へハードコードしない（role-based config。OI-001 / OI-002）。
 6. **Git・秘密情報**: main へ直接 commit / push しない。force push・履歴改変をしない。全変更は Issue → worktree（`.claude/worktrees/<branch>`）→ PR。API キー・`.env*` はコミットしない。Claude API はローカル Runtime 側からのみ呼び、ブラウザへキーを渡さない。
-7. **必ず立ち止まる**（完全自走でも）: 秘密情報のコミット / force push・履歴破壊・データ削除 / 永続化スキーマの破壊的変更 / セキュリティ・権限・課金 / **`decision_log.yaml` の採用済み判断の変更・Open Item の永久確定**・新たな人間判断なしの非目標（Auth・Cloud DB・SaaS・Voice・3D 等。`docs/00` §6・`docs/03` §11）の導入 / 設計の根本変更・要件の曖昧さ。不可逆な git / gh 操作は `settings.json` の `permissions.ask` で人間プロンプトになる（書き方を変えて迂回しない）。
+7. **必ず立ち止まる**（完全自走でも）: 秘密情報のコミット / force push・履歴破壊・データ削除 / 永続化スキーマの破壊的変更 / セキュリティ・権限・課金 / **`decision_log.yaml` の採用済み判断の変更・Open Item の永久確定**・新たな人間判断なしの非目標（Auth・Cloud DB・SaaS・Voice・3D 等。`docs/00` §6・`docs/03` §11）の導入 / 設計の根本変更・要件の曖昧さ。禁止操作（force push・main 直 push・履歴改変・repo 削除 / archive・ルート / ホームの一括削除）は `settings.json` の `permissions.deny` で機械的に拒否される（ask は使わない。書き方を変えて迂回しない）。
 
 ## 自走ルール（このプロジェクトの既定）
 
