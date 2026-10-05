@@ -124,6 +124,20 @@ Evidence Gateの振る舞いは確定。
 
 具体的Provider / Integrationは未確定です。
 
+## OI-011 — Chipの数値表現
+
+前提（docs/09 §3）:
+- Chip総量の保存（INV-TEST-002 / 005）を完全一致で検証できる表現にする
+
+暫定（Phase 1・Issue #17。人間判断ではないためDは付けない）:
+- Chipは「最小単位の整数」（`number`。`Number.isSafeInteger` で検証）で表し、浮動小数は使わない
+- Blind・Stack・Bet・Potはすべて同じ単位で持つ
+- Phase 1 Presetは SB 1 / BB 2 / Starting Stack 200（100BB）。`packages/engine/src/table-config.ts` の `PHASE1_CASH_PRESET`
+
+未確定:
+- 最小単位と実額（通貨・Denomination）の対応（OI-004と合わせて決める）
+- `bigint` 等への変更要否（Stack上限・Tournamentの桁）
+
 ## すでに確定しており、Routine Implementationで再検討しない項目
 
 - Local Single User

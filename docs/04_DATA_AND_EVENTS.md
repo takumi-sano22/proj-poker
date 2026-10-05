@@ -61,6 +61,25 @@ Hand Event Logを、実際に何が起きたかを表す**唯一の正本**と�
 
 内部実装でEventを統合しても構いませんが、必要な情報を後から復元できることが条件です。
 
+### Phase 1 Engine の Event 構成（`packages/engine/src/hand-events.ts`）
+
+Phase 1（D70）の1 Hand進行で発行するEventです。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
+
+| Event | 主な項目 | Visibility | 統合元・備考 |
+|---|---|---|---|
+| `HAND_STARTED` | `handId`・`ruleProfile`・`smallBlind`・`bigBlind`・`seats`（席順の `playerId` / `stack`）・`buttonPlayerId` | public | `BUTTON_ASSIGNED` |
+| `DECK_SHUFFLED` | `seed`（積んだDeckならnull）・`deck`（配布順の52枚） | engine | 未来のCardを含むため、どのPlayerのProjectionにも入れない。§9のRNG Seedに相当 |
+| `BLIND_POSTED` | `playerId`・`blind`（small / big）・`amount` | public | Ante は Phase 1 で扱わない |
+| `HOLE_CARD_DEALT` | `playerId`・`cards`（2枚） | private(playerId) | 1 Player 1 Event |
+| `ACTION_TAKEN` | `playerId`・`street`・`action`（fold / check / call / bet / raise / all_in）・`amount`（出した額）・`toAmount`（そのStreetの累計）・`allIn` | public | `PLAYER_FOLDED`・`PLAYER_ALL_IN`・`CHIPS_MOVED`（Bet分） |
+| `BOARD_DEALT` | `street`（flop / turn / river）・`cards` | public | Burn は省く（`CARD_BURNED` は発行しない） |
+| `CARDS_TABLED` | `playerId`・`cards` | public | `SHOWDOWN_STARTED`。River後か、All-inでBettingが終わった時点で、Foldしていない全員が公開する |
+| `UNCALLED_BET_RETURNED` | `playerId`・`amount` | public | `CHIPS_MOVED`（返却分） |
+| `POT_AWARDED` | `potTotal`・`awards`（`playerId` / `amount`）・`showdown` | public | 単一Potのみ |
+| `HAND_FINISHED` | `stacks`（`playerId` / `amount`） | public | §10のRecovery境界 |
+
+Phase 1で扱えない状態（D70）は、Eventを発行せずにEngineが `unsupported_state` エラーを返します（`side_pot`: All-inした額を他のPlayerのCommitが超える／`odd_chip_split`: Split Potを等分できない）。
+
 ## 4. Visibility
 
 Card / Observation EventにはVisibilityを明示します。
@@ -69,8 +88,11 @@ Card / Observation EventにはVisibilityを明示します。
 type Visibility =
   | { type: "public" }
   | { type: "private"; playerId: string }
-  | { type: "learning_only" };
+  | { type: "learning_only" }
+  | { type: "engine" };
 ```
+
+`engine` はEngine内部専用で、Deckの順序（未来のCard）のようにどのPlayerにも見せない情報に付けます。Phase 1 Engineが発行するのは `public` / `private` / `engine` で、`learning_only` はReviewのRevealを実装するときに使います。
 
 これにより以下を再構築できます。
 
@@ -81,6 +103,8 @@ type Visibility =
 ## 5. KnowledgeState Projection
 
 `KnowledgeState` はglobal Event Storeそのものではなく、PlayerごとのProjectionです。
+
+Phase 1 Engineでは、`public` と自分宛ての `private` のEventだけを畳み込んで作ります（`packages/engine/src/projection.ts` の `projectHeroView` / `projectBotView`）。`engine` と他者宛ての `private` は読みません。
 
 含めるもの:
 - Public Table State
