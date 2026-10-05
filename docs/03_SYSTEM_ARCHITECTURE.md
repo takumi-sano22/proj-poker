@@ -36,6 +36,7 @@ apps/
 - `apps/server`はlocal専用で`127.0.0.1`にbindします。
 - `packages/engine`はruntime依存を持たず、`apps/*`へも依存しません（D68）。
 - `apps/server`は`packages/engine`をworkspace依存で使います。typecheck・lint・dev（tsx）・testではEngineをbuildせずに`src`から読みます（Engineの`package.json`の`exports`にある条件`@proj-poker/source`を、serverの`tsconfig.json`の`customConditions`・`vitest.config.mjs`・`tsx --conditions`で指定）。`build`（`tsconfig.build.json`）と`start`はbuild済みの`dist`を使います。
+- `apps/web`も`packages/engine`をworkspace依存（devDependencies）にしますが、importするのは型（`HeroView`・`LegalActionSet`・`PlayerAction`等）だけです。Engineのロジックをブラウザで動かして合法性や他者の札を判断しません。型は同じ条件`@proj-poker/source`（webの`tsconfig.json`の`customConditions`）で`src`から読みます。
 
 ### Phase 1の実装方針（D70〜D75）
 
@@ -58,6 +59,11 @@ apps/
 | `GET /api/hands/:handId/stream` | なし | SSE（`text/event-stream`）。メッセージは`event: view`で、`data`は`HeroView`のJSONです。接続時に現在のViewを1回送り、以後はLogが進むたびに送ります。`status`が`complete`のViewを送ったらserverが閉じます（clientは再接続しない） | 404 Handが無い |
 
 失敗の応答は`{ error: { kind, message } }`です。
+
+- **Basic UI（Issue #19）**: `apps/web`の構成は次のとおりです。表示はすべてserverから届いた`HeroView`に基づき、clientは状態を進めず、合法性も判定しません（D40・D73）。
+  - `hooks/useHandSession.ts`: `POST /api/hands`でHandを始め、`EventSource`で`/stream`を購読し、Heroの宣言を`POST .../actions`で送ります。RESTの応答とSSEのPushのどちらが先に届いても、同じHandで`log`の最後の`seq`が進んでいる方だけを残します（別Handの遅れた応答は捨てる）。送信中はrefとstateの2層で二重送信を止めます。`complete`のViewを受けたら`EventSource`を閉じます。SSEの`data`は最小の形検査（`parseHeroView`）を通ったものだけを描画へ流します。
+  - `components/`: 卓（`Table`。席はHeroを画面下の中央に置き、席順＝時計回りに配置。SB / BBは公開Eventの`BLIND_POSTED`から読む）、Card（`PlayingCard`。SVGの構造描画。D60）、金額（`Amount`。実額が正本でBBは補助。D49）、宣言ボタン（`ActionBar`。`legalActions`にあるActionだけを出し、Bet / Raiseの額はPreset〔最小・½ Pot・¾ Pot・Pot〕とSliderで選ぶ。数値の入力欄は作らない。docs/06 §4）、進行ログ（`HandLog`）。他者の札は`seats[].holeCards`に入っているもの（Showdownで公開された札）だけを表に向け、それ以外は裏向き（Fold済みの席は札なし）で描きます。HeroがFoldした後もHandの終了まで観戦を続けます（docs/06 §8）。
+  - 見た目の値は`styles.css`の`:root`のトークン（役割名の色・影3段・層ごとの角丸）に置いた暫定値です。卓UI向けのデザイン体系は#5で整えます。
 
 ## 2. Logical Component
 
