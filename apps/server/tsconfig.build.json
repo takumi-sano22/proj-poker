@@ -1,0 +1,8 @@
+{
+  // build 専用。テストとテスト補助を dist へ出さず、Engine は build 済みの dist を参照する（src から読む条件を外す）。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "customConditions": []
+  },
+  "exclude": ["src/**/*.test.ts", "src/testing/**"]
+}
