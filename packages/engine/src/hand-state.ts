@@ -213,6 +213,11 @@ function applyBody(state: HandState, event: HandEvent): HandState {
 
     case "HAND_FINISHED":
       return { ...state, status: "complete", actorIndex: null };
+
+    case "AI_ACTION_INVALID":
+    case "AI_FALLBACK_USED":
+      // 判断の経緯の記録で、卓の State（Chip・手番）は変えない（seq だけが進む）。
+      return state;
   }
 }
 

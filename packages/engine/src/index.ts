@@ -46,9 +46,11 @@ export type { Pot, PotContributor } from "./side-pots.js";
 export { isVisibleTo, visibilityOf } from "./hand-events.js";
 export type {
   ActionType,
+  FallbackKind,
   HandEvent,
   HandEventBody,
   HandEventType,
+  InvalidOutputStage,
   PlayerChips,
   SeatInit,
   Street,
@@ -66,8 +68,9 @@ export type {
   PlayerAction,
 } from "./legal-actions.js";
 
-export { applyAction, startHand } from "./hand-engine.js";
+export { applyAction, recordAiEvent, startHand } from "./hand-engine.js";
 export type {
+  AiEventBody,
   EngineError,
   EngineResult,
   HandProgress,

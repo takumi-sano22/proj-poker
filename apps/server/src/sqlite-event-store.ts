@@ -28,8 +28,10 @@ import {
  * - 1: Phase 1（単一 Pot）
  * - 2: POT_AWARDED を Pot ごとに発行し、potIndex と eligible を持つ（D78）。版 1 は読み込み時に upcast する
  * - 3: HAND_STARTED に reopenRule（Short All-in の後の Raise の再開規則）を持つ（D79）。版 1・2 は読み込み時に upcast する
+ * - 4: CPU の判断の経緯 AI_ACTION_INVALID / AI_FALLBACK_USED を足す（D83）。既存の Event の形は変えていないので、
+ *   版 3 の行は変換せずに読む（版 1〜3 の行にこの 2 種類は無い）
  */
-export const EVENT_SCHEMA_VERSION = 3;
+export const EVENT_SCHEMA_VERSION = 4;
 
 /** 保存済みの Event の schema_version を、このアプリが読めない。 */
 export class UnsupportedEventSchemaError extends Error {
@@ -189,13 +191,14 @@ export class SqliteEventStore implements EventStore {
     }
     // 版 1 の行は Hand の前の Event（Fold の有無）を見て upcast するので、Hand 単位でまとめて変換し、
     // 版 1 の行にだけ変換結果を使う（1 Hand は 1 トランザクションで同じ版で書くが、混在しても新しい版の行を変えない）。
-    // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。
+    // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。版 3 → 4 は変換が要らない（Event の種類を足しただけ）。
     const parsed = rows.map((row) => JSON.parse(row.payload) as HandEventV1);
     const asV2 = rows.some((row) => row.schema_version === 1)
       ? upcastV1ToV2(parsed)
       : null;
     const toCurrent = (row: EventRow, i: number): HandEvent => {
-      if (row.schema_version === EVENT_SCHEMA_VERSION) {
+      // 版 3 以上は reopenRule を持つ。補う変換に通すと保存した値を上書きするので、そのまま返す。
+      if (row.schema_version >= 3) {
         return parsed[i] as HandEvent;
       }
       const v2 =
