@@ -78,13 +78,15 @@ export { nextHandSeating } from "./position.js";
 export type { NextHandSeating, PreviousHandResult } from "./position.js";
 
 export {
-  projectBotView,
   projectHeroView,
+  projectKnowledgeState,
   visibleEvents,
 } from "./projection.js";
 export type {
-  BotView,
+  DecisionMath,
   HeroView,
+  KnowledgeState,
+  PositionInfo,
   PublicActionRecord,
   SeatView,
   TableView,

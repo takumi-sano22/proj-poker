@@ -117,9 +117,9 @@ type Visibility =
 
 `KnowledgeState` はglobal Event Storeそのものではなく、PlayerごとのProjectionです。
 
-Phase 1 Engineでは、`public` と自分宛ての `private` のEventだけを畳み込んで作ります（`packages/engine/src/projection.ts` の `projectHeroView` / `projectBotView`）。`engine` と他者宛ての `private` は読みません。
+Phase 1 Engineでは、`public` と自分宛ての `private` のEventだけを畳み込んで作ります（`packages/engine/src/projection.ts` の `projectHeroView` / `projectKnowledgeState`）。`engine` と他者宛ての `private` は読みません。
 
-Phase 1の`apps/server`は、暫定CPUへ`projectBotView`の結果とLegal Actionだけを渡し（`OpponentAgent.decide({ view, legal })`）、APIの応答とSSEには`projectHeroView`の結果だけを載せます（D71・D73）。
+`apps/server`は、CPUへそのCPUの`KnowledgeState`（`projectKnowledgeState`の結果）とLegal Actionだけを渡し（`OpponentAgent.decide({ knowledge, legal })`。#46）、APIの応答とSSEには`projectHeroView`の結果だけを載せます（D71・D73）。`KnowledgeState`はHeroViewと違いEventのログを持たず、自分のHole Cards・Position・Public Actionの履歴・決定論のMath（Call額・Pot Odds・有効Stack・SPR）を持ちます（中身は`docs/03` §5）。他PlayerのHidden Cards・Deck（未来のCard）・`engine` VisibilityのEventが入らないことは、全席・全手番のProperty Testで確かめます（INV-TEST-007。見えないEventの中身を差し替えても`KnowledgeState`が変わらないことも確かめます）。
 
 含めるもの:
 - Public Table State

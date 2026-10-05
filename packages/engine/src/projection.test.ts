@@ -7,7 +7,7 @@ import { applyAction, startHand } from "./hand-engine.js";
 import type { HandState } from "./hand-state.js";
 import { getLegalActions, type PlayerAction } from "./legal-actions.js";
 import {
-  projectBotView,
+  projectKnowledgeState,
   projectHeroView,
   visibleEvents,
 } from "./projection.js";
@@ -55,7 +55,7 @@ describe("Projection", () => {
     for (const viewer of seats.map((s) => s.playerId)) {
       for (const view of [
         projectHeroView(events, viewer),
-        projectBotView(events, viewer),
+        projectKnowledgeState(events, viewer),
       ]) {
         const own = parseCards(holes[viewer as keyof typeof holes]).map(
           cardToString,
@@ -91,11 +91,11 @@ describe("Projection", () => {
     hand = act(hand, "btn", { type: "call" });
     hand = act(hand, "sb", { type: "call" });
     hand = act(hand, "bb", { type: "check" });
-    const view = projectBotView(hand.events, "bb");
+    const view = projectKnowledgeState(hand.events, "bb");
     expect(view.board.map(cardToString)).toEqual(["Ks", "Qs", "9h"]);
     expect(cardsIn(view)).not.toContain("8h");
     expect(cardsIn(view)).not.toContain("7d");
-    // Bot の判断材料: Public Action の履歴と、手番のときだけ Legal Action（全情報の State と一致）
+    // CPU の判断材料: Public Action の履歴と、手番のときだけ Legal Action（全情報の State と一致）
     expect(view.actionHistory.map((a) => `${a.playerId}:${a.action}`)).toEqual([
       "utg:call",
       "btn:call",
@@ -104,7 +104,7 @@ describe("Projection", () => {
     ]);
     expect(view.actorId).toBe("sb");
     expect(view.legalActions).toBeNull();
-    expect(projectBotView(hand.events, "sb").legalActions).toEqual(
+    expect(projectKnowledgeState(hand.events, "sb").legalActions).toEqual(
       getLegalActions(hand.state),
     );
   });
@@ -136,9 +136,50 @@ describe("Projection", () => {
     }
   });
 
+  it("KnowledgeState: 自分の札・Position・決定論の Math を持つ（開始直後）", () => {
+    const { events } = start();
+    // UTG（手番）: BB の 2 を Call する。Pot は Blind の 3。
+    const utg = projectKnowledgeState(events, "utg");
+    expect(utg.holeCards?.map(cardToString)).toEqual(["Ac", "Ad"]);
+    expect(utg.position).toEqual({ buttonOffset: 3, playerCount: 4 });
+    expect(utg.math).toEqual({
+      callAmount: 2,
+      potOdds: 2 / 5,
+      effectiveStack: 200,
+      spr: 200 / 3,
+    });
+    // BB（手番ではない）: もう BB を出しているので Call 額は 0。有効 Stack は自分の残り 198 で頭打ち。
+    const bb = projectKnowledgeState(events, "bb");
+    expect(bb.position).toEqual({ buttonOffset: 2, playerCount: 4 });
+    expect(bb.legalActions).toBeNull();
+    expect(bb.math).toEqual({
+      callAmount: 0,
+      potOdds: null,
+      effectiveStack: 198,
+      spr: 198 / 3,
+    });
+  });
+
+  it("KnowledgeState: Call 額は Stack で頭打ちになり、有効 Stack は Fold していない他者の残りで決まる", () => {
+    let hand = start();
+    hand = act(hand, "utg", { type: "all_in" });
+    hand = act(hand, "btn", { type: "fold" });
+    // SB の残りは 199。UTG の 200 には届かないので Call 額は 199（All-in の Call）。
+    const sb = projectKnowledgeState(hand.events, "sb");
+    expect(sb.math.callAmount).toBe(199);
+    expect(sb.math.potOdds).toBe(199 / (203 + 199));
+    // Fold した BTN（200）は数えず、残りが 0 の UTG と BB（198）のうち大きい方と自分の 199 の小さい方。
+    expect(sb.math.effectiveStack).toBe(198);
+    expect(sb.math.spr).toBe(198 / 203);
+    expect(sb.legalActions?.actions.find((a) => a.type === "call")).toEqual({
+      type: "call",
+      amount: 199,
+    });
+  });
+
   it("卓にいない Player の Projection は作らない", () => {
     const { events } = start();
     expect(() => projectHeroView(events, "stranger")).toThrow(RangeError);
-    expect(() => projectBotView(events, "stranger")).toThrow(RangeError);
+    expect(() => projectKnowledgeState(events, "stranger")).toThrow(RangeError);
   });
 });
