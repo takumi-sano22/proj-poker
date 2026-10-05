@@ -3,6 +3,7 @@
 // 他者の Hole Cards と Deck は最初から State に入らない（docs/04 §5 の whitelist）。
 import type { Card } from "./card.js";
 import type { HandEvent, PlayerChips, Street } from "./hand-events.js";
+import type { OddChipRule } from "./table-config.js";
 
 export interface PlayerState {
   readonly playerId: string;
@@ -29,6 +30,7 @@ export interface HandState {
   readonly ruleProfile: string;
   readonly smallBlind: number;
   readonly bigBlind: number;
+  readonly oddChipRule: OddChipRule;
   /** 席順（時計回り）。 */
   readonly players: readonly PlayerState[];
   readonly buttonIndex: number;
@@ -76,6 +78,7 @@ export function initialState(event: HandEvent): HandState {
     ruleProfile: event.ruleProfile,
     smallBlind: event.smallBlind,
     bigBlind: event.bigBlind,
+    oddChipRule: event.oddChipRule,
     players: event.seats.map((s) => ({
       playerId: s.playerId,
       stack: s.stack,

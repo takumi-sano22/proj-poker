@@ -31,7 +31,9 @@ export {
   PHASE1_CASH_PRESET,
   isChipAmount,
 } from "./table-config.js";
-export type { TableConfig } from "./table-config.js";
+export type { OddChipRule, TableConfig } from "./table-config.js";
+
+export { splitPot } from "./pot-split.js";
 
 export { isVisibleTo, visibilityOf } from "./hand-events.js";
 export type {

@@ -2,11 +2,19 @@
 // Chip は「最小単位の整数（number）」で表す。Blind・Stack・Bet はすべて同じ単位で持ち、浮動小数は使わない
 // （D74。Chip 総量の保存〔INV-TEST-002 / 005〕を完全一致で検証できるようにするため）。
 
-/** 卓の Betting 設定。Rule Profile は ID だけを持ち、HAND_STARTED に残す（docs/02 §3）。 */
+/**
+ * Split Pot で割り切れない端数（Odd Chip）の配り方（Rule Profile の設定値。docs/02 §5）。
+ * - first_left_of_button: Button の左から時計回りで最初の勝者から 1 Chip ずつ配る（Live Cash の一般的な規則）
+ * 値は OI-008（Live Ruling の範囲）の暫定値で、永久仕様ではない（D75）。
+ */
+export type OddChipRule = "first_left_of_button";
+
+/** 卓の Betting 設定。Rule Profile は ID と、Engine が分岐に使う設定値を持ち、HAND_STARTED に残す（docs/02 §3）。 */
 export interface TableConfig {
   readonly ruleProfile: string;
   readonly smallBlind: number;
   readonly bigBlind: number;
+  readonly oddChipRule: OddChipRule;
 }
 
 /**
@@ -19,6 +27,7 @@ export const PHASE1_CASH_PRESET: TableConfig & {
   ruleProfile: "phase1_provisional_v0",
   smallBlind: 1,
   bigBlind: 2,
+  oddChipRule: "first_left_of_button",
   startingStack: 200,
 };
 
