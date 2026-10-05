@@ -815,8 +815,7 @@ const SCENARIOS: readonly HandScenario[] = [
   {
     id: "SCN-short-allin-no-reopen-001",
     title: "Short All-in では行動済みの Player に Raise が再開しない",
-    source:
-      "docs/02 §5 Short All-in / Action Reopening（累積 Short All-in は Phase 2・D70）",
+    source: "docs/02 §5 Short All-in / Action Reopening（D79）",
     seats: [
       { playerId: "a", stack: 1000 },
       { playerId: "b", stack: 1000 },
@@ -888,6 +887,183 @@ const SCENARIOS: readonly HandScenario[] = [
       stacks: { a: 700, b: 700, c: 900 },
       pot: 0,
       awards: { c: 900 },
+    },
+  },
+  {
+    id: "SCN-cumulative-short-allin-reopen-001",
+    title:
+      "累積 Short All-in: 2 つの Short All-in の合計が Full Raise に達すると、行動済みの Player に Raise が再開する（Side Pot あり）",
+    source:
+      "docs/02 §5 累積 Short All-in / Action Reopening / Multi Side Pot（D79・OI-008 の暫定値・D78）",
+    seats: [
+      { playerId: "a", stack: 150 },
+      { playerId: "b", stack: 200 },
+      { playerId: "c", stack: 1000 },
+      { playerId: "d", stack: 1000 },
+    ],
+    // a = Button、b = SB、c = BB、d = UTG。Preflop は d → a → b → c。
+    button: "a",
+    holes: { a: "Ah Ad", b: "Kh Kd", c: "Qh Qd", d: "Th Td" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      // d の Raise 増分 98 が Full Raise 幅になる。
+      { player: "d", action: raise(100) },
+      // a の All-in 150 は増分 50 < 98 → Short All-in。
+      { player: "a", action: allIn },
+      {
+        // b は未行動なので Raise してよいが、最小 Raise 150 + 98 = 248 に Stack 200 が届かない。
+        // All-in 200 は増分 50 < 98 → 2 つ目の Short All-in。
+        player: "b",
+        action: allIn,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 149 },
+          { type: "all_in", amount: 200 },
+        ],
+      },
+      { player: "c", action: call },
+      {
+        // d が最後に行動した時点の最高額 100 からの上乗せは 50 + 50 = 100 >= 98 → 再開する。
+        // 最小 Raise は 200 + 98（直近の Full Raise 幅。Short All-in では変わらない）= 298。
+        player: "d",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 100 },
+          { type: "raise", min: 298, max: 1000 },
+          { type: "all_in", amount: 1000 },
+        ],
+      },
+      // Flop 以降は Button の左で行動できる c → d。
+      ...checkDown("c", "d"),
+    ],
+    expect: {
+      status: "complete",
+      // Commit: a 150 / b 200 / c 200 / d 200。
+      // Main = 150 × 4 = 600（全員）→ a の AA。Side = 50 × 3 = 150（b・c・d）→ b の KK。
+      // a 600 / b 150 / c 800 / d 800（計 2350）
+      stacks: { a: 600, b: 150, c: 800, d: 800 },
+      pot: 0,
+      awards: { a: 600, b: 150 },
+      pots: [
+        {
+          total: 600,
+          eligible: ["b", "c", "d", "a"],
+          awards: { a: 600 },
+          showdown: true,
+        },
+        {
+          total: 150,
+          eligible: ["b", "c", "d"],
+          awards: { b: 150 },
+          showdown: true,
+        },
+      ],
+      absentEvents: ["UNCALLED_BET_RETURNED"],
+    },
+  },
+  {
+    id: "SCN-cumulative-short-allin-no-reopen-001",
+    title:
+      "累積 Short All-in: 2 つの Short All-in の合計が Full Raise に届かなければ、行動済みの Player に Raise は再開しない",
+    source:
+      "docs/02 §5 累積 Short All-in / Action Reopening（D79・OI-008 の暫定値）",
+    seats: [
+      { playerId: "a", stack: 150 },
+      { playerId: "b", stack: 180 },
+      { playerId: "c", stack: 1000 },
+      { playerId: "d", stack: 1000 },
+    ],
+    button: "a",
+    holes: { a: "Ah Ad", b: "Kh Kd", c: "Qh Qd", d: "Th Td" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      { player: "d", action: raise(100) },
+      // 増分 50 → Short All-in。
+      { player: "a", action: allIn },
+      // 増分 30 → Short All-in。
+      { player: "b", action: allIn },
+      { player: "c", action: call },
+      // d から見た上乗せは 50 + 30 = 80 < 98 → 再開しない（Call か Fold だけ）。
+      { player: "d", action: raise(400), reject: { kind: "illegal_action" } },
+      { player: "d", action: allIn, reject: { kind: "illegal_action" } },
+      {
+        player: "d",
+        action: call,
+        legal: [{ type: "fold" }, { type: "call", amount: 80 }],
+      },
+      ...checkDown("c", "d"),
+    ],
+    expect: {
+      status: "complete",
+      // Commit: a 150 / b 180 / c 180 / d 180。
+      // Main = 150 × 4 = 600 → a の AA。Side = 30 × 3 = 90（b・c・d）→ b の KK。
+      // a 600 / b 90 / c 820 / d 820（計 2330）
+      stacks: { a: 600, b: 90, c: 820, d: 820 },
+      pot: 0,
+      awards: { a: 600, b: 90 },
+    },
+  },
+  {
+    id: "SCN-cumulative-reopen-per-player-001",
+    title:
+      "累積は Player ごとに最後の行動から数える: 先に行動した Player には再開し、途中で Call した Player には再開しない",
+    source:
+      "docs/02 §5 累積 Short All-in / Action Reopening（D79・OI-008 の暫定値）",
+    seats: [
+      { playerId: "a", stack: 150 },
+      { playerId: "b", stack: 1000 },
+      { playerId: "c", stack: 200 },
+      { playerId: "d", stack: 1000 },
+    ],
+    button: "a",
+    holes: { a: "Ah Ad", b: "Kh Kd", c: "Qh Qd", d: "Th Td" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      { player: "d", action: raise(100) },
+      // 増分 50 → Short All-in。
+      { player: "a", action: allIn },
+      // b は最高額 150 の時点で行動した。
+      { player: "b", action: call },
+      {
+        // 最小 Raise 248 に Stack 200 が届かない。All-in 200 は増分 50 → Short All-in。
+        player: "c",
+        action: allIn,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 148 },
+          { type: "all_in", amount: 200 },
+        ],
+      },
+      {
+        // d から見た上乗せは 200 − 100 = 100 >= 98 → 再開する。
+        player: "d",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 100 },
+          { type: "raise", min: 298, max: 1000 },
+          { type: "all_in", amount: 1000 },
+        ],
+      },
+      // b から見た上乗せは 200 − 150 = 50 < 98 → 再開しない。
+      { player: "b", action: raise(300), reject: { kind: "illegal_action" } },
+      {
+        player: "b",
+        action: call,
+        legal: [{ type: "fold" }, { type: "call", amount: 50 }],
+      },
+      // Flop 以降は Button の左で行動できる b → d（c は All-in）。
+      ...checkDown("b", "d"),
+    ],
+    expect: {
+      status: "complete",
+      // Commit: a 150 / b 200 / c 200 / d 200。
+      // Main = 150 × 4 = 600 → a の AA。Side = 50 × 3 = 150（b・c・d）→ b の KK。
+      // a 600 / b 1000 − 200 + 150 = 950 / c 0 / d 800（計 2350）
+      stacks: { a: 600, b: 950, c: 0, d: 800 },
+      pot: 0,
+      awards: { a: 600, b: 150 },
     },
   },
 ];

@@ -4,7 +4,11 @@ import type { SeatInit } from "./hand-events.js";
 import { applyAction, startHand, type StartHandInput } from "./hand-engine.js";
 import { getLegalActions } from "./legal-actions.js";
 import { createShuffledDeck } from "./rng.js";
-import { PHASE1_CASH_PRESET } from "./table-config.js";
+import {
+  PHASE1_CASH_PRESET,
+  type OddChipRule,
+  type ReopenRule,
+} from "./table-config.js";
 
 const seats = (n: number, stack = 200): SeatInit[] =>
   Array.from({ length: n }, (_, i) => ({ playerId: `p${i}`, stack }));
@@ -88,6 +92,7 @@ describe("startHand", () => {
           smallBlind: 2,
           bigBlind: 1,
           oddChipRule: "first_left_of_button",
+          reopenRule: "cumulative_full_raise",
         },
       },
     ],
@@ -99,6 +104,25 @@ describe("startHand", () => {
           smallBlind: 0.5,
           bigBlind: 1,
           oddChipRule: "first_left_of_button",
+          reopenRule: "cumulative_full_raise",
+        },
+      },
+    ],
+    [
+      "未知の oddChipRule",
+      {
+        config: {
+          ...PHASE1_CASH_PRESET,
+          oddChipRule: "random" as string as OddChipRule,
+        },
+      },
+    ],
+    [
+      "未知の reopenRule",
+      {
+        config: {
+          ...PHASE1_CASH_PRESET,
+          reopenRule: "never" as string as ReopenRule,
         },
       },
     ],

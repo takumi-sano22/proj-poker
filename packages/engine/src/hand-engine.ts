@@ -87,6 +87,7 @@ export function startHand(input: StartHandInput): EngineResult<HandProgress> {
     smallBlind: config.smallBlind,
     bigBlind: config.bigBlind,
     oddChipRule: config.oddChipRule,
+    reopenRule: config.reopenRule,
     // 入力の配列を Event に共有させない（呼び出し側が後で書き換えても Event Log が変わらないように）。
     seats: seats.map((s) => ({ playerId: s.playerId, stack: s.stack })),
     buttonPlayerId: input.buttonPlayerId,
@@ -323,6 +324,9 @@ function validateStartInput(input: StartHandInput): string | null {
   }
   if (config.oddChipRule !== "first_left_of_button") {
     return `未対応の oddChipRule: ${String(config.oddChipRule)}`;
+  }
+  if (config.reopenRule !== "cumulative_full_raise") {
+    return `未対応の reopenRule: ${String(config.reopenRule)}`;
   }
   // Chip はすべて最小単位の整数（D74）。
   if (
