@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import {
   DEFAULT_BOT_THINK_DELAY_MS,
+  DEFAULT_OPPONENT_TIMEOUT_MS,
   PHASE1_TABLE_SETUP,
   type TableSetup,
 } from "./config.js";
@@ -15,6 +16,7 @@ import { registerHandRoutes } from "./routes/hands.js";
 export interface AppOptions {
   readonly logger?: boolean;
   readonly botDelayMs?: number;
+  readonly opponentTimeoutMs?: number;
   readonly setup?: TableSetup;
   readonly store?: EventStore;
   readonly createOpponent?: OpponentFactory;
@@ -38,6 +40,7 @@ export function buildApp(options: AppOptions = {}) {
     setup: options.setup ?? PHASE1_TABLE_SETUP,
     createOpponent: options.createOpponent ?? createRuleBot,
     botDelayMs: options.botDelayMs ?? DEFAULT_BOT_THINK_DELAY_MS,
+    opponentTimeoutMs: options.opponentTimeoutMs ?? DEFAULT_OPPONENT_TIMEOUT_MS,
     // seed はサーバーだけが持つ。クライアントから受け取らず、レスポンスにも出さない（Deck を推測させない）。
     nextSeed: options.nextSeed ?? (() => randomInt(0, 2 ** 32)),
     nextHandId: options.nextHandId ?? randomUUID,

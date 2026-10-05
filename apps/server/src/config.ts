@@ -87,6 +87,24 @@ export function parseBotDelayMs(raw: string | undefined): number {
 }
 
 /**
+ * CPU の 1 回の判断（OpponentAgent.decide の 1 呼び出し）を待つ上限（ミリ秒）。
+ * 暫定値（OI-001 の Cost / Latency Policy が決まるまでの仮置き。永久仕様ではない）。
+ * 超えたら「障害」として Hand を止める（RuleBot へ自動で切り替えない。D86）。
+ * 環境変数 OPPONENT_TIMEOUT_MS で上書きできる。
+ */
+export const DEFAULT_OPPONENT_TIMEOUT_MS = 15_000;
+
+/** 環境変数の値を判断待ちの上限として読む。未設定・不正（0 以下・小数・文字列）なら既定値に戻す。 */
+export function parseOpponentTimeoutMs(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "")
+    return DEFAULT_OPPONENT_TIMEOUT_MS;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0
+    ? value
+    : DEFAULT_OPPONENT_TIMEOUT_MS;
+}
+
+/**
  * SQLite の DB ファイルの既定の置き場所: apps/server/data/poker.sqlite（gitignore 済み）。
  * src（dev）からも dist（start）からも 1 階層上なので、同じ場所になる。worktree ごとに別の DB になる。
  */

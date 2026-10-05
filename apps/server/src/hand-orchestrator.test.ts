@@ -13,11 +13,11 @@ import {
   type HandOrchestratorOptions,
 } from "./hand-orchestrator.js";
 import type {
-  OpponentAgent,
   OpponentFactory,
   OpponentInput,
+  OpponentOutput,
 } from "./opponents/opponent-agent.js";
-import { createRuleBot } from "./opponents/rule-bot.js";
+import { RuleBot, createRuleBot } from "./opponents/rule-bot.js";
 import { forbiddenKeys, leakedCards } from "./testing/leaks.js";
 
 const HERO = "hero";
@@ -52,6 +52,7 @@ function setup(overrides: Partial<HandOrchestratorOptions> = {}) {
     setup: PHASE1_TABLE_SETUP,
     createOpponent: createRuleBot,
     botDelayMs: 0,
+    opponentTimeoutMs: 1000,
     nextSeed: () => 42,
     nextHandId: () => `hand-${++handNo}`,
     nextSessionId: () => `session-${++sessionNo}`,
@@ -75,17 +76,21 @@ function lastSeq(view: HeroView): number {
 }
 
 /** Hero の方針で Hand を最後まで進め、最後の View を返す。 */
-function playOut(
+async function playOut(
   orchestrator: HandOrchestrator,
   handId: string,
   start: HeroView,
   hero: (view: HeroView) => PlayerAction = passiveHero,
-): HeroView {
+): Promise<HeroView> {
   let view = start;
   for (let guard = 0; view.status !== "complete"; guard++) {
     expect(guard).toBeLessThan(100);
     expect(view.actorId).toBe(HERO);
-    const result = orchestrator.heroAction(handId, lastSeq(view), hero(view));
+    const result = await orchestrator.heroAction(
+      handId,
+      lastSeq(view),
+      hero(view),
+    );
     if (!result.ok) throw new Error(result.error.message);
     view = result.value;
   }
@@ -117,6 +122,13 @@ function stackOf(chips: readonly PlayerChips[], playerId: string): number {
   return chips.find((c) => c.playerId === playerId)?.amount ?? 0;
 }
 
+/** PlayerAction を CPU の出力の形（OpponentOutput）にする。 */
+function toOutput(action: PlayerAction): OpponentOutput {
+  return "amount" in action
+    ? { action: action.type, amount: action.amount }
+    : { action: action.type };
+}
+
 /** All-in できれば All-in、できなければ Call、それも無ければ Check（Bust を起こしやすい）。 */
 function shove(legal: LegalActionSet): PlayerAction {
   const types = legal.actions.map((a) => a.type);
@@ -131,10 +143,14 @@ function scriptedCpus(
 ): OpponentFactory {
   return (_seed, playerId) => ({
     decide: ({ legal }) => {
-      if (policy[playerId] === "shove") return shove(legal);
-      return legal.actions.some((a) => a.type === "check")
-        ? { type: "check" }
-        : { type: "fold" };
+      if (policy[playerId] === "shove") {
+        return Promise.resolve(toOutput(shove(legal)));
+      }
+      return Promise.resolve(
+        legal.actions.some((a) => a.type === "check")
+          ? { action: "check" }
+          : { action: "fold" },
+      );
     },
   });
 }
@@ -146,7 +162,7 @@ const shoveHero = (view: HeroView): PlayerAction =>
  * 3 人卓（hero・cpu1・cpu2）の最初の Hand を、Hero が All-in し CPU が方針どおりに動く形で最後まで進める。
  * seed を 1 から順に試し、最初の Hand の結果が条件に合う最初の seed で止める（Deck は seed だけで決まる）。
  */
-function firstHandWhere(
+async function firstHandWhere(
   policy: Readonly<Record<string, "shove" | "fold">>,
   matches: (stacks: readonly PlayerChips[]) => boolean,
 ) {
@@ -156,10 +172,10 @@ function firstHandWhere(
       createOpponent: scriptedCpus(policy),
       nextSeed: () => seed,
     });
-    const started = ctx.orchestrator.startHand(null);
+    const started = await ctx.orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     const { handId, view } = started.value;
-    playOut(ctx.orchestrator, handId, view, shoveHero);
+    await playOut(ctx.orchestrator, handId, view, shoveHero);
     if (matches(finishedOf(ctx.events(handId)).stacks)) {
       return { ...ctx, handId };
     }
@@ -172,21 +188,21 @@ afterEach(() => {
 });
 
 describe("HandOrchestrator", () => {
-  it("Hero の手番で止まり、Hero の Action で Hand が最後まで終わる（Chip 総量は不変）", () => {
+  it("Hero の手番で止まり、Hero の Action で Hand が最後まで終わる（Chip 総量は不変）", async () => {
     const { orchestrator, events } = setup();
-    const started = orchestrator.startHand(null);
+    const started = await orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     const { handId, view } = started.value;
     // Hand の開始直後は、Hero の手番か、Hand が終わっているかのどちらか（CPU の手番では止まらない）。
     expect(view.status === "complete" || view.actorId === HERO).toBe(true);
 
-    const final = playOut(orchestrator, handId, view);
+    const final = await playOut(orchestrator, handId, view);
     expect(final.status).toBe("complete");
     expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
     expect(orchestrator.fallbacksOf(handId)).toEqual([]);
   });
 
-  it("多数の seed で、CPU は合法 Action だけを選び（Fallback なし）、CPU の入力に見えない札・Deck が入らない", () => {
+  it("多数の seed で、CPU は合法 Action だけを選び（Fallback なし）、CPU の入力に見えない札・Deck が入らない", async () => {
     for (let seed = 1; seed <= 60; seed++) {
       const store = new InMemoryEventStore();
       const inputs: { playerId: string; input: OpponentInput; upto: number }[] =
@@ -208,18 +224,19 @@ describe("HandOrchestrator", () => {
         setup: PHASE1_TABLE_SETUP,
         createOpponent: spyFactory,
         botDelayMs: 0,
+        opponentTimeoutMs: 1000,
         nextSeed: () => seed,
         nextHandId: () => {
           currentHand = `hand-${seed}`;
           return currentHand;
         },
       });
-      const started = orchestrator.startHand(null);
+      const started = await orchestrator.startHand(null);
       if (!started.ok) throw new Error(started.error.message);
       // seed ごとに Hero の方針を変え、Fold で終わる Hand も通す。
       const hero =
         seed % 3 === 0 ? (): PlayerAction => ({ type: "fold" }) : passiveHero;
-      playOut(orchestrator, currentHand, started.value.view, hero);
+      await playOut(orchestrator, currentHand, started.value.view, hero);
 
       const log = store.read(currentHand).map((s) => s.event);
       expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
@@ -235,7 +252,7 @@ describe("HandOrchestrator", () => {
 
   it.each([2, 6, 8])(
     "%i 人卓で Session を通して、Stack を持ち越し Chip 総量が保存され、Bust した席は退席し、CPU は Fallback しない",
-    (size) => {
+    async (size) => {
       const tableSetup = buildTableSetup(size);
       const total = tableSetup.startingStack * size;
       // 20 seed のどこかで Bust が起きている（退席・Session 終了の経路を実際に通している）こと。
@@ -248,7 +265,9 @@ describe("HandOrchestrator", () => {
         let previous: { started: HandEvent[]; handId: string } | null = null;
         // Session が終わるまで（長くても 30 Hand）回す
         for (let h = 0; h < 30; h++) {
-          const started = orchestrator.startHand(previous?.handId ?? null);
+          const started = await orchestrator.startHand(
+            previous?.handId ?? null,
+          );
           if (!started.ok) throw new Error(started.error.message);
           const { handId, view } = started.value;
           const opening = startedOf(events(handId));
@@ -277,7 +296,7 @@ describe("HandOrchestrator", () => {
           }
           const hero =
             seed % 3 === 0 ? () => ({ type: "fold" as const }) : passiveHero;
-          playOut(orchestrator, handId, view, hero);
+          await playOut(orchestrator, handId, view, hero);
           expect(finishedStacks(events(handId))).toBe(total);
           expect(orchestrator.fallbacksOf(handId)).toEqual([]);
           busts += finishedOf(events(handId)).stacks.filter(
@@ -294,8 +313,8 @@ describe("HandOrchestrator", () => {
     },
   );
 
-  it("3 人卓で CPU が Bust すると退席し、次 Hand は 2 人（Heads-Up・Button = SB）で Stack を持ち越して続く", () => {
-    const { orchestrator, events, store, handId } = firstHandWhere(
+  it("3 人卓で CPU が Bust すると退席し、次 Hand は 2 人（Heads-Up・Button = SB）で Stack を持ち越して続く", async () => {
+    const { orchestrator, events, store, handId } = await firstHandWhere(
       { cpu1: "shove", cpu2: "fold" },
       (stacks) => stackOf(stacks, "cpu1") === 0 && stackOf(stacks, "hero") > 0,
     );
@@ -309,7 +328,7 @@ describe("HandOrchestrator", () => {
     });
     const before = finishedOf(events(handId)).stacks;
 
-    const next = orchestrator.startHand(handId);
+    const next = await orchestrator.startHand(handId);
     if (!next.ok) throw new Error(next.error.message);
     const log = events(next.value.handId);
     const opening = startedOf(log);
@@ -334,8 +353,8 @@ describe("HandOrchestrator", () => {
     );
   });
 
-  it("Hero が Bust したら Session を終え、次の Hand は新しい Session として均等 Stack で始まる", () => {
-    const { orchestrator, events, store, handId } = firstHandWhere(
+  it("Hero が Bust したら Session を終え、次の Hand は新しい Session として均等 Stack で始まる", async () => {
+    const { orchestrator, events, store, handId } = await firstHandWhere(
       { cpu1: "shove", cpu2: "fold" },
       (stacks) => stackOf(stacks, "hero") === 0,
     );
@@ -345,7 +364,7 @@ describe("HandOrchestrator", () => {
       reason: "hero_busted",
     });
 
-    const next = orchestrator.startHand(handId);
+    const next = await orchestrator.startHand(handId);
     if (!next.ok) throw new Error(next.error.message);
     const opening = startedOf(events(next.value.handId));
     const { startingStack } = buildTableSetup(3);
@@ -361,8 +380,8 @@ describe("HandOrchestrator", () => {
     );
   });
 
-  it("CPU が全員 Bust して Hero だけが残ったら Session を終える", () => {
-    const { orchestrator, handId } = firstHandWhere(
+  it("CPU が全員 Bust して Hero だけが残ったら Session を終える", async () => {
+    const { orchestrator, handId } = await firstHandWhere(
       { cpu1: "shove", cpu2: "shove" },
       (stacks) =>
         stackOf(stacks, "cpu1") === 0 && stackOf(stacks, "cpu2") === 0,
@@ -373,24 +392,24 @@ describe("HandOrchestrator", () => {
     });
   });
 
-  it("今の Session の Hand が進行中なら、新しい Hand を作らずその Hand を返す（開始の再送で Session を捨てない）", () => {
+  it("今の Session の Hand が進行中なら、新しい Hand を作らずその Hand を返す（開始の再送で Session を捨てない）", async () => {
     const policy: Record<string, "shove" | "fold"> = {
       cpu1: "shove",
       cpu2: "fold",
     };
-    const { orchestrator, events, handId } = firstHandWhere(
+    const { orchestrator, events, handId } = await firstHandWhere(
       policy,
       (stacks) => stackOf(stacks, "cpu1") === 0 && stackOf(stacks, "hero") > 0,
     );
     // 2 Hand 目（Heads-Up・Button = SB = cpu2）で cpu2 が All-in し、Hero の手番で止まるようにする。
     policy["cpu2"] = "shove";
-    const next = orchestrator.startHand(handId);
+    const next = await orchestrator.startHand(handId);
     if (!next.ok) throw new Error(next.error.message);
     expect(next.value.created).toBe(true);
     expect(next.value.view.actorId).toBe(HERO);
     const before = events(next.value.handId).length;
 
-    const again = orchestrator.startHand(handId);
+    const again = await orchestrator.startHand(handId);
     if (!again.ok) throw new Error(again.error.message);
     expect(again.value).toMatchObject({
       handId: next.value.handId,
@@ -403,19 +422,19 @@ describe("HandOrchestrator", () => {
     });
   });
 
-  it("開始直後に終わった Hand も、クライアントがまだ見ていなければ再送で同じ Hand を返し、見た後の開始で次へ進む", () => {
-    const { orchestrator, events, store, handId } = firstHandWhere(
+  it("開始直後に終わった Hand も、クライアントがまだ見ていなければ再送で同じ Hand を返し、見た後の開始で次へ進む", async () => {
+    const { orchestrator, events, store, handId } = await firstHandWhere(
       { cpu1: "shove", cpu2: "fold" },
       (stacks) => stackOf(stacks, "cpu1") === 0 && stackOf(stacks, "hero") > 0,
     );
     // 2 Hand 目（Heads-Up）は Button = SB の cpu2 が Fold するので、開始の時点で終わる。
-    const next = orchestrator.startHand(handId);
+    const next = await orchestrator.startHand(handId);
     if (!next.ok) throw new Error(next.error.message);
     expect(next.value).toMatchObject({ created: true });
     expect(next.value.view.status).toBe("complete");
 
     // 応答が失われて同じ要求（1 Hand 目の次）を再送しても、2 Hand 目を返し、3 Hand 目へ進めない。
-    const again = orchestrator.startHand(handId);
+    const again = await orchestrator.startHand(handId);
     if (!again.ok) throw new Error(again.error.message);
     expect(again.value).toMatchObject({
       handId: next.value.handId,
@@ -424,7 +443,7 @@ describe("HandOrchestrator", () => {
     expect(again.value.view).toEqual(next.value.view);
 
     // 2 Hand 目を見たうえでの開始なら 3 Hand 目へ進み、Stack を持ち越す（同じ Session）。
-    const third = orchestrator.startHand(next.value.handId);
+    const third = await orchestrator.startHand(next.value.handId);
     if (!third.ok) throw new Error(third.error.message);
     expect(third.value.created).toBe(true);
     expect(third.value.handId).not.toBe(next.value.handId);
@@ -439,13 +458,13 @@ describe("HandOrchestrator", () => {
     );
   });
 
-  it("Session が終わった Hand も、クライアントがまだ見ていなければ新しい Session へ進めずその Hand を返す", () => {
-    const { orchestrator, handId } = firstHandWhere(
+  it("Session が終わった Hand も、クライアントがまだ見ていなければ新しい Session へ進めずその Hand を返す", async () => {
+    const { orchestrator, handId } = await firstHandWhere(
       { cpu1: "shove", cpu2: "fold" },
       (stacks) => stackOf(stacks, "hero") === 0,
     );
     // 結果を見ていない（null のまま）要求には、終わった Hand をそのまま返す。
-    const unseen = orchestrator.startHand(null);
+    const unseen = await orchestrator.startHand(null);
     if (!unseen.ok) throw new Error(unseen.error.message);
     expect(unseen.value).toMatchObject({ handId, created: false });
     expect(orchestrator.sessionStatus(handId)).toMatchObject({
@@ -453,12 +472,12 @@ describe("HandOrchestrator", () => {
     });
   });
 
-  it("6 人卓の開始直後（Hero の手番）に開始を再送しても、同じ Hand を返す", () => {
+  it("6 人卓の開始直後（Hero の手番）に開始を再送しても、同じ Hand を返す", async () => {
     const { orchestrator } = setup();
-    const first = orchestrator.startHand(null);
+    const first = await orchestrator.startHand(null);
     if (!first.ok) throw new Error(first.error.message);
     expect(first.value.view.status).toBe("in_progress");
-    const again = orchestrator.startHand(null);
+    const again = await orchestrator.startHand(null);
     if (!again.ok) throw new Error(again.error.message);
     expect(again.value).toMatchObject({
       handId: first.value.handId,
@@ -467,18 +486,18 @@ describe("HandOrchestrator", () => {
     expect(orchestrator.sessionStatus("nope")).toBeNull();
   });
 
-  it("最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める", () => {
+  it("最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める", async () => {
     vi.useFakeTimers();
     const { orchestrator, events, store } = setup({ botDelayMs: 100 });
-    const first = orchestrator.startHand(null);
+    const first = await orchestrator.startHand(null);
     if (!first.ok) throw new Error(first.error.message);
     // 最初の Hand の Preflop は CPU（UTG）から。予約した CPU の手番の書き込みを失敗させて進行を止める。
     expect(first.value.view.actorId).not.toBe(HERO);
     store.failing = true;
-    vi.advanceTimersByTime(100);
+    await vi.advanceTimersByTimeAsync(100);
     store.failing = false;
 
-    const second = orchestrator.startHand(first.value.handId);
+    const second = await orchestrator.startHand(first.value.handId);
     if (!second.ok) throw new Error(second.error.message);
     expect(second.value.created).toBe(true);
     expect(second.value.handId).not.toBe(first.value.handId);
@@ -492,85 +511,322 @@ describe("HandOrchestrator", () => {
     );
   });
 
-  it("同じ seed と同じ Hero の Action なら、同じ Event Log になる（再現性）", () => {
-    const run = () => {
+  it("同じ seed と同じ Hero の Action なら、同じ Event Log になる（再現性）", async () => {
+    const run = async () => {
       const { orchestrator, events } = setup({ nextSeed: () => 20261005 });
-      const started = orchestrator.startHand(null);
+      const started = await orchestrator.startHand(null);
       if (!started.ok) throw new Error(started.error.message);
-      playOut(orchestrator, started.value.handId, started.value.view);
+      await playOut(orchestrator, started.value.handId, started.value.view);
       return events(started.value.handId);
     };
-    expect(run()).toEqual(run());
+    expect(await run()).toEqual(await run());
   });
 
-  it("CPU の出力が非合法なら Safe Fallback（Check、できなければ Fold）にして記録する", () => {
-    // 常に非合法な額の Raise を返す CPU。
-    const broken: OpponentFactory = () => ({
-      decide: () => ({ type: "raise", amount: -1 }),
-    });
-    const { orchestrator, events } = setup({ createOpponent: broken });
-    const started = orchestrator.startHand(null);
-    if (!started.ok) throw new Error(started.error.message);
-    const { handId, view } = started.value;
-    playOut(orchestrator, handId, view);
+  describe("CPU 出力の検証・Retry・Fallback（Fake Model）", () => {
+    /** RuleBot と同じ判断をする Fake Model の正常な出力。 */
+    const valid = (input: OpponentInput): Promise<unknown> =>
+      Promise.resolve(toOutput(new RuleBot(1).choose(input)));
 
-    const fallbacks = orchestrator.fallbacksOf(handId);
-    expect(fallbacks.length).toBeGreaterThan(0);
-    const log = events(handId);
-    for (const record of fallbacks) {
-      const applied = log.find((e) => e.seq === record.seq);
-      expect(applied?.type).toBe("ACTION_TAKEN");
-      if (applied?.type !== "ACTION_TAKEN") continue;
-      expect(applied.playerId).toBe(record.playerId);
-      expect(["check", "fold"]).toContain(applied.action);
-      expect(record.reason).toContain("illegal_action");
+    /** Fake Model: 呼ばれるたびに respond の結果を返し、受け取った入力を記録する。 */
+    function fakeModel(respond: (input: OpponentInput) => Promise<unknown>) {
+      const inputs: OpponentInput[] = [];
+      const factory: OpponentFactory = () => ({
+        decide: (input) => {
+          inputs.push(input);
+          return respond(input);
+        },
+      });
+      return { factory, inputs };
     }
-    expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
-  });
 
-  it("CPU が例外を投げても Safe Fallback で Hand を進める", () => {
-    const throwing: OpponentFactory = (): OpponentAgent => ({
-      decide: () => {
-        throw new Error("boom");
-      },
+    it("不正 → 正常: Correction（理由）付きで 1 回だけ再要求し、正常な出力を使う（Fallback しない）", async () => {
+      const { factory, inputs } = fakeModel((input) =>
+        input.correction === undefined
+          ? Promise.resolve({ action: "shove" })
+          : valid(input),
+      );
+      const { orchestrator, events } = setup({ createOpponent: factory });
+      const started = await orchestrator.startHand(null);
+      if (!started.ok) throw new Error(started.error.message);
+      const { handId, view } = started.value;
+      await playOut(orchestrator, handId, view);
+
+      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+      const invalid = orchestrator.invalidOutputsOf(handId);
+      expect(invalid.length).toBeGreaterThan(0);
+      // CPU の手番ごとに、1 回目が不正・2 回目（Correction 付き）が正常。
+      expect(inputs).toHaveLength(invalid.length * 2);
+      for (const [i, record] of invalid.entries()) {
+        expect(record).toMatchObject({ attempt: 1, stage: "schema" });
+        expect(inputs[i * 2]?.correction).toBeUndefined();
+        expect(inputs[i * 2 + 1]?.correction).toEqual({
+          stage: "schema",
+          reason: record.reason,
+        });
+        // 再要求の入力も KnowledgeState と Legal Action は同じ（Correction だけが足される）。
+        expect(inputs[i * 2 + 1]?.knowledge).toEqual(inputs[i * 2]?.knowledge);
+        // 正常な出力の Action が、その手番の seq に入っている。
+        const applied = events(handId).find((e) => e.seq === record.seq);
+        expect(applied).toMatchObject({
+          type: "ACTION_TAKEN",
+          playerId: record.playerId,
+        });
+      }
+      expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
     });
-    const { orchestrator } = setup({ createOpponent: throwing });
-    const started = orchestrator.startHand(null);
-    if (!started.ok) throw new Error(started.error.message);
-    const final = playOut(
-      orchestrator,
-      started.value.handId,
-      started.value.view,
+
+    /** 各段で必ず不正になる出力を、その手番の Legal Action から作る。 */
+    const invalidAt: Record<
+      "schema" | "legal_action" | "amount_range",
+      (legal: LegalActionSet) => unknown
+    > = {
+      // bet / raise なのに amount が無い。
+      schema: () => ({ action: "raise" }),
+      // Check できる手番で Call、できない手番で Check。
+      legal_action: (legal) =>
+        legal.actions.some((a) => a.type === "check")
+          ? { action: "call" }
+          : { action: "check" },
+      // 選べる bet / raise の上限を 1 超える額。
+      amount_range: (legal) => {
+        const sized = legal.actions.find(
+          (a) => a.type === "bet" || a.type === "raise",
+        );
+        if (sized?.type !== "bet" && sized?.type !== "raise") {
+          throw new Error("bet / raise を選べない手番");
+        }
+        return { action: sized.type, amount: sized.max + 1 };
+      },
+    };
+
+    it.each(["schema", "legal_action", "amount_range"] as const)(
+      "不正 → 不正（%s）: 再要求の後、RuleBot の判断（Deterministic Fallback）で続け、記録を残す",
+      async (stage) => {
+        const { factory, inputs } = fakeModel(({ legal }) =>
+          Promise.resolve(invalidAt[stage](legal)),
+        );
+        const { orchestrator, events } = setup({ createOpponent: factory });
+        const started = await orchestrator.startHand(null);
+        if (!started.ok) throw new Error(started.error.message);
+        const { handId, view } = started.value;
+        await playOut(orchestrator, handId, view);
+
+        const fallbacks = orchestrator.fallbacksOf(handId);
+        const invalid = orchestrator.invalidOutputsOf(handId);
+        expect(fallbacks.length).toBeGreaterThan(0);
+        // 1 手につき 2 回だけ求め（1 回の Retry）、2 回とも不正として記録する。
+        expect(inputs).toHaveLength(fallbacks.length * 2);
+        expect(invalid).toHaveLength(fallbacks.length * 2);
+        for (const record of fallbacks) {
+          const attempts = invalid.filter((r) => r.seq === record.seq);
+          expect(attempts.map((r) => [r.attempt, r.stage])).toEqual([
+            [1, stage],
+            [2, stage],
+          ]);
+          expect(record.reason).toContain(stage);
+          const applied = events(handId).find((e) => e.seq === record.seq);
+          expect(applied).toMatchObject({
+            type: "ACTION_TAKEN",
+            playerId: record.playerId,
+          });
+        }
+        expect(orchestrator.outageOf(handId)).toBeNull();
+        expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
+      },
     );
-    expect(final.status).toBe("complete");
-    expect(orchestrator.fallbacksOf(started.value.handId)[0]?.reason).toContain(
-      "boom",
+
+    it("出力が常に不正なら、各 CPU は同じ seed の RuleBot と同じ判断になる（Fallback は決定論）", async () => {
+      const run = async (createOpponent: OpponentFactory) => {
+        const { orchestrator, events } = setup({
+          createOpponent,
+          nextSeed: () => 777,
+        });
+        const started = await orchestrator.startHand(null);
+        if (!started.ok) throw new Error(started.error.message);
+        await playOut(orchestrator, started.value.handId, started.value.view);
+        return events(started.value.handId);
+      };
+      const broken = fakeModel(() => Promise.resolve(null));
+      expect(await run(broken.factory)).toEqual(await run(createRuleBot));
+    });
+
+    it.each([
+      [
+        "Promise の reject",
+        () => Promise.reject(new Error("API が 500 を返した")),
+      ],
+      [
+        "Promise を返す前の例外",
+        () => {
+          throw new Error("API が 500 を返した");
+        },
+      ],
+    ] as const)(
+      "例外（%s）は障害として Hand をその手番で止め、RuleBot へ自動で切り替えない",
+      async (_label, respond) => {
+        const { factory, inputs } = fakeModel(respond);
+        const { orchestrator, events } = setup({ createOpponent: factory });
+        const started = await orchestrator.startHand(null);
+        if (!started.ok) throw new Error(started.error.message);
+        const { handId, view } = started.value;
+        // 最初の Hand の Preflop は CPU（UTG）から。その手番で止まる。
+        expect(view.actorId).not.toBe(HERO);
+        expect(view.status).toBe("in_progress");
+        const outage = orchestrator.outageOf(handId);
+        expect(outage).toMatchObject({
+          seq: events(handId).length,
+          playerId: view.actorId,
+          kind: "error",
+        });
+        expect(outage?.message).toContain("API が 500 を返した");
+        // 障害は再要求しない（不正な出力ではない）・Fallback もしない。
+        expect(inputs).toHaveLength(1);
+        expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+        expect(orchestrator.invalidOutputsOf(handId)).toEqual([]);
+
+        // 止まった Hand は保持され、開始の再送でも同じ Hand を返す（新しい Session を始めない）。
+        const before = events(handId).length;
+        const again = await orchestrator.startHand(null);
+        expect(again).toMatchObject({
+          ok: true,
+          value: { handId, created: false },
+        });
+        expect(
+          await orchestrator.heroAction(handId, lastSeq(view), {
+            type: "fold",
+          }),
+        ).toMatchObject({ ok: false, error: { kind: "not_actor" } });
+        expect(events(handId)).toHaveLength(before);
+        expect(inputs).toHaveLength(1);
+      },
     );
+
+    it("不正 → 例外は、再要求の途中でも障害として止める", async () => {
+      const { factory, inputs } = fakeModel((input) =>
+        input.correction === undefined
+          ? Promise.resolve({ action: "fold", amount: 1 })
+          : Promise.reject(new Error("timeout from API")),
+      );
+      const { orchestrator, events } = setup({ createOpponent: factory });
+      const started = await orchestrator.startHand(null);
+      if (!started.ok) throw new Error(started.error.message);
+      const { handId } = started.value;
+      expect(inputs).toHaveLength(2);
+      expect(orchestrator.invalidOutputsOf(handId)).toMatchObject([
+        { attempt: 1, stage: "schema" },
+      ]);
+      expect(orchestrator.outageOf(handId)).toMatchObject({
+        seq: events(handId).length,
+        kind: "error",
+      });
+      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+    });
+
+    it("遅延: 上限を超えたら障害（timeout）として止め、後から届いた判断を適用しない", async () => {
+      vi.useFakeTimers();
+      const { factory, inputs } = fakeModel(
+        (input) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(valid(input)), 5000);
+          }),
+      );
+      const { orchestrator, events } = setup({
+        createOpponent: factory,
+        opponentTimeoutMs: 1000,
+      });
+      const pending = orchestrator.startHand(null);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(inputs).toHaveLength(1);
+      const handId = "hand-1";
+      expect(orchestrator.outageOf(handId)).toBeNull();
+      await vi.advanceTimersByTimeAsync(1);
+      const started = await pending;
+      if (!started.ok) throw new Error(started.error.message);
+      expect(orchestrator.outageOf(handId)).toMatchObject({
+        seq: events(handId).length,
+        kind: "timeout",
+      });
+      const before = events(handId).length;
+
+      // 上限の後に判断が届いても、Log は変わらず、次の判断も求めない。
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(events(handId)).toHaveLength(before);
+      expect(inputs).toHaveLength(1);
+      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+    });
+
+    it("遅延: 上限以内に届いた判断はそのまま使う", async () => {
+      vi.useFakeTimers();
+      const { factory } = fakeModel(
+        (input) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(valid(input)), 999);
+          }),
+      );
+      const { orchestrator } = setup({
+        createOpponent: factory,
+        opponentTimeoutMs: 1000,
+      });
+      const pending = orchestrator.startHand(null);
+      // CPU の手番の数だけ 999ms ずつ待つ（上限の 1000ms には届かない）。
+      await vi.advanceTimersByTimeAsync(999 * 20);
+      const started = await pending;
+      if (!started.ok) throw new Error(started.error.message);
+      const { handId, view } = started.value;
+      expect(view.status === "complete" || view.actorId === HERO).toBe(true);
+      expect(orchestrator.outageOf(handId)).toBeNull();
+      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+    });
+
+    it("判断を待っている間に close したら、後から届いた判断を適用しない", async () => {
+      vi.useFakeTimers();
+      const { factory } = fakeModel(
+        (input) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve(valid(input)), 500);
+          }),
+      );
+      const { orchestrator, events } = setup({
+        createOpponent: factory,
+        opponentTimeoutMs: 1000,
+      });
+      const pending = orchestrator.startHand(null);
+      await vi.advanceTimersByTimeAsync(100);
+      const before = events("hand-1").length;
+      orchestrator.close();
+      const started = await pending;
+      expect(started.ok).toBe(true);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(events("hand-1")).toHaveLength(before);
+      expect(orchestrator.outageOf("hand-1")).toBeNull();
+    });
   });
 
-  it("古い lastSeq（二重送信・古い画面）は stale_view で拒否し、Log を変えない", () => {
+  it("古い lastSeq（二重送信・古い画面）は stale_view で拒否し、Log を変えない", async () => {
     const { orchestrator, events } = setup();
-    const started = orchestrator.startHand(null);
+    const started = await orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     const { handId, view } = started.value;
     expect(view.actorId).toBe(HERO);
 
-    const first = orchestrator.heroAction(handId, lastSeq(view), {
+    const first = await orchestrator.heroAction(handId, lastSeq(view), {
       type: "fold",
     });
     expect(first.ok).toBe(true);
     const before = events(handId).length;
     // 同じリクエストをもう一度送る。
-    const again = orchestrator.heroAction(handId, lastSeq(view), {
+    const again = await orchestrator.heroAction(handId, lastSeq(view), {
       type: "fold",
     });
     expect(again).toMatchObject({ ok: false, error: { kind: "stale_view" } });
     expect(events(handId).length).toBe(before);
   });
 
-  it("未知の Hand は hand_not_found", () => {
+  it("未知の Hand は hand_not_found", async () => {
     const { orchestrator } = setup();
-    expect(orchestrator.heroAction("nope", 0, { type: "fold" })).toMatchObject({
+    expect(
+      await orchestrator.heroAction("nope", 0, { type: "fold" }),
+    ).toMatchObject({
       ok: false,
       error: { kind: "hand_not_found" },
     });
@@ -578,44 +834,44 @@ describe("HandOrchestrator", () => {
     expect(orchestrator.subscribe("nope", () => {})).toBeNull();
   });
 
-  it("思考待ちがあると CPU は 1 手ずつ進み、その間の Hero の Action は not_actor で拒否される", () => {
+  it("思考待ちがあると CPU は 1 手ずつ進み、その間の Hero の Action は not_actor で拒否される", async () => {
     vi.useFakeTimers();
     // 最初の Hand は Button = hero なので、Preflop の最初の Actor は CPU（UTG）。
     const { orchestrator, events } = setup({ botDelayMs: 100 });
-    const started = orchestrator.startHand(null);
+    const started = await orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     const { handId, view } = started.value;
     expect(view.actorId).not.toBe(HERO);
 
     const pushed: HeroView[] = [];
     orchestrator.subscribe(handId, (v) => pushed.push(v));
-    const early = orchestrator.heroAction(handId, lastSeq(view), {
+    const early = await orchestrator.heroAction(handId, lastSeq(view), {
       type: "fold",
     });
     expect(early).toMatchObject({ ok: false, error: { kind: "not_actor" } });
 
     const before = events(handId).length;
-    vi.advanceTimersByTime(99);
+    await vi.advanceTimersByTimeAsync(99);
     expect(events(handId).length).toBe(before);
-    vi.advanceTimersByTime(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(events(handId).length).toBeGreaterThan(before);
     expect(pushed.length).toBe(1);
 
-    vi.runAllTimers();
+    await vi.runAllTimersAsync();
     const latest = orchestrator.heroView(handId);
     expect(latest?.status === "complete" || latest?.actorId === HERO).toBe(
       true,
     );
   });
 
-  it("close 後は予約済みの CPU の手番を実行しない", () => {
+  it("close 後は予約済みの CPU の手番を実行しない", async () => {
     vi.useFakeTimers();
     const { orchestrator, events } = setup({ botDelayMs: 100 });
-    const started = orchestrator.startHand(null);
+    const started = await orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     const before = events(started.value.handId).length;
     orchestrator.close();
-    vi.runAllTimers();
+    await vi.runAllTimersAsync();
     expect(events(started.value.handId).length).toBe(before);
   });
 

@@ -2,6 +2,7 @@ import { buildApp } from "./app.js";
 import {
   buildTableSetup,
   parseBotDelayMs,
+  parseOpponentTimeoutMs,
   parseTableSize,
   resolveDbPath,
 } from "./config.js";
@@ -17,6 +18,8 @@ const store = SqliteEventStore.open(dbPath);
 
 const app = buildApp({
   botDelayMs: parseBotDelayMs(process.env["BOT_THINK_DELAY_MS"]),
+  // CPU の 1 回の判断を待つ上限（暫定値）。環境変数 OPPONENT_TIMEOUT_MS で上書きする。
+  opponentTimeoutMs: parseOpponentTimeoutMs(process.env["OPPONENT_TIMEOUT_MS"]),
   // 卓の人数（2〜8。既定 6）。環境変数 TABLE_SIZE で選ぶ。
   setup: buildTableSetup(parseTableSize(process.env["TABLE_SIZE"])),
   store,

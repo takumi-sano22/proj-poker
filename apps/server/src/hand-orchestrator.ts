@@ -3,6 +3,9 @@
 // - Session（D80）も同じ: Orchestrator が持つのは「今の Session の ID と最後の Hand の ID」だけで、
 //   次 Hand の席・Button・持ち越す Stack は、最後の Hand の HAND_STARTED と HAND_FINISHED から Position Engine で決める。
 // - 合法性は Engine だけが判定する。CPU の出力も Hero の入力も applyAction で検証する（D40）。
+// - CPU の判断は非同期（LLM を差し込めるように）。出力は Schema → Legal Action → Amount Range で検証し、
+//   不正なら理由を付けて 1 回だけ再要求、再度不正なら RuleBot の判断で続行する（D41）。
+//   例外・応答時間の超過は「障害」として Hand を止め、RuleBot へ自動で切り替えない（D86。続け方の選択は #52）。
 // - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
 import { randomUUID } from "node:crypto";
 import {
@@ -16,16 +19,19 @@ import {
   type EngineError,
   type HandEvent,
   type HeroView,
-  type LegalActionSet,
   type PlayerAction,
   type SeatInit,
 } from "@proj-poker/engine";
 import type { SeatPlayer, TableSetup } from "./config.js";
 import type { EventStore } from "./event-store.js";
 import type {
+  InvalidOutputStage,
   OpponentAgent,
   OpponentFactory,
+  OpponentInput,
 } from "./opponents/opponent-agent.js";
+import { checkOpponentOutput } from "./opponents/opponent-output.js";
+import { RuleBot } from "./opponents/rule-bot.js";
 
 /** Orchestrator が返す失敗。Engine の拒否理由はそのまま通す。 */
 export type OrchestratorError =
@@ -56,12 +62,39 @@ export type OrchestratorResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: OrchestratorError };
 
-/** CPU の出力が使えず Fallback した記録（docs/03 §5・§6 の Flag）。Event Log とは別の運用 Metadata。 */
+/**
+ * CPU の出力が 2 回続けて不正で、RuleBot の判断（Deterministic Fallback）で続けた記録（docs/03 §5・§6 の Flag）。
+ * Event Log とは別の運用 Metadata（Event への記録は #48）。
+ */
 export interface BotFallbackRecord {
   /** Fallback で適用した ACTION_TAKEN の seq。 */
   readonly seq: number;
   readonly playerId: string;
+  /** 最後に不正と判定した理由。 */
   readonly reason: string;
+}
+
+/** CPU の不正な出力の記録（docs/03 §5「Invalid Output は Log へ残す」）。Event Log とは別の運用 Metadata。 */
+export interface InvalidOutputRecord {
+  /** この手番の Action が入る seq（Retry・Fallback の結果もこの seq に入る）。 */
+  readonly seq: number;
+  readonly playerId: string;
+  /** 1 回目の要求か、Correction 付きの再要求か。 */
+  readonly attempt: 1 | 2;
+  readonly stage: InvalidOutputStage;
+  readonly reason: string;
+}
+
+/**
+ * CPU が判断を返せなかった「障害」（応答時間の超過・例外。API 障害を含む）。不正な出力とは区別する（D86）。
+ * 障害の Hand はその手番で止まり、RuleBot へ自動では切り替えない。続け方（Retry / Emergency Bot / Session 終了）の選択は #52。
+ */
+export interface OpponentOutage {
+  /** 止まった手番の Action が入るはずだった seq。 */
+  readonly seq: number;
+  readonly playerId: string;
+  readonly kind: "timeout" | "error";
+  readonly message: string;
 }
 
 export interface OrchestratorLogger {
@@ -73,8 +106,13 @@ export interface HandOrchestratorOptions {
   readonly store: EventStore;
   readonly setup: TableSetup;
   readonly createOpponent: OpponentFactory;
-  /** CPU が行動するまでの待ち時間（演出用）。0 なら CPU の手番を同期でまとめて進める。 */
+  /**
+   * CPU が行動するまでの待ち時間（演出用）。0 なら startHand / heroAction は CPU の手番が尽きるまで待ってから返す。
+   * 0 より大きければ、CPU の手番は応答の後に 1 手ずつ進み、購読者（SSE）へ届く。
+   */
   readonly botDelayMs: number;
+  /** CPU の 1 回の判断（decide の 1 呼び出し）を待つ上限（ミリ秒。Config の暫定値）。超えたら障害として Hand を止める。 */
+  readonly opponentTimeoutMs: number;
   /** Hand ごとの seed（Deck のシャッフルと CPU の乱数の元）。テストでは固定値を渡す。 */
   readonly nextSeed: () => number;
   readonly nextHandId: () => string;
@@ -89,13 +127,31 @@ interface HandRuntime {
   readonly handId: string;
   readonly sessionId: string;
   readonly opponents: ReadonlyMap<string, OpponentAgent>;
+  /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
+  readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
   readonly fallbacks: BotFallbackRecord[];
-  /** 予約済みの CPU の手番（botDelayMs > 0 のとき）。 */
-  timer: ReturnType<typeof setTimeout> | null;
+  readonly invalidOutputs: InvalidOutputRecord[];
+  /** CPU の手番を進めている最中ならその Promise（同じ Hand で 2 本同時に進めない）。 */
+  running: Promise<void> | null;
+  /** 今の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。待っていなければ null。 */
+  cancelWait: (() => void) | null;
   /** 進行を止めた内部エラー。以降この Hand の CPU は動かさない。 */
   failure: string | null;
+  /** CPU の障害で止まった手番。以降この Hand の CPU は動かさない（続け方の選択は #52）。 */
+  outage: OpponentOutage | null;
 }
+
+/** CPU に 1 回判断を求めた結果。 */
+type AskOutcome =
+  | { readonly kind: "output"; readonly output: unknown }
+  | {
+      readonly kind: "outage";
+      readonly cause: OpponentOutage["kind"];
+      readonly message: string;
+    }
+  /** アプリ終了で待ちを打ち切った。 */
+  | { readonly kind: "cancelled" };
 
 /** 次 Hand の席・Button と、その Hand が属する Session。 */
 interface HandPlan {
@@ -128,6 +184,14 @@ export class HandOrchestrator {
     if (!Number.isSafeInteger(options.botDelayMs) || options.botDelayMs < 0) {
       throw new RangeError(`botDelayMs は 0 以上の整数: ${options.botDelayMs}`);
     }
+    if (
+      !Number.isSafeInteger(options.opponentTimeoutMs) ||
+      options.opponentTimeoutMs <= 0
+    ) {
+      throw new RangeError(
+        `opponentTimeoutMs は 1 以上の整数: ${options.opponentTimeoutMs}`,
+      );
+    }
     this.heroId = hero.playerId;
     this.logger = options.logger ?? silentLogger;
   }
@@ -147,11 +211,13 @@ export class HandOrchestrator {
    *   Session が終わっていたら（D80）新しい Session として均等 Stack で始める
    * - 最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める
    */
-  startHand(afterHandId: string | null): OrchestratorResult<{
-    handId: string;
-    view: HeroView;
-    created: boolean;
-  }> {
+  async startHand(afterHandId: string | null): Promise<
+    OrchestratorResult<{
+      handId: string;
+      view: HeroView;
+      created: boolean;
+    }>
+  > {
     const { setup, store } = this.options;
     const unseen = this.unseenLatestHand(afterHandId);
     if (unseen !== null) {
@@ -181,29 +247,36 @@ export class HandOrchestrator {
     store.append(handId, started.value.events, { sessionId: plan.sessionId });
     this.session = { sessionId: plan.sessionId, lastHandId: handId };
 
-    // 座っている CPU にだけ Opponent を割り当てる。CPU の seed は卓の設定上の席番号から導く
+    // 座っている CPU にだけ Opponent（と Fallback 用の RuleBot）を割り当てる。CPU の seed は卓の設定上の席番号から導く
     // （Bust で席が詰まっても、同じ CPU には同じ導き方の seed が渡る）。
     const seated = new Set(plan.seats.map((s) => s.playerId));
     const opponents = new Map<string, OpponentAgent>();
+    const fallbackBots = new Map<string, RuleBot>();
     setup.players.forEach((p, seatIndex) => {
       if (p.kind === "cpu" && seated.has(p.playerId)) {
+        const cpuSeed = deriveSeed(seed, seatIndex);
         opponents.set(
           p.playerId,
-          this.options.createOpponent(deriveSeed(seed, seatIndex), p.playerId),
+          this.options.createOpponent(cpuSeed, p.playerId),
         );
+        fallbackBots.set(p.playerId, new RuleBot(cpuSeed));
       }
     });
     const rt: HandRuntime = {
       handId,
       sessionId: plan.sessionId,
       opponents,
+      fallbackBots,
       listeners: new Set(),
       fallbacks: [],
-      timer: null,
+      invalidOutputs: [],
+      running: null,
+      cancelWait: null,
       failure: null,
+      outage: null,
     };
     this.hands.set(handId, rt);
-    this.advance(rt);
+    await this.proceed(rt);
     return {
       ok: true,
       value: { handId, view: this.heroViewOf(handId), created: true },
@@ -215,11 +288,11 @@ export class HandOrchestrator {
    * lastSeq は Hero が見ていた HeroView の log の最後の seq。Log がそこから進んでいれば stale_view で拒否する
    * （二重送信や、CPU の行動を見る前の画面からの送信を、手番の判定より先に弾く）。
    */
-  heroAction(
+  async heroAction(
     handId: string,
     lastSeq: number,
     action: PlayerAction,
-  ): OrchestratorResult<HeroView> {
+  ): Promise<OrchestratorResult<HeroView>> {
     const rt = this.hands.get(handId);
     if (rt === undefined) return notFound(handId);
     const events = this.events(handId);
@@ -236,7 +309,7 @@ export class HandOrchestrator {
     const result = applyAction(foldHandEvents(events), this.heroId, action);
     if (!result.ok) return result;
     this.commit(rt, result.value.events);
-    this.advance(rt);
+    await this.proceed(rt);
     return { ok: true, value: this.heroViewOf(handId) };
   }
 
@@ -258,17 +331,26 @@ export class HandOrchestrator {
     return () => rt.listeners.delete(listener);
   }
 
-  /** CPU の出力が使えず Fallback した記録。 */
+  /** CPU の出力が 2 回続けて不正で、RuleBot の判断で続けた記録。 */
   fallbacksOf(handId: string): readonly BotFallbackRecord[] {
     return [...(this.hands.get(handId)?.fallbacks ?? [])];
   }
 
-  /** 予約済みの CPU の手番を取り消す（アプリ終了時）。以降は CPU を進めない。 */
+  /** CPU の不正な出力の記録（Retry で正常に戻ったものも含む）。 */
+  invalidOutputsOf(handId: string): readonly InvalidOutputRecord[] {
+    return [...(this.hands.get(handId)?.invalidOutputs ?? [])];
+  }
+
+  /** CPU の障害で止まっていればその内容。止まっていない・未知の Hand なら null。 */
+  outageOf(handId: string): OpponentOutage | null {
+    return this.hands.get(handId)?.outage ?? null;
+  }
+
+  /** CPU の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。以降は CPU を進めない。遅れて届いた判断も適用しない。 */
   close(): void {
     this.closed = true;
     for (const rt of this.hands.values()) {
-      if (rt.timer !== null) clearTimeout(rt.timer);
-      rt.timer = null;
+      rt.cancelWait?.();
       rt.listeners.clear();
     }
   }
@@ -391,86 +473,196 @@ export class HandOrchestrator {
     }
   }
 
-  /** CPU の手番が続く間、CPU を進める。Hero の手番か Hand の終了で止まる。 */
-  private advance(rt: HandRuntime): void {
+  /**
+   * CPU の手番を進める。思考待ちが 0 なら CPU の手番が尽きるまで待ち、0 より大きければ待たずに返す
+   * （CPU の行動は後から 1 手ずつ購読者へ届く）。
+   */
+  private async proceed(rt: HandRuntime): Promise<void> {
+    const running = this.advance(rt);
+    if (this.options.botDelayMs === 0) await running;
+  }
+
+  /** CPU の手番が続く間、CPU を進める。Hero の手番・Hand の終了・障害・内部エラー・終了で止まる。 */
+  private advance(rt: HandRuntime): Promise<void> {
+    // すでに進めている最中なら、その進行に任せる（同じ手番を 2 回判断させない）。
+    if (rt.running !== null) return rt.running;
+    const running = this.runCpuTurns(rt).finally(() => {
+      rt.running = null;
+    });
+    rt.running = running;
+    return running;
+  }
+
+  private async runCpuTurns(rt: HandRuntime): Promise<void> {
     try {
-      while (!this.closed && rt.failure === null && rt.timer === null) {
+      while (this.canRun(rt)) {
         const events = this.events(rt.handId);
         const legal = getLegalActions(foldHandEvents(events));
         if (legal === null || legal.playerId === this.heroId) return;
         const expectedSeq = events.length;
-        if (this.options.botDelayMs === 0) {
-          this.cpuTurn(rt, expectedSeq);
-          continue;
+        if (this.options.botDelayMs > 0) {
+          await this.wait(rt, this.options.botDelayMs);
         }
-        rt.timer = setTimeout(() => {
-          rt.timer = null;
-          try {
-            this.cpuTurn(rt, expectedSeq);
-          } catch (error) {
-            this.fail(rt, error);
-            return;
-          }
-          this.advance(rt);
-        }, this.options.botDelayMs);
+        await this.cpuTurn(rt, expectedSeq);
       }
     } catch (error) {
       this.fail(rt, error);
     }
   }
 
+  private canRun(rt: HandRuntime): boolean {
+    return !this.closed && rt.failure === null && rt.outage === null;
+  }
+
+  /** Log が expectedSeq のまま（待っている間に誰も進めていない）で、まだ CPU を動かしてよいか。 */
+  private isCurrent(rt: HandRuntime, expectedSeq: number): boolean {
+    return this.canRun(rt) && this.events(rt.handId).length === expectedSeq;
+  }
+
   /**
-   * CPU 1 手分。予約したときから Log が進んでいたら、古い予約として何もしない（遅れて届いた判断を適用しない）。
-   * CPU の出力は Engine で検証し、拒否されたら決定論的な Safe Fallback（Check、できなければ Fold）にする（docs/03 §5）。
+   * CPU 1 手分。待っている間に Log が進んでいたら、古い手番として何もしない（遅れて届いた判断を適用しない）。
+   * 出力は Schema → Legal Action → Amount Range で検証し、Engine（applyAction）が最後に適用可否を決める（D40）。
+   * 不正なら理由を付けて 1 回だけ再要求し、再度不正なら RuleBot の判断で続ける（D41）。
+   * 障害（応答時間の超過・例外）なら Hand をその手番で止める（D86）。
    */
-  private cpuTurn(rt: HandRuntime, expectedSeq: number): void {
-    if (this.closed) return;
+  private async cpuTurn(rt: HandRuntime, expectedSeq: number): Promise<void> {
+    if (!this.isCurrent(rt, expectedSeq)) return;
     const events = this.events(rt.handId);
-    if (events.length !== expectedSeq) return;
     const state = foldHandEvents(events);
     const legal = getLegalActions(state);
     if (legal === null || legal.playerId === this.heroId) return;
-    const agent = rt.opponents.get(legal.playerId);
-    if (agent === undefined) {
-      throw new Error(`CPU が割り当てられていない席: ${legal.playerId}`);
+    const playerId = legal.playerId;
+    const agent = rt.opponents.get(playerId);
+    const fallbackBot = rt.fallbackBots.get(playerId);
+    if (agent === undefined || fallbackBot === undefined) {
+      throw new Error(`CPU が割り当てられていない席: ${playerId}`);
     }
 
-    let reason: string | null = null;
-    let result: ReturnType<typeof applyAction> | null = null;
-    try {
-      // CPU に渡すのはその CPU の KnowledgeState と Legal Action だけ（global State・他者の札・Deck を渡さない）。
-      const decided = agent.decide({
-        knowledge: projectKnowledgeState(events, legal.playerId),
-        legal,
-      });
-      result = applyAction(state, legal.playerId, decided);
-      if (!result.ok) {
-        reason = `${result.error.kind}: ${result.error.message}`;
+    // CPU に渡すのはその CPU の KnowledgeState と Legal Action だけ（global State・他者の札・Deck を渡さない）。
+    const base: OpponentInput = {
+      knowledge: projectKnowledgeState(events, playerId),
+      legal,
+    };
+    let input = base;
+    let lastInvalid: InvalidOutputRecord | null = null;
+    for (const attempt of [1, 2] as const) {
+      const outcome = await this.ask(rt, agent, input);
+      if (outcome.kind === "cancelled" || !this.isCurrent(rt, expectedSeq)) {
+        return;
       }
-    } catch (error) {
-      reason = `decide が例外を投げた: ${String(error)}`;
-    }
-
-    if (result === null || !result.ok) {
-      const fallback = applyAction(state, legal.playerId, safeFallback(legal));
-      if (!fallback.ok) {
-        throw new Error(
-          `Safe Fallback も Engine に拒否された: ${fallback.error.message}`,
+      if (outcome.kind === "outage") {
+        rt.outage = {
+          seq: expectedSeq,
+          playerId,
+          kind: outcome.cause,
+          message: outcome.message,
+        };
+        this.logger.error(
+          { handId: rt.handId, ...rt.outage },
+          "CPU の障害で Hand を止めた",
         );
+        return;
       }
-      result = fallback;
-      const record: BotFallbackRecord = {
-        seq: fallback.value.events[0]?.seq ?? expectedSeq,
-        playerId: legal.playerId,
-        reason: reason ?? "不明",
-      };
-      rt.fallbacks.push(record);
+      const checked = checkOpponentOutput(outcome.output, legal);
+      const applied = checked.ok
+        ? applyAction(state, playerId, checked.action)
+        : null;
+      if (applied?.ok === true) {
+        this.commit(rt, applied.value.events);
+        return;
+      }
+      // 検証は通ったのに Engine が拒否した場合も不正な出力として扱う（合法性の最終判断は Engine。D40）。
+      const { stage, reason } = checked.ok
+        ? {
+            stage: "legal_action" as const,
+            reason: applied?.ok === false ? applied.error.message : "不明",
+          }
+        : checked;
+      lastInvalid = { seq: expectedSeq, playerId, attempt, stage, reason };
+      rt.invalidOutputs.push(lastInvalid);
       this.logger.warn(
-        { handId: rt.handId, ...record },
-        "CPU の出力を使えず Safe Fallback した",
+        { handId: rt.handId, ...lastInvalid, output: outcome.output },
+        "CPU の出力が不正だった",
+      );
+      input = { ...base, correction: { stage, reason } };
+    }
+
+    // 2 回続けて不正: RuleBot の判断（Deterministic Fallback）で続ける。RuleBot は同期で、障害を起こさない。
+    const fallback = applyAction(state, playerId, fallbackBot.choose(base));
+    if (!fallback.ok) {
+      throw new Error(
+        `Deterministic Fallback（RuleBot）も Engine に拒否された: ${fallback.error.message}`,
       );
     }
-    this.commit(rt, result.value.events);
+    const record: BotFallbackRecord = {
+      seq: fallback.value.events[0]?.seq ?? expectedSeq,
+      playerId,
+      reason:
+        lastInvalid === null
+          ? "不明"
+          : `${lastInvalid.stage}: ${lastInvalid.reason}`,
+    };
+    rt.fallbacks.push(record);
+    this.logger.warn(
+      { handId: rt.handId, ...record },
+      "CPU の出力を 2 回続けて使えず、RuleBot の判断で続けた",
+    );
+    this.commit(rt, fallback.value.events);
+  }
+
+  /**
+   * CPU に 1 回判断を求める。応答時間の上限を超えた・例外を投げたら「障害」として返す（不正な出力とは区別する）。
+   * 上限を超えた後に届いた判断は捨てる（ここで決まった結果だけが使われる）。
+   */
+  private ask(
+    rt: HandRuntime,
+    agent: OpponentAgent,
+    input: OpponentInput,
+  ): Promise<AskOutcome> {
+    const limit = this.options.opponentTimeoutMs;
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (outcome: AskOutcome) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        rt.cancelWait = null;
+        resolve(outcome);
+      };
+      const timer = setTimeout(
+        () =>
+          finish({
+            kind: "outage",
+            cause: "timeout",
+            message: `${limit}ms 以内に判断が返らなかった`,
+          }),
+        limit,
+      );
+      rt.cancelWait = () => finish({ kind: "cancelled" });
+      const toError = (error: unknown) =>
+        finish({ kind: "outage", cause: "error", message: String(error) });
+      try {
+        agent
+          .decide(input)
+          .then((output) => finish({ kind: "output", output }), toError);
+      } catch (error) {
+        // Promise を返す前に投げた場合も、Promise の reject と同じ障害として扱う。
+        toError(error);
+      }
+    });
+  }
+
+  /** 思考待ち（演出）。アプリ終了時は打ち切る。 */
+  private wait(rt: HandRuntime, ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        rt.cancelWait = null;
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      rt.cancelWait = done;
+    });
   }
 
   private fail(rt: HandRuntime, error: unknown): void {
@@ -480,13 +672,6 @@ export class HandOrchestrator {
       "Hand の進行を止めた（内部エラー）",
     );
   }
-}
-
-/** Check できれば Check、できなければ Fold（どちらも追加の Chip を出さない）。 */
-function safeFallback(legal: LegalActionSet): PlayerAction {
-  return legal.actions.some((a) => a.type === "check")
-    ? { type: "check" }
-    : { type: "fold" };
 }
 
 /** Hand の seed から席ごとの CPU の seed を導く（同じ Hand seed なら同じ CPU の乱数列になる）。 */

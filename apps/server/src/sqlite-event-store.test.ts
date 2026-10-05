@@ -338,22 +338,23 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
-  it("Orchestrator で 1 Hand を最後まで進めると、再起動後に同じ Event Log を読み出せる", () => {
+  it("Orchestrator で 1 Hand を最後まで進めると、再起動後に同じ Event Log を読み出せる", async () => {
     const store = open();
     const orchestrator = new HandOrchestrator({
       store,
       setup: PHASE1_TABLE_SETUP,
       createOpponent: createRuleBot,
       botDelayMs: 0,
+      opponentTimeoutMs: 1000,
       nextSeed: () => 42,
       nextHandId: () => "hand-1",
     });
-    const started = orchestrator.startHand(null);
+    const started = await orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     let view: HeroView = started.value.view;
     for (let guard = 0; view.status !== "complete"; guard++) {
       expect(guard).toBeLessThan(100);
-      const result = orchestrator.heroAction(
+      const result = await orchestrator.heroAction(
         "hand-1",
         view.log.at(-1)?.seq ?? -1,
         passive(view),

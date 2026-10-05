@@ -1,5 +1,5 @@
 // 暫定 CPU（D71）: seed 付きの決定論ルール Bot。
-// 戦略の質は求めない（Phase 1 は 1 Hand を最後まで進められることが目的）。将来の Fallback / Emergency Bot（D41・D42）の土台。
+// 戦略の質は求めない（Phase 1 は 1 Hand を最後まで進められることが目的）。不正な出力が続いたときの Deterministic Fallback（D41）にも使い、将来の Emergency Bot（D42）の土台にもなる。
 // 入力は OpponentInput（自分の KnowledgeState と Legal Action）だけで、乱数は seed から作る（Math.random を使わない）。
 import {
   HandCategory,
@@ -14,6 +14,7 @@ import type {
   OpponentAgent,
   OpponentFactory,
   OpponentInput,
+  OpponentOutput,
 } from "./opponent-agent.js";
 
 type Strength = "strong" | "medium" | "weak";
@@ -38,7 +39,21 @@ export class RuleBot implements OpponentAgent {
     this.rng = createRng(seed);
   }
 
-  decide({ knowledge, legal }: OpponentInput): PlayerAction {
+  /** OpponentAgent としての出力。中身は choose と同じ判断を OpponentOutput の形にしたもの。 */
+  decide(input: OpponentInput): Promise<OpponentOutput> {
+    const action = this.choose(input);
+    return Promise.resolve(
+      "amount" in action
+        ? { action: action.type, amount: action.amount }
+        : { action: action.type },
+    );
+  }
+
+  /**
+   * 合法 Action から同期で 1 つ選ぶ。Deterministic Fallback（D41）はこちらを直接使う
+   * （待ち時間も障害も無く、seed だけで結果が決まる）。
+   */
+  choose({ knowledge, legal }: OpponentInput): PlayerAction {
     const strength = rateStrength(knowledge.holeCards, knowledge.board);
     const r = this.rng();
     const find = <T extends LegalAction["type"]>(type: T) =>
