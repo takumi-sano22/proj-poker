@@ -78,7 +78,15 @@ Phase 1（D70）の1 Hand進行で発行するEventです。上の一覧のう�
 | `POT_AWARDED` | `potTotal`・`awards`（`playerId` / `amount`）・`showdown` | public | 単一Potのみ。同着の端数は `oddChipRule` に従って配分済みの額が入る（D75） |
 | `HAND_FINISHED` | `stacks`（`playerId` / `amount`） | public | §10のRecovery境界 |
 
-Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます。今はメモリ内の実装だけで、SQLiteへの保存はIssue #20です。CPUの出力が使えずSafe Fallbackした記録（seq・Player・理由）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_FALLBACK_USED`はLLMのOpponentを入れるときにEventへ足します）。
+Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの出力が使えずSafe Fallbackした記録（seq・Player・理由）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_FALLBACK_USED`はLLMのOpponentを入れるときにEventへ足します）。
+
+#### Event の形の版（schema_version）
+
+保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。方針は次のとおりです（D76）。
+
+- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `1`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
+- 読み出しは現在の版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。
+- 互換の無い形の変更（必須項目の追加・意味の変更）をするときは版を上げ、旧版の行を読み込み時に新しい形へそろえる変換（upcast）を同じ PR で足します。保存済みの行は書き換えません（append-only）。任意項目の追加など、旧版の読み手が誤らない変更は版を上げません。
 
 Phase 1で扱えない状態（D70）は、Eventを発行せずにEngineが `unsupported_state` エラーを返します（`side_pot`: All-inした額を他のPlayerのCommitが超える）。Split Potの端数はD75で実装したため、エラーにしない。
 
@@ -208,6 +216,14 @@ Best-effortなDebug / Re-analysis用Metadata:
 アプリがHand途中で終了した場合、直前のCompleted Hand終了時点から再開できればMVPとして十分です。
 
 Action単位の完全Crash RecoveryはMVPで過剰実装しません。
+
+### Phase 1 の保存（Issue #20。D62・D72）
+
+- 保存先は SQLite（`node:sqlite`）で、`apps/server` だけが扱います。DB ファイルは環境変数 `POKER_DB_PATH`（`:memory:` も可）で変えられ、既定は `apps/server/data/poker.sqlite`（gitignore 済み）です。
+- テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only。削除は §11 の Reset と一緒に設計する）。
+- マイグレーションは自前の小さな仕組みで、SQL の配列（`apps/server/src/db/database.ts` の `MIGRATIONS`）を `PRAGMA user_version` より新しい分だけ 1 版ずつトランザクションで当てます。アプリより新しい版の DB は開きません。
+- Hand 途中の Event はメモリに持ち、`HAND_FINISHED` を追記した時点で、その Hand の全 Event と `hands` の行（最初の Hand なら `sessions` の行も）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。
+- Session は起動ごとに 1 つです。Session Projection・Stack の持ち越し・Memory Update はまだ保存しません（Phase 1 は毎 Hand 均等 Stack で始める。D70）。Stack は `HAND_FINISHED` の `stacks` から読めます。
 
 ## 11. Reset Semantics
 

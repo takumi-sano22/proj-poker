@@ -42,13 +42,14 @@ apps/
 
 - **Betting範囲（D70）**: 全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装します。Side Pot・Short All-in ReopenはPhase 2で、未対応の状態はEngineが明示エラーにします。Split Potの端数はD75でPhase 1に前倒しして実装しました。
 - **暫定CPU（D71）**: seed付きの決定論ルールBotです。合法Actionから選び、そのPlayerに見える情報だけを受け取ります。将来D41 / D42のFallback / Emergency Botに流用します。
-- **永続化（D72）**: `node:sqlite`（Node 24内蔵）を`apps/server`だけが使います。ORMなし・生SQL・自前の小さなマイグレーションで、EventはJSON列にappend-onlyで保存します。
+- **永続化（D72）**: `node:sqlite`（Node 24内蔵）を`apps/server`だけが使います。ORMなし・生SQL・自前の小さなマイグレーションで、EventはJSON列にappend-onlyで保存します。保存の単位はCompleted Hand（D62）で、テーブル・マイグレーション・Eventの版（`schema_version`。D76）は`docs/04` §3・§10です。
 - **通信（D73）**: HeroのActionはREST（POST）、卓の状態はSSEでPushします。PushするのはHeroに見えるProjectionだけです。
 - **Engine の入口（Issue #17）**: `packages/engine` は純粋関数で、`startHand`（Hand開始）→ `getLegalActions`（現在のActorの合法Action）→ `applyAction`（Actionの適用。Streetの進行・Showdown・Potの配分まで自動で進める）を持ちます。各Commandは新しいEventと畳み込み後のStateを返し、Event Logへの追記は呼び出し側が行います。Playerごとの可視Projectionは `projectHeroView`（Hero表示用）/ `projectBotView`（暫定CPU用）です。Event構成は `docs/04` §3。Chipは最小単位の整数です（D74）。Split Potの端数（Odd Chip）は、Rule Profileの設定値 `oddChipRule`（暫定値 `first_left_of_button`: Buttonの左から時計回りで最初の勝者へ1 Chipずつ。OI-008の暫定値）に従って `splitPot` が配ります（D75）。
 - **Hand Orchestrator・暫定CPU・API（Issue #18）**: `apps/server`の構成は次のとおりです（§4の流れを実装したもの）。
   - `hand-orchestrator.ts`（Hand Orchestrator）: Stateは毎回Event Store（Event Log）から`foldHandEvents`で作り、別のStateを持ちません（D37）。`startHand` → Hero の手番か Hand の終了まで CPU を進める → Hero の Action を`applyAction`で検証して適用 → また CPU を進める、を繰り返します。CPUの手番はserver側で進め、Heroの入力待ちで止まります。CPUの思考待ち（演出）はConfig値`BOT_THINK_DELAY_MS`（既定600ms・テストは0）で、待ちの間に Log が進んでいたら予約した手番を捨てます。
   - `opponents/`（Opponent Agent Adapter）: `OpponentAgent.decide({ view, legal })`のInterfaceで、Domainの外に置いた差し替え口です。入力は`projectBotView`の結果とLegal Actionだけです。暫定CPU（D71）の`RuleBot`は、自分の札と公開Boardから手の強さを3段階で見積もり、seed付きの乱数で合法Actionから選びます（CPUのseedはHandのseedから席ごとに導きます）。CPUの出力は`applyAction`で検証し、拒否・例外ならDeterministic Safe Fallback（Check、できなければFold）にして、Fallbackの記録（seq・Player・理由）をHandの運用Metadataとして残します（§5。Retryと`AI_FALLBACK_USED` EventはLLMのOpponentを入れるときに足します）。
-  - `event-store.ts`（Event Store）: §2 Persistence の Event Store の Interface（`append` / `read`）と、メモリ内の実装です。append-onlyで、seqが連続しない追記（二重追記・抜け）は何も書かずに拒否します。保存時にEventを複製して配下まで凍結し、呼び出し側の参照から書き換えられないようにします。SQLiteの実装はIssue #20で差し替えます（D72）。
+  - `event-store.ts`（Event Store）: §2 Persistence の Event Store の Interface（`append` / `read`）と、メモリ内の実装です。append-onlyで、seqが連続しない追記（二重追記・抜け）と`HAND_FINISHED`の後ろへの追記は何も書かずに拒否します。保存時にEventを複製して配下まで凍結し、呼び出し側の参照から書き換えられないようにします。起動時（`index.ts`）は同じInterfaceのSQLite実装（下記）を渡し、メモリ内の実装はテスト用です。
+  - `sqlite-event-store.ts`・`db/database.ts`（Event StoreのSQLite実装。Issue #20・D72）: `db/database.ts`がDBファイルを開いてマイグレーションを当て、`SqliteEventStore`が`HAND_FINISHED`の時点でHandの全Eventを1トランザクションで書きます。Hand途中のEventはメモリに持ちます（D62）。DBの場所は環境変数`POKER_DB_PATH`（既定`apps/server/data/poker.sqlite`。gitignore済み）。詳細は`docs/04` §10。
   - `routes/hands.ts`（API。D73）: 下表。入力の形はJSON Schemaで検証し（型の自動変換・余分な項目の黙った削除はしない）、合法性はEngineが判定します。返す・PushするのはHeroに見えるProjection（`projectHeroView`）だけで、Hand のseedはclientから受け取らず、返しません。
   - 卓の人数・CPUの名前は`config.ts`の`PHASE1_TABLE_SETUP`（Hero 1人 + CPU 5人。OI-005の暫定値）で、ButtonはHandごとに時計回りに1席ずつ動かします。
 

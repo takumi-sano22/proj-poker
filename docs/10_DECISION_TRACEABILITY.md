@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D75の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D76の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -18,7 +18,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D55〜D60 | MVP、Stack、Solver、Research、Test、Asset |
 | D61〜D66 | Single User、Persistence、CPU Pool、Reset、Latency、MVP DoD |
 | D67〜D69 | Web Stack、Repository構成、品質ツール |
-| D70〜D75 | Phase 1 のBetting範囲、暫定CPU、永続化、通信、Chipの数値表現、Odd Chip Split |
+| D70〜D76 | Phase 1 のBetting範囲、暫定CPU、永続化、通信、Chipの数値表現、Odd Chip Split、Eventの版（schema_version） |
 
 ## 特に重要なClosed Decision
 

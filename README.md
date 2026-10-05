@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: Phase 0（Repository / Docs / Tooling）の到達点 / **まだ遊べません**（ポーカーのロジックと卓 UI は Phase 1 から）
+> 現在の状態: Phase 1（Vertical Poker Slice）の到達点 / ブラウザで **6-max Cash の 1 Hand を CPU 5 人と遊べます**。終わった Hand の Event Log は SQLite に残ります（Replay・Review・AI の CPU はまだありません）
 
 ## このプロジェクトを作る理由
 
@@ -110,7 +110,7 @@ AIは「もっともらしい答えを作る計算機」ではなく、**複数�
   - `apps/web`: Local Browser UI（Vite + ReactのSPA。SSRなし。ブラウザへAPI Keyを渡さない）
 - **品質ツール**（D69）: ESLint（typescript-eslint）・Prettier（版を厳密固定）・Vitest・fast-check・`tsc --noEmit`。CIはGitHub Actions。pre-commit hookは使いません
 - Node 24 LTS（`.nvmrc`）。pnpmの版は`package.json`の`packageManager`で固定（corepack）
-- SQLite（永続化はPhase 1以降）
+- SQLite（Node 24内蔵の`node:sqlite`。ORMなし・生SQL・自前マイグレーション。D72）: 終わったHandのEvent Logを保存
 - 対戦CPU: Claude Haiku級を初期候補 / Review: より上位のClaudeモデルを初期候補
 - ローカルSolverをAdapter経由で接続（必要ならRust / Python / C++の専門解析器もAdapter越しに利用）
 
@@ -126,7 +126,13 @@ pnpm install
 pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）を同時に起動
 ```
 
-ブラウザで Vite が表示するURL（既定は `http://127.0.0.1:5173`）を開きます。現時点の画面は空で、`/api/health` が `{"status":"ok"}` を返す疎通確認だけができます。
+ブラウザで Vite が表示するURL（既定は `http://127.0.0.1:5173`）を開き、「Hand を始める」を押すと、Hero として 6-max の 1 Hand を遊べます（CPU 5 人。終わったら「次の Hand へ」）。
+
+| 環境変数 | 既定 | 内容 |
+|---|---|---|
+| `POKER_DB_PATH` | `apps/server/data/poker.sqlite`（gitignore 済み） | Event Log を保存する SQLite ファイル。`:memory:` なら保存しない |
+| `BOT_THINK_DELAY_MS` | `600` | CPU の思考に見せる待ち時間（演出のみ） |
+| `PORT` | `3001` | `apps/server` の待ち受けポート（`127.0.0.1` 固定） |
 
 ## 開発コマンド
 
@@ -136,7 +142,7 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 |---|---|
 | `pnpm lint` | ESLint |
 | `pnpm typecheck` | 全パッケージの `tsc --noEmit` |
-| `pnpm test` | Vitest（現在は `packages/engine` のみ） |
+| `pnpm test` | Vitest（`packages/engine`・`apps/server`・`apps/web`） |
 | `pnpm format:check` | Prettier の整形チェック（適用は `pnpm format`） |
 
 ## MVPの完成条件
@@ -170,7 +176,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D69の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D76の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -202,18 +208,22 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 0 — Repository / Docs / Tooling** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
+**Phase 1 — Vertical Poker Slice** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
 
 できていること:
 
-- 設計ドキュメント（`docs/`）と人間判断（D01〜D69）
-- Claude Code Skills / Harness（`.claude/`）の投入と、このプロジェクトの開発規約としての確認
-- TypeScriptのプロジェクトスケルトン（`packages/engine`・`apps/server`・`apps/web`）
-- Lint / Typecheck / Test / Format と CI
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D76）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
+- 決定論的なPoker Engine（`packages/engine`）: 6-max Cash・全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います。Scenario・Invariant・Property のテスト付き
+- ブラウザで遊べる Basic UI（`apps/web`）: 2Dの卓・実額表示（BBは補助）・合法Actionだけの宣言ボタン・進行ログ・Hero Fold 後の観戦
+- 暫定CPU（D71）: seed付きの決定論ルールBot。そのCPUに見える情報だけで合法Actionから選びます
+- Event Log（D37）: Handの進行はすべてEventで表し、終わったHandのEventをSQLiteへ1トランザクションで保存します（Completed Handが保存の境界。D62）
 
 制約・未実装:
 
-- **まだ遊べません。** Poker Engineのロジック・卓UI・Event Log・AI CPU・Hand Reviewは未実装です
-- MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ1項目も満たしていません
+- 1 Hand ずつの独立した練習です。Stackは毎Hand均等に戻り、Sessionの集計・Stackの持ち越しはありません
+- Side Pot・Short All-in Reopen・2〜8人の可変人数はPhase 2です（Phase 1では未対応の状態をEngineがエラーにします）
+- 保存したHandを画面から開くReplay・Hand Review・LLMのCPU・Chip操作（Click + Drag）は未実装です
+- Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
+- MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
 
-次は **Phase 1 — Vertical Poker Slice**（6-max Cashの1 Hand・Basic UI・Event Log）です。
+次は **Phase 2 — Full Poker Engine**（2〜8人・Side Pot・Heads-Up・Deterministic Tests）です。

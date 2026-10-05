@@ -1,4 +1,5 @@
 // Runtime の卓設定。値は Open Item の暫定値で、永久仕様ではない（Config に置いて差し替えられるようにする）。
+import { fileURLToPath } from "node:url";
 import { PHASE1_CASH_PRESET, type TableConfig } from "@proj-poker/engine";
 
 /** 卓に座る Player。kind は Hero（ユーザー）か CPU か。displayName は表示用で、Engine は playerId だけを使う。 */
@@ -46,4 +47,17 @@ export function parseBotDelayMs(raw: string | undefined): number {
   return Number.isSafeInteger(value) && value >= 0
     ? value
     : DEFAULT_BOT_THINK_DELAY_MS;
+}
+
+/**
+ * SQLite の DB ファイルの既定の置き場所: apps/server/data/poker.sqlite（gitignore 済み）。
+ * src（dev）からも dist（start）からも 1 階層上なので、同じ場所になる。worktree ごとに別の DB になる。
+ */
+export const DEFAULT_DB_PATH = fileURLToPath(
+  new URL("../data/poker.sqlite", import.meta.url),
+);
+
+/** 環境変数 POKER_DB_PATH の値を DB の場所として読む。未設定・空なら既定の場所。":memory:" も受け付ける。 */
+export function resolveDbPath(raw: string | undefined): string {
+  return raw === undefined || raw.trim() === "" ? DEFAULT_DB_PATH : raw;
 }

@@ -1,5 +1,5 @@
 // Event Store。Hand の Event Log を append-only で持つ（D37: Event Log が唯一の正本）。
-// Interface だけを Orchestrator へ見せ、今はメモリ内実装を使う（SQLite 実装は #20 で差し替える。D72）。
+// Interface だけを Orchestrator へ見せる。起動時は SQLite 実装（sqlite-event-store.ts。D72）、テストの既定はメモリ内実装を使う。
 import { randomUUID } from "node:crypto";
 import type { HandEvent } from "@proj-poker/engine";
 
@@ -17,6 +17,7 @@ export interface EventStore {
    * Hand の Event Log の末尾へ追記する。更新・削除の API は持たない（append-only）。
    * 先頭の Event の seq は「その Hand の保存済み件数」と一致し、連番でなければならない。
    * 一致しなければ何も書かずに EventSeqConflictError を投げる（二重追記・抜けを拒否する）。
+   * HAND_FINISHED は Hand の最後の Event で、その後ろへの追記も同じく拒否する。
    */
   append(
     handId: string,
@@ -35,7 +36,7 @@ export interface InMemoryEventStoreOptions {
   readonly newEventId?: () => string;
 }
 
-/** プロセス内のメモリだけに持つ実装。再起動で消える（永続化は #20）。 */
+/** プロセス内のメモリだけに持つ実装。再起動で消える（テスト用。永続化は SqliteEventStore）。 */
 export class InMemoryEventStore implements EventStore {
   private readonly logs = new Map<string, StoredHandEvent[]>();
   private readonly now: () => Date;
@@ -51,24 +52,12 @@ export class InMemoryEventStore implements EventStore {
     events: readonly HandEvent[],
   ): readonly StoredHandEvent[] {
     const log = this.logs.get(handId) ?? [];
-    // 書く前に全件の seq を検査する（途中まで書いて失敗する、を作らない）。
-    events.forEach((event, i) => {
-      const expected = log.length + i;
-      if (event.seq !== expected) {
-        throw new EventSeqConflictError(
-          `Hand ${handId} の seq が連続しない: 期待 ${expected}・実際 ${event.seq}`,
-        );
-      }
-    });
-    const recordedAt = this.now().toISOString();
-    // 呼び出し側が持つ Event と切り離すため複製し、配下まで凍結する（保存後に書き換えられない＝append-only・D37）。
-    const stored = events.map((event): StoredHandEvent =>
-      deepFreeze({
-        eventId: this.newEventId(),
-        handId,
-        recordedAt,
-        event: structuredClone(event),
-      }),
+    assertAppendable(handId, log, events);
+    const stored = toStoredEvents(
+      handId,
+      events,
+      this.now().toISOString(),
+      this.newEventId,
     );
     log.push(...stored);
     this.logs.set(handId, log);
@@ -81,8 +70,59 @@ export class InMemoryEventStore implements EventStore {
   }
 }
 
+/**
+ * 追記してよいかを書く前に全件で検査する（途中まで書いて失敗する、を作らない）。
+ * - 先頭の seq が保存済み件数と一致し、連番であること
+ * - HAND_FINISHED（Hand の最後の Event）の後ろに Event が続かないこと（保存済み・追記分とも）
+ * 崩れていれば EventSeqConflictError。
+ */
+export function assertAppendable(
+  handId: string,
+  saved: readonly StoredHandEvent[],
+  events: readonly HandEvent[],
+): void {
+  if (saved.at(-1)?.event.type === "HAND_FINISHED") {
+    throw new EventSeqConflictError(
+      `Hand ${handId} は終了していて追記できない`,
+    );
+  }
+  events.forEach((event, i) => {
+    const expected = saved.length + i;
+    if (event.seq !== expected) {
+      throw new EventSeqConflictError(
+        `Hand ${handId} の seq が連続しない: 期待 ${expected}・実際 ${event.seq}`,
+      );
+    }
+    if (event.type === "HAND_FINISHED" && i !== events.length - 1) {
+      throw new EventSeqConflictError(
+        `Hand ${handId} の HAND_FINISHED の後ろに Event がある`,
+      );
+    }
+  });
+}
+
+/**
+ * 保存する形にする。呼び出し側が持つ Event と切り離すため複製し、配下まで凍結する
+ * （保存後に書き換えられない＝append-only・D37）。
+ */
+export function toStoredEvents(
+  handId: string,
+  events: readonly HandEvent[],
+  recordedAt: string,
+  newEventId: () => string,
+): StoredHandEvent[] {
+  return events.map((event): StoredHandEvent =>
+    deepFreeze({
+      eventId: newEventId(),
+      handId,
+      recordedAt,
+      event: structuredClone(event),
+    }),
+  );
+}
+
 /** object と配列を配下まで凍結する（Event は JSON 相当の値だけを持つ）。 */
-function deepFreeze<T>(value: T): T {
+export function deepFreeze<T>(value: T): T {
   if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
     Object.values(value).forEach(deepFreeze);
     Object.freeze(value);

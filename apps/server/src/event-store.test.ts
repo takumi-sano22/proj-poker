@@ -1,10 +1,19 @@
 import {
+  applyAction,
+  foldHandEvents,
+  getLegalActions,
   PHASE1_CASH_PRESET,
   startHand,
   type HandEvent,
 } from "@proj-poker/engine";
-import { describe, expect, it } from "vitest";
-import { EventSeqConflictError, InMemoryEventStore } from "./event-store.js";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  EventSeqConflictError,
+  InMemoryEventStore,
+  type EventStore,
+  type InMemoryEventStoreOptions,
+} from "./event-store.js";
+import { SqliteEventStore } from "./sqlite-event-store.js";
 
 function sampleEvents(): readonly HandEvent[] {
   const result = startHand({
@@ -21,10 +30,43 @@ function sampleEvents(): readonly HandEvent[] {
   return result.value.events;
 }
 
-describe("InMemoryEventStore", () => {
+/** sampleEvents の続き: 手番の Player が Fold して HAND_FINISHED まで進めた Event。 */
+function finishingEvents(started: readonly HandEvent[]): readonly HandEvent[] {
+  const state = foldHandEvents(started);
+  const actor = getLegalActions(state)?.playerId;
+  if (actor === undefined) throw new Error("手番が無い");
+  const result = applyAction(state, actor, { type: "fold" });
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value.events;
+}
+
+// 開いた SQLite の Store はテストごとに閉じる。
+const opened: SqliteEventStore[] = [];
+afterEach(() => {
+  opened.splice(0).forEach((store) => store.close());
+});
+
+// Interface（EventStore）の契約は、どの実装でも同じテストで確かめる。
+// SQLite 実装の Hand 途中の Event はメモリ側にあり、ここでの検査はその経路を通る（保存の経路は sqlite-event-store.test.ts）。
+const implementations: [
+  string,
+  (options?: InMemoryEventStoreOptions) => EventStore,
+][] = [
+  ["InMemoryEventStore", (options) => new InMemoryEventStore(options)],
+  [
+    "SqliteEventStore",
+    (options) => {
+      const store = SqliteEventStore.open(":memory:", options);
+      opened.push(store);
+      return store;
+    },
+  ],
+];
+
+describe.each(implementations)("%s", (_name, createStore) => {
   it("追記した Event を seq 順に返し、event_id と記録時刻を付ける", () => {
     let id = 0;
-    const store = new InMemoryEventStore({
+    const store = createStore({
       now: () => new Date("2026-10-05T00:00:00Z"),
       newEventId: () => `e${++id}`,
     });
@@ -43,7 +85,7 @@ describe("InMemoryEventStore", () => {
   });
 
   it("seq が連続しない追記（二重追記・抜け）は何も書かずに拒否する", () => {
-    const store = new InMemoryEventStore();
+    const store = createStore();
     const events = sampleEvents();
     store.append("h1", events.slice(0, 3));
 
@@ -62,8 +104,30 @@ describe("InMemoryEventStore", () => {
     expect(store.read("h1").length).toBe(3);
   });
 
+  it("HAND_FINISHED の後ろへの追記と、HAND_FINISHED の後ろに Event が続く追記は何も書かずに拒否する", () => {
+    const started = sampleEvents();
+    const rest = finishingEvents(started);
+    const finished = rest.at(-1) as HandEvent;
+    expect(finished.type).toBe("HAND_FINISHED");
+
+    // 同じ追記の中で HAND_FINISHED の後ろに Event が続く。
+    const store = createStore();
+    store.append("h1", started);
+    expect(() =>
+      store.append("h1", [...rest, { ...finished, seq: finished.seq + 1 }]),
+    ).toThrow(EventSeqConflictError);
+    expect(store.read("h1").length).toBe(started.length);
+
+    // 終わった Hand の後ろへ、次の seq で足す。
+    store.append("h1", rest);
+    expect(() =>
+      store.append("h1", [{ ...finished, seq: finished.seq + 1 }]),
+    ).toThrow(EventSeqConflictError);
+    expect(store.read("h1").map((s) => s.event)).toEqual([...started, ...rest]);
+  });
+
   it("追記に渡した Event や read で得た Event を書き換えても、保存済みの Log は変わらない", () => {
-    const store = new InMemoryEventStore();
+    const store = createStore();
     const events = structuredClone(sampleEvents()) as HandEvent[];
     store.append("h1", events);
     const snapshot = structuredClone(store.read("h1").map((s) => s.event));
@@ -88,7 +152,7 @@ describe("InMemoryEventStore", () => {
   });
 
   it("read の戻り値を書き換えても Log は変わらない", () => {
-    const store = new InMemoryEventStore();
+    const store = createStore();
     store.append("h1", sampleEvents());
     const copy = store.read("h1") as unknown[];
     const length = copy.length;
