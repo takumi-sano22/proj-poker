@@ -124,26 +124,16 @@ describe("SqliteEventStore（保存の経路）", () => {
     expect(reopen().read("h1")).toEqual([]);
   });
 
-  it("保存済み（終了済み）の Hand への追記と、HAND_FINISHED の後ろに続く Event は拒否する", () => {
-    const store = open();
+  it("開き直した後も、保存済み（終了済み）の Hand へは追記できない", () => {
     const { started, rest } = finishedHandEvents("h1");
-    store.append("h1", [...started, ...rest]);
-    const count = store.read("h1").length;
+    open().append("h1", [...started, ...rest]);
+    const count = started.length + rest.length;
 
-    // 次の seq の Event を足そうとしても、終わった Hand には書けない。
+    // 開き直すとメモリ側は空。DB に Hand があることで、終わった Hand と判定する。
+    const store = reopen();
     const extra = { ...(rest.at(-1) as HandEvent), seq: count };
     expect(() => store.append("h1", [extra])).toThrow(EventSeqConflictError);
     expect(reopen().read("h1").length).toBe(count);
-
-    const other = finishedHandEvents("h2");
-    const finished = other.rest.at(-1) as HandEvent;
-    const misplaced = [
-      ...other.started,
-      ...other.rest.slice(0, -1),
-      finished,
-      { ...finished, seq: finished.seq + 1 },
-    ];
-    expect(() => open().append("h2", misplaced)).toThrow(EventSeqConflictError);
   });
 
   it("保存済みの Event は DB 上でも書き換えられない（append-only）", () => {

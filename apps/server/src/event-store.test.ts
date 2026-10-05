@@ -1,4 +1,7 @@
 import {
+  applyAction,
+  foldHandEvents,
+  getLegalActions,
   PHASE1_CASH_PRESET,
   startHand,
   type HandEvent,
@@ -23,6 +26,16 @@ function sampleEvents(): readonly HandEvent[] {
     config: PHASE1_CASH_PRESET,
     deal: { seed: 1 },
   });
+  if (!result.ok) throw new Error(result.error.message);
+  return result.value.events;
+}
+
+/** sampleEvents の続き: 手番の Player が Fold して HAND_FINISHED まで進めた Event。 */
+function finishingEvents(started: readonly HandEvent[]): readonly HandEvent[] {
+  const state = foldHandEvents(started);
+  const actor = getLegalActions(state)?.playerId;
+  if (actor === undefined) throw new Error("手番が無い");
+  const result = applyAction(state, actor, { type: "fold" });
   if (!result.ok) throw new Error(result.error.message);
   return result.value.events;
 }
@@ -89,6 +102,28 @@ describe.each(implementations)("%s", (_name, createStore) => {
       store.append("h1", [events[3] as HandEvent, events[5] as HandEvent]),
     ).toThrow(EventSeqConflictError);
     expect(store.read("h1").length).toBe(3);
+  });
+
+  it("HAND_FINISHED の後ろへの追記と、HAND_FINISHED の後ろに Event が続く追記は何も書かずに拒否する", () => {
+    const started = sampleEvents();
+    const rest = finishingEvents(started);
+    const finished = rest.at(-1) as HandEvent;
+    expect(finished.type).toBe("HAND_FINISHED");
+
+    // 同じ追記の中で HAND_FINISHED の後ろに Event が続く。
+    const store = createStore();
+    store.append("h1", started);
+    expect(() =>
+      store.append("h1", [...rest, { ...finished, seq: finished.seq + 1 }]),
+    ).toThrow(EventSeqConflictError);
+    expect(store.read("h1").length).toBe(started.length);
+
+    // 終わった Hand の後ろへ、次の seq で足す。
+    store.append("h1", rest);
+    expect(() =>
+      store.append("h1", [{ ...finished, seq: finished.seq + 1 }]),
+    ).toThrow(EventSeqConflictError);
+    expect(store.read("h1").map((s) => s.event)).toEqual([...started, ...rest]);
   });
 
   it("追記に渡した Event や read で得た Event を書き換えても、保存済みの Log は変わらない", () => {

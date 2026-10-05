@@ -78,7 +78,7 @@ Phase 1（D70）の1 Hand進行で発行するEventです。上の一覧のう�
 | `POT_AWARDED` | `potTotal`・`awards`（`playerId` / `amount`）・`showdown` | public | 単一Potのみ。同着の端数は `oddChipRule` に従って配分済みの額が入る（D75） |
 | `HAND_FINISHED` | `stacks`（`playerId` / `amount`） | public | §10のRecovery境界 |
 
-Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの出力が使えずSafe Fallbackした記録（seq・Player・理由）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_FALLBACK_USED`はLLMのOpponentを入れるときにEventへ足します）。
+Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの出力が使えずSafe Fallbackした記録（seq・Player・理由）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_FALLBACK_USED`はLLMのOpponentを入れるときにEventへ足します）。
 
 #### Event の形の版（schema_version）
 

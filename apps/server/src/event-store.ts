@@ -17,6 +17,7 @@ export interface EventStore {
    * Hand の Event Log の末尾へ追記する。更新・削除の API は持たない（append-only）。
    * 先頭の Event の seq は「その Hand の保存済み件数」と一致し、連番でなければならない。
    * 一致しなければ何も書かずに EventSeqConflictError を投げる（二重追記・抜けを拒否する）。
+   * HAND_FINISHED は Hand の最後の Event で、その後ろへの追記も同じく拒否する。
    */
   append(
     handId: string,
@@ -51,7 +52,7 @@ export class InMemoryEventStore implements EventStore {
     events: readonly HandEvent[],
   ): readonly StoredHandEvent[] {
     const log = this.logs.get(handId) ?? [];
-    assertContiguous(handId, log.length, events);
+    assertAppendable(handId, log, events);
     const stored = toStoredEvents(
       handId,
       events,
@@ -70,19 +71,31 @@ export class InMemoryEventStore implements EventStore {
 }
 
 /**
- * 先頭の seq が保存済み件数と一致し、連番であることを書く前に全件で検査する
- * （途中まで書いて失敗する、を作らない）。崩れていれば EventSeqConflictError。
+ * 追記してよいかを書く前に全件で検査する（途中まで書いて失敗する、を作らない）。
+ * - 先頭の seq が保存済み件数と一致し、連番であること
+ * - HAND_FINISHED（Hand の最後の Event）の後ろに Event が続かないこと（保存済み・追記分とも）
+ * 崩れていれば EventSeqConflictError。
  */
-export function assertContiguous(
+export function assertAppendable(
   handId: string,
-  savedCount: number,
+  saved: readonly StoredHandEvent[],
   events: readonly HandEvent[],
 ): void {
+  if (saved.at(-1)?.event.type === "HAND_FINISHED") {
+    throw new EventSeqConflictError(
+      `Hand ${handId} は終了していて追記できない`,
+    );
+  }
   events.forEach((event, i) => {
-    const expected = savedCount + i;
+    const expected = saved.length + i;
     if (event.seq !== expected) {
       throw new EventSeqConflictError(
         `Hand ${handId} の seq が連続しない: 期待 ${expected}・実際 ${event.seq}`,
+      );
+    }
+    if (event.type === "HAND_FINISHED" && i !== events.length - 1) {
+      throw new EventSeqConflictError(
+        `Hand ${handId} の HAND_FINISHED の後ろに Event がある`,
       );
     }
   });

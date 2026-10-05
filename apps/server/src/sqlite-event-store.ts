@@ -7,7 +7,7 @@ import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { HandEvent } from "@proj-poker/engine";
 import { inTransaction, openDatabase } from "./db/database.js";
 import {
-  assertContiguous,
+  assertAppendable,
   deepFreeze,
   EventSeqConflictError,
   toStoredEvents,
@@ -98,13 +98,7 @@ export class SqliteEventStore implements EventStore {
       );
     }
     const log = pending ?? [];
-    assertContiguous(handId, log.length, events);
-    const finishedAt = events.findIndex((e) => e.type === "HAND_FINISHED");
-    if (finishedAt !== -1 && finishedAt !== events.length - 1) {
-      throw new EventSeqConflictError(
-        `Hand ${handId} の HAND_FINISHED の後ろに Event がある`,
-      );
-    }
+    assertAppendable(handId, log, events);
 
     const stored = toStoredEvents(
       handId,
@@ -113,7 +107,7 @@ export class SqliteEventStore implements EventStore {
       this.newEventId,
     );
     const next = [...log, ...stored];
-    if (finishedAt === -1) {
+    if (events.at(-1)?.type !== "HAND_FINISHED") {
       this.pending.set(handId, next);
     } else {
       // 書き込みに失敗したら例外のまま返し、メモリ側も変えない（Hand は未完了のまま残る）。
