@@ -70,7 +70,14 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(gh repo delete:*)",
-      "Bash(gh repo archive:*)"
+      "Bash(gh repo archive:*)",
+      "Bash(gh api -X DELETE*)",
+      "Bash(gh api *-X DELETE*)",
+      "Bash(gh api --method DELETE*)",
+      "Bash(gh api *--method DELETE*)",
+      "Bash(gh api *-XDELETE*)",
+      "Bash(gh api *--method=DELETE*)",
+      "Bash(gh api *archived*)"
     ]
   },
   "hooks": {
