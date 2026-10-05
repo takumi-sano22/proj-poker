@@ -4,6 +4,9 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
+    // typecheck・lint・dev（tsx）・test では Engine を build せずに src から読む（packages/engine の exports の条件）。
+    // build（tsconfig.build.json）だけはこの条件を外し、build 済みの dist を参照する。
+    "customConditions": ["@proj-poker/source"],
     "rootDir": "src",
     "outDir": "dist"
   },
