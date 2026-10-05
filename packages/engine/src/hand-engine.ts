@@ -130,6 +130,31 @@ export function applyAction(
   return progress(acc);
 }
 
+/** CPU の判断の経緯として Orchestrator が残す Event の中身（D83）。 */
+export type AiEventBody = Extract<
+  HandEventBody,
+  { type: "AI_ACTION_INVALID" | "AI_FALLBACK_USED" }
+>;
+
+/**
+ * 手番の CPU の判断の経緯（不正な出力・Fallback の利用）を、Log の次の seq の Event にする（D83）。卓の State は変えない。
+ * 記録はその手番の Action より前に置く（Action で Hand が終わると、HAND_FINISHED の後ろへは追記できない）。
+ * 手番でない Player・終わった Hand の記録は呼び出し側の誤りなので投げる。
+ */
+export function recordAiEvent(
+  state: HandState,
+  body: AiEventBody,
+): HandProgress {
+  const actor =
+    state.actorIndex === null ? null : playerAt(state, state.actorIndex);
+  if (state.status !== "in_progress" || actor?.playerId !== body.playerId) {
+    throw new RangeError(
+      `${body.type} は手番の Player の記録にする: ${body.playerId}`,
+    );
+  }
+  return emit({ state, events: [] }, body);
+}
+
 /** Event を 1 つ発行し、State に畳み込む。seq と Visibility はここでだけ付ける。 */
 function emit(acc: HandProgress, body: HandEventBody): HandProgress {
   const event: HandEvent = {

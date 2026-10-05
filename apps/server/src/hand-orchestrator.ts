@@ -5,6 +5,8 @@
 // - 合法性は Engine だけが判定する。CPU の出力も Hero の入力も applyAction で検証する（D40）。
 // - CPU の判断は非同期（LLM を差し込めるように）。出力は Schema → Legal Action → Amount Range で検証し、
 //   不正なら理由を付けて 1 回だけ再要求、再度不正なら RuleBot の判断で続行する（D41）。
+//   不正な出力と Fallback の利用は AI_ACTION_INVALID / AI_FALLBACK_USED として Event Log に残す（D83。system Visibility で、
+//   Hero の View と CPU の KnowledgeState には入らない）。
 //   例外・応答時間の超過は「障害」として Hand を止め、RuleBot へ自動で切り替えない（D86。続け方の選択は #52）。
 // - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
 import { randomUUID } from "node:crypto";
@@ -15,9 +17,12 @@ import {
   nextHandSeating,
   projectHeroView,
   projectKnowledgeState,
+  recordAiEvent,
   startHand,
   type EngineError,
   type HandEvent,
+  type HandProgress,
+  type HandState,
   type HeroView,
   type PlayerAction,
   type SeatInit,
@@ -25,7 +30,6 @@ import {
 import type { SeatPlayer, TableSetup } from "./config.js";
 import type { EventStore } from "./event-store.js";
 import type {
-  InvalidOutputStage,
   OpponentAgent,
   OpponentFactory,
   OpponentInput,
@@ -61,29 +65,6 @@ export type SessionStatus =
 export type OrchestratorResult<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: OrchestratorError };
-
-/**
- * CPU の出力が 2 回続けて不正で、RuleBot の判断（Deterministic Fallback）で続けた記録（docs/03 §5・§6 の Flag）。
- * Event Log とは別の運用 Metadata（Event への記録は #48）。
- */
-export interface BotFallbackRecord {
-  /** Fallback で適用した ACTION_TAKEN の seq。 */
-  readonly seq: number;
-  readonly playerId: string;
-  /** 最後に不正と判定した理由。 */
-  readonly reason: string;
-}
-
-/** CPU の不正な出力の記録（docs/03 §5「Invalid Output は Log へ残す」）。Event Log とは別の運用 Metadata。 */
-export interface InvalidOutputRecord {
-  /** この手番の Action が入る seq（Retry・Fallback の結果もこの seq に入る）。 */
-  readonly seq: number;
-  readonly playerId: string;
-  /** 1 回目の要求か、Correction 付きの再要求か。 */
-  readonly attempt: 1 | 2;
-  readonly stage: InvalidOutputStage;
-  readonly reason: string;
-}
 
 /**
  * CPU が判断を返せなかった「障害」（応答時間の超過・例外。API 障害を含む）。不正な出力とは区別する（D86）。
@@ -130,8 +111,6 @@ interface HandRuntime {
   /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
   readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
-  readonly fallbacks: BotFallbackRecord[];
-  readonly invalidOutputs: InvalidOutputRecord[];
   /** CPU の手番を進めている最中ならその Promise（同じ Hand で 2 本同時に進めない）。 */
   running: Promise<void> | null;
   /** 今の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。待っていなければ null。 */
@@ -268,8 +247,6 @@ export class HandOrchestrator {
       opponents,
       fallbackBots,
       listeners: new Set(),
-      fallbacks: [],
-      invalidOutputs: [],
       running: null,
       cancelWait: null,
       failure: null,
@@ -329,16 +306,6 @@ export class HandOrchestrator {
     if (rt === undefined) return null;
     rt.listeners.add(listener);
     return () => rt.listeners.delete(listener);
-  }
-
-  /** CPU の出力が 2 回続けて不正で、RuleBot の判断で続けた記録。 */
-  fallbacksOf(handId: string): readonly BotFallbackRecord[] {
-    return [...(this.hands.get(handId)?.fallbacks ?? [])];
-  }
-
-  /** CPU の不正な出力の記録（Retry で正常に戻ったものも含む）。 */
-  invalidOutputsOf(handId: string): readonly InvalidOutputRecord[] {
-    return [...(this.hands.get(handId)?.invalidOutputs ?? [])];
   }
 
   /** CPU の障害で止まっていればその内容。止まっていない・未知の Hand なら null。 */
@@ -455,6 +422,17 @@ export class HandOrchestrator {
     };
   }
 
+  /**
+   * CPU の判断の経緯（system Visibility の Event）を Log へ追記する。Hero の View は変わらないので配らない。
+   * 追記後の State（seq だけが進む）を返す。
+   */
+  private record(rt: HandRuntime, progress: HandProgress): HandState {
+    this.options.store.append(rt.handId, progress.events, {
+      sessionId: rt.sessionId,
+    });
+    return progress.state;
+  }
+
   /** Event を Log へ追記し、Hero の View を購読者へ配る。 */
   private commit(rt: HandRuntime, events: readonly HandEvent[]): void {
     this.options.store.append(rt.handId, events, { sessionId: rt.sessionId });
@@ -522,13 +500,14 @@ export class HandOrchestrator {
   /**
    * CPU 1 手分。待っている間に Log が進んでいたら、古い手番として何もしない（遅れて届いた判断を適用しない）。
    * 出力は Schema → Legal Action → Amount Range で検証し、Engine（applyAction）が最後に適用可否を決める（D40）。
-   * 不正なら理由を付けて 1 回だけ再要求し、再度不正なら RuleBot の判断で続ける（D41）。
+   * 不正なら AI_ACTION_INVALID を残して理由を付けて 1 回だけ再要求し、再度不正なら AI_FALLBACK_USED を残して
+   * RuleBot の判断で続ける（D41・D83）。記録はその手番の Action より前の seq に入る。
    * 障害（応答時間の超過・例外）なら Hand をその手番で止める（D86）。
    */
   private async cpuTurn(rt: HandRuntime, expectedSeq: number): Promise<void> {
     if (!this.isCurrent(rt, expectedSeq)) return;
     const events = this.events(rt.handId);
-    const state = foldHandEvents(events);
+    let state = foldHandEvents(events);
     const legal = getLegalActions(state);
     if (legal === null || legal.playerId === this.heroId) return;
     const playerId = legal.playerId;
@@ -539,20 +518,22 @@ export class HandOrchestrator {
     }
 
     // CPU に渡すのはその CPU の KnowledgeState と Legal Action だけ（global State・他者の札・Deck を渡さない）。
+    // AI_ACTION_INVALID は誰の Projection にも入らないので、再要求でも KnowledgeState は同じ。
     const base: OpponentInput = {
       knowledge: projectKnowledgeState(events, playerId),
       legal,
     };
     let input = base;
-    let lastInvalid: InvalidOutputRecord | null = null;
+    let lastInvalid: string | null = null;
     for (const attempt of [1, 2] as const) {
       const outcome = await this.ask(rt, agent, input);
-      if (outcome.kind === "cancelled" || !this.isCurrent(rt, expectedSeq)) {
+      // 記録を追記した分だけ Log は進むので、今の State の nextSeq で「誰も進めていない」かを見る。
+      if (outcome.kind === "cancelled" || !this.isCurrent(rt, state.nextSeq)) {
         return;
       }
       if (outcome.kind === "outage") {
         rt.outage = {
-          seq: expectedSeq,
+          seq: state.nextSeq,
           playerId,
           kind: outcome.cause,
           message: outcome.message,
@@ -578,36 +559,54 @@ export class HandOrchestrator {
             reason: applied?.ok === false ? applied.error.message : "不明",
           }
         : checked;
-      lastInvalid = { seq: expectedSeq, playerId, attempt, stage, reason };
-      rt.invalidOutputs.push(lastInvalid);
+      state = this.record(
+        rt,
+        recordAiEvent(state, {
+          type: "AI_ACTION_INVALID",
+          playerId,
+          attempt,
+          stage,
+          reason,
+        }),
+      );
+      lastInvalid = `${stage}: ${reason}`;
       this.logger.warn(
-        { handId: rt.handId, ...lastInvalid, output: outcome.output },
+        {
+          handId: rt.handId,
+          playerId,
+          attempt,
+          stage,
+          reason,
+          output: outcome.output,
+        },
         "CPU の出力が不正だった",
       );
       input = { ...base, correction: { stage, reason } };
     }
 
     // 2 回続けて不正: RuleBot の判断（Deterministic Fallback）で続ける。RuleBot は同期で、障害を起こさない。
-    const fallback = applyAction(state, playerId, fallbackBot.choose(base));
+    // AI_FALLBACK_USED と Fallback の Action は 1 回の追記で置く（記録の直後がその Action になる）。
+    const used = recordAiEvent(state, {
+      type: "AI_FALLBACK_USED",
+      playerId,
+      fallbackKind: "automatic",
+      reason: lastInvalid ?? "不明",
+    });
+    const fallback = applyAction(
+      used.state,
+      playerId,
+      fallbackBot.choose(base),
+    );
     if (!fallback.ok) {
       throw new Error(
         `Deterministic Fallback（RuleBot）も Engine に拒否された: ${fallback.error.message}`,
       );
     }
-    const record: BotFallbackRecord = {
-      seq: fallback.value.events[0]?.seq ?? expectedSeq,
-      playerId,
-      reason:
-        lastInvalid === null
-          ? "不明"
-          : `${lastInvalid.stage}: ${lastInvalid.reason}`,
-    };
-    rt.fallbacks.push(record);
     this.logger.warn(
-      { handId: rt.handId, ...record },
+      { handId: rt.handId, playerId, reason: lastInvalid },
       "CPU の出力を 2 回続けて使えず、RuleBot の判断で続けた",
     );
-    this.commit(rt, fallback.value.events);
+    this.commit(rt, [...used.events, ...fallback.value.events]);
   }
 
   /**

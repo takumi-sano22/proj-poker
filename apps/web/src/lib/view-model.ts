@@ -209,7 +209,9 @@ export function describeEvent(
     case "HAND_FINISHED":
       return "Hand 終了";
     case "DECK_SHUFFLED":
-      // engine Visibility の Event。Hero の View には入らない（届いても表示しない）。
+    case "AI_ACTION_INVALID":
+    case "AI_FALLBACK_USED":
+      // engine / system Visibility の Event。Hero の View には入らない（届いても表示しない）。
       return null;
   }
 }

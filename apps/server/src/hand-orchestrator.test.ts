@@ -97,6 +97,23 @@ async function playOut(
   return view;
 }
 
+type InvalidEvent = Extract<HandEvent, { type: "AI_ACTION_INVALID" }>;
+type FallbackEvent = Extract<HandEvent, { type: "AI_FALLBACK_USED" }>;
+
+/** Log の AI_ACTION_INVALID（CPU の不正な出力の記録。D83）。 */
+function invalidsIn(events: readonly HandEvent[]): InvalidEvent[] {
+  return events.filter(
+    (e): e is InvalidEvent => e.type === "AI_ACTION_INVALID",
+  );
+}
+
+/** Log の AI_FALLBACK_USED（Bot の判断で続けた記録。D83）。 */
+function fallbacksIn(events: readonly HandEvent[]): FallbackEvent[] {
+  return events.filter(
+    (e): e is FallbackEvent => e.type === "AI_FALLBACK_USED",
+  );
+}
+
 function finishedStacks(events: readonly HandEvent[]): number {
   return sum(finishedOf(events).stacks);
 }
@@ -199,7 +216,7 @@ describe("HandOrchestrator", () => {
     const final = await playOut(orchestrator, handId, view);
     expect(final.status).toBe("complete");
     expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
-    expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+    expect(fallbacksIn(events(handId))).toEqual([]);
   });
 
   it("多数の seed で、CPU は合法 Action だけを選び（Fallback なし）、CPU の入力に見えない札・Deck が入らない", async () => {
@@ -240,7 +257,7 @@ describe("HandOrchestrator", () => {
 
       const log = store.read(currentHand).map((s) => s.event);
       expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
-      expect(orchestrator.fallbacksOf(currentHand)).toEqual([]);
+      expect(fallbacksIn(log)).toEqual([]);
       for (const { playerId, input, upto } of inputs) {
         expect(Object.keys(input).sort()).toEqual(["knowledge", "legal"]);
         expect(input.knowledge.viewerId).toBe(playerId);
@@ -298,7 +315,7 @@ describe("HandOrchestrator", () => {
             seed % 3 === 0 ? () => ({ type: "fold" as const }) : passiveHero;
           await playOut(orchestrator, handId, view, hero);
           expect(finishedStacks(events(handId))).toBe(total);
-          expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+          expect(fallbacksIn(events(handId))).toEqual([]);
           busts += finishedOf(events(handId)).stacks.filter(
             (s) => s.amount === 0,
           ).length;
@@ -551,13 +568,18 @@ describe("HandOrchestrator", () => {
       const { handId, view } = started.value;
       await playOut(orchestrator, handId, view);
 
-      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
-      const invalid = orchestrator.invalidOutputsOf(handId);
+      const log = events(handId);
+      expect(fallbacksIn(log)).toEqual([]);
+      const invalid = invalidsIn(log);
       expect(invalid.length).toBeGreaterThan(0);
       // CPU の手番ごとに、1 回目が不正・2 回目（Correction 付き）が正常。
       expect(inputs).toHaveLength(invalid.length * 2);
       for (const [i, record] of invalid.entries()) {
-        expect(record).toMatchObject({ attempt: 1, stage: "schema" });
+        expect(record).toMatchObject({
+          attempt: 1,
+          stage: "schema",
+          visibility: { type: "system" },
+        });
         expect(inputs[i * 2]?.correction).toBeUndefined();
         expect(inputs[i * 2 + 1]?.correction).toEqual({
           stage: "schema",
@@ -565,9 +587,8 @@ describe("HandOrchestrator", () => {
         });
         // 再要求の入力も KnowledgeState と Legal Action は同じ（Correction だけが足される）。
         expect(inputs[i * 2 + 1]?.knowledge).toEqual(inputs[i * 2]?.knowledge);
-        // 正常な出力の Action が、その手番の seq に入っている。
-        const applied = events(handId).find((e) => e.seq === record.seq);
-        expect(applied).toMatchObject({
+        // 記録の直後の seq に、正常な出力の Action が入っている。
+        expect(log.find((e) => e.seq === record.seq + 1)).toMatchObject({
           type: "ACTION_TAKEN",
           playerId: record.playerId,
         });
@@ -611,24 +632,38 @@ describe("HandOrchestrator", () => {
         const { handId, view } = started.value;
         await playOut(orchestrator, handId, view);
 
-        const fallbacks = orchestrator.fallbacksOf(handId);
-        const invalid = orchestrator.invalidOutputsOf(handId);
+        const log = events(handId);
+        const fallbacks = fallbacksIn(log);
+        const invalid = invalidsIn(log);
         expect(fallbacks.length).toBeGreaterThan(0);
         // 1 手につき 2 回だけ求め（1 回の Retry）、2 回とも不正として記録する。
         expect(inputs).toHaveLength(fallbacks.length * 2);
         expect(invalid).toHaveLength(fallbacks.length * 2);
         for (const record of fallbacks) {
-          const attempts = invalid.filter((r) => r.seq === record.seq);
-          expect(attempts.map((r) => [r.attempt, r.stage])).toEqual([
-            [1, stage],
-            [2, stage],
+          // 手番ごとに AI_ACTION_INVALID（1 回目・2 回目）→ AI_FALLBACK_USED → Fallback の ACTION_TAKEN が続く。
+          const turn = log.slice(record.seq - 2, record.seq + 2);
+          expect(
+            turn.map((e) => [
+              e.type,
+              e.type === "AI_ACTION_INVALID" ? e.attempt : null,
+              "playerId" in e ? e.playerId : null,
+            ]),
+          ).toEqual([
+            ["AI_ACTION_INVALID", 1, record.playerId],
+            ["AI_ACTION_INVALID", 2, record.playerId],
+            ["AI_FALLBACK_USED", null, record.playerId],
+            ["ACTION_TAKEN", null, record.playerId],
           ]);
-          expect(record.reason).toContain(stage);
-          const applied = events(handId).find((e) => e.seq === record.seq);
-          expect(applied).toMatchObject({
-            type: "ACTION_TAKEN",
-            playerId: record.playerId,
+          expect(
+            turn
+              .slice(0, 2)
+              .map((e) => e.type === "AI_ACTION_INVALID" && e.stage),
+          ).toEqual([stage, stage]);
+          expect(record).toMatchObject({
+            fallbackKind: "automatic",
+            visibility: { type: "system" },
           });
+          expect(record.reason).toContain(stage);
         }
         expect(orchestrator.outageOf(handId)).toBeNull();
         expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
@@ -646,8 +681,76 @@ describe("HandOrchestrator", () => {
         await playOut(orchestrator, started.value.handId, started.value.view);
         return events(started.value.handId);
       };
-      const broken = fakeModel(() => Promise.resolve(null));
-      expect(await run(broken.factory)).toEqual(await run(createRuleBot));
+      const broken = await run(fakeModel(() => Promise.resolve(null)).factory);
+      const ruleBot = await run(createRuleBot);
+      expect(fallbacksIn(broken).length).toBeGreaterThan(0);
+      expect(fallbacksIn(ruleBot)).toEqual([]);
+      // 判断の経緯の記録（system）を除けば、seq 以外は同じ Event 列になる。
+      const tableEvents = (log: HandEvent[]) =>
+        log
+          .filter((e) => e.visibility.type !== "system")
+          .map((e) => ({ ...e, seq: 0 }));
+      expect(tableEvents(broken)).toEqual(tableEvents(ruleBot));
+    });
+
+    it("記録（AI_ACTION_INVALID / AI_FALLBACK_USED）は Hero の応答・SSE と、他の CPU の入力に入らない", async () => {
+      // CPU ごとに違う生の出力（不正な action の名前）を返させる。不正の理由にはその値が入る。
+      const markerOf = (playerId: string) => `raw-output-of-${playerId}`;
+      const inputs: { playerId: string; input: OpponentInput }[] = [];
+      const factory: OpponentFactory = (_seed, playerId) => ({
+        decide: (input) => {
+          inputs.push({ playerId, input });
+          return Promise.resolve({ action: markerOf(playerId) });
+        },
+      });
+      const { orchestrator, events } = setup({ createOpponent: factory });
+      const started = await orchestrator.startHand(null);
+      if (!started.ok) throw new Error(started.error.message);
+      const { handId } = started.value;
+      const pushed: HeroView[] = [];
+      orchestrator.subscribe(handId, (v) => pushed.push(v));
+      const responses: HeroView[] = [started.value.view];
+      let view = started.value.view;
+      while (view.status !== "complete") {
+        const next = await orchestrator.heroAction(
+          handId,
+          lastSeq(view),
+          passiveHero(view),
+        );
+        if (!next.ok) throw new Error(next.error.message);
+        view = next.value;
+        responses.push(view);
+      }
+      const log = events(handId);
+      // 記録は Event Log に残り、理由にその CPU の生の出力の値が入っている。
+      const invalid = invalidsIn(log);
+      expect(invalid.length).toBeGreaterThan(0);
+      expect(fallbacksIn(log).length).toBeGreaterThan(0);
+      for (const record of invalid) {
+        expect(record.reason).toContain(markerOf(record.playerId));
+      }
+      // Hero の応答・SSE には、記録の種別も、どの CPU の生の出力も出ない。
+      expect(pushed.length).toBeGreaterThan(0);
+      const cpuIds = PHASE1_TABLE_SETUP.players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => p.playerId);
+      for (const payload of [...responses, ...pushed]) {
+        expect(forbiddenKeys(payload)).toEqual([]);
+        for (const id of cpuIds) {
+          expect(JSON.stringify(payload)).not.toContain(markerOf(id));
+        }
+      }
+      // CPU の KnowledgeState には誰の記録も入らない。Correction（D41）は本人の再要求にだけ付く。
+      expect(new Set(inputs.map((i) => i.playerId)).size).toBeGreaterThan(1);
+      for (const { playerId, input } of inputs) {
+        expect(forbiddenKeys(input)).toEqual([]);
+        for (const id of cpuIds) {
+          expect(JSON.stringify(input.knowledge)).not.toContain(markerOf(id));
+          if (id !== playerId) {
+            expect(JSON.stringify(input)).not.toContain(markerOf(id));
+          }
+        }
+      }
     });
 
     it.each([
@@ -681,8 +784,8 @@ describe("HandOrchestrator", () => {
         expect(outage?.message).toContain("API が 500 を返した");
         // 障害は再要求しない（不正な出力ではない）・Fallback もしない。
         expect(inputs).toHaveLength(1);
-        expect(orchestrator.fallbacksOf(handId)).toEqual([]);
-        expect(orchestrator.invalidOutputsOf(handId)).toEqual([]);
+        expect(fallbacksIn(events(handId))).toEqual([]);
+        expect(invalidsIn(events(handId))).toEqual([]);
 
         // 止まった Hand は保持され、開始の再送でも同じ Hand を返す（新しい Session を始めない）。
         const before = events(handId).length;
@@ -712,14 +815,14 @@ describe("HandOrchestrator", () => {
       if (!started.ok) throw new Error(started.error.message);
       const { handId } = started.value;
       expect(inputs).toHaveLength(2);
-      expect(orchestrator.invalidOutputsOf(handId)).toMatchObject([
-        { attempt: 1, stage: "schema" },
+      expect(invalidsIn(events(handId))).toMatchObject([
+        { attempt: 1, stage: "schema", seq: events(handId).length - 1 },
       ]);
       expect(orchestrator.outageOf(handId)).toMatchObject({
         seq: events(handId).length,
         kind: "error",
       });
-      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+      expect(fallbacksIn(events(handId))).toEqual([]);
     });
 
     it("遅延: 上限を超えたら障害（timeout）として止め、後から届いた判断を適用しない", async () => {
@@ -752,7 +855,7 @@ describe("HandOrchestrator", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(events(handId)).toHaveLength(before);
       expect(inputs).toHaveLength(1);
-      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+      expect(fallbacksIn(events(handId))).toEqual([]);
     });
 
     it("遅延: 上限以内に届いた判断はそのまま使う", async () => {
@@ -763,7 +866,7 @@ describe("HandOrchestrator", () => {
             setTimeout(() => resolve(valid(input)), 999);
           }),
       );
-      const { orchestrator } = setup({
+      const { orchestrator, events } = setup({
         createOpponent: factory,
         opponentTimeoutMs: 1000,
       });
@@ -775,7 +878,7 @@ describe("HandOrchestrator", () => {
       const { handId, view } = started.value;
       expect(view.status === "complete" || view.actorId === HERO).toBe(true);
       expect(orchestrator.outageOf(handId)).toBeNull();
-      expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+      expect(fallbacksIn(events(handId))).toEqual([]);
     });
 
     it("判断を待っている間に close したら、後から届いた判断を適用しない", async () => {

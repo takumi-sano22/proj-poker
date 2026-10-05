@@ -1,5 +1,6 @@
 // Hand の Event 型と Visibility。Event Log が唯一の正本で、State は Event の畳み込みで作る（D37・docs/04 §1）。
-// Event 種別は docs/04 §3 のうち Phase 1 で必要なものだけを持つ（統合した種別は docs/04 §3 の構成表を参照）。
+// Event 種別は docs/04 §3 のうち Phase 1 で必要なものと、CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED。D83）を持つ
+// （統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
 import type { OddChipRule, ReopenRule } from "./table-config.js";
 
@@ -8,17 +9,30 @@ import type { OddChipRule, ReopenRule } from "./table-config.js";
  * - public: 卓の全員
  * - private: 指定 Player だけ（自分の Hole Cards）
  * - engine: Engine 内部専用。どの Player の Projection にも入れない（Deck の順序＝未来の Card）
- * learning_only（Review 用の開示）は Phase 1 では発行しない。
+ * - system: 卓の外の運用記録（CPU の不正な出力・Fallback の利用。D83）。CPU の出力の値を含みうるので、
+ *   Hero・CPU（本人を含む）のどの Projection にも入れない。読むのは Server（Debug・Review の集計）だけ
+ * learning_only（Review 用の開示）はまだ発行しない。
  */
 export type Visibility =
   | { readonly type: "public" }
   | { readonly type: "private"; readonly playerId: string }
-  | { readonly type: "engine" };
+  | { readonly type: "engine" }
+  | { readonly type: "system" };
 
 export type Street = "preflop" | "flop" | "turn" | "river";
 
 /** Canonical Action（docs/02 §4）。 */
 export type ActionType = "fold" | "check" | "call" | "bet" | "raise" | "all_in";
+
+/** CPU の出力の検証で不正と判定した段（docs/03 §5 の順: Schema → Legal Action → Amount Range）。 */
+export type InvalidOutputStage = "schema" | "legal_action" | "amount_range";
+
+/**
+ * CPU の判断の代わりに使った Bot の種類。
+ * - automatic: 出力が Retry の後も不正だったときの自動 Fallback（RuleBot。D41）
+ * - emergency_bot: 障害の後にユーザーが選んだ Emergency Bot（D86。発行は #52）
+ */
+export type FallbackKind = "automatic" | "emergency_bot";
 
 export interface SeatInit {
   readonly playerId: string;
@@ -108,6 +122,26 @@ export type HandEventBody =
   | {
       readonly type: "HAND_FINISHED";
       readonly stacks: readonly PlayerChips[];
+    }
+  | {
+      // CPU の出力を検証で不正と判定した（D41・D83）。Retry で正常に戻った不正も残す。卓の State は変えない。
+      // その手番の Action（ACTION_TAKEN）より前に置く（seq は Event 自身の seq）。
+      readonly type: "AI_ACTION_INVALID";
+      readonly playerId: string;
+      /** 何回目の要求の出力か（1 始まり。2 は Correction 付きの再要求）。 */
+      readonly attempt: number;
+      readonly stage: InvalidOutputStage;
+      /** 不正と判定した理由。CPU の出力の値を含みうる。 */
+      readonly reason: string;
+    }
+  | {
+      // CPU の判断の代わりに Bot の判断を使った（docs/03 §6 の Flag。D83）。卓の State は変えない。
+      // 直後の Event が、同じ Player の Fallback で決めた ACTION_TAKEN（同じ追記で置く）。
+      readonly type: "AI_FALLBACK_USED";
+      readonly playerId: string;
+      readonly fallbackKind: FallbackKind;
+      /** Fallback した理由（automatic は最後に不正と判定した段と理由）。CPU の出力の値を含みうる。 */
+      readonly reason: string;
     };
 
 export type HandEventType = HandEventBody["type"];
@@ -128,6 +162,9 @@ export function visibilityOf(body: HandEventBody): Visibility {
       return { type: "private", playerId: body.playerId };
     case "DECK_SHUFFLED":
       return { type: "engine" };
+    case "AI_ACTION_INVALID":
+    case "AI_FALLBACK_USED":
+      return { type: "system" };
     case "HAND_STARTED":
     case "BLIND_POSTED":
     case "ACTION_TAKEN":

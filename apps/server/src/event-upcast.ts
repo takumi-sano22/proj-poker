@@ -2,19 +2,31 @@
 // 保存済みの行は書き換えない（events は append-only。D37）。読むたびに同じ変換をする。
 import type { HandEvent } from "@proj-poker/engine";
 
+/** 版 1〜3 に無い Event（CPU の判断の経緯。版 4 で足した。D83）。 */
+type AiEventV4 = Extract<
+  HandEvent,
+  { type: "AI_ACTION_INVALID" | "AI_FALLBACK_USED" }
+>;
+
+/**
+ * 版 3 の Event。版 4 は Event の種類（AI_ACTION_INVALID / AI_FALLBACK_USED）を足しただけで、
+ * 版 3 にあった Event の形は変えていないので、版 3 の Event はそのまま版 4 の Event として読める（変換は要らない）。
+ */
+export type HandEventV3 = Exclude<HandEvent, AiEventV4>;
+
 /** 版 1・2 の HAND_STARTED（reopenRule が無い）。 */
 type HandStartedV2 = Omit<
-  Extract<HandEvent, { type: "HAND_STARTED" }>,
+  Extract<HandEventV3, { type: "HAND_STARTED" }>,
   "reopenRule"
 >;
 
 /** 版 2 の Event。HAND_STARTED 以外の形は版 3 と同じ。 */
 export type HandEventV2 =
-  Exclude<HandEvent, { type: "HAND_STARTED" }> | HandStartedV2;
+  Exclude<HandEventV3, { type: "HAND_STARTED" }> | HandStartedV2;
 
 /** 版 1 の POT_AWARDED（Phase 1 の単一 Pot。potIndex と eligible が無い）。 */
 type PotAwardedV1 = Omit<
-  Extract<HandEvent, { type: "POT_AWARDED" }>,
+  Extract<HandEventV3, { type: "POT_AWARDED" }>,
   "potIndex" | "eligible"
 >;
 
@@ -66,7 +78,7 @@ export function upcastV1ToV2(events: readonly HandEventV1[]): HandEventV2[] {
  *   Short All-in の累積と単発が一致する（Legal Action も同じになる）
  * 1 Event ずつ変換できるので、版 1 の行は upcastV1ToV2 の後にこれを通す。
  */
-export function upcastV2ToV3(event: HandEventV2): HandEvent {
+export function upcastV2ToV3(event: HandEventV2): HandEventV3 {
   return event.type === "HAND_STARTED"
     ? { ...event, reopenRule: "cumulative_full_raise" }
     : event;

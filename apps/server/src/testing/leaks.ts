@@ -50,10 +50,16 @@ export function leakedCards(
     .filter((c) => !allowed.has(c));
 }
 
-/** Deck・seed・engine Visibility の Event を指す語が JSON に含まれていないか（Card 以外の経路の漏れ）。 */
+/** Deck・seed・engine / system Visibility の Event（CPU の判断の経緯を含む）を指す語が JSON に含まれていないか（Card 以外の経路の漏れ）。 */
 export function forbiddenKeys(payload: unknown): string[] {
   const json = JSON.stringify(payload);
-  return ['"deck"', '"seed"', "DECK_SHUFFLED", '"engine"'].filter((k) =>
-    json.includes(k),
-  );
+  return [
+    '"deck"',
+    '"seed"',
+    "DECK_SHUFFLED",
+    '"engine"',
+    "AI_ACTION_INVALID",
+    "AI_FALLBACK_USED",
+    '"system"',
+  ].filter((k) => json.includes(k));
 }

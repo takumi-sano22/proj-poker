@@ -338,6 +338,77 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
+  it("版 3 の行は変換せずに読む（保存した reopenRule を補う値で上書きしない）。行は書き換えない（D76・D83）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    // 版 3 の行の reopenRule は、補う値（cumulative_full_raise）ではなく保存した値のまま読む。
+    const v3 = [...started, ...rest].map((e) =>
+      e.type === "HAND_STARTED"
+        ? ({ ...e, reopenRule: "stored_rule" } as unknown as HandEvent)
+        : e,
+    );
+    insertRows("h1", 3, v3);
+
+    expect(
+      open()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(v3);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 3 }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED）も版 4 で保存し、再起動後に同じ Event Log を読み出せる", async () => {
+    const store = open();
+    const orchestrator = new HandOrchestrator({
+      store,
+      setup: PHASE1_TABLE_SETUP,
+      // 出力が常に不正な CPU（毎手番 Retry の後に RuleBot で続ける）。
+      createOpponent: () => ({ decide: () => Promise.resolve(null) }),
+      botDelayMs: 0,
+      opponentTimeoutMs: 1000,
+      nextSeed: () => 42,
+      nextHandId: () => "hand-1",
+    });
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    let view: HeroView = started.value.view;
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      const result = await orchestrator.heroAction(
+        "hand-1",
+        view.log.at(-1)?.seq ?? -1,
+        passive(view),
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      view = result.value;
+    }
+    orchestrator.close();
+    const before = store.read("hand-1").map((s) => s.event);
+    const types = new Set(before.map((e) => e.type));
+    expect(types.has("AI_ACTION_INVALID")).toBe(true);
+    expect(types.has("AI_FALLBACK_USED")).toBe(true);
+
+    expect(
+      reopen()
+        .read("hand-1")
+        .map((s) => s.event),
+    ).toEqual(before);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 4 }]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("Orchestrator で 1 Hand を最後まで進めると、再起動後に同じ Event Log を読み出せる", async () => {
     const store = open();
     const orchestrator = new HandOrchestrator({
@@ -374,9 +445,12 @@ describe("SqliteEventStore（保存の経路）", () => {
   });
 });
 
-/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。 */
+/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4 で足した種類は版 2 に無いので渡さない。 */
 function toV2(events: readonly HandEvent[]): HandEventV2[] {
   return events.map((e): HandEventV2 => {
+    if (e.type === "AI_ACTION_INVALID" || e.type === "AI_FALLBACK_USED") {
+      throw new Error(`版 2 に無い Event: ${e.type}`);
+    }
     if (e.type !== "HAND_STARTED") return e;
     const v2: Record<string, unknown> = { ...e };
     delete v2.reopenRule;

@@ -2,13 +2,14 @@
 // Domain（Poker Engine）の外に置き、Orchestrator はこの Interface だけを知る。
 // LLM の Opponent に差し替えても、入力は「その Player の KnowledgeState と Legal Action」だけに保つ（D28・D71）。
 import type {
+  InvalidOutputStage,
   KnowledgeState,
   LegalActionSet,
   PlayerAction,
 } from "@proj-poker/engine";
 
-/** 出力の検証で不正と判定した段（docs/03 §5 の順: Schema → Legal Action → Amount Range）。 */
-export type InvalidOutputStage = "schema" | "legal_action" | "amount_range";
+/** 出力の検証で不正と判定した段。AI_ACTION_INVALID の Event にも残すので、型は Engine の Event と共有する（D83）。 */
+export type { InvalidOutputStage };
 
 /** 前回の出力が不正だった理由。再要求（Retry）のときだけ渡す（D41）。 */
 export interface OpponentCorrection {
