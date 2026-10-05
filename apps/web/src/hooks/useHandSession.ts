@@ -68,7 +68,7 @@ function noticeOf(error: unknown): SessionNotice {
     case "hand_not_found":
       return {
         message:
-          "この Hand はサーバーに見つかりませんでした（サーバーが再起動した可能性があります）。新しい Session を始めてください。",
+          "この Hand はサーバーに見つかりませんでした（サーバーが再起動した可能性があります）。「卓に戻る」から始め直してください。",
         retryable: false,
       };
     case "illegal_action":
@@ -92,6 +92,8 @@ export function useHandSession(): HandSession {
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
+  // SSE を張り直すための世代。開始が成功するたびに進める。
+  const [streamEpoch, setStreamEpoch] = useState(0);
 
   // 遅れて届いた応答がどの Hand のものかを判定するため、現在の Hand を ref でも持つ。
   const activeHandId = useRef<string | null>(null);
@@ -130,12 +132,16 @@ export function useHandSession(): HandSession {
     lastFailed.current = null;
     startHand()
       .then((res) => {
+        // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
+        // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
         activeHandId.current = res.handId;
         setHandId(res.handId);
         setPlayers(res.players);
-        setView(res.view);
-        setSession({ handId: res.handId, status: res.session });
+        accept(res.view);
+        acceptSession({ handId: res.handId, status: res.session });
         setConnection("idle");
+        // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。
+        setStreamEpoch((n) => n + 1);
       })
       .catch((error: unknown) => {
         lastFailed.current = { kind: "start" };
@@ -145,7 +151,7 @@ export function useHandSession(): HandSession {
         inFlight.current = false;
         setPending(false);
       });
-  }, []);
+  }, [accept, acceptSession]);
 
   /** Action を送る。lastSeq は「この操作を選んだときに見ていた View」の値。 */
   const send = useCallback(
@@ -222,7 +228,7 @@ export function useHandSession(): HandSession {
       );
     });
     return () => source.close();
-  }, [accept, acceptSession, handId]);
+  }, [accept, acceptSession, handId, streamEpoch]);
 
   return {
     handId,

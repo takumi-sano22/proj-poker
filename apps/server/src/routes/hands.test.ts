@@ -108,6 +108,22 @@ describe("Hand API（REST）", () => {
     }
   });
 
+  it("進行中の Hand があるときの POST /api/hands は、新しく作らずその Hand を 200 で返す（開始の再送）", async () => {
+    const { app } = makeApp();
+    const created = await app.inject({ method: "POST", url: "/api/hands" });
+    expect(created.statusCode).toBe(201);
+    const first = created.json<{ handId: string; view: HeroView }>();
+    expect(first.view.status).toBe("in_progress");
+
+    const again = await app.inject({ method: "POST", url: "/api/hands" });
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({
+      handId: first.handId,
+      view: first.view,
+      session: { state: "in_hand" },
+    });
+  });
+
   it("入力の形が不正なら 400（schema）、非合法な額なら 422（Engine）、未知の Hand なら 404", async () => {
     const { app } = makeApp();
     const created = await app.inject({ method: "POST", url: "/api/hands" });

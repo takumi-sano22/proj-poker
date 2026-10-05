@@ -10,15 +10,15 @@ Server の Hand Orchestrator に Session を持たせ、Hand 間で Stack を持
 - **最初の Hand**: 均等 Stack（`startingStack`）・Button は席順の先頭（Hero）。従来の最初の Hand と同じ。
 - **Session の終了（D80）**: Hero の Stack が 0 なら `hero_busted`（CPU が何人残っていても）。Hero の Stack が残っていて `no_next_hand` なら `hero_last_standing`。
 - **Session 終了後に新しい Hand を求められたら**: 明示エラーにせず、新しい Session として均等 Stack で始める（Web の「新しい Session を始める」はこの `POST /api/hands`）。
-- **前 Hand が未完了のまま新しい Hand を求められたら**: 持ち越す Stack が決まらないので、新しい Session として均等 Stack で始める。Session を入れる前の「いつでも新しい Hand を均等 Stack で始められる」挙動、および Web の接続断・Hand 不明からの復旧（新しく始める）と整合させた。未完了の Hand はメモリ上に残る（従来どおり）。
+- **前 Hand が未完了のまま新しい Hand を求められたら**: 今の Session の最後の Hand が進行中なら、新しく作らずその Hand を返す（`POST /api/hands` は 200）。当初は「新しい Session として均等 Stack で始める」にしていたが、Codex の指摘（P1: 開始の応答だけが失われて Web が再送すると Session と持ち越した Stack が捨てられる）で開始を冪等にした。最後の Hand が内部エラーで止まっている場合だけ、新しい Session として均等 Stack で始める（復旧の手段を残す）。Web の接続断の案内は「卓に戻る」にした（進行中の Hand があればその続き、無ければ新しい Session）。
 - **Session の状態の返し方**: Hand ごとに `SessionStatus`（`in_hand` / `ready_for_next_hand` / `ended` + `reason`）を `POST /api/hands`・`POST .../actions` の応答に入れ、SSE では `complete` の View の直前に `event: session` を 1 回送る（Web は complete の View で SSE を閉じるため先に送る）。Hero に返すのは Hero 自身の結果と次 Hand の有無だけ（D28・D73）。Bust や Session 終了の判定は Web でしない。
 - **SQLite の Session**: `EventStore.append` に任意の `AppendContext { sessionId }` を足し、Hand の最初の追記の値で `hands.session_id` を書く。`sessions.started_at` はその Session の最初に保存した Hand の開始時刻。テーブル・列・Trigger は変えていない。従来の「起動ごとに 1 Session」は Orchestrator の Session 単位になった。
 - **CPU の seed**: 卓の設定上の席番号から導く（Bust で席が詰まっても同じ CPU に同じ導き方）。
 
 ## テスト
 
-- Orchestrator: 2・6・8 人卓で Session を最大 30 Hand 回し、各 Hand の開始時に Chip 総量が不変・前 Hand の Stack をそのまま持ち越し Stack 0 の席だけが抜ける（席順は保つ）・同じ Session ID・CPU の Fallback なし、どこかで Bust が起きていること。3 人卓で CPU が Bust → 次 Hand は Hero と cpu2 の Heads-Up・Button = cpu2 = SB・Stack 持ち越し・同じ Session。Hero の Bust で `ended/hero_busted`、次の Hand は新しい Session（均等 Stack・Button = Hero）。CPU 全員の Bust で `ended/hero_last_standing`。未完了の Hand の後の新しい Hand は新しい Session（均等 Stack）。
-- API: 応答の `session` が View と食い違わない（途中は `in_hand`、終了後は `ready_for_next_hand` か `ended`）。SSE は `session` を complete の View の直前に 1 回だけ送り、漏れ検査を通る。
+- Orchestrator: 2・6・8 人卓で Session を最大 30 Hand 回し、各 Hand の開始時に Chip 総量が不変・前 Hand の Stack をそのまま持ち越し Stack 0 の席だけが抜ける（席順は保つ）・同じ Session ID・CPU の Fallback なし、どこかで Bust が起きていること。3 人卓で CPU が Bust → 次 Hand は Hero と cpu2 の Heads-Up・Button = cpu2 = SB・Stack 持ち越し・同じ Session。Hero の Bust で `ended/hero_busted`、次の Hand は新しい Session（均等 Stack・Button = Hero）。CPU 全員の Bust で `ended/hero_last_standing`。進行中の Hand があるときの開始は同じ Hand を返し Event を増やさない（Heads-Up の 2 Hand 目・6 人卓の 1 Hand 目）。最後の Hand が内部エラーで止まっていたら新しい Session（均等 Stack）。
+- API: 進行中の Hand があるときの `POST /api/hands` は同じ Hand を 200 で返す。応答の `session` が View と食い違わない（途中は `in_hand`、終了後は `ready_for_next_hand` か `ended`）。SSE は `session` を complete の View の直前に 1 回だけ送り、漏れ検査を通る。
 - SQLite: Hand の最初の追記の Session ID で `hands.session_id` を書き、`sessions` の行は Session ごとに 1 回（最初の Hand の開始時刻）。
 - Web: `selectSessionStatus`（Hand 終了後の状態を遅れた `in_hand` で戻さない・別 Hand は捨てる）、`parseSessionStatus`（whitelist）。
 

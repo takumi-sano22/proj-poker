@@ -138,11 +138,28 @@ export class HandOrchestrator {
 
   /**
    * Hand を開始し、Hero の手番（または Hand の終了）まで CPU を進める。
-   * 今の Session が続くなら、前 Hand の席順・Button・終了時の Stack から次 Hand の席を決めて Stack を持ち越す。
-   * Session が終わっていたら（D80）、または前 Hand が終わらないうちに求められたら、新しい Session として均等 Stack で始める。
+   * - 今の Session の最後の Hand が進行中なら、新しい Hand を作らずその Hand を返す（created: false）。
+   *   開始の応答だけが失われて再送されても、Session と持ち越した Stack を捨てない（開始を冪等にする）
+   * - 今の Session が続くなら、前 Hand の席順・Button・終了時の Stack から次 Hand の席を決めて Stack を持ち越す
+   * - Session が終わっていたら（D80）、または最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める
    */
-  startHand(): OrchestratorResult<{ handId: string; view: HeroView }> {
+  startHand(): OrchestratorResult<{
+    handId: string;
+    view: HeroView;
+    created: boolean;
+  }> {
     const { setup, store } = this.options;
+    const ongoing = this.ongoingHand();
+    if (ongoing !== null) {
+      return {
+        ok: true,
+        value: {
+          handId: ongoing,
+          view: this.heroViewOf(ongoing),
+          created: false,
+        },
+      };
+    }
     const handId = this.options.nextHandId();
     if (this.hands.has(handId) || store.read(handId).length > 0) {
       throw new Error(`Hand ID が重複した: ${handId}`);
@@ -183,7 +200,10 @@ export class HandOrchestrator {
     };
     this.hands.set(handId, rt);
     this.advance(rt);
-    return { ok: true, value: { handId, view: this.heroViewOf(handId) } };
+    return {
+      ok: true,
+      value: { handId, view: this.heroViewOf(handId), created: true },
+    };
   }
 
   /**
@@ -257,12 +277,22 @@ export class HandOrchestrator {
     return projectHeroView(this.events(handId), this.heroId);
   }
 
+  /** 今の Session の最後の Hand が、まだ終わっておらず進行を続けられるなら、その Hand ID。 */
+  private ongoingHand(): string | null {
+    const current = this.session;
+    if (current === null) return null;
+    const rt = this.hands.get(current.lastHandId);
+    if (rt === undefined || rt.failure !== null) return null;
+    return this.sessionAfter(current.lastHandId).status.state === "in_hand"
+      ? current.lastHandId
+      : null;
+  }
+
   /**
-   * 次 Hand の席・Button・Session を決める。
+   * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand が進行中でないときだけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
-   * - それ以外（最初の Hand・Session 終了後・前 Hand が未完了）: 新しい Session。均等 Stack で、Button は席順の先頭
-   *   （前 Hand が未完了だと持ち越す Stack が決まらないので、新しい Hand は新しい Session になる。
-   *   Session を入れる前の「いつでも新しい Hand を均等 Stack で始められる」挙動と同じ）
+   * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった）: 新しい Session。
+   *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）
    */
   private planNextHand(): HandPlan {
     const current = this.session;

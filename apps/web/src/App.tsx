@@ -205,7 +205,7 @@ function Notice({ session }: { readonly session: HandSession }) {
       : connection === "reconnecting"
         ? "サーバーとの接続を再開しています…"
         : connection === "lost"
-          ? "サーバーとの接続が切れました。新しい Session を始めてください。"
+          ? "サーバーとの接続が切れました。「卓に戻る」で、進行中の Hand があればその続きを、無ければ新しい Session を始めます。"
           : null;
   if (notice === null && connectionText === null) return null;
   return (
@@ -229,7 +229,7 @@ function Notice({ session }: { readonly session: HandSession }) {
           disabled={session.pending}
           onClick={session.start}
         >
-          新しい Session を始める
+          卓に戻る
         </button>
       )}
     </div>

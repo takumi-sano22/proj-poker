@@ -94,12 +94,13 @@ export function registerHandRoutes(
 
   // Hand を開始する。Hero の手番か Hand の終了まで CPU を進めた時点の View を返す。
   // Session が続いていれば Stack を持ち越し、終わっていれば新しい Session として均等 Stack で始める（D80）。
+  // 今の Session の Hand が進行中なら、新しく作らずその Hand を 200 で返す（応答が失われた開始の再送で Session を捨てない）。
   // Hand が開始直後に終わることもあるので、Session の状態も一緒に返す。
   app.post("/api/hands", (_request, reply) => {
     const result = orchestrator.startHand();
     if (!result.ok) return sendError(reply, result.error);
-    const { handId, view } = result.value;
-    return reply.code(201).send({
+    const { handId, view, created } = result.value;
+    return reply.code(created ? 201 : 200).send({
       handId,
       players: orchestrator.players,
       view,
