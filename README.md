@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: Phase 1（Vertical Poker Slice）の到達点 / ブラウザで **6-max Cash の 1 Hand を CPU 5 人と遊べます**。終わった Hand の Event Log は SQLite に残ります（Replay・Review・AI の CPU はまだありません）
+> 現在の状態: Phase 2（Full Poker Engine）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊べます**（Stack は Hand をまたいで持ち越し、Bust した CPU は退席）。Side Pot・Short All-in の Reopen・Heads-Up への移行を Engine が扱います。終わった Hand の Event Log は SQLite に残ります（Replay・Review・AI の CPU はまだありません）
 
 ## このプロジェクトを作る理由
 
@@ -126,7 +126,7 @@ pnpm install
 pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）を同時に起動
 ```
 
-ブラウザで Vite が表示するURL（既定は `http://127.0.0.1:5173`）を開き、「Hand を始める」を押すと、Hero として 6-max の 1 Hand を遊べます（CPU 5 人。終わったら「次の Hand へ」）。
+ブラウザで Vite が表示するURL（既定は `http://127.0.0.1:5173`）を開き、「Hand を始める」を押すと、Hero として遊べます（既定は 6-max で CPU 5 人。人数は `TABLE_SIZE`）。Hand が終わったら「次の Hand へ」で Stack を持ち越して続けます。Hero が Bust するか、CPU が全員 Bust すると Session が終わり、「新しい Session を始める」で均等 Stack から始め直せます。
 
 | 環境変数 | 既定 | 内容 |
 |---|---|---|
@@ -209,22 +209,26 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 1 — Vertical Poker Slice** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
+**Phase 2 — Full Poker Engine** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
 
 できていること:
 
 - 設計ドキュメント（`docs/`）と人間判断（D01〜D81）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
-- 決定論的なPoker Engine（`packages/engine`）: 6-max Cash・全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います。Scenario・Invariant・Property のテスト付き
-- ブラウザで遊べる Basic UI（`apps/web`）: 2Dの卓・実額表示（BBは補助）・合法Actionだけの宣言ボタン・進行ログ・Hero Fold 後の観戦
+- 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 1 は 6-max・均等Stack・単一Pot）
+- Position Engine（D80・OI-008 の暫定値）: 前 Hand の結果から次 Hand の席と Button を決めます。Bust（Stack 0）した Player を外し、Button は時計回りで次の生存席へ（Dead Button なし）。3 人→Heads-Up の移行もここで扱います
+- テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）
+- Session（Server の Hand Orchestrator）: Stack を Hand 間で持ち越し、Bust した CPU は退席します。Hero の Bust か、Hero だけが残ったら Session を終えます（D80）。席・Stack・Button は直前の Hand の Event Log から作ります
+- ブラウザで遊べる Basic UI（`apps/web`）: 2Dの卓（2〜8 席）・実額表示（BBは補助）・合法Actionだけの宣言ボタン・進行ログ・Hero Fold 後の観戦・Session 終了の表示
 - 暫定CPU（D71）: seed付きの決定論ルールBot。そのCPUに見える情報だけで合法Actionから選びます
 - Event Log（D37）: Handの進行はすべてEventで表し、終わったHandのEventをSQLiteへ1トランザクションで保存します（Completed Handが保存の境界。D62）
 
 制約・未実装:
 
-- 1 Hand ずつの独立した練習です。Stackは毎Hand均等に戻り、Sessionの集計・Stackの持ち越しはありません
-- Side Pot・Short All-in Reopen・2〜8人の可変人数はPhase 2です（Phase 1では未対応の状態をEngineがエラーにします）
-- 保存したHandを画面から開くReplay・Hand Review・LLMのCPU・Chip操作（Click + Drag）は未実装です
+- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）・Session 終了の Event はまだありません
+- サーバーを再起動すると新しい Session から始まります（再起動後の Session Resume は Phase 5）
+- Optional BB 表示・Fast Forward は Phase 4、Chip 操作（Click + Drag）・Dealer Feedback・Ruling（Oversized Chip・String Bet / Raise・Out of Turn）は Phase 4、Ante・Blind Level は Phase 8（Tournament）です
+- 保存したHandを画面から開くReplay・Hand Review・LLMのCPU は未実装です
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
 - MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
 
-次は **Phase 2 — Full Poker Engine**（2〜8人・Side Pot・Heads-Up・Deterministic Tests）です。
+次は **Phase 3 — AI Opponents**（Model Adapter・KnowledgeState・Basic Persona・Structured Action・Retry / Fallback）です。
