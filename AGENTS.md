@@ -46,7 +46,7 @@ proj-poker は、ライブ実戦を意識した No-Limit Texas Hold'em の練習
 
 ### 3. 秘密情報・ローカル境界（全 Phase 共通）
 
-- `.env*`、API キー、トークンのコミット、またはブラウザ（クライアント）側のコードから Claude API キーを参照できる経路は **[P0]**。
+- `.env*`、API キー、トークン、Claude Code の OAuth 資格情報（`~/.claude/` の中身）のコミット、またはブラウザ（クライアント）側のコードから Claude の資格情報を参照できる経路は **[P0]**。Claude を呼ぶ子プロセスの環境に `ANTHROPIC_API_KEY` が残り API 課金へ切り替わりうる実装は `[P1]`（D87）。
 - モデル名・Solver 名の Domain Logic へのハードコードは `[P2]`（role-based config。OI-001 / OI-002）。
 
 ### 4. Event Log・永続化

@@ -28,8 +28,8 @@ Solver / Equity Engineは必要に応じて:
 packages/
 └─ engine/   Poker Engine（純粋TypeScript。I/O・DB・LLMをimportしない）
 apps/
-├─ server/   Local Application Runtime（Fastify。Claude API・SQLiteはここだけが扱う）
-└─ web/      Local Browser UI（Vite + React。ブラウザへAPI Keyを渡さない）
+├─ server/   Local Application Runtime（Fastify。Claude・SQLiteはここだけが扱う）
+└─ web/      Local Browser UI（Vite + React。ブラウザへClaudeの資格情報を渡さない）
 ```
 
 - `apps/web`はdev時に`/api`を`apps/server`へproxyし、ブラウザは同一originの`/api`だけを呼びます。
@@ -128,6 +128,18 @@ models:
 - Opponent: Haiku級
 - Review: より上位モデル
 - コスト / Latency / Quality実測後にRouting変更可能
+
+### Claudeの認証（D87。D84を変更）
+
+CPU等のClaude呼び出しは、APIキーではなく、ローカルでログイン済みの**Claude CodeのOAuth認証（サブスクリプション枠）**を**Claude Agent SDK**経由で使います。手順（ユーザー向け）は`README.md`の「Claudeの認証」です。
+
+- **呼ぶ場所**: ローカルの`apps/server`だけです。`apps/web`（ブラウザ）はClaudeを呼ばず、資格情報も受け取りません。
+- **資格情報の置き場所**: Claude Codeが`~/.claude/`に持つものをそのまま使います。リポジトリ・`.env`・`apps/web`へ置かない・コピーしない・渡しません（CLAUDE.md 不変条件6）。`claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN`（ブラウザが使えない環境向け）は本プロダクトでは使いません。
+- **API課金への切り替わりを防ぐ**: 環境に`ANTHROPIC_API_KEY`があるとAgent SDKはそちらを優先し、サブスク枠ではなくAPI課金になります。そのため`apps/server`はClaudeを呼ぶ子プロセスの環境から`ANTHROPIC_API_KEY`を外します（実装は#50）。利用者にも、serverを起動するシェルに無いことを確認してもらいます。
+- **前提と範囲**: 本人のログインを本人が使うローカル単一ユーザー（D61）に限ります。第三者が自分の製品でclaude.aiログインを提供することは公式に認められていないので、配布・共有・複数ユーザー化の方向には使いません（Auth Providerは§11の非目標のまま。ここでいう認証はClaudeを呼ぶ資格であり、プロダクトのログインではありません）。
+- **利用枠**: サブスクの利用枠は開発で使うClaude Codeと共有です。ログイン切れ・上限到達は、Claudeの呼び出しの失敗として§6の「AI障害」で扱います（Retry / Emergency Botで続行 / Session終了。ダイアログは#52）。
+- **テスト**: CIと`pnpm test`はClaudeを呼びません（FakeのModelと録画済み応答だけ。D84から変わらず）。開発中の実呼び出しは制限しません。
+- CPUをClaudeに切り替える設定名は#50で確定し、そこで`README.md`とこの節に追記します。
 
 ## 4. Hand Orchestration
 
