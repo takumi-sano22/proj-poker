@@ -47,7 +47,7 @@ apps/
 - **Hand Orchestrator・暫定CPU・API（Issue #18）**: `apps/server`の構成は次のとおりです（§4の流れを実装したもの）。
   - `hand-orchestrator.ts`（Hand Orchestrator）: Stateは毎回Event Store（Event Log）から`foldHandEvents`で作り、別のStateを持ちません（D37）。`startHand` → Hero の手番か Hand の終了まで CPU を進める → Hero の Action を`applyAction`で検証して適用 → また CPU を進める、を繰り返します。CPUの手番はserver側で進め、Heroの入力待ちで止まります。CPUの思考待ち（演出）はConfig値`BOT_THINK_DELAY_MS`（既定600ms・テストは0）で、待ちの間に Log が進んでいたら予約した手番を捨てます。
   - `opponents/`（Opponent Agent Adapter）: `OpponentAgent.decide({ view, legal })`のInterfaceで、Domainの外に置いた差し替え口です。入力は`projectBotView`の結果とLegal Actionだけです。暫定CPU（D71）の`RuleBot`は、自分の札と公開Boardから手の強さを3段階で見積もり、seed付きの乱数で合法Actionから選びます（CPUのseedはHandのseedから席ごとに導きます）。CPUの出力は`applyAction`で検証し、拒否・例外ならDeterministic Safe Fallback（Check、できなければFold）にして、Fallbackの記録（seq・Player・理由）をHandの運用Metadataとして残します（§5。Retryと`AI_FALLBACK_USED` EventはLLMのOpponentを入れるときに足します）。
-  - `event-store.ts`（Event Store）: §2 Persistence の Event Store の Interface（`append` / `read`）と、メモリ内の実装です。append-onlyで、seqが連続しない追記（二重追記・抜け）は何も書かずに拒否します。SQLiteの実装はIssue #20で差し替えます（D72）。
+  - `event-store.ts`（Event Store）: §2 Persistence の Event Store の Interface（`append` / `read`）と、メモリ内の実装です。append-onlyで、seqが連続しない追記（二重追記・抜け）は何も書かずに拒否します。保存時にEventを複製して配下まで凍結し、呼び出し側の参照から書き換えられないようにします。SQLiteの実装はIssue #20で差し替えます（D72）。
   - `routes/hands.ts`（API。D73）: 下表。入力の形はJSON Schemaで検証し（型の自動変換・余分な項目の黙った削除はしない）、合法性はEngineが判定します。返す・PushするのはHeroに見えるProjection（`projectHeroView`）だけで、Hand のseedはclientから受け取らず、返しません。
   - 卓の人数・CPUの名前は`config.ts`の`PHASE1_TABLE_SETUP`（Hero 1人 + CPU 5人。OI-005の暫定値）で、ButtonはHandごとに時計回りに1席ずつ動かします。
 

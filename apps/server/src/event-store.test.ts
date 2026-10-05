@@ -62,6 +62,31 @@ describe("InMemoryEventStore", () => {
     expect(store.read("h1").length).toBe(3);
   });
 
+  it("追記に渡した Event や read で得た Event を書き換えても、保存済みの Log は変わらない", () => {
+    const store = new InMemoryEventStore();
+    const events = structuredClone(sampleEvents()) as HandEvent[];
+    store.append("h1", events);
+    const snapshot = structuredClone(store.read("h1").map((s) => s.event));
+
+    // 呼び出し側が持ち続けている元の Event を書き換える。
+    const original = events[0] as { handId?: string };
+    original.handId = "tampered";
+    expect(store.read("h1").map((s) => s.event)).toEqual(snapshot);
+
+    // read で得た Event とその配下（Card など）は凍結されていて書き換えられない。
+    const stored = store.read("h1")[1]?.event;
+    expect(stored?.type).toBe("DECK_SHUFFLED");
+    if (stored?.type === "DECK_SHUFFLED") {
+      expect(() => {
+        (stored.deck as unknown[]).pop();
+      }).toThrow(TypeError);
+      expect(() => {
+        (stored.deck[0] as { rank: number }).rank = 2;
+      }).toThrow(TypeError);
+    }
+    expect(store.read("h1").map((s) => s.event)).toEqual(snapshot);
+  });
+
   it("read の戻り値を書き換えても Log は変わらない", () => {
     const store = new InMemoryEventStore();
     store.append("h1", sampleEvents());

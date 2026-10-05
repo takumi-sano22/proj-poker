@@ -13,7 +13,7 @@
 - **Fallback**: CPU の出力が Engine に拒否される／例外を投げる → Check（できなければ Fold）。記録（seq・Player・理由）は Event Log ではなく Orchestrator の運用 Metadata に残し、warn ログを出す。Retry と `AI_FALLBACK_USED` Event は LLM の Opponent を入れるときに足す（決定論 Bot の Retry は同じ結果になるため）。
 - **CPU の思考待ち**: `BOT_THINK_DELAY_MS`（既定 600ms・テストは 0）。0 なら同期でまとめて進める。待ちの間に Log が進んでいたら予約した手番を捨てる（遅延応答を適用しない）。アプリ終了時（`onClose`）に予約を取り消す。
 - **二重送信の検出**: Hero の Action は `lastSeq`（client が見ていた `view.log` の最後の seq）を必須にした。Log がそこから進んでいれば `stale_view`（409）で拒否する。Hero に見える Event の seq だけで比べるので、見えない Event の存在は漏れない。
-- **Event Store**: `append` / `read` の Interface とメモリ内実装。append-only で、seq が連続しない追記（二重追記・抜け）は何も書かずに拒否する。`eventId`・`recordedAt` は保存側が付ける（docs/04 §3）。
+- **Event Store**: `append` / `read` の Interface とメモリ内実装。append-only で、seq が連続しない追記（二重追記・抜け）は何も書かずに拒否する。保存時に Event を複製して配下まで凍結し、呼び出し側の参照から書き換えられないようにする。`eventId`・`recordedAt` は保存側が付ける（docs/04 §3）。
 - **SSE**: `event: view` + `data: HeroView`。接続時に現在の View、以後は Log が進むたびに送る。Hand が終わった View を送ったらサーバーが閉じる。`preClose` で開いている SSE を閉じる。
 - **Engine を build せずに使う**: Engine の `exports` に条件 `@proj-poker/source`（→ `src/index.ts`）を 1 行足し、server の `tsconfig.json`（`customConditions`）・`vitest.config.mjs`（`ssr.resolve.conditions`）・`dev`（`tsx --conditions`）で指定した。CI は build せずに lint → typecheck → test を流すため（`dist` 参照のままだと型付き lint・typecheck・test が Engine を解決できない）。`build`（新設 `tsconfig.build.json`）と `start` は build 済みの `dist` を使う。Engine の公開 API は変えていない。
 
@@ -35,7 +35,7 @@
 
 ## 実行した確認
 
-- ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test`（Engine 109・Server 20 テスト）/ `pnpm format:check`（結果は PR の Test plan）。
+- ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test`（Engine 109・Server 21 テスト）/ `pnpm format:check`（結果は PR の Test plan）。
 - `pnpm build` → `node apps/server/dist/index.js` で `/api/health` と `POST /api/hands` を確認（`dist` にテストと `testing/` が出ないことも確認）。確認後にプロセスを止め、`dist` を削除した。
 - `pnpm dev` 相当（server だけ・`BOT_THINK_DELAY_MS=300`・別ポート）で、CPU の行動が 1 手ずつ SSE で届き Hero の手番で止まることを `curl -N` で確認。確認後にプロセスを止めた。
 

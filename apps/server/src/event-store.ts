@@ -61,8 +61,14 @@ export class InMemoryEventStore implements EventStore {
       }
     });
     const recordedAt = this.now().toISOString();
+    // 呼び出し側が持つ Event と切り離すため複製し、配下まで凍結する（保存後に書き換えられない＝append-only・D37）。
     const stored = events.map((event): StoredHandEvent =>
-      Object.freeze({ eventId: this.newEventId(), handId, recordedAt, event }),
+      deepFreeze({
+        eventId: this.newEventId(),
+        handId,
+        recordedAt,
+        event: structuredClone(event),
+      }),
     );
     log.push(...stored);
     this.logs.set(handId, log);
@@ -73,4 +79,13 @@ export class InMemoryEventStore implements EventStore {
     // 呼び出し側が配列を書き換えても Log が変わらないよう、写しを返す。
     return [...(this.logs.get(handId) ?? [])];
   }
+}
+
+/** object と配列を配下まで凍結する（Event は JSON 相当の値だけを持つ）。 */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+    Object.values(value).forEach(deepFreeze);
+    Object.freeze(value);
+  }
+  return value;
 }
