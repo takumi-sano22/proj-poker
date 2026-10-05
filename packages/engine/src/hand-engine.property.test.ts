@@ -112,7 +112,7 @@ function checkStep(total: number) {
   };
 }
 
-const playerCount = fc.integer({ min: 2, max: 6 });
+const playerCount = fc.integer({ min: 2, max: 8 });
 const seed = fc.integer({ min: 0, max: 2 ** 31 - 1 });
 const choices = fc.array(fc.nat({ max: 10_000 }), {
   minLength: 1,

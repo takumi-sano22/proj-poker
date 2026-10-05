@@ -1,5 +1,10 @@
 import { buildApp } from "./app.js";
-import { parseBotDelayMs, resolveDbPath } from "./config.js";
+import {
+  buildTableSetup,
+  parseBotDelayMs,
+  parseTableSize,
+  resolveDbPath,
+} from "./config.js";
 import { SqliteEventStore } from "./sqlite-event-store.js";
 
 // ローカル専用（D61・非目標: Auth / Online Multiplayer）。外部 NIC へ公開しないため loopback に固定し、設定で変えさせない。
@@ -12,6 +17,8 @@ const store = SqliteEventStore.open(dbPath);
 
 const app = buildApp({
   botDelayMs: parseBotDelayMs(process.env["BOT_THINK_DELAY_MS"]),
+  // 卓の人数（2〜8。既定 6）。環境変数 TABLE_SIZE で選ぶ。
+  setup: buildTableSetup(parseTableSize(process.env["TABLE_SIZE"])),
   store,
 });
 // アプリの終了時に DB を閉じる。途中の Hand は保存されない（Completed Hand が保存境界。D62）。

@@ -22,7 +22,6 @@ export type ApiErrorKind =
   | "illegal_action"
   | "hand_not_found"
   | "invalid_input"
-  | "unsupported_state"
   | "network"
   | "unknown";
 
@@ -43,7 +42,6 @@ const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "illegal_action",
   "hand_not_found",
   "invalid_input",
-  "unsupported_state",
 ];
 
 async function postJson<T>(path: string, body?: unknown): Promise<T> {

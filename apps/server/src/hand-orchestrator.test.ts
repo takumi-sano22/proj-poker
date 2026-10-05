@@ -4,7 +4,7 @@ import {
   type PlayerAction,
 } from "@proj-poker/engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PHASE1_TABLE_SETUP } from "./config.js";
+import { PHASE1_TABLE_SETUP, buildTableSetup } from "./config.js";
 import { InMemoryEventStore } from "./event-store.js";
 import {
   HandOrchestrator,
@@ -141,6 +141,32 @@ describe("HandOrchestrator", () => {
       }
     }
   });
+
+  it.each([2, 6, 8])(
+    "%i 人卓でも Hand が最後まで終わり、Button を回しても Chip 総量が不変で CPU は Fallback しない",
+    (size) => {
+      const tableSetup = buildTableSetup(size);
+      const total = tableSetup.startingStack * size;
+      for (let seed = 1; seed <= 20; seed++) {
+        const { orchestrator, events } = setup({
+          setup: tableSetup,
+          nextSeed: () => seed,
+        });
+        // 全員が 1 回ずつ Button になるまで回す
+        for (let h = 0; h < size; h++) {
+          const started = orchestrator.startHand();
+          if (!started.ok) throw new Error(started.error.message);
+          const { handId, view } = started.value;
+          expect(view.seats).toHaveLength(size);
+          const hero =
+            seed % 3 === 0 ? () => ({ type: "fold" as const }) : passiveHero;
+          playOut(orchestrator, handId, view, hero);
+          expect(finishedStacks(events(handId))).toBe(total);
+          expect(orchestrator.fallbacksOf(handId)).toEqual([]);
+        }
+      }
+    },
+  );
 
   it("同じ seed と同じ Hero の Action なら、同じ Event Log になる（再現性）", () => {
     const run = () => {

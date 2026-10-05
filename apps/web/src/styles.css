@@ -81,7 +81,8 @@
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* 寸法。席と Bet は卓の中心から --dir-x / --dir-y（単位円）の向きに、ここで決めた半径だけ離す */
-  --seat-rx: 45%;
+  /* 真横（2・4・8 人卓の 180°）の席も画面内に収まるよう、横の半径は「半幅 - 席の半幅」で決める */
+  --seat-rx: calc(50% - 62px);
   --seat-ry: 44%;
   --bet-rx: 27%;
   --bet-ry: 25%;
@@ -591,7 +592,7 @@ input {
 @media (max-width: 719px) {
   :root {
     /* 縦長の卓では左右の席が画面外へ出ないよう横の半径を詰め、縦に広げる */
-    --seat-rx: 36%;
+    --seat-rx: calc(50% - 46px);
     --seat-ry: 45%;
     --bet-rx: 20%;
     --bet-ry: 29%;
@@ -611,6 +612,26 @@ input {
   }
   .bet {
     font-size: 11px;
+  }
+  /* 7・8 人卓は席が詰まるので、狭い画面では札と席の面を一段小さくして重ならないようにする */
+  .table[data-seat-count="7"],
+  .table[data-seat-count="8"] {
+    --card-sm-w: 18px;
+  }
+  .table[data-seat-count="7"] .seat__plate,
+  .table[data-seat-count="8"] .seat__plate {
+    min-width: 64px;
+    padding: 2px 4px 3px;
+  }
+  .table[data-seat-count="7"] .seat__name,
+  .table[data-seat-count="8"] .seat__name,
+  .table[data-seat-count="7"] .seat__stack,
+  .table[data-seat-count="8"] .seat__stack {
+    font-size: 11px;
+  }
+  .table[data-seat-count="7"] .seat__status,
+  .table[data-seat-count="8"] .seat__status {
+    font-size: 10px;
   }
 }
 
