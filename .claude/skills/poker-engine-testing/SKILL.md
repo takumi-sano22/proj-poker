@@ -7,7 +7,7 @@ description: proj-poker の決定論的 Poker Engine のテスト規約。Invari
 
 `docs/09` §1 にあるとおり、最優先は **Poker Engine の正しさ**。AI の戦略は不完全でもよいが、Chip Accounting・Legal Action・Pot Distribution・Hidden Information Isolation は壊れてはいけない。本 skill は、その「壊れてはいけない」をテストとしてどう書くかを定める。テストの要求範囲（何を最低限テストするか）の一次情報は `docs/09` と `docs/02` §5 で、ここには書き写さない。
 
-> **ランナーと配置（D69）**: テストランナーは Vitest、Property / Fuzz は fast-check。テストは `packages/engine/src/**/*.test.ts` に実装と並べて置き（コロケーション）、Property テストは `*.property.test.ts` とする。実行はルートの `pnpm test`（Engine だけなら `pnpm --filter @proj-poker/engine test`）。§4 の Scenario ファイルの置き場は、最初の Scenario ランナーを作る Issue で決めてここへ追記する。
+> **ランナーと配置（D69）**: テストランナーは Vitest、Property / Fuzz は fast-check。テストは `packages/engine/src/**/*.test.ts` に実装と並べて置き（コロケーション）、Property テストは `*.property.test.ts` とする。実行はルートの `pnpm test`（Engine だけなら `pnpm --filter @proj-poker/engine test`）。Scenario は `packages/engine/src/hand-scenarios.test.ts` に置く（§4）。テスト補助は `packages/engine/src/testing/`（`invariants.ts` / `stacked-deck.ts` / `view-leaks.ts`。build 対象外）。
 
 ## 1. Engine を変えたら何を足すか（必須）
 
@@ -23,9 +23,9 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 
 ## 2. 決定論の前提
 
-- Engine は RNG を**注入**で受け取る。テストは固定 seed、または **Deck を明示的に積んだ（stacked deck）RNG** を使う。`Math.random()` や実時刻に依存するテストを書かない。
+- Engine は配布を**入力**で受け取る（`startHand` の `deal`: `{ seed }` か `{ deck }`）。テストは固定 seed、または **Deck を明示的に積んだ（stacked deck）** `{ deck: stackedDeck(seats, button, holes, board) }`（`testing/stacked-deck.ts`。配布順は Engine と同じ）を使う。`Math.random()` や実時刻に依存するテストを書かない。
 - 同じ seed と同じ Action 列から、同じ Event 列と同じ最終 State が得られることを、少なくとも 1 本のテストで assert する（再現性の保存候補は `docs/02` §10。Projection が Event から再構築できることは `docs/04` §1）。
-- Chip の数値表現（整数の最小単位など）は docs で未確定。決めたら `decision-log` で記録し、ここに追記する。それまでは assert を**完全一致**で書く（誤差を許容する比較で保存則の破れを隠さない）。
+- Chip は最小単位の整数（`number`・`Number.isSafeInteger` で検証・浮動小数なし。Blind / Stack / Bet / Pot は同じ単位。**D74**）。assert は**完全一致**で書く（誤差を許容する比較で保存則の破れを隠さない）。
 
 ## 3. Invariant テスト（INV-TEST-001〜008）
 
@@ -47,31 +47,37 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 
 固定ハンドは**データとして記述**し、1 つの汎用ランナーで再生・検証する（ハンドごとに手続き的なテストを書かない）。Scenario は Human-reviewed Hand の回帰ケースにもそのまま使える（`docs/09` §6）。
 
-推奨形式（形式は、最初の Scenario ランナーを作る Issue〔Phase 1 / 2〕で確定する。Phase 0 はツールチェーンだけでランナーを作っていないため。要素はこれを満たすこと）:
+形式は #17 で確定した、`packages/engine/src/hand-scenarios.test.ts` の TS のデータ（`HandScenario`）。同じファイル末尾の汎用ランナーが再生する（YAML ファイルは使わない）。要素:
 
-```yaml
-id: SCN-side-pot-3way-001
-title: 3-way All-in で Main Pot と Side Pot が 1 つずつできる
-rule_profile: live_cash_training_v1
-source: docs/09 §4 3-way Side Pot           # 根拠（docs 節 / 実バグの Issue 番号）
-table: { players: 3, button: 0, sb: 1, bb: 2, blinds: [1, 2] }
-stacks: [100, 40, 250]
-deck: [As, Kd, ...]                         # 積んだ Deck（配布順）
-actions:                                    # Canonical Action または Physical Action
-  - { seat: 0, action: raise, to: 10 }
-  - { seat: 1, action: all_in }
-  ...
-expect:
-  events_include: [POT_AWARDED]
-  # 手計算: seat1 の 40 × 3 人 = Main 120 / 残りの seat0・seat2 の超過分 = Side（値は例）
-  pots: [{ amount: 120, eligible: [0,1,2] }, { amount: 120, eligible: [0,2] }]
-  final_stacks: [..]
-  rejected_actions: []                      # 合法でない Actor の Canonical Action など、Reject されるべき入力
-  rulings: []                               # Physical Action の裁定結果（Rule Profile 依存。例: Out of Turn・Oversized Chip）
+```ts
+{
+  id: "SCN-6max-standard-001",
+  title: "Standard 6-max: Preflop Raise → … → Showdown",
+  source: "docs/09 §4 Standard 6-max / INV-TEST-003・006", // 根拠（docs 節・D 番号・実バグの Issue 番号）
+  seats: sixMax(),                      // [{ playerId, stack }]（席順＝時計回り）
+  button: "btn",
+  config: PHASE1_CASH_PRESET,           // 省略時は PHASE1_CASH_PRESET（Rule Profile を含む）
+  holes: { utg: "As Ad", co: "Kh Kd" }, // 指定しない Player には残りの Card が配られる
+  board: "2c 7d 9s Jh 3c",
+  steps: [
+    { player: "co", action: call, reject: { kind: "not_actor" } }, // 拒否されるべき入力（拒否後の State は不変）
+    { player: "utg", action: raise(6), legal: [/* 行動前の Legal Action（完全一致） */] },
+    // …
+  ],
+  expect: {
+    status: "complete",
+    stacks: { /* 手計算の最終 Stack */ },
+    pot: 0, awards: { /* 手計算の配分 */ },
+    tailEvents: ["CARDS_TABLED", "POT_AWARDED", "HAND_FINISHED"], // 最後の Action 以降の Event 種別（順序どおり）
+    absentEvents: [],                   // 1 度も発行されてはいけない Event 種別
+  },
+}
 ```
 
+- ランナーは `deal: { deck: stackedDeck(...) }` で Hand を始め、各ステップの後に `checkInvariants(state, initialChipTotal(seats))`（`testing/invariants.ts`。INV-TEST-001〜005）が空であることと、`foldHandEvents(events)` が State と一致すること（Event Log から再構築できる。D37）を確かめる。INV-TEST-006 は `reject` のステップで確かめる。
+- Side Pot・Ruling（Physical Action）の Scenario は、それを実装する Phase で `HandScenario` に要素を足して書く（Phase 1 は単一 Pot。D70）。
 - **命名**: `SCN-<領域>-<内容>-<連番>`。`docs/09` §4 と `docs/02` §5 の必須 Scenario を、それぞれ最低 1 本ずつ用意する（一覧との対応は Scenario の `source` で追える）。
-- **期待値は手計算**で書き、計算過程を YAML コメントに残す。Engine の出力をコピーして期待値にしない（バグを固定してしまうため）。
+- **期待値は手計算**で書き、計算過程をコメントに残す。Engine の出力をコピーして期待値にしない（バグを固定してしまうため）。
 - Rule Profile で結果が変わるものは、Profile ごとに Scenario を分ける。
 
 ## 5. Property / Fuzz
