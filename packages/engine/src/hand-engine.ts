@@ -26,6 +26,7 @@ import {
 } from "./legal-actions.js";
 import { splitPot } from "./pot-split.js";
 import { createShuffledDeck } from "./rng.js";
+import { buildPots } from "./side-pots.js";
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
@@ -50,18 +51,12 @@ export interface HandProgress {
 }
 
 /**
- * Engine が拒否した理由。unsupported_state は「ルール上は合法だが Phase 1 の Engine が扱えない状態」（D70）。
- * - side_pot: 貢献額の異なる All-in（Side Pot が要る）
- * Split Pot の端数は D75 で Phase 1 に前倒しして実装したため、ここには無い。
+ * Engine が拒否した理由。
+ * Phase 1 にあった unsupported_state（side_pot）は、Side Pot を実装したので無い（D78・#31）。
  */
 export type EngineError =
   | ActionRejection
-  | { readonly kind: "invalid_input"; readonly message: string }
-  | {
-      readonly kind: "unsupported_state";
-      readonly reason: "side_pot";
-      readonly message: string;
-    };
+  | { readonly kind: "invalid_input"; readonly message: string };
 
 export type EngineResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -116,8 +111,6 @@ export function startHand(input: StartHandInput): EngineResult<HandProgress> {
     });
   }
 
-  const sidePot = checkSidePot(acc.state);
-  if (sidePot !== null) return { ok: false, error: sidePot };
   return progress(acc);
 }
 
@@ -133,8 +126,6 @@ export function applyAction(
     { state, events: [] },
     { type: "ACTION_TAKEN", ...resolved.value },
   );
-  const sidePot = checkSidePot(acc.state);
-  if (sidePot !== null) return { ok: false, error: sidePot };
   return progress(acc);
 }
 
@@ -158,7 +149,7 @@ function postBlind(
   amount: number,
 ): HandProgress {
   const p = playerAt(acc.state, index);
-  // Stack が Blind に満たなければ Stack 全額（All-in）。その状態は直後の checkSidePot で拒否される。
+  // Stack が Blind に満たなければ Stack 全額（All-in）。超過分は Betting 終了時に返し、残りは Side Pot で扱う。
   return emit(acc, {
     type: "BLIND_POSTED",
     playerId: p.playerId,
@@ -168,37 +159,17 @@ function postBlind(
 }
 
 /**
- * Side Pot が要る状態か（D70: Phase 1 は単一 Pot だけを扱う）。
- * All-in した Player より多く Commit した Player がいれば、超過分は All-in の Player が争えない Pot になる。
- */
-function checkSidePot(state: HandState): EngineError | null {
-  for (const a of state.players) {
-    if (!a.allIn || a.folded) continue;
-    const over = state.players.find((q) => q.totalCommitted > a.totalCommitted);
-    if (over !== undefined) {
-      return {
-        kind: "unsupported_state",
-        reason: "side_pot",
-        message: `${a.playerId} の All-in（${a.totalCommitted}）を ${over.playerId}（${over.totalCommitted}）が超えるため Side Pot が要る。Phase 1 は未対応（D70）`,
-      };
-    }
-  }
-  return null;
-}
-
-/**
  * 誰も行動できない間、Hand を自動で進める。
- * 残り 1 人 → Uncalled Bet を返して Pot を渡す。それ以外は Board を配り、River の後で Showdown する。
+ * Betting Round が終わるたびに、誰も Call しなかった超過分（Uncalled Bet）を返す。
+ * 残り 1 人 → Pot を渡す。それ以外は Board を配り、River の後で Showdown する。
  */
 function progress(start: HandProgress): EngineResult<HandProgress> {
   let acc = start;
   while (acc.state.status === "in_progress" && acc.state.actorIndex === null) {
+    acc = returnUncalledBet(acc);
     const state = acc.state;
-    const alive = state.players.filter((p) => !p.folded);
-    const [onlyAlive] = alive;
-
-    if (alive.length === 1 && onlyAlive !== undefined) {
-      acc = finishByFold(acc, onlyAlive.playerId);
+    if (state.players.filter((p) => !p.folded).length === 1) {
+      acc = finish(awardPots(acc, false));
       continue;
     }
     // これ以上 Betting が無い（All-in で決着待ち）か River が終わったら、残った全員が札を公開する。
@@ -209,32 +180,29 @@ function progress(start: HandProgress): EngineResult<HandProgress> {
       acc = dealNextStreet(acc);
       continue;
     }
-    acc = awardShowdown(acc);
+    acc = finish(awardPots(acc, true));
   }
   return { ok: true, value: acc };
 }
 
-function finishByFold(acc: HandProgress, winnerId: string): HandProgress {
-  const winner = acc.state.players.find((p) => p.playerId === winnerId);
-  const others = acc.state.players.filter((p) => p.playerId !== winnerId);
-  const called = Math.max(0, ...others.map((p) => p.streetCommitted));
-  const uncalled = (winner?.streetCommitted ?? 0) - called;
-  let next = acc;
-  if (uncalled > 0) {
-    // 誰も Call していない分は Pot に入らない。勝者へ返してから Pot を渡す。
-    next = emit(next, {
-      type: "UNCALLED_BET_RETURNED",
-      playerId: winnerId,
-      amount: uncalled,
-    });
-  }
-  next = emit(next, {
-    type: "POT_AWARDED",
-    potTotal: next.state.pot,
-    awards: [{ playerId: winnerId, amount: next.state.pot }],
-    showdown: false,
+/**
+ * この Street で最も多く出した Player の、2 番目に多い額を超える分は誰も Call していない（Uncalled Bet）。
+ * Pot に入れず本人へ返す（Fold で決着したときの Bet・Short All-in を超えた Bet・Stack 不足の Blind を超えた Blind）。
+ * 超過が残るのは他の全員が Fold か All-in のときだけなので、Betting Round の終わりに 1 回見れば足りる。
+ */
+function returnUncalledBet(acc: HandProgress): HandProgress {
+  const byCommit = [...acc.state.players].sort(
+    (a, b) => b.streetCommitted - a.streetCommitted,
+  );
+  const [top, second] = byCommit;
+  if (top === undefined || second === undefined) return acc;
+  const uncalled = top.streetCommitted - second.streetCommitted;
+  if (uncalled <= 0) return acc;
+  return emit(acc, {
+    type: "UNCALLED_BET_RETURNED",
+    playerId: top.playerId,
+    amount: uncalled,
   });
-  return finish(next);
 }
 
 /** Fold していない全員の札を、Button の左から順に公開する（公開済みの Player は飛ばす）。 */
@@ -269,36 +237,56 @@ function dealNextStreet(acc: HandProgress): HandProgress {
   });
 }
 
-/** Showdown で最強の Hand を持つ Player に Pot を配る。同着の端数は Rule Profile の規則で配る（D75）。 */
-function awardShowdown(acc: HandProgress): HandProgress {
+/**
+ * Commit の累計から Main / Side Pot を組み立て、Main Pot から順に 1 Pot ずつ配る（POT_AWARDED は Pot ごとに 1 つ。D78）。
+ * 各 Pot は争える Player の中で最強の Hand が取り、同着の端数は Rule Profile の規則で配る（D75）。
+ * 争える Player が 1 人だけの Pot（Fold で決着・Side Pot の独占）は札を比べずにその Player へ渡す。
+ */
+function awardPots(acc: HandProgress, showdown: boolean): HandProgress {
   const state = acc.state;
-  const contenders = seatsFromButton(state)
-    .filter((p) => !p.folded)
-    .map((p) => ({
-      playerId: p.playerId,
-      value: evaluateHand([...(p.holeCards ?? []), ...state.board]),
-    }));
-  const best = contenders.reduce<HandValue | null>(
-    (top, c) =>
-      top === null || compareHands(c.value, top) > 0 ? c.value : top,
-    null,
-  );
-  const winners = contenders.filter(
-    (c) => best !== null && compareHands(c.value, best) === 0,
-  );
-  // contenders は Button の左から時計回りの順なので、winners もその順になる（端数を配る順）。
-  const awards = splitPot(
-    state.pot,
-    winners.map((w) => w.playerId),
-    state.oddChipRule,
-  );
-  const awarded = emit(acc, {
-    type: "POT_AWARDED",
-    potTotal: state.pot,
-    awards,
-    showdown: true,
+  // Button の左から時計回りの順で渡すので、eligible と winners もその順になる（端数を配る順）。
+  const pots = buildPots(seatsFromButton(state));
+  const values = new Map<string, HandValue>();
+  if (showdown) {
+    for (const p of state.players) {
+      if (!p.folded) {
+        values.set(
+          p.playerId,
+          evaluateHand([...(p.holeCards ?? []), ...state.board]),
+        );
+      }
+    }
+  }
+  let next = acc;
+  pots.forEach((pot, potIndex) => {
+    const contested = showdown && pot.eligible.length > 1;
+    const winners = contested ? bestHands(pot.eligible, values) : pot.eligible;
+    next = emit(next, {
+      type: "POT_AWARDED",
+      potIndex,
+      potTotal: pot.amount,
+      eligible: pot.eligible,
+      awards: splitPot(pot.amount, winners, state.oddChipRule),
+      showdown: contested,
+    });
   });
-  return finish(awarded);
+  return next;
+}
+
+/** 候補のうち最強の Hand を持つ Player（同着なら全員）。候補の順を保つ。 */
+function bestHands(
+  candidates: readonly string[],
+  values: ReadonlyMap<string, HandValue>,
+): string[] {
+  const valueOf = (id: string): HandValue => {
+    const v = values.get(id);
+    if (v === undefined) throw new RangeError(`Hand を評価していない: ${id}`);
+    return v;
+  };
+  const best = candidates
+    .map(valueOf)
+    .reduce((top, v) => (compareHands(v, top) > 0 ? v : top));
+  return candidates.filter((id) => compareHands(valueOf(id), best) === 0);
 }
 
 function finish(acc: HandProgress): HandProgress {

@@ -92,9 +92,15 @@ export type HandEventBody =
       readonly amount: number;
     }
   | {
+      // Pot ごとに 1 つ発行する（Main Pot が先。D78）。Σ awards = potTotal。
       readonly type: "POT_AWARDED";
+      /** 0 が Main Pot、1 以降が Side Pot（作られた順）。 */
+      readonly potIndex: number;
       readonly potTotal: number;
+      /** この Pot を争えた（Fold せず、この Pot の段まで Commit した）Player。Button の左から時計回りの順。 */
+      readonly eligible: readonly string[];
       readonly awards: readonly PlayerChips[];
+      /** 札を比べて決めたか。争える Player が 1 人だけの Pot（Fold で決着・Side Pot の独占）は false。 */
       readonly showdown: boolean;
     }
   | {

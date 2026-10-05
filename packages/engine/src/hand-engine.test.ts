@@ -115,24 +115,32 @@ describe("startHand", () => {
     if (!result.ok) expect(result.error.kind).toBe("invalid_input");
   });
 
-  it("Blind で All-in になり Side Pot が要る卓は unsupported_state で拒否する（D70）", () => {
-    // p1（SB）は Stack 1 で SB を出して All-in。BB の p2 が 2 を出すと p1 の 1 を超える。
+  it("Heads-Up で Button（SB）の Stack が SB に満たなければ、Blind で All-in して行動なしで Showdown まで進む", () => {
+    // p0（Button = SB）は Stack 1 で All-in。BB の p1 の 2 のうち 1 は誰も Call できないので返す。
     const result = startHand(
       input({
         seats: [
-          { playerId: "p0", stack: 200 },
-          { playerId: "p1", stack: 1 },
-          { playerId: "p2", stack: 200 },
+          { playerId: "p0", stack: 1 },
+          { playerId: "p1", stack: 200 },
         ],
       }),
     );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toMatchObject({
-        kind: "unsupported_state",
-        reason: "side_pot",
-      });
-    }
+    if (!result.ok) throw new Error(result.error.message);
+    const { events, state } = result.value;
+    expect(state.status).toBe("complete");
+    expect(state.pot).toBe(0);
+    expect(events.filter((e) => e.type === "UNCALLED_BET_RETURNED")).toEqual([
+      expect.objectContaining({ playerId: "p1", amount: 1 }),
+    ]);
+    // Pot は 1 + 1 = 2 の 1 つだけ。Chip 総量は 201 のまま。
+    expect(events.filter((e) => e.type === "POT_AWARDED")).toEqual([
+      expect.objectContaining({
+        potIndex: 0,
+        potTotal: 2,
+        eligible: ["p1", "p0"],
+      }),
+    ]);
+    expect(state.players.reduce((sum, p) => sum + p.stack, 0)).toBe(201);
   });
 });
 

@@ -35,6 +35,9 @@ export type { OddChipRule, TableConfig } from "./table-config.js";
 
 export { splitPot } from "./pot-split.js";
 
+export { buildPots } from "./side-pots.js";
+export type { Pot, PotContributor } from "./side-pots.js";
+
 export { isVisibleTo, visibilityOf } from "./hand-events.js";
 export type {
   ActionType,

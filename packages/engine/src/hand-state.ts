@@ -49,6 +49,7 @@ export interface HandState {
   /** 次に行動する Player の添字。誰も行動できない（Street 終了・Hand 終了）なら null。 */
   readonly actorIndex: number | null;
   readonly status: "in_progress" | "complete";
+  /** この Hand で配分した額の Player ごとの合計（Main / Side Pot を合算。最初に受け取った順）。 */
   readonly awards: readonly PlayerChips[];
   /** 次に発行する Event の seq。 */
   readonly nextSeq: number;
@@ -208,7 +209,7 @@ function applyBody(state: HandState, event: HandEvent): HandState {
         ...state,
         players,
         pot: state.pot - event.potTotal,
-        awards: event.awards,
+        awards: addAwards(state.awards, event.awards),
         actorIndex: null,
       };
     }
@@ -216,6 +217,22 @@ function applyBody(state: HandState, event: HandEvent): HandState {
     case "HAND_FINISHED":
       return { ...state, status: "complete", actorIndex: null };
   }
+}
+
+/** Pot ごとの配分を Player ごとの合計へ足し込む（同じ Player が複数の Pot を取っても 1 行にまとめる）。 */
+function addAwards(
+  total: readonly PlayerChips[],
+  awards: readonly PlayerChips[],
+): PlayerChips[] {
+  const merged: { playerId: string; amount: number }[] = total.map((t) => ({
+    ...t,
+  }));
+  for (const a of awards) {
+    const existing = merged.find((m) => m.playerId === a.playerId);
+    if (existing === undefined) merged.push({ ...a });
+    else existing.amount += a.amount;
+  }
+  return merged;
 }
 
 /** Stack から amount を出して Commit する。Stack が 0 になったら All-in。 */

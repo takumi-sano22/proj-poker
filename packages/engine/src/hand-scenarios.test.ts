@@ -10,7 +10,11 @@ import {
   type PlayerAction,
 } from "./legal-actions.js";
 import { PHASE1_CASH_PRESET, type TableConfig } from "./table-config.js";
-import { checkInvariants, initialChipTotal } from "./testing/invariants.js";
+import {
+  checkInvariants,
+  checkPotAwards,
+  initialChipTotal,
+} from "./testing/invariants.js";
 import { stackedDeck } from "./testing/stacked-deck.js";
 
 interface ScenarioStep {
@@ -19,10 +23,7 @@ interface ScenarioStep {
   /** 行動前の Legal Action（完全一致）。 */
   readonly legal?: readonly LegalAction[];
   /** 拒否されるべき入力。拒否後の State は変わらない。 */
-  readonly reject?: {
-    readonly kind: EngineError["kind"];
-    readonly reason?: "side_pot";
-  };
+  readonly reject?: { readonly kind: EngineError["kind"] };
 }
 
 interface HandScenario {
@@ -42,11 +43,21 @@ interface HandScenario {
     readonly stacks: Readonly<Record<string, number>>;
     readonly pot?: number;
     readonly awards?: Readonly<Record<string, number>>;
+    /** POT_AWARDED を発行順（Main Pot → Side Pot）に。potIndex は 0 からの連番であることも確かめる。 */
+    readonly pots?: readonly ExpectedPot[];
     /** 最後の Action 以降に発行された Event 種別（順序どおり）。 */
     readonly tailEvents?: readonly HandEventType[];
     /** 1 度も発行されてはいけない Event 種別。 */
     readonly absentEvents?: readonly HandEventType[];
   };
+}
+
+interface ExpectedPot {
+  readonly total: number;
+  /** 争える Player（Button の左から時計回りの順）。 */
+  readonly eligible: readonly string[];
+  readonly awards: Readonly<Record<string, number>>;
+  readonly showdown: boolean;
 }
 
 const sixMax = (stack = 200): SeatInit[] =>
@@ -191,7 +202,7 @@ const SCENARIOS: readonly HandScenario[] = [
   {
     id: "SCN-fold-to-bb-001",
     title: "全員 Fold で BB が勝ち、Call されなかった 1 が返る",
-    source: "docs/09 §2 Blind / Fold・D70 単一 Pot",
+    source: "docs/09 §2 Blind / Fold",
     seats: sixMax(),
     button: "btn",
     holes: {},
@@ -209,6 +220,10 @@ const SCENARIOS: readonly HandScenario[] = [
       stacks: { btn: 200, sb: 199, bb: 201, utg: 200, hj: 200, co: 200 },
       pot: 0,
       awards: { bb: 2 },
+      // Fold で決着した Pot は 1 つで、争えるのは BB だけ（札は比べない）。
+      pots: [
+        { total: 2, eligible: ["bb"], awards: { bb: 2 }, showdown: false },
+      ],
       tailEvents: [
         "ACTION_TAKEN",
         "UNCALLED_BET_RETURNED",
@@ -438,10 +453,157 @@ const SCENARIOS: readonly HandScenario[] = [
     },
   },
   {
-    id: "SCN-side-pot-unsupported-001",
+    id: "SCN-side-pot-3way-001",
     title:
-      "All-in を超える Commit（Side Pot が要る）は Phase 1 では明示エラー（D70）",
-    source: "D70・docs/09 §4 3-way Side Pot（Phase 2 で実装）",
+      "3-way Side Pot: Short Stack の All-in を 2 人が超える → Main は Short Stack、Side は残りの 2 人で争う",
+    source: "docs/09 §4 3-way Side Pot・docs/02 §5 Multi Side Pot（D78）",
+    seats: [
+      { playerId: "btn", stack: 200 },
+      { playerId: "sb", stack: 200 },
+      { playerId: "bb", stack: 200 },
+      { playerId: "utg", stack: 50 },
+    ],
+    button: "btn",
+    holes: { utg: "Ah Ad", btn: "Kh Kd", bb: "Qh Qd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      // UTG の All-in 50 は増分 48 >= 2 → Full Raise。最小 Raise は 50 + 48 = 98。
+      { player: "utg", action: allIn },
+      {
+        player: "btn",
+        action: raise(150),
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 50 },
+          { type: "raise", min: 98, max: 200 },
+          { type: "all_in", amount: 200 },
+        ],
+      },
+      { player: "sb", action: fold },
+      { player: "bb", action: call },
+      // Flop は Button の左で行動できる BB から（UTG は All-in）。
+      { player: "bb", action: check },
+      { player: "btn", action: bet(30) },
+      { player: "bb", action: call },
+      { player: "bb", action: check },
+      { player: "btn", action: check },
+      { player: "bb", action: check },
+      { player: "btn", action: check },
+    ],
+    expect: {
+      status: "complete",
+      // Commit: UTG 50 / BTN 180 / SB 1 / BB 180。
+      // Main = 50 + 50 + 1 + 50 = 151（SB・BB・UTG・BTN のうち Fold していない BB・UTG・BTN が争う）→ UTG の AA。
+      // Side = 130 + 130 = 260（BB・BTN）→ BTN の KK。
+      // UTG 151 / BTN 200 − 180 + 260 = 280 / SB 199 / BB 200 − 180 = 20（計 650）
+      stacks: { btn: 280, sb: 199, bb: 20, utg: 151 },
+      pot: 0,
+      awards: { utg: 151, btn: 260 },
+      pots: [
+        {
+          total: 151,
+          eligible: ["bb", "utg", "btn"],
+          awards: { utg: 151 },
+          showdown: true,
+        },
+        {
+          total: 260,
+          eligible: ["bb", "btn"],
+          awards: { btn: 260 },
+          showdown: true,
+        },
+      ],
+      // Showdown は Button の左から公開（BB → UTG → BTN）。Pot は Main から 1 つずつ配る。
+      tailEvents: [
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "POT_AWARDED",
+        "POT_AWARDED",
+        "HAND_FINISHED",
+      ],
+      absentEvents: ["UNCALLED_BET_RETURNED"],
+    },
+  },
+  {
+    id: "SCN-side-pot-multi-split-001",
+    title:
+      "Multi Side Pot: 段の違う 2 人の All-in で Pot が 3 つ。Side Pot 内の同着は端数を Button の左から配る",
+    source: "docs/02 §5 Multi Side Pot・Odd Chip Split（D75・D78）",
+    seats: [
+      { playerId: "a", stack: 30 },
+      { playerId: "b", stack: 81 },
+      { playerId: "c", stack: 200 },
+      { playerId: "d", stack: 200 },
+    ],
+    // Button は d。SB は a、BB は b、Preflop の先手は c。Button の左から時計回りは a → b → c → d。
+    button: "d",
+    // Board 5c 6d 7h 8s Kc: a は 6〜T の Straight、c と d は 5〜9 の Straight（同着）、b は A のワンペア。
+    holes: { a: "9h Ts", b: "Ah Ad", c: "9c 2d", d: "9d 3h" },
+    board: "5c 6d 7h 8s Kc",
+    steps: [
+      { player: "c", action: raise(10) },
+      { player: "d", action: call },
+      // a の All-in 30 は増分 20 >= 8 → Full Raise。b の All-in 81 は増分 51 >= 20 → Full Raise。
+      { player: "a", action: allIn },
+      { player: "b", action: allIn },
+      {
+        player: "c",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 71 },
+          { type: "raise", min: 132, max: 200 },
+          { type: "all_in", amount: 200 },
+        ],
+      },
+      { player: "d", action: call },
+      // Flop は Button の左で行動できる c から（a・b は All-in）。
+      { player: "c", action: bet(20) },
+      { player: "d", action: call },
+      { player: "c", action: check },
+      { player: "d", action: check },
+      { player: "c", action: check },
+      { player: "d", action: check },
+    ],
+    expect: {
+      status: "complete",
+      // Commit: a 30 / b 81 / c 101 / d 101。
+      // Main = 30 × 4 = 120（a・b・c・d）→ a。
+      // Side 1 = 51 × 3 = 153（b・c・d）→ c と d が同着。153 / 2 = 76 余り 1 → Button の左に近い c が 77、d が 76。
+      // Side 2 = 20 × 2 = 40（c・d）→ 同着で 20 ずつ。
+      // a 120 / b 0 / c 200 − 101 + 77 + 20 = 196 / d 200 − 101 + 76 + 20 = 195（計 511）
+      stacks: { a: 120, b: 0, c: 196, d: 195 },
+      pot: 0,
+      awards: { a: 120, c: 97, d: 96 },
+      pots: [
+        {
+          total: 120,
+          eligible: ["a", "b", "c", "d"],
+          awards: { a: 120 },
+          showdown: true,
+        },
+        {
+          total: 153,
+          eligible: ["b", "c", "d"],
+          awards: { c: 77, d: 76 },
+          showdown: true,
+        },
+        {
+          total: 40,
+          eligible: ["c", "d"],
+          awards: { c: 20, d: 20 },
+          showdown: true,
+        },
+      ],
+      absentEvents: ["UNCALLED_BET_RETURNED"],
+    },
+  },
+  {
+    id: "SCN-side-pot-dead-money-001",
+    title:
+      "Side Pot に Fold した Player の Chip が残り、争える Player が 1 人なら札を比べずに渡す",
+    source: "docs/02 §5 Multi Side Pot（D78）",
     seats: [
       { playerId: "btn", stack: 200 },
       { playerId: "sb", stack: 200 },
@@ -453,28 +615,201 @@ const SCENARIOS: readonly HandScenario[] = [
     board: "2c 7s 9d Jc 3h",
     steps: [
       { player: "utg", action: allIn },
-      // UTG の 50 を超えると Side Pot が要る
-      {
-        player: "btn",
-        action: raise(150),
-        reject: { kind: "unsupported_state", reason: "side_pot" },
-      },
-      { player: "btn", action: call },
+      { player: "btn", action: raise(100) },
       { player: "sb", action: fold },
       { player: "bb", action: call },
+      // Flop: BB が Check、BTN の Bet に BB が Fold。BTN の 60 は誰も Call していないので返す。
+      { player: "bb", action: check },
+      { player: "btn", action: bet(60) },
+      { player: "bb", action: fold },
+    ],
+    expect: {
+      status: "complete",
+      // Commit（返却後）: UTG 50 / BTN 100 / SB 1 / BB 100（BB は Fold）。
+      // Main = 50 + 50 + 1 + 50 = 151（UTG・BTN）→ UTG の AA。
+      // Side = 50 + 50 = 100（Fold した BB の 50 は死に金として残る。争えるのは BTN だけ）→ BTN、札は比べない。
+      // UTG 151 / BTN 200 − 100 + 100 = 200 / SB 199 / BB 100（計 650）
+      stacks: { btn: 200, sb: 199, bb: 100, utg: 151 },
+      pot: 0,
+      awards: { utg: 151, btn: 100 },
+      pots: [
+        {
+          total: 151,
+          eligible: ["utg", "btn"],
+          awards: { utg: 151 },
+          showdown: true,
+        },
+        {
+          total: 100,
+          eligible: ["btn"],
+          awards: { btn: 100 },
+          showdown: false,
+        },
+      ],
+      // Uncalled Bet を返してから、残った全員の札を公開して Board を配りきる。
+      tailEvents: [
+        "UNCALLED_BET_RETURNED",
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "BOARD_DEALT",
+        "BOARD_DEALT",
+        "POT_AWARDED",
+        "POT_AWARDED",
+        "HAND_FINISHED",
+      ],
+    },
+  },
+  {
+    id: "SCN-uncalled-over-short-allin-001",
+    title:
+      "Short Stack の All-in Call を超えた Raise は、誰も Call できないので Showdown 前に返す",
+    source: "docs/02 §5 All-in Showdown・docs/04 §3 UNCALLED_BET_RETURNED",
+    seats: [
+      { playerId: "a", stack: 1000 },
+      { playerId: "b", stack: 1000 },
+      { playerId: "c", stack: 100 },
+    ],
+    // a = Button、b = SB、c = BB。
+    button: "a",
+    holes: { c: "Ah Ad", a: "Kh Kd", b: "Qh Qd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      { player: "a", action: raise(300) },
+      { player: "b", action: fold },
       {
-        player: "bb",
-        action: bet(2),
-        reject: { kind: "unsupported_state", reason: "side_pot" },
+        // c は Call 298 に届かない。Stack 98 の Call（All-in）か All-in だけ。
+        player: "c",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 98 },
+          { type: "all_in", amount: 100 },
+        ],
       },
+    ],
+    expect: {
+      status: "complete",
+      // a の 300 のうち c の 100 を超える 200 は返す。Pot = a 100 + b 1 + c 100 = 201 → c の AA。
+      stacks: { a: 900, b: 999, c: 201 },
+      pot: 0,
+      awards: { c: 201 },
+      pots: [
+        {
+          total: 201,
+          eligible: ["c", "a"],
+          awards: { c: 201 },
+          showdown: true,
+        },
+      ],
+      tailEvents: [
+        "UNCALLED_BET_RETURNED",
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "BOARD_DEALT",
+        "BOARD_DEALT",
+        "BOARD_DEALT",
+        "POT_AWARDED",
+        "HAND_FINISHED",
+      ],
+    },
+  },
+  {
+    id: "SCN-blind-allin-sb-001",
+    title:
+      "Stack が SB に満たない Player は Blind で All-in。Main Pot だけを争い、上の段は残りの Player の Side Pot",
+    source: "docs/02 §5 Blind / Multi Side Pot（D78）",
+    seats: [
+      { playerId: "btn", stack: 200 },
+      { playerId: "sb", stack: 1 },
+      { playerId: "bb", stack: 200 },
+    ],
+    button: "btn",
+    holes: { sb: "Ah Ad", btn: "Kh Kd", bb: "Qh Qd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // SB は 1 で All-in。Preflop の先手は BTN で、Call 額は BB の 2。
+        player: "btn",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 2 },
+          { type: "raise", min: 4, max: 200 },
+          { type: "all_in", amount: 200 },
+        ],
+      },
+      { player: "bb", action: check },
       ...checkDown("bb", "btn"),
     ],
     expect: {
       status: "complete",
-      // Pot = UTG 50 + BTN 50 + SB 1 + BB 50 = 151 → UTG の AA が勝つ
-      stacks: { btn: 150, sb: 199, bb: 150, utg: 151 },
+      // Commit: BTN 2 / SB 1 / BB 2。Main = 1 × 3 = 3（SB・BB・BTN）→ SB の AA。
+      // Side = 1 + 1 = 2（BB・BTN）→ BTN の KK。BTN 200 − 2 + 2 = 200 / SB 3 / BB 198（計 401）
+      stacks: { btn: 200, sb: 3, bb: 198 },
       pot: 0,
-      awards: { utg: 151 },
+      awards: { sb: 3, btn: 2 },
+      pots: [
+        {
+          total: 3,
+          eligible: ["sb", "bb", "btn"],
+          awards: { sb: 3 },
+          showdown: true,
+        },
+        {
+          total: 2,
+          eligible: ["bb", "btn"],
+          awards: { btn: 2 },
+          showdown: true,
+        },
+      ],
+      absentEvents: ["UNCALLED_BET_RETURNED"],
+    },
+  },
+  {
+    id: "SCN-blind-allin-bb-hu-001",
+    title:
+      "Heads-Up で BB が Stack 不足の All-in: Call 額は BB の全額、BB を超えた分は返す",
+    source: "docs/02 §5 Blind・§7 Heads-Up（D78）",
+    seats: [
+      { playerId: "a", stack: 200 },
+      { playerId: "b", stack: 1 },
+    ],
+    // Heads-Up は Button = SB。a が SB 1、b が BB で Stack 1 の All-in。
+    button: "a",
+    holes: { a: "Kh Kd", b: "Ah Ad" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // 相手は All-in なので Raise はできない。Call 額は BB の 2 − 1 = 1。
+        player: "a",
+        action: call,
+        legal: [{ type: "fold" }, { type: "call", amount: 1 }],
+      },
+    ],
+    expect: {
+      status: "complete",
+      // a は 2 を出し、b は 1。超過の 1 を a へ返して Pot = 2 → b の AA。a 199 / b 2（計 201）
+      stacks: { a: 199, b: 2 },
+      pot: 0,
+      awards: { b: 2 },
+      pots: [
+        {
+          total: 2,
+          eligible: ["b", "a"],
+          awards: { b: 2 },
+          showdown: true,
+        },
+      ],
+      tailEvents: [
+        "UNCALLED_BET_RETURNED",
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "BOARD_DEALT",
+        "BOARD_DEALT",
+        "BOARD_DEALT",
+        "POT_AWARDED",
+        "HAND_FINISHED",
+      ],
     },
   },
   {
@@ -592,9 +927,6 @@ function runScenario(s: HandScenario): void {
       expect(result.ok, where).toBe(false);
       if (!result.ok) {
         expect(result.error.kind, where).toBe(step.reject.kind);
-        if (step.reject.reason !== undefined && "reason" in result.error) {
-          expect(result.error.reason, where).toBe(step.reject.reason);
-        }
       }
       continue;
     }
@@ -607,6 +939,7 @@ function runScenario(s: HandScenario): void {
   }
 
   expect(state.status).toBe(s.expect.status);
+  expect(checkPotAwards(events)).toEqual([]);
   expect(
     Object.fromEntries(state.players.map((p) => [p.playerId, p.stack])),
   ).toEqual(s.expect.stacks);
@@ -615,6 +948,20 @@ function runScenario(s: HandScenario): void {
     expect(
       Object.fromEntries(state.awards.map((a) => [a.playerId, a.amount])),
     ).toEqual(s.expect.awards);
+  }
+  if (s.expect.pots !== undefined) {
+    const awarded = events.flatMap((e) =>
+      e.type === "POT_AWARDED" ? [e] : [],
+    );
+    expect(awarded.map((e) => e.potIndex)).toEqual(awarded.map((_, i) => i));
+    expect(
+      awarded.map((e) => ({
+        total: e.potTotal,
+        eligible: e.eligible,
+        awards: Object.fromEntries(e.awards.map((a) => [a.playerId, a.amount])),
+        showdown: e.showdown,
+      })),
+    ).toEqual(s.expect.pots);
   }
   if (s.expect.tailEvents !== undefined) {
     const tail = events.slice(tailFrom).map((e) => e.type);
