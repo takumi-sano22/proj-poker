@@ -8,7 +8,7 @@
 
 - **表示はサーバーの HeroView だけに基づく**: クライアントは状態を進めず、合法性も判定しない（D40）。宣言ボタンは `legalActions.actions` にある種類だけを出し、Bet / Raise の範囲は `min` / `max` をそのまま Slider の範囲にする。Engine は型だけを import する（`@proj-poker/source` 条件で src の型を読む。ロジックはブラウザで動かさない）。
 - **他者の札**: `seats[].holeCards` に入っているもの（Showdown で公開された札）だけを表に向ける。それ以外は裏向き、Fold 済みの席は札なし。クライアントで推測・保持しない（D28）。
-- **受信経路が 2 つある**（REST の応答と SSE の Push）: `selectLatestView` で「同じ Hand で `log` の最後の seq が進んでいる方」だけを残す。別 Hand の遅れた応答は捨てる（LC-041）。送信中は ref と state の 2 層で二重送信を止める。SSE の `data` は `parseHeroView` の最小の形検査を通ったものだけを描画へ流す（LC-043）。
+- **受信経路が 2 つある**（REST の応答と SSE の Push）: `selectLatestView` で「同じ Hand で `log` の最後の seq が進んでいる方」だけを残す。別 Hand の遅れた応答は捨てる（LC-041）。送信中は ref と state の 2 層で二重送信を止める。「もう一度送る」（再送）は、失敗した送信の handId と lastSeq をそのまま使う（応答だけが失われて実は適用済みだった場合にサーバーの `stale_view` で弾かせ、次の手番へ誤適用しない。Codex P1 の指摘で修正）。SSE の `data` は `parseHeroView` の最小の形検査を通ったものだけを描画へ流す（LC-043）。
 - **SB / BB は公開 Event の `BLIND_POSTED` から読む**（位置をクライアントで計算しない）。Dealer Button は `seats[].isButton`。
 - **実額が正本、BB は補助**（D49）: `Amount` 部品で実額を大きく、BB 換算を小さく添える。Stack・Pot・Bet・宣言ボタンの額・Preset のすべてに適用。
 - **Bet 額**: Preset（最小・½ Pot・¾ Pot・Pot）と Slider。Pot 比は「Call した後の Pot」に対する Raise 幅で、to 額 = currentBet + 比率 × (pot + toCall) をサーバーの min / max に丸める。数値の入力欄は作らない（docs/06 §4）。
@@ -69,4 +69,5 @@
 - 卓 UI 向けのデザイン体系（固有補強 md・トークンの確定）は #5。
 - Chip Drag・Chip Click・Stack Composition（docs/06 §4）は Phase 4。
 - Hover / Click で用語の Definition を出す（docs/06 §7）、Fast Forward（docs/06 §8）、BB 補助表示の設定（docs/06 §13）は未実装。
+- `POST /api/hands` の再送は冪等ではない（応答だけが失われた場合、再送で別の Hand ができる）。冪等キーはサーバーの API 変更が要るため本 PR の範囲外（Codex P2 を accept）。
 - Hand をまたいだ Stack の持ち越し（Session）はサーバー側の後続 Issue（現在は Hand ごとに全員 200 で始まる）。

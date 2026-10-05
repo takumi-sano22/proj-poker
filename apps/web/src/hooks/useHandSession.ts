@@ -95,8 +95,17 @@ export function useHandSession(): HandSession {
   const activeHandId = useRef<string | null>(null);
   const inFlight = useRef(false);
   // 再送ボタンで同じ操作をやり直すために、最後に失敗した操作を覚えておく。
+  // Action は送ったときの handId と lastSeq ごと覚え、再送でも同じ値を送る。応答だけが失われて実は適用済みだった場合、
+  // サーバーが stale_view で弾くので、次の手番へ誤って適用されない（現在の View の lastSeq で送り直さない）。
   const lastFailed = useRef<
-    { kind: "start" } | { kind: "action"; action: PlayerAction } | null
+    | { kind: "start" }
+    | {
+        kind: "action";
+        handId: string;
+        lastSeq: number;
+        action: PlayerAction;
+      }
+    | null
   >(null);
 
   const accept = useCallback((incoming: HeroView) => {
@@ -129,20 +138,25 @@ export function useHandSession(): HandSession {
       });
   }, []);
 
-  const act = useCallback(
-    (action: PlayerAction) => {
-      if (inFlight.current || view === null || handId === null) return;
-      const sentFor = handId;
+  /** Action を送る。lastSeq は「この操作を選んだときに見ていた View」の値。 */
+  const send = useCallback(
+    (sentFor: string, lastSeq: number, action: PlayerAction) => {
+      if (inFlight.current) return;
       inFlight.current = true;
       setPending(true);
       setNotice(null);
       lastFailed.current = null;
-      sendHeroAction(sentFor, lastSeqOf(view), action)
+      sendHeroAction(sentFor, lastSeq, action)
         .then((res) => accept(res.view))
         .catch((error: unknown) => {
           // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。
           if (activeHandId.current !== sentFor) return;
-          lastFailed.current = { kind: "action", action };
+          lastFailed.current = {
+            kind: "action",
+            handId: sentFor,
+            lastSeq,
+            action,
+          };
           setNotice(noticeOf(error));
         })
         .finally(() => {
@@ -150,14 +164,23 @@ export function useHandSession(): HandSession {
           setPending(false);
         });
     },
-    [accept, handId, view],
+    [accept],
+  );
+
+  const act = useCallback(
+    (action: PlayerAction) => {
+      if (view === null || handId === null) return;
+      send(handId, lastSeqOf(view), action);
+    },
+    [handId, send, view],
   );
 
   const retry = useCallback(() => {
     const failed = lastFailed.current;
     if (failed?.kind === "start") start();
-    else if (failed?.kind === "action") act(failed.action);
-  }, [act, start]);
+    else if (failed?.kind === "action")
+      send(failed.handId, failed.lastSeq, failed.action);
+  }, [send, start]);
 
   // SSE: 接続直後に現在の View が 1 回届き、以後は Log が進むたびに届く。complete を受けたら閉じる。
   useEffect(() => {
