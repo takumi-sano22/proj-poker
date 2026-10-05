@@ -63,7 +63,6 @@ const STATUS_BY_ERROR: Record<OrchestratorError["kind"], number> = {
   hand_complete: 409,
   illegal_action: 422,
   invalid_input: 422,
-  unsupported_state: 422,
 };
 
 function sendError(reply: FastifyReply, error: OrchestratorError) {

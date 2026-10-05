@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { HandEvent } from "@proj-poker/engine";
 import { inTransaction, openDatabase } from "./db/database.js";
+import { upcastV1ToV2, type HandEventV1 } from "./event-upcast.js";
 import {
   assertAppendable,
   deepFreeze,
@@ -17,9 +18,11 @@ import {
 
 /**
  * 保存する Event（payload）の形の版。Engine の HandEvent の形を互換の無い形で変えたら上げる。
- * 読み出しはこの版だけを受け付け、知らない版は UnsupportedEventSchemaError にする（D76・docs/04 §3）。
+ * 読み出しはこの版と、upcast を持つ旧版だけを受け付け、知らない版は UnsupportedEventSchemaError にする（D76・docs/04 §3）。
+ * - 1: Phase 1（単一 Pot）
+ * - 2: POT_AWARDED を Pot ごとに発行し、potIndex と eligible を持つ（D78）。版 1 は読み込み時に upcast する
  */
-export const EVENT_SCHEMA_VERSION = 1;
+export const EVENT_SCHEMA_VERSION = 2;
 
 /** 保存済みの Event の schema_version を、このアプリが読めない。 */
 export class UnsupportedEventSchemaError extends Error {
@@ -159,19 +162,30 @@ export class SqliteEventStore implements EventStore {
 
   private readPersisted(handId: string): StoredHandEvent[] {
     const rows = this.selectEvents.all(handId) as unknown as EventRow[];
-    return rows.map((row) => {
-      if (row.schema_version !== EVENT_SCHEMA_VERSION) {
+    for (const row of rows) {
+      if (row.schema_version !== 1 && row.schema_version !== 2) {
         // 旧形式を黙って新形式として扱わない（Replay / Review が誤った Event を読む）。
         throw new UnsupportedEventSchemaError(
-          `Event ${row.event_id} の schema_version ${row.schema_version} は読めない（対応: ${EVENT_SCHEMA_VERSION}）`,
+          `Event ${row.event_id} の schema_version ${row.schema_version} は読めない（対応: 1〜${EVENT_SCHEMA_VERSION}）`,
         );
       }
-      return deepFreeze({
+    }
+    // 版 1 の行は Hand の前の Event（Fold の有無）を見て upcast するので、Hand 単位でまとめて変換し、
+    // 版 1 の行にだけ変換結果を使う（1 Hand は 1 トランザクションで同じ版で書くが、混在しても版 2 の行を変えない）。
+    const parsed = rows.map((row) => JSON.parse(row.payload) as HandEventV1);
+    const upcasted = rows.some((row) => row.schema_version === 1)
+      ? upcastV1ToV2(parsed)
+      : null;
+    return rows.map((row, i) =>
+      deepFreeze({
         eventId: row.event_id,
         handId: row.hand_id,
         recordedAt: row.recorded_at,
-        event: JSON.parse(row.payload) as HandEvent,
-      });
-    });
+        event:
+          upcasted !== null && row.schema_version === 1
+            ? (upcasted[i] as HandEvent)
+            : (parsed[i] as HandEvent),
+      }),
+    );
   }
 }

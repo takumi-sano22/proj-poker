@@ -75,6 +75,69 @@ function finishedHandEvents(handId: string): {
   return { started: started.value.events, rest: folded.value.events };
 }
 
+/** 3 人卓で、最初の手番が Fold し、残りの 2 人が Call / Check で Showdown まで進む 1 Hand の Event。 */
+function showdownHandEvents(handId: string): {
+  started: readonly HandEvent[];
+  rest: readonly HandEvent[];
+} {
+  const started = startHand({
+    handId,
+    seats: [
+      { playerId: "a", stack: 200 },
+      { playerId: "b", stack: 200 },
+      { playerId: "c", stack: 200 },
+    ],
+    buttonPlayerId: "a",
+    config: PHASE1_CASH_PRESET,
+    deal: { seed: 7 },
+  });
+  if (!started.ok) throw new Error(started.error.message);
+  const events: HandEvent[] = [];
+  let state = foldHandEvents(started.value.events);
+  for (let step = 0; state.status !== "complete"; step++) {
+    const legal = getLegalActions(state);
+    if (legal === null || step > 50) throw new Error("Hand が進まない");
+    const types = legal.actions.map((a) => a.type);
+    const action: PlayerAction =
+      step === 0
+        ? { type: "fold" }
+        : types.includes("call")
+          ? { type: "call" }
+          : { type: "check" };
+    const result = applyAction(state, legal.playerId, action);
+    if (!result.ok) throw new Error(result.error.message);
+    state = result.value.state;
+    events.push(...result.value.events);
+  }
+  expect(events.some((e) => e.type === "CARDS_TABLED")).toBe(true);
+  return { started: started.value.events, rest: events };
+}
+
+/** 指定した版で Hand の行を直接書く（旧版の行を用意するため）。 */
+function insertRows(
+  handId: string,
+  version: number,
+  events: readonly object[],
+) {
+  open().close();
+  const db = new DatabaseSync(dbPath);
+  try {
+    db.exec(`
+      INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+      INSERT INTO hands VALUES ('${handId}', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:00:00.000Z');
+    `);
+    const insert = db.prepare(
+      "INSERT INTO events VALUES (?, ?, ?, ?, ?, '2026-10-05T00:00:00.000Z', ?)",
+    );
+    events.forEach((e, i) => {
+      const { type } = e as { type: string };
+      insert.run(`e${i}`, handId, i, type, version, JSON.stringify(e));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 describe("SqliteEventStore（保存の経路）", () => {
   it("HAND_FINISHED で保存し、開き直しても Event の順序と内容・event_id・記録時刻が一致する", () => {
     let id = 0;
@@ -166,6 +229,49 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
     expect(() => open().read("h1")).toThrow(UnsupportedEventSchemaError);
   });
+
+  it.each([
+    ["Fold で決着した Hand", () => finishedHandEvents("h1")],
+    [
+      "Fold した Player がいて Showdown まで進んだ Hand",
+      () => showdownHandEvents("h1"),
+    ],
+  ])(
+    "版 1 の行は読み込み時に upcast し、Main Pot の potIndex と eligible を補う。行は書き換えない（D76・D78）: %s",
+    (_, make) => {
+      const { started, rest } = make();
+      const current = [...started, ...rest];
+      // 単一 Pot の Hand では、版 1 の形（potIndex・eligible なし）に戻して保存したものを upcast すると、
+      // 版 2 の Engine が発行した Event と一致する。
+      const v1 = current.map((e) => {
+        if (e.type !== "POT_AWARDED") return e;
+        const v1Award: Record<string, unknown> = { ...e };
+        delete v1Award.potIndex;
+        delete v1Award.eligible;
+        return v1Award;
+      });
+      insertRows("h1", 1, v1);
+
+      expect(
+        open()
+          .read("h1")
+          .map((s) => s.event),
+      ).toEqual(current);
+      const db = new DatabaseSync(dbPath, { readOnly: true });
+      try {
+        // 保存済みの行は版 1 のまま（payload も書き換えない）。
+        expect(
+          db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+        ).toEqual([{ schema_version: 1 }]);
+        const award = db
+          .prepare("SELECT payload FROM events WHERE type = 'POT_AWARDED'")
+          .get() as { payload: string };
+        expect(JSON.parse(award.payload)).not.toHaveProperty("potIndex");
+      } finally {
+        db.close();
+      }
+    },
+  );
 
   it("Orchestrator で 1 Hand を最後まで進めると、再起動後に同じ Event Log を読み出せる", () => {
     const store = open();
