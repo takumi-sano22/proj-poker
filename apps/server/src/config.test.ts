@@ -43,9 +43,7 @@ describe("parseTableSize / buildTableSetup（卓の人数 2〜8）", () => {
       });
       expect(setup.players.filter((p) => p.kind === "cpu")).toHaveLength(n - 1);
       expect(new Set(setup.players.map((p) => p.playerId)).size).toBe(n);
-      expect(setup.players.at(-1)?.playerId).toBe(
-        n === 2 ? "cpu1" : `cpu${n - 1}`,
-      );
+      expect(setup.players.at(-1)?.playerId).toBe(`cpu${n - 1}`);
     },
   );
 
