@@ -21,7 +21,7 @@ interface ScenarioStep {
   /** 拒否されるべき入力。拒否後の State は変わらない。 */
   readonly reject?: {
     readonly kind: EngineError["kind"];
-    readonly reason?: "side_pot" | "odd_chip_split";
+    readonly reason?: "side_pot";
   };
 }
 
@@ -343,9 +343,10 @@ const SCENARIOS: readonly HandScenario[] = [
     },
   },
   {
-    id: "SCN-odd-chip-unsupported-001",
-    title: "端数の出る Split Pot は Phase 1 では明示エラー（D70）",
-    source: "D70・docs/02 §5 Odd Chip Split（Phase 2 で実装）",
+    id: "SCN-odd-chip-2way-001",
+    title:
+      "2 人の同着で 1 Chip の端数が出る: Button の左に近い方（BB）が端数を受け取る",
+    source: "docs/02 §5 Odd Chip Split・D75（first_left_of_button）",
     seats: [
       { playerId: "btn", stack: 200 },
       { playerId: "sb", stack: 200 },
@@ -358,19 +359,82 @@ const SCENARIOS: readonly HandScenario[] = [
       { player: "btn", action: call },
       { player: "sb", action: fold },
       { player: "bb", action: check },
-      // Pot = 1 + 2 + 2 = 5 を BTN と BB で分ける → 2.5 ずつにはできない
-      ...checkDown("bb", "btn").slice(0, 5),
-      {
-        player: "btn",
-        action: check,
-        reject: { kind: "unsupported_state", reason: "odd_chip_split" },
-      },
+      ...checkDown("bb", "btn"),
     ],
     expect: {
-      // 拒否された River の Check は適用されず、手番は BTN のまま
-      status: "in_progress",
-      stacks: { btn: 198, sb: 199, bb: 198 },
-      pot: 5,
+      status: "complete",
+      // Pot = SB 1 + BTN 2 + BB 2 = 5。Board の Royal Flush で BTN と BB が同着 → 5 / 2 = 2 余り 1。
+      // Button の左から時計回りは SB → BB → BTN なので、勝者のうち先頭の BB が端数 1 を受け取り 3、BTN は 2。
+      stacks: { btn: 200, sb: 199, bb: 201 },
+      pot: 0,
+      awards: { bb: 3, btn: 2 },
+    },
+  },
+  {
+    id: "SCN-odd-chip-3way-001",
+    title: "3 人の同着で端数が 2 Chip 出る: 先頭 2 人に 1 Chip ずつ配る",
+    source: "docs/02 §5 Odd Chip Split・D75（first_left_of_button）",
+    seats: sixMax(),
+    button: "btn",
+    holes: { sb: "2c 3d", bb: "4c 5d", utg: "6c 7d", hj: "8c 9d" },
+    board: "As Ks Qs Js Ts",
+    steps: [
+      // Preflop: UTG・HJ・SB が Call（CO・BTN は Fold）、BB は Check → Pot = 2 × 4 = 8
+      { player: "utg", action: call },
+      { player: "hj", action: call },
+      { player: "co", action: fold },
+      { player: "btn", action: fold },
+      { player: "sb", action: call },
+      { player: "bb", action: check },
+      // Flop: SB が 2 を Bet、BB は Fold（Preflop の 2 は Pot に残る）、UTG・HJ が Call → Pot = 8 + 6 = 14
+      { player: "sb", action: bet(2) },
+      { player: "bb", action: fold },
+      { player: "utg", action: call },
+      { player: "hj", action: call },
+      // Turn・River は SB → UTG → HJ の順に Check
+      ...[1, 2].flatMap(() =>
+        ["sb", "utg", "hj"].map((player) => ({ player, action: check })),
+      ),
+    ],
+    expect: {
+      status: "complete",
+      // Board の Royal Flush で SB・UTG・HJ が同着 → 14 / 3 = 4 余り 2。
+      // Button の左から時計回りは SB → BB → UTG → HJ。勝者のうち先頭の SB と UTG が端数 1 ずつを受け取り 5、HJ は 4。
+      // 各 Player の出した額は SB 4・UTG 4・HJ 4・BB 2（Fold）。Stack = 200 − 出した額 + 配分。
+      stacks: { btn: 200, sb: 201, bb: 198, utg: 201, hj: 200, co: 200 },
+      pot: 0,
+      awards: { sb: 5, utg: 5, hj: 4 },
+    },
+  },
+  {
+    id: "SCN-odd-chip-order-001",
+    title:
+      "端数の順序は席番号ではなく Button の左から数える: 席番号の小さい勝者が後回しになる",
+    source: "docs/02 §5 Odd Chip Split・D75（first_left_of_button）",
+    seats: [
+      { playerId: "a", stack: 200 },
+      { playerId: "b", stack: 200 },
+      { playerId: "c", stack: 200 },
+      { playerId: "d", stack: 200 },
+    ],
+    // Button は b（席 1）。左から時計回りは c → d → a → b。SB は c、BB は d、Preflop の先手は a。
+    button: "b",
+    holes: { a: "2c 3d", d: "4c 5d" },
+    board: "As Ks Qs Js Ts",
+    steps: [
+      { player: "a", action: call },
+      { player: "b", action: fold },
+      { player: "c", action: fold },
+      { player: "d", action: check },
+      ...checkDown("d", "a"),
+    ],
+    expect: {
+      status: "complete",
+      // Pot = A 2 + C（SB・Fold）1 + D 2 = 5。Board の Royal Flush で A と D が同着 → 5 / 2 = 2 余り 1。
+      // Button の左から時計回りは D → A（席番号では A が先）。先頭の D が端数 1 を受け取り 3、A は 2。
+      stacks: { a: 200, b: 200, c: 199, d: 201 },
+      pot: 0,
+      awards: { d: 3, a: 2 },
     },
   },
   {

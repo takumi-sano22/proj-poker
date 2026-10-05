@@ -1,4 +1,4 @@
-# D01〜D74の採用済み人間判断。
+# D01〜D75の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -280,7 +280,7 @@
   decision: "品質ツールはESLint（typescript-eslint）・Prettier（厳密固定）・Vitest・fast-check・tsc --noEmit、CIはGitHub Actionsとする。pre-commit hookは使わない。Nodeは24 LTS。"
 - id: D70
   choice: "Phase 1 のBetting範囲を限定（推奨案、AskUserQuestion）"
-  status: "採用済み"
+  status: "D75 で一部変更"
   decision: "Phase 1は全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装する。Side Pot・Short All-in Reopen・Split Potの端数はPhase 2とし、未対応の状態はEngineが明示エラーにする。"
 - id: D71
   choice: "暫定CPUは決定論ルールBot（推奨案、AskUserQuestion）"
@@ -298,3 +298,7 @@
   choice: "整数の最小単位・D で確定（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "Chipは最小単位の整数（number。Number.isSafeInteger で検証）で表し、浮動小数は使わない。Blind・Stack・Bet・Potはすべて同じ単位で持つ。"
+- id: D75
+  choice: "Phase 1 で Odd Chip Split を実装する（AskUserQuestion）"
+  status: "採用済み"
+  decision: "Split Potで割り切れない端数（Odd Chip）をPhase 1で実装する。端数はButtonの左から時計回りで最初の勝者に1 Chipずつ配り、配り方はRule Profileの設定値とする（OI-008の暫定値。永久仕様にしない）。D70のうち「Split Potの端数はPhase 2」の部分を変更する。Side Pot・Short All-in ReopenはD70のままPhase 2。"

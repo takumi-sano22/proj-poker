@@ -125,7 +125,7 @@ const choices = fc.array(fc.nat({ max: 10_000 }), {
 });
 
 describe("Hand 進行: Property", () => {
-  it("均等 Stack（Phase 1 Preset）なら Side Pot は起きず、Chip が保存され、情報が漏れない", () => {
+  it("均等 Stack（Phase 1 Preset）なら Hand は最後まで進み（端数込み）、Chip が保存され、情報が漏れない", () => {
     fc.assert(
       fc.property(playerCount, seed, choices, (n, s, cs) => {
         const seats = Array.from({ length: n }, (_, i) => ({
@@ -138,13 +138,10 @@ describe("Hand 進行: Property", () => {
           cs,
           checkStep(initialChipTotal(seats)),
         );
-        // 均等 Stack で止まりうるのは端数の出る Split だけ（D70）。
-        if (played.stoppedBy !== null) {
-          expect(played.stoppedBy).toMatchObject({ reason: "odd_chip_split" });
-        } else {
-          expect(played.state?.status).toBe("complete");
-          expect(played.state?.pot).toBe(0);
-        }
+        // 均等 Stack では Hand が止まらない。同着の端数も配られ、Pot は空になる（D75）。
+        expect(played.stoppedBy).toBeNull();
+        expect(played.state?.status).toBe("complete");
+        expect(played.state?.pot).toBe(0);
       }),
       { numRuns: 150 },
     );

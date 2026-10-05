@@ -5,7 +5,6 @@ import {
   visibilityOf,
   type HandEvent,
   type HandEventBody,
-  type PlayerChips,
   type SeatInit,
 } from "./hand-events.js";
 import {
@@ -25,6 +24,7 @@ import {
   type ActionRejection,
   type PlayerAction,
 } from "./legal-actions.js";
+import { splitPot } from "./pot-split.js";
 import { createShuffledDeck } from "./rng.js";
 import {
   MAX_PLAYERS,
@@ -52,14 +52,14 @@ export interface HandProgress {
 /**
  * Engine が拒否した理由。unsupported_state は「ルール上は合法だが Phase 1 の Engine が扱えない状態」（D70）。
  * - side_pot: 貢献額の異なる All-in（Side Pot が要る）
- * - odd_chip_split: Split Pot を等分できない（端数の配分）
+ * Split Pot の端数は D75 で Phase 1 に前倒しして実装したため、ここには無い。
  */
 export type EngineError =
   | ActionRejection
   | { readonly kind: "invalid_input"; readonly message: string }
   | {
       readonly kind: "unsupported_state";
-      readonly reason: "side_pot" | "odd_chip_split";
+      readonly reason: "side_pot";
       readonly message: string;
     };
 
@@ -91,6 +91,7 @@ export function startHand(input: StartHandInput): EngineResult<HandProgress> {
     ruleProfile: config.ruleProfile,
     smallBlind: config.smallBlind,
     bigBlind: config.bigBlind,
+    oddChipRule: config.oddChipRule,
     // 入力の配列を Event に共有させない（呼び出し側が後で書き換えても Event Log が変わらないように）。
     seats: seats.map((s) => ({ playerId: s.playerId, stack: s.stack })),
     buttonPlayerId: input.buttonPlayerId,
@@ -208,9 +209,7 @@ function progress(start: HandProgress): EngineResult<HandProgress> {
       acc = dealNextStreet(acc);
       continue;
     }
-    const showdown = awardShowdown(acc);
-    if (!showdown.ok) return showdown;
-    acc = showdown.value;
+    acc = awardShowdown(acc);
   }
   return { ok: true, value: acc };
 }
@@ -270,8 +269,8 @@ function dealNextStreet(acc: HandProgress): HandProgress {
   });
 }
 
-/** Showdown で最強の Hand を持つ Player に Pot を配る。等分できない Split は Phase 1 では拒否する（D70）。 */
-function awardShowdown(acc: HandProgress): EngineResult<HandProgress> {
+/** Showdown で最強の Hand を持つ Player に Pot を配る。同着の端数は Rule Profile の規則で配る（D75）。 */
+function awardShowdown(acc: HandProgress): HandProgress {
   const state = acc.state;
   const contenders = seatsFromButton(state)
     .filter((p) => !p.folded)
@@ -287,28 +286,19 @@ function awardShowdown(acc: HandProgress): EngineResult<HandProgress> {
   const winners = contenders.filter(
     (c) => best !== null && compareHands(c.value, best) === 0,
   );
-  if (state.pot % winners.length !== 0) {
-    return {
-      ok: false,
-      error: {
-        kind: "unsupported_state",
-        reason: "odd_chip_split",
-        message: `Pot ${state.pot} を ${winners.length} 人で等分できない。端数の配分は Phase 2（D70）`,
-      },
-    };
-  }
-  const share = state.pot / winners.length;
-  const awards: PlayerChips[] = winners.map((w) => ({
-    playerId: w.playerId,
-    amount: share,
-  }));
+  // contenders は Button の左から時計回りの順なので、winners もその順になる（端数を配る順）。
+  const awards = splitPot(
+    state.pot,
+    winners.map((w) => w.playerId),
+    state.oddChipRule,
+  );
   const awarded = emit(acc, {
     type: "POT_AWARDED",
     potTotal: state.pot,
     awards,
     showdown: true,
   });
-  return { ok: true, value: finish(awarded) };
+  return finish(awarded);
 }
 
 function finish(acc: HandProgress): HandProgress {
@@ -342,6 +332,9 @@ function validateStartInput(input: StartHandInput): string | null {
   }
   if (!ids.has(input.buttonPlayerId)) {
     return `Button が卓にいない: ${input.buttonPlayerId}`;
+  }
+  if (config.oddChipRule !== "first_left_of_button") {
+    return `未対応の oddChipRule: ${String(config.oddChipRule)}`;
   }
   // Chip はすべて最小単位の整数（D74）。
   if (

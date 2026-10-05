@@ -80,10 +80,27 @@ describe("startHand", () => {
     ["Button が卓にいない", { buttonPlayerId: "nobody" }],
     ["Stack が 0", { seats: [...seats(2), { playerId: "x", stack: 0 }] }],
     ["Stack が小数", { seats: [...seats(2), { playerId: "x", stack: 1.5 }] }],
-    ["BB < SB", { config: { ruleProfile: "x", smallBlind: 2, bigBlind: 1 } }],
+    [
+      "BB < SB",
+      {
+        config: {
+          ruleProfile: "x",
+          smallBlind: 2,
+          bigBlind: 1,
+          oddChipRule: "first_left_of_button",
+        },
+      },
+    ],
     [
       "Blind が小数",
-      { config: { ruleProfile: "x", smallBlind: 0.5, bigBlind: 1 } },
+      {
+        config: {
+          ruleProfile: "x",
+          smallBlind: 0.5,
+          bigBlind: 1,
+          oddChipRule: "first_left_of_button",
+        },
+      },
     ],
     ["seed が小数", { deal: { seed: 1.5 } }],
     ["Deck が 51 枚", { deal: { deck: createDeck().slice(1) } }],
