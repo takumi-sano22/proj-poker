@@ -33,7 +33,7 @@ export function buildApp(options: AppOptions = {}) {
   app.get("/api/health", () => ({ status: "ok" }));
 
   const orchestrator = new HandOrchestrator({
-    // Event Log はメモリ内（永続化は #20 で SQLite 実装に差し替える）。
+    // 起動時（index.ts）は SQLite の Store を渡す（D72）。省略時のメモリ内実装はテスト用。
     store: options.store ?? new InMemoryEventStore(),
     setup: options.setup ?? PHASE1_TABLE_SETUP,
     createOpponent: options.createOpponent ?? createRuleBot,

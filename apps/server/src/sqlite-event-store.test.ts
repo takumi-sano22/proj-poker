@@ -1,0 +1,221 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import {
+  applyAction,
+  foldHandEvents,
+  getLegalActions,
+  PHASE1_CASH_PRESET,
+  startHand,
+  type HandEvent,
+  type HeroView,
+  type PlayerAction,
+} from "@proj-poker/engine";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { PHASE1_TABLE_SETUP } from "./config.js";
+import { EventSeqConflictError } from "./event-store.js";
+import { HandOrchestrator } from "./hand-orchestrator.js";
+import { createRuleBot } from "./opponents/rule-bot.js";
+import {
+  EVENT_SCHEMA_VERSION,
+  SqliteEventStore,
+  UnsupportedEventSchemaError,
+} from "./sqlite-event-store.js";
+
+// テストは一時ディレクトリの使い捨て DB で行い、開発用の DB を汚さない。
+let dir: string;
+let dbPath: string;
+const opened: SqliteEventStore[] = [];
+
+function open(options: Parameters<typeof SqliteEventStore.open>[1] = {}) {
+  const store = SqliteEventStore.open(dbPath, options);
+  opened.push(store);
+  return store;
+}
+
+/** 再起動の代わり: いま開いている Store を閉じて、同じファイルを開き直す。 */
+function reopen() {
+  opened.splice(0).forEach((store) => store.close());
+  return open();
+}
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "proj-poker-store-"));
+  dbPath = join(dir, "poker.sqlite");
+});
+
+afterEach(() => {
+  opened.splice(0).forEach((store) => store.close());
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/** 2 人卓で始め、手番の Player が Fold して終わる 1 Hand の Event（HAND_FINISHED まで）。 */
+function finishedHandEvents(handId: string): {
+  started: readonly HandEvent[];
+  rest: readonly HandEvent[];
+} {
+  const started = startHand({
+    handId,
+    seats: [
+      { playerId: "a", stack: 200 },
+      { playerId: "b", stack: 200 },
+    ],
+    buttonPlayerId: "a",
+    config: PHASE1_CASH_PRESET,
+    deal: { seed: 7 },
+  });
+  if (!started.ok) throw new Error(started.error.message);
+  const state = foldHandEvents(started.value.events);
+  const actor = getLegalActions(state)?.playerId;
+  if (actor === undefined) throw new Error("手番が無い");
+  const folded = applyAction(state, actor, { type: "fold" });
+  if (!folded.ok) throw new Error(folded.error.message);
+  expect(folded.value.events.at(-1)?.type).toBe("HAND_FINISHED");
+  return { started: started.value.events, rest: folded.value.events };
+}
+
+describe("SqliteEventStore（保存の経路）", () => {
+  it("HAND_FINISHED で保存し、開き直しても Event の順序と内容・event_id・記録時刻が一致する", () => {
+    let id = 0;
+    const store = open({
+      now: () => new Date("2026-10-05T00:00:00Z"),
+      newEventId: () => `e${++id}`,
+      sessionId: "s1",
+    });
+    const { started, rest } = finishedHandEvents("h1");
+    store.append("h1", started);
+    store.append("h1", rest);
+    const before = store.read("h1");
+
+    const after = reopen().read("h1");
+    expect(after.map((s) => s.event)).toEqual([...started, ...rest]);
+    expect(after).toEqual(before);
+    expect(after.map((s) => s.event.seq)).toEqual(after.map((_, i) => i));
+
+    // hands・sessions の行も同じトランザクションで書かれている。
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(db.prepare("SELECT * FROM hands").all()).toEqual([
+        {
+          hand_id: "h1",
+          session_id: "s1",
+          started_at: "2026-10-05T00:00:00.000Z",
+          finished_at: "2026-10-05T00:00:00.000Z",
+        },
+      ]);
+      expect(db.prepare("SELECT session_id FROM sessions").all()).toEqual([
+        { session_id: "s1" },
+      ]);
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: EVENT_SCHEMA_VERSION }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("HAND_FINISHED 前の Hand は保存せず、開き直すと残らない（Completed Hand が保存境界。D62）", () => {
+    const store = open();
+    const { started } = finishedHandEvents("h1");
+    store.append("h1", started);
+    expect(store.read("h1").length).toBe(started.length);
+
+    expect(reopen().read("h1")).toEqual([]);
+  });
+
+  it("保存済み（終了済み）の Hand への追記と、HAND_FINISHED の後ろに続く Event は拒否する", () => {
+    const store = open();
+    const { started, rest } = finishedHandEvents("h1");
+    store.append("h1", [...started, ...rest]);
+    const count = store.read("h1").length;
+
+    // 次の seq の Event を足そうとしても、終わった Hand には書けない。
+    const extra = { ...(rest.at(-1) as HandEvent), seq: count };
+    expect(() => store.append("h1", [extra])).toThrow(EventSeqConflictError);
+    expect(reopen().read("h1").length).toBe(count);
+
+    const other = finishedHandEvents("h2");
+    const finished = other.rest.at(-1) as HandEvent;
+    const misplaced = [
+      ...other.started,
+      ...other.rest.slice(0, -1),
+      finished,
+      { ...finished, seq: finished.seq + 1 },
+    ];
+    expect(() => open().append("h2", misplaced)).toThrow(EventSeqConflictError);
+  });
+
+  it("保存済みの Event は DB 上でも書き換えられない（append-only）", () => {
+    const store = open();
+    const { started, rest } = finishedHandEvents("h1");
+    store.append("h1", [...started, ...rest]);
+    store.close();
+
+    const db = new DatabaseSync(dbPath);
+    try {
+      expect(() =>
+        db.exec("UPDATE events SET payload = '{}' WHERE seq = 0"),
+      ).toThrow(/append-only/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("知らない schema_version の Event は読まずに失敗する（旧形式を黙って新形式として扱わない）", () => {
+    open().close();
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:00:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', ${EVENT_SCHEMA_VERSION + 1}, '2026-10-05T00:00:00.000Z', '{}');
+      `);
+    } finally {
+      db.close();
+    }
+    expect(() => open().read("h1")).toThrow(UnsupportedEventSchemaError);
+  });
+
+  it("Orchestrator で 1 Hand を最後まで進めると、再起動後に同じ Event Log を読み出せる", () => {
+    const store = open();
+    const orchestrator = new HandOrchestrator({
+      store,
+      setup: PHASE1_TABLE_SETUP,
+      createOpponent: createRuleBot,
+      botDelayMs: 0,
+      nextSeed: () => 42,
+      nextHandId: () => "hand-1",
+    });
+    const started = orchestrator.startHand();
+    if (!started.ok) throw new Error(started.error.message);
+    let view: HeroView = started.value.view;
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      const result = orchestrator.heroAction(
+        "hand-1",
+        view.log.at(-1)?.seq ?? -1,
+        passive(view),
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      view = result.value;
+    }
+    orchestrator.close();
+    const before = store.read("hand-1").map((s) => s.event);
+    expect(before.at(-1)?.type).toBe("HAND_FINISHED");
+
+    expect(
+      reopen()
+        .read("hand-1")
+        .map((s) => s.event),
+    ).toEqual(before);
+  });
+});
+
+/** Call できれば Call、できなければ Check、どちらも無ければ Fold。 */
+function passive(view: HeroView): PlayerAction {
+  const types = view.legalActions?.actions.map((a) => a.type) ?? [];
+  if (types.includes("call")) return { type: "call" };
+  if (types.includes("check")) return { type: "check" };
+  return { type: "fold" };
+}
