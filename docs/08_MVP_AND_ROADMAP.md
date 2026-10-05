@@ -96,6 +96,8 @@
 - Heads-Up
 - Deterministic Tests
 
+子Issue #31〜#36 に分解します（D77）。Optional BB表示・Fast ForwardはPhase 4、再起動後のSession ResumeはPhase 5で扱います。
+
 ### Phase 3 — AI Opponents
 
 - Model Adapter

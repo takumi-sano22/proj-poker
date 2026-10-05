@@ -42,6 +42,7 @@ export interface TableView {
   readonly seats: readonly SeatView[];
   /** viewer が手番のときだけ。それ以外は null。 */
   readonly legalActions: LegalActionSet | null;
+  /** 配分した額の Player ごとの合計（Main / Side Pot を合算。Pot ごとの内訳は POT_AWARDED）。 */
   readonly awards: readonly PlayerChips[];
 }
 

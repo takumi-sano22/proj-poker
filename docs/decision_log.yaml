@@ -1,4 +1,4 @@
-# D01〜D76の採用済み人間判断。
+# D01〜D80の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -280,7 +280,7 @@
   decision: "品質ツールはESLint（typescript-eslint）・Prettier（厳密固定）・Vitest・fast-check・tsc --noEmit、CIはGitHub Actionsとする。pre-commit hookは使わない。Nodeは24 LTS。"
 - id: D70
   choice: "Phase 1 のBetting範囲を限定（推奨案、AskUserQuestion）"
-  status: "D75 で一部変更"
+  status: "D75・D78 で一部変更"
   decision: "Phase 1は全員100BBの均等Stack・単一Potで、Fold / Check / Call / Bet / Raise / All-inとMinimum Raiseを実装する。Side Pot・Short All-in Reopen・Split Potの端数はPhase 2とし、未対応の状態はEngineが明示エラーにする。"
 - id: D71
   choice: "暫定CPUは決定論ルールBot（推奨案、AskUserQuestion）"
@@ -306,3 +306,19 @@
   choice: "行ごとに版を持つ（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "保存するEventの行ごとにschema_versionを持たせ、読み出しは知っている版だけを受け付け、知らない版はエラーにする。互換の無い形の変更をするときは版を上げ、旧版を新しい形へそろえる読み込み時のupcastを同じPRで足す。保存済みの行は書き換えない（D37）。"
+- id: D77
+  choice: "Phase 2 を 6 つの子 Issue に分解（AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 2（Full Poker Engine）を #31〜#36 の6つの子Issueに分解する（1 Side Potと不均等Stack / 2 Short All-inのReopen / 3 2〜8人の卓 / 4 Position Engine / 5 Session / 6 Scenario総点検とREADME）。Optional BB表示・Fast ForwardはPhase 4、再起動後のSession ResumeはPhase 5へ回す。"
+- id: D78
+  choice: "Pot ごとに POT_AWARDED を発行し schema_version を 2 に上げる（AskUserQuestion）"
+  status: "採用済み"
+  decision: "Side PotはPotごとにPOT_AWARDEDを1つ発行し、potIndex（0がMain Pot）とeligible（そのPotを争えるplayerId）を持たせる。Eventのschema_versionを2に上げ、版1の行は読み込み時のupcastで補う（保存済みの行は書き換えない。D76）。D70のうち「単一Pot・Side Potは未対応の明示エラー」の部分を変更する。"
+- id: D79
+  choice: "Short All-in の Reopen は TDA 準拠の累積 Full Raise（AskUserQuestion）"
+  status: "採用済み"
+  decision: "Short All-inによるActionの再開（Reopen）は、TDA準拠で累積のRaise額がFull Raiseに達したときに再開する規則をRule Profileの暫定値とする（OI-008の暫定値。永久仕様にしない）。実装は#32。"
+- id: D80
+  choice: "Bust した CPU は退席・Button は次の生存席へ（AskUserQuestion）"
+  status: "採用済み"
+  decision: "BustしたCPUは退席し、HeroがBustするか残りがHeroだけになったらSessionを終了する。Buttonは次の生存席へ単純に進める（Dead Buttonは使わない。OI-008の暫定値。永久仕様にしない）。実装は#34・#35。"

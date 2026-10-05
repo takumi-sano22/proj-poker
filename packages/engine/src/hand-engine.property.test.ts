@@ -4,7 +4,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { HandEvent, SeatInit } from "./hand-events.js";
-import { applyAction, startHand, type EngineError } from "./hand-engine.js";
+import { applyAction, startHand } from "./hand-engine.js";
 import { foldHandEvents, type HandState } from "./hand-state.js";
 import {
   getLegalActions,
@@ -13,17 +13,18 @@ import {
 } from "./legal-actions.js";
 import { projectBotView, projectHeroView } from "./projection.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
-import { checkInvariants, initialChipTotal } from "./testing/invariants.js";
+import {
+  checkInvariants,
+  checkPotAwards,
+  initialChipTotal,
+} from "./testing/invariants.js";
 import { leakedCards } from "./testing/view-leaks.js";
 
 const MAX_STEPS = 500;
 
 interface PlayedHand {
-  /** 開始自体が拒否されたら null。 */
-  readonly state: HandState | null;
+  readonly state: HandState;
   readonly events: readonly HandEvent[];
-  /** 途中で止まった理由（Phase 1 が扱えない状態）。最後まで進めば null。 */
-  readonly stoppedBy: EngineError | null;
 }
 
 /** choices を順に使って Legal Action と額を選ぶ。各ステップで check を呼ぶ。 */
@@ -40,11 +41,8 @@ function playHand(
     config: PHASE1_CASH_PRESET,
     deal: { seed },
   });
-  if (!started.ok) {
-    // 開始時に拒否されうるのは、Blind で All-in になり Side Pot が要る場合だけ（Stack < Blind）。
-    expect(started.error.kind).toBe("unsupported_state");
-    return { state: null, events: [], stoppedBy: started.error };
-  }
+  // 正しい入力の開始は拒否されない（Stack が Blind に満たなくても Blind で All-in して始まる）。
+  if (!started.ok) throw new Error(started.error.message);
   let state = started.value.state;
   const events: HandEvent[] = [...started.value.events];
   check(state, events);
@@ -60,16 +58,13 @@ function playHand(
       legal.playerId,
       toAction(option, pick(1)),
     );
-    if (!result.ok) {
-      // Legal Action から選んだ入力が「合法でない」と拒否されることはない。拒否は Phase 1 の未対応状態だけ。
-      expect(result.error.kind).toBe("unsupported_state");
-      return { state, events, stoppedBy: result.error };
-    }
+    // Legal Action から選んだ入力は拒否されない（Side Pot も扱えるので、止まる状態は無い。D78）。
+    if (!result.ok) throw new Error(result.error.message);
     state = result.value.state;
     events.push(...result.value.events);
     check(state, events);
   }
-  return { state, events, stoppedBy: null };
+  return { state, events };
 }
 
 function toAction(option: LegalAction, choice: number): PlayerAction {
@@ -138,16 +133,15 @@ describe("Hand 進行: Property", () => {
           cs,
           checkStep(initialChipTotal(seats)),
         );
-        // 均等 Stack では Hand が止まらない。同着の端数も配られ、Pot は空になる（D75）。
-        expect(played.stoppedBy).toBeNull();
-        expect(played.state?.status).toBe("complete");
-        expect(played.state?.pot).toBe(0);
+        // 同着の端数も配られ、Pot は空になる（D75）。
+        expect(played.state.status).toBe("complete");
+        expect(played.state.pot).toBe(0);
       }),
       { numRuns: 150 },
     );
   });
 
-  it("不均等 Stack でも、合法な入力は Phase 1 の未対応状態以外で拒否されず、Chip が保存される", () => {
+  it("不均等 Stack（Blind に満たない Stack を含む）でも Hand は最後まで進み、Side Pot ごとの配分で Chip が保存され、情報が漏れない", () => {
     const stacks = fc.array(fc.integer({ min: 1, max: 400 }), {
       minLength: 2,
       maxLength: 6,
@@ -156,12 +150,10 @@ describe("Hand 進行: Property", () => {
       fc.property(stacks, seed, choices, (ss, s, cs) => {
         const seats = ss.map((stack, i) => ({ playerId: `p${i}`, stack }));
         const total = initialChipTotal(seats);
-        const played = playHand(seats, s, cs, (state) => {
-          expect(checkInvariants(state, total)).toEqual([]);
-        });
-        if (played.stoppedBy !== null) {
-          expect(played.stoppedBy.kind).toBe("unsupported_state");
-        }
+        const played = playHand(seats, s, cs, checkStep(total));
+        expect(played.state.status).toBe("complete");
+        expect(played.state.pot).toBe(0);
+        expect(checkPotAwards(played.events)).toEqual([]);
       }),
       { numRuns: 200 },
     );

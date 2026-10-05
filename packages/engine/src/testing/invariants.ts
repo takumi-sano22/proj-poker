@@ -1,6 +1,7 @@
 // Hand State の Invariant（docs/09 §3 の INV-TEST-001〜005。006 は Command の拒否で別に確かめる）。
 // Scenario と Property の両方から呼ぶ。違反を文字列で返し、テスト側で `toEqual([])` と比べる。
 import { cardToString } from "../card.js";
+import type { HandEvent } from "../hand-events.js";
 import type { HandState } from "../hand-state.js";
 
 export function checkInvariants(
@@ -75,4 +76,79 @@ export function checkInvariants(
 /** Hand 開始時の Chip 総量。 */
 export function initialChipTotal(stacks: readonly { stack: number }[]): number {
   return stacks.reduce((a, s) => a + s.stack, 0);
+}
+
+/**
+ * Pot ごとの配分（POT_AWARDED）の Invariant（INV-TEST-005 の Pot 単位版。D78）。
+ * - potIndex は 0（Main Pot）からの連番
+ * - 各 Pot の Σ awards = potTotal で、受け取るのは争える Player だけ
+ * - 争える Player は Fold していない。Side Pot ほど顔ぶれが狭まる（後の Pot の eligible は前の Pot の eligible に含まれる）
+ * - 誰も、各 Player から「自分の Commit 額まで」しか受け取れない（Σ_q min(自分の Commit, q の Commit) 以下）。
+ *   Pot の組み立てとは独立に、Short Stack が Side Pot を取っていないことを確かめる
+ */
+export function checkPotAwards(events: readonly HandEvent[]): string[] {
+  const errors: string[] = [];
+  const folded = new Set(
+    events.flatMap((e) =>
+      e.type === "ACTION_TAKEN" && e.action === "fold" ? [e.playerId] : [],
+    ),
+  );
+  const pots = events.flatMap((e) => (e.type === "POT_AWARDED" ? [e] : []));
+  pots.forEach((pot, i) => {
+    const where = `POT_AWARDED #${i}`;
+    if (pot.potIndex !== i) {
+      errors.push(`${where}: potIndex が ${pot.potIndex}`);
+    }
+    const awarded = pot.awards.reduce((sum, a) => sum + a.amount, 0);
+    if (awarded !== pot.potTotal) {
+      errors.push(`${where}: Σ 配分 ${awarded} ≠ potTotal ${pot.potTotal}`);
+    }
+    if (pot.eligible.length === 0) {
+      errors.push(`${where}: 争える Player がいない`);
+    }
+    for (const a of pot.awards) {
+      if (!pot.eligible.includes(a.playerId)) {
+        errors.push(`${where}: 争えない ${a.playerId} が受け取った`);
+      }
+    }
+    for (const id of pot.eligible) {
+      if (folded.has(id)) errors.push(`${where}: Fold した ${id} が争える`);
+    }
+    const previous = pots[i - 1];
+    if (
+      previous !== undefined &&
+      !pot.eligible.every((id) => previous.eligible.includes(id))
+    ) {
+      errors.push(`${where}: eligible が前の Pot の eligible に含まれない`);
+    }
+  });
+
+  // Commit の累計を Event から数え直す（Blind・Action で出した額 − 返却された Uncalled Bet）。
+  const commits = new Map<string, number>();
+  const add = (id: string, amount: number) =>
+    commits.set(id, (commits.get(id) ?? 0) + amount);
+  for (const e of events) {
+    if (e.type === "BLIND_POSTED" || e.type === "ACTION_TAKEN") {
+      add(e.playerId, e.amount);
+    } else if (e.type === "UNCALLED_BET_RETURNED") {
+      add(e.playerId, -e.amount);
+    }
+  }
+  const won = new Map<string, number>();
+  for (const pot of pots) {
+    for (const a of pot.awards) {
+      won.set(a.playerId, (won.get(a.playerId) ?? 0) + a.amount);
+    }
+  }
+  for (const [id, amount] of won) {
+    const own = commits.get(id) ?? 0;
+    let cap = 0;
+    for (const other of commits.values()) cap += Math.min(own, other);
+    if (amount > cap) {
+      errors.push(
+        `${id} が Commit ${own} で取れる上限 ${cap} を超えて ${amount} を受け取った`,
+      );
+    }
+  }
+  return errors;
 }
