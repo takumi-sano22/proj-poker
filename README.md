@@ -133,6 +133,7 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | `POKER_DB_PATH` | `apps/server/data/poker.sqlite`（gitignore 済み） | Event Log を保存する SQLite ファイル。`:memory:` なら保存しない |
 | `TABLE_SIZE` | `6` | 卓の人数（Hero + CPU）。2〜8 の整数。範囲外・不正値は 6 に戻す |
 | `BOT_THINK_DELAY_MS` | `600` | CPU の思考に見せる待ち時間（演出のみ） |
+| `OPPONENT_TIMEOUT_MS` | `15000`（暫定値） | CPU の 1 回の判断を待つ上限。超えたら障害として Hand を止める。1 以上の整数。不正値は既定に戻す |
 | `PORT` | `3001` | `apps/server` の待ち受けポート（`127.0.0.1` 固定） |
 
 ## 開発コマンド

@@ -78,7 +78,7 @@ Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED`
 | `POT_AWARDED` | `potIndex`（0がMain Pot、1以降がSide Pot）・`potTotal`・`eligible`（そのPotを争えるplayerId。Buttonの左から時計回りの順）・`awards`（`playerId` / `amount`）・`showdown`（札を比べたか。争えるPlayerが1人のPotはfalse） | public | Potごとに1つ、Main Potから順に発行する（D78）。Σ`awards` = `potTotal`。同着の端数は `oddChipRule` に従って配分済みの額が入る（D75） |
 | `HAND_FINISHED` | `stacks`（`playerId` / `amount`） | public | §10のRecovery境界 |
 
-Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの出力が使えずSafe Fallbackした記録（seq・Player・理由）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_FALLBACK_USED`はLLMのOpponentを入れるときにEventへ足します）。
+Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの不正な出力と、RuleBotの判断で続けたFallbackの記録（#47。`docs/03` §5）は、Event LogではなくOrchestratorの運用Metadataとして持ちます（`AI_ACTION_INVALID` / `AI_FALLBACK_USED`としてEventへ足すのは#48・D83）。
 
 #### Event の形の版（schema_version）
 

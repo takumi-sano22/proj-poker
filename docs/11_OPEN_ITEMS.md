@@ -19,6 +19,8 @@ Role-based Configで実装します。
 
 暫定値は D85（確定ではない）: `opponent_fast` は `claude-haiku-4-5`。
 
+Latency Policy の暫定値（#47。確定ではない）: CPU の 1 回の判断を待つ上限は 15000ms（`apps/server` の Config `OPPONENT_TIMEOUT_MS`）。
+
 ## OI-002 — Primary Solver
 
 MVPで実Solver統合は必須です。
