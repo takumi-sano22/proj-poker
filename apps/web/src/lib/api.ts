@@ -92,9 +92,15 @@ function toApiError(status: number, payload: unknown): ApiError {
   return new ApiError(kind, message);
 }
 
-/** 次の Hand を始める。Session が終わっていたら、サーバーが新しい Session として均等 Stack で始める。 */
-export function startHand(): Promise<StartHandResponse> {
-  return postJson<StartHandResponse>("/api/hands");
+/**
+ * 次の Hand を始める。afterHandId は結果まで見た最後の Hand（まだ無ければ null）。
+ * サーバーはそれより新しい Hand（進行中・まだ見ていない結果）があれば、新しく作らずその Hand を返す（開始の再送が冪等になる）。
+ * Session が終わっていたら、サーバーが新しい Session として均等 Stack で始める。
+ */
+export function startHand(
+  afterHandId: string | null,
+): Promise<StartHandResponse> {
+  return postJson<StartHandResponse>("/api/hands", { afterHandId });
 }
 
 /** lastSeq は Hero が見ていた View の log の最後の seq（古い画面・二重送信をサーバーが弾く）。 */

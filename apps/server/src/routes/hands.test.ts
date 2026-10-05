@@ -29,6 +29,18 @@ function makeApp(seed = 42) {
   return { app, events };
 }
 
+/** Hand の開始。afterHandId は結果まで見た最後の Hand（まだ無ければ null）。 */
+function startRequest(
+  app: ReturnType<typeof buildApp>,
+  afterHandId: string | null,
+) {
+  return app.inject({
+    method: "POST",
+    url: "/api/hands",
+    payload: { afterHandId },
+  });
+}
+
 afterEach(async () => {
   await Promise.all(apps.map((a) => a.close()));
   apps = [];
@@ -64,7 +76,7 @@ describe("Hand API（REST）", () => {
   it("POST /api/hands → Hero の Action を繰り返して 1 Hand が最後まで終わり、どの応答にも漏れが無い", async () => {
     for (const seed of [1, 2, 3, 42, 777]) {
       const { app, events } = makeApp(seed);
-      const created = await app.inject({ method: "POST", url: "/api/hands" });
+      const created = await startRequest(app, null);
       expect(created.statusCode).toBe(201);
       const body = created.json<{
         handId: string;
@@ -110,12 +122,12 @@ describe("Hand API（REST）", () => {
 
   it("進行中の Hand があるときの POST /api/hands は、新しく作らずその Hand を 200 で返す（開始の再送）", async () => {
     const { app } = makeApp();
-    const created = await app.inject({ method: "POST", url: "/api/hands" });
+    const created = await startRequest(app, null);
     expect(created.statusCode).toBe(201);
     const first = created.json<{ handId: string; view: HeroView }>();
     expect(first.view.status).toBe("in_progress");
 
-    const again = await app.inject({ method: "POST", url: "/api/hands" });
+    const again = await startRequest(app, null);
     expect(again.statusCode).toBe(200);
     expect(again.json()).toMatchObject({
       handId: first.handId,
@@ -126,7 +138,7 @@ describe("Hand API（REST）", () => {
 
   it("入力の形が不正なら 400（schema）、非合法な額なら 422（Engine）、未知の Hand なら 404", async () => {
     const { app } = makeApp();
-    const created = await app.inject({ method: "POST", url: "/api/hands" });
+    const created = await startRequest(app, null);
     const { handId, view } = created.json<{ handId: string; view: HeroView }>();
     const post = (payload: unknown) =>
       app.inject({
@@ -158,6 +170,22 @@ describe("Hand API（REST）", () => {
     const stale = await post({ lastSeq: seq - 1, action: { type: "fold" } });
     expect(stale.statusCode).toBe(409);
     expect(stale.json()).toMatchObject({ error: { kind: "stale_view" } });
+
+    // 開始の入力も形を検証する（afterHandId は必須・文字列か null）。
+    for (const bad of [
+      undefined,
+      {},
+      { afterHandId: 1 },
+      { afterHandId: "" },
+      { afterHandId: null, extra: true },
+    ]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/hands",
+        ...(bad === undefined ? {} : { payload: bad }),
+      });
+      expect(res.statusCode).toBe(400);
+    }
 
     const missing = await app.inject({
       method: "POST",
@@ -208,7 +236,11 @@ describe("Hand API（SSE）", () => {
     }
     const base = `http://127.0.0.1:${address.port}`;
 
-    const created = await fetch(`${base}/api/hands`, { method: "POST" });
+    const created = await fetch(`${base}/api/hands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ afterHandId: null }),
+    });
     const { handId, view: initial } = (await created.json()) as {
       handId: string;
       view: HeroView;
@@ -262,7 +294,7 @@ describe("Hand API（SSE）", () => {
 
   it("終わった Hand の SSE は、最後の View を 1 回送って閉じる", async () => {
     const { app } = makeApp();
-    const created = await app.inject({ method: "POST", url: "/api/hands" });
+    const created = await startRequest(app, null);
     const { handId, view } = created.json<{ handId: string; view: HeroView }>();
     await app.inject({
       method: "POST",

@@ -138,24 +138,28 @@ export class HandOrchestrator {
 
   /**
    * Hand を開始し、Hero の手番（または Hand の終了）まで CPU を進める。
-   * - 今の Session の最後の Hand が進行中なら、新しい Hand を作らずその Hand を返す（created: false）。
-   *   開始の応答だけが失われて再送されても、Session と持ち越した Stack を捨てない（開始を冪等にする）
-   * - 今の Session が続くなら、前 Hand の席順・Button・終了時の Stack から次 Hand の席を決めて Stack を持ち越す
-   * - Session が終わっていたら（D80）、または最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める
+   * afterHandId はクライアントが結果まで見た最後の Hand（まだ無ければ null）。Action の lastSeq と同じく、
+   * 「どの Hand の次を求めているか」で開始の再送と明示的な「次の Hand」を区別する（開始を冪等にする）。
+   * - 今の Session の最後の Hand が進行中なら、新しい Hand を作らずその Hand を返す（created: false）
+   * - 最後の Hand が終わっていても、クライアントがまだその Hand を見ていなければ（afterHandId が違う）その Hand を返す。
+   *   開始の応答だけが失われて再送されても、結果を見ないまま Button・Stack を進めない／Session を捨てない
+   * - クライアントが最後の Hand を見たうえで求めたら、Session が続くなら Stack を持ち越して次 Hand を始め、
+   *   Session が終わっていたら（D80）新しい Session として均等 Stack で始める
+   * - 最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める
    */
-  startHand(): OrchestratorResult<{
+  startHand(afterHandId: string | null): OrchestratorResult<{
     handId: string;
     view: HeroView;
     created: boolean;
   }> {
     const { setup, store } = this.options;
-    const ongoing = this.ongoingHand();
-    if (ongoing !== null) {
+    const unseen = this.unseenLatestHand(afterHandId);
+    if (unseen !== null) {
       return {
         ok: true,
         value: {
-          handId: ongoing,
-          view: this.heroViewOf(ongoing),
+          handId: unseen,
+          view: this.heroViewOf(unseen),
           created: false,
         },
       };
@@ -277,19 +281,25 @@ export class HandOrchestrator {
     return projectHeroView(this.events(handId), this.heroId);
   }
 
-  /** 今の Session の最後の Hand が、まだ終わっておらず進行を続けられるなら、その Hand ID。 */
-  private ongoingHand(): string | null {
+  /**
+   * 新しい Hand を作らずに返すべき Hand（今の Session の最後の Hand）。無ければ null。
+   * 進行中なら常に、終わっていればクライアントがまだ見ていないとき（afterHandId が違う）だけ返す。
+   * 内部エラーで止まった Hand は返さない（新しい Session で始め直せるようにする）。
+   */
+  private unseenLatestHand(afterHandId: string | null): string | null {
     const current = this.session;
     if (current === null) return null;
     const rt = this.hands.get(current.lastHandId);
     if (rt === undefined || rt.failure !== null) return null;
-    return this.sessionAfter(current.lastHandId).status.state === "in_hand"
-      ? current.lastHandId
-      : null;
+    const finished =
+      this.sessionAfter(current.lastHandId).status.state !== "in_hand";
+    return finished && afterHandId === current.lastHandId
+      ? null
+      : current.lastHandId;
   }
 
   /**
-   * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand が進行中でないときだけ）。
+   * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった）: 新しい Session。
    *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）

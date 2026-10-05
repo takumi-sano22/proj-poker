@@ -14,6 +14,11 @@ interface HandParams {
   handId: string;
 }
 
+interface StartHandBody {
+  /** クライアントが結果まで見た最後の Hand（まだ無ければ null）。開始の再送と「次の Hand」を区別する。 */
+  afterHandId: string | null;
+}
+
 interface HeroActionBody {
   /** クライアントが見ていた HeroView の log の最後の seq（古い画面・二重送信の検出に使う）。 */
   lastSeq: number;
@@ -24,6 +29,20 @@ const handParamsSchema = {
   type: "object",
   required: ["handId"],
   properties: { handId: { type: "string", minLength: 1, maxLength: 64 } },
+} as const;
+
+const startHandBodySchema = {
+  type: "object",
+  required: ["afterHandId"],
+  additionalProperties: false,
+  properties: {
+    afterHandId: {
+      anyOf: [
+        { type: "string", minLength: 1, maxLength: 64 },
+        { type: "null" },
+      ],
+    },
+  },
 } as const;
 
 // Canonical Action（docs/02 §4）の形。bet / raise だけが amount（この Street の累計＝to 額）を持つ。
@@ -94,19 +113,24 @@ export function registerHandRoutes(
 
   // Hand を開始する。Hero の手番か Hand の終了まで CPU を進めた時点の View を返す。
   // Session が続いていれば Stack を持ち越し、終わっていれば新しい Session として均等 Stack で始める（D80）。
-  // 今の Session の Hand が進行中なら、新しく作らずその Hand を 200 で返す（応答が失われた開始の再送で Session を捨てない）。
+  // afterHandId（クライアントが結果まで見た最後の Hand）が今の Session の最後の Hand と違う、またはその Hand が進行中なら、
+  // 新しく作らずその Hand を 200 で返す（応答が失われた開始の再送で、結果を見ないまま次へ進めない・Session を捨てない）。
   // Hand が開始直後に終わることもあるので、Session の状態も一緒に返す。
-  app.post("/api/hands", (_request, reply) => {
-    const result = orchestrator.startHand();
-    if (!result.ok) return sendError(reply, result.error);
-    const { handId, view, created } = result.value;
-    return reply.code(created ? 201 : 200).send({
-      handId,
-      players: orchestrator.players,
-      view,
-      session: orchestrator.sessionStatus(handId),
-    });
-  });
+  app.post<{ Body: StartHandBody }>(
+    "/api/hands",
+    { schema: { body: startHandBodySchema } },
+    (request, reply) => {
+      const result = orchestrator.startHand(request.body.afterHandId);
+      if (!result.ok) return sendError(reply, result.error);
+      const { handId, view, created } = result.value;
+      return reply.code(created ? 201 : 200).send({
+        handId,
+        players: orchestrator.players,
+        view,
+        session: orchestrator.sessionStatus(handId),
+      });
+    },
+  );
 
   // Hero の Action。適用後、次の Hero の手番か Hand の終了まで CPU を進めた時点の View を返す
   // （CPU の思考待ちがある設定では、CPU の行動は SSE で後から届く）。

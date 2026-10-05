@@ -348,7 +348,7 @@ describe("SqliteEventStore（保存の経路）", () => {
       nextSeed: () => 42,
       nextHandId: () => "hand-1",
     });
-    const started = orchestrator.startHand();
+    const started = orchestrator.startHand(null);
     if (!started.ok) throw new Error(started.error.message);
     let view: HeroView = started.value.view;
     for (let guard = 0; view.status !== "complete"; guard++) {
