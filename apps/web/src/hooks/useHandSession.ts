@@ -1,4 +1,5 @@
-// 1 Hand 分のセッション状態。卓の状態はサーバーの HeroView だけを正とし、クライアントで状態を進めない。
+// Hand の画面状態。卓の状態はサーバーの HeroView、Session の状態（D80）はサーバーの SessionStatus だけを正とし、
+// クライアントで状態を進めない（Bust や Session 終了をクライアントで判定しない）。
 // - 受信経路は 2 つ（REST の応答と SSE の Push）。どちらが先に届いても seq の新しい方だけを残す
 // - 送信中は ref と state の 2 層で二重送信を止める（state は描画用、ref は同じ tick 内の連打用）
 import type { HeroView, PlayerAction } from "@proj-poker/engine";
@@ -8,12 +9,16 @@ import {
   handStreamUrl,
   sendHeroAction,
   startHand,
+  type SessionStatus,
   type TablePlayer,
 } from "../lib/api.js";
 import {
   lastSeqOf,
   parseHeroView,
+  parseSessionStatus,
   selectLatestView,
+  selectSessionStatus,
+  type HandSessionStatus,
 } from "../lib/view-model.js";
 
 export type ConnectionState = "idle" | "open" | "reconnecting" | "lost";
@@ -28,6 +33,8 @@ export interface HandSession {
   readonly handId: string | null;
   readonly players: readonly TablePlayer[];
   readonly view: HeroView | null;
+  /** 表示中の Hand から見た Session の状態。まだ届いていなければ null。 */
+  readonly sessionStatus: SessionStatus | null;
   readonly pending: boolean;
   readonly notice: SessionNotice | null;
   readonly connection: ConnectionState;
@@ -61,7 +68,7 @@ function noticeOf(error: unknown): SessionNotice {
     case "hand_not_found":
       return {
         message:
-          "この Hand はサーバーに見つかりませんでした（サーバーが再起動した可能性があります）。新しい Hand を始めてください。",
+          "この Hand はサーバーに見つかりませんでした（サーバーが再起動した可能性があります）。「卓に戻る」から始め直してください。",
         retryable: false,
       };
     case "illegal_action":
@@ -81,9 +88,12 @@ export function useHandSession(): HandSession {
   const [handId, setHandId] = useState<string | null>(null);
   const [players, setPlayers] = useState<readonly TablePlayer[]>([]);
   const [view, setView] = useState<HeroView | null>(null);
+  const [session, setSession] = useState<HandSessionStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
+  // SSE を張り直すための世代。開始が成功するたびに進める。
+  const [streamEpoch, setStreamEpoch] = useState(0);
 
   // 遅れて届いた応答がどの Hand のものかを判定するため、現在の Hand を ref でも持つ。
   const activeHandId = useRef<string | null>(null);
@@ -92,7 +102,7 @@ export function useHandSession(): HandSession {
   // Action は送ったときの handId と lastSeq ごと覚え、再送でも同じ値を送る。応答だけが失われて実は適用済みだった場合、
   // サーバーが stale_view で弾くので、次の手番へ誤って適用されない（現在の View の lastSeq で送り直さない）。
   const lastFailed = useRef<
-    | { kind: "start" }
+    | { kind: "start"; afterHandId: string | null }
     | {
         kind: "action";
         handId: string;
@@ -108,29 +118,55 @@ export function useHandSession(): HandSession {
     );
   }, []);
 
-  const start = useCallback(() => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setPending(true);
-    setNotice(null);
-    lastFailed.current = null;
-    startHand()
-      .then((res) => {
-        activeHandId.current = res.handId;
-        setHandId(res.handId);
-        setPlayers(res.players);
-        setView(res.view);
-        setConnection("idle");
-      })
-      .catch((error: unknown) => {
-        lastFailed.current = { kind: "start" };
-        setNotice(noticeOf(error));
-      })
-      .finally(() => {
-        inFlight.current = false;
-        setPending(false);
-      });
+  const acceptSession = useCallback((incoming: HandSessionStatus) => {
+    setSession((current) =>
+      selectSessionStatus(current, incoming, activeHandId.current),
+    );
   }, []);
+
+  // 結果（complete の View）まで見た最後の Hand。開始の要求で送り、サーバーが再送と「次の Hand」を区別する。
+  const seenComplete = useRef<string | null>(null);
+  useEffect(() => {
+    if (view?.status === "complete") seenComplete.current = view.handId;
+  }, [view]);
+
+  /** 開始の要求を送る。afterHandId は送ったときの値のまま再送する（再送で次の Hand へ進めない）。 */
+  const requestStart = useCallback(
+    (afterHandId: string | null) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      setPending(true);
+      setNotice(null);
+      lastFailed.current = null;
+      startHand(afterHandId)
+        .then((res) => {
+          // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
+          // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
+          activeHandId.current = res.handId;
+          setHandId(res.handId);
+          setPlayers(res.players);
+          accept(res.view);
+          acceptSession({ handId: res.handId, status: res.session });
+          setConnection("idle");
+          // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。
+          setStreamEpoch((n) => n + 1);
+        })
+        .catch((error: unknown) => {
+          lastFailed.current = { kind: "start", afterHandId };
+          setNotice(noticeOf(error));
+        })
+        .finally(() => {
+          inFlight.current = false;
+          setPending(false);
+        });
+    },
+    [accept, acceptSession],
+  );
+
+  const start = useCallback(
+    () => requestStart(seenComplete.current),
+    [requestStart],
+  );
 
   /** Action を送る。lastSeq は「この操作を選んだときに見ていた View」の値。 */
   const send = useCallback(
@@ -141,7 +177,10 @@ export function useHandSession(): HandSession {
       setNotice(null);
       lastFailed.current = null;
       sendHeroAction(sentFor, lastSeq, action)
-        .then((res) => accept(res.view))
+        .then((res) => {
+          accept(res.view);
+          acceptSession({ handId: sentFor, status: res.session });
+        })
         .catch((error: unknown) => {
           // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。
           if (activeHandId.current !== sentFor) return;
@@ -158,7 +197,7 @@ export function useHandSession(): HandSession {
           setPending(false);
         });
     },
-    [accept],
+    [accept, acceptSession],
   );
 
   const act = useCallback(
@@ -171,15 +210,23 @@ export function useHandSession(): HandSession {
 
   const retry = useCallback(() => {
     const failed = lastFailed.current;
-    if (failed?.kind === "start") start();
+    if (failed?.kind === "start") requestStart(failed.afterHandId);
     else if (failed?.kind === "action")
       send(failed.handId, failed.lastSeq, failed.action);
-  }, [send, start]);
+  }, [requestStart, send]);
 
   // SSE: 接続直後に現在の View が 1 回届き、以後は Log が進むたびに届く。complete を受けたら閉じる。
+  // Session の状態（session イベント）は complete の View の直前に届く。
   useEffect(() => {
     if (handId === null) return;
     const source = new EventSource(handStreamUrl(handId));
+    source.addEventListener("session", (event) => {
+      const data: unknown = event.data;
+      const status = typeof data === "string" ? parseSessionStatus(data) : null;
+      // 形の合わない data は描画に流さない（受け側の whitelist）。
+      if (status === null) return;
+      acceptSession({ handId, status });
+    });
     source.addEventListener("view", (event) => {
       const data: unknown = event.data;
       const incoming = typeof data === "string" ? parseHeroView(data) : null;
@@ -196,12 +243,13 @@ export function useHandSession(): HandSession {
       );
     });
     return () => source.close();
-  }, [accept, handId]);
+  }, [accept, acceptSession, handId, streamEpoch]);
 
   return {
     handId,
     players,
     view,
+    sessionStatus: session?.handId === handId ? session.status : null,
     pending,
     notice,
     connection,

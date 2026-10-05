@@ -1,11 +1,15 @@
 // Hand Orchestrator（docs/03 §4）。Engine・Event Store・CPU（Opponent Agent）をつなぎ、1 Hand を最後まで進める。
 // - State は毎回 Event Log（Event Store）から畳み込んで作る。Orchestrator は「もう一つの State」を持たない（D37）。
+// - Session（D80）も同じ: Orchestrator が持つのは「今の Session の ID と最後の Hand の ID」だけで、
+//   次 Hand の席・Button・持ち越す Stack は、最後の Hand の HAND_STARTED と HAND_FINISHED から Position Engine で決める。
 // - 合法性は Engine だけが判定する。CPU の出力も Hero の入力も applyAction で検証する（D40）。
 // - CPU に渡すのは projectBotView と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
+import { randomUUID } from "node:crypto";
 import {
   applyAction,
   foldHandEvents,
   getLegalActions,
+  nextHandSeating,
   projectBotView,
   projectHeroView,
   startHand,
@@ -14,6 +18,7 @@ import {
   type HeroView,
   type LegalActionSet,
   type PlayerAction,
+  type SeatInit,
 } from "@proj-poker/engine";
 import type { SeatPlayer, TableSetup } from "./config.js";
 import type { EventStore } from "./event-store.js";
@@ -28,6 +33,24 @@ export type OrchestratorError =
   | { readonly kind: "hand_not_found"; readonly message: string }
   /** Hero が見ていた卓の状態より Log が進んでいる（二重送信・古い画面からの送信）。 */
   | { readonly kind: "stale_view"; readonly message: string };
+
+/**
+ * Session が終わった理由（D80）。
+ * - hero_busted: Hero の Stack が 0 になった
+ * - hero_last_standing: CPU が全員 Bust し、Hero だけが残った
+ */
+export type SessionEndReason = "hero_busted" | "hero_last_standing";
+
+/**
+ * ある Hand から見た Session の状態。Hero に返してよい情報（Hero 自身の結果と、次 Hand があるか）だけを持つ。
+ * - in_hand: Hand の途中
+ * - ready_for_next_hand: Hand が終わり、Stack を持ち越して次 Hand を始められる
+ * - ended: Hand が終わり、Session も終わった（次の Hand は新しい Session として均等 Stack で始まる）
+ */
+export type SessionStatus =
+  | { readonly state: "in_hand" }
+  | { readonly state: "ready_for_next_hand" }
+  | { readonly state: "ended"; readonly reason: SessionEndReason };
 
 export type OrchestratorResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -55,6 +78,8 @@ export interface HandOrchestratorOptions {
   /** Hand ごとの seed（Deck のシャッフルと CPU の乱数の元）。テストでは固定値を渡す。 */
   readonly nextSeed: () => number;
   readonly nextHandId: () => string;
+  /** 新しい Session の ID。省略時は UUID。 */
+  readonly nextSessionId?: () => string;
   readonly logger?: OrchestratorLogger;
 }
 
@@ -62,6 +87,7 @@ export type HeroViewListener = (view: HeroView) => void;
 
 interface HandRuntime {
   readonly handId: string;
+  readonly sessionId: string;
   readonly opponents: ReadonlyMap<string, OpponentAgent>;
   readonly listeners: Set<HeroViewListener>;
   readonly fallbacks: BotFallbackRecord[];
@@ -71,13 +97,26 @@ interface HandRuntime {
   failure: string | null;
 }
 
+/** 次 Hand の席・Button と、その Hand が属する Session。 */
+interface HandPlan {
+  readonly sessionId: string;
+  readonly seats: readonly SeatInit[];
+  readonly buttonPlayerId: string;
+}
+
+/** 今の Session。持つのは ID の参照だけで、Stack・席・Button は lastHandId の Event Log から読む（D37）。 */
+interface SessionPointer {
+  readonly sessionId: string;
+  readonly lastHandId: string;
+}
+
 const silentLogger: OrchestratorLogger = { warn: () => {}, error: () => {} };
 
 export class HandOrchestrator {
   private readonly hands = new Map<string, HandRuntime>();
   private readonly heroId: string;
   private readonly logger: OrchestratorLogger;
-  private handCount = 0;
+  private session: SessionPointer | null = null;
   private closed = false;
 
   constructor(private readonly options: HandOrchestratorOptions) {
@@ -97,33 +136,57 @@ export class HandOrchestrator {
     return this.options.setup.players;
   }
 
-  /** Hand を開始し、Hero の手番（または Hand の終了）まで CPU を進める。 */
-  startHand(): OrchestratorResult<{ handId: string; view: HeroView }> {
+  /**
+   * Hand を開始し、Hero の手番（または Hand の終了）まで CPU を進める。
+   * afterHandId はクライアントが結果まで見た最後の Hand（まだ無ければ null）。Action の lastSeq と同じく、
+   * 「どの Hand の次を求めているか」で開始の再送と明示的な「次の Hand」を区別する（開始を冪等にする）。
+   * - 今の Session の最後の Hand が進行中なら、新しい Hand を作らずその Hand を返す（created: false）
+   * - 最後の Hand が終わっていても、クライアントがまだその Hand を見ていなければ（afterHandId が違う）その Hand を返す。
+   *   開始の応答だけが失われて再送されても、結果を見ないまま Button・Stack を進めない／Session を捨てない
+   * - クライアントが最後の Hand を見たうえで求めたら、Session が続くなら Stack を持ち越して次 Hand を始め、
+   *   Session が終わっていたら（D80）新しい Session として均等 Stack で始める
+   * - 最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める
+   */
+  startHand(afterHandId: string | null): OrchestratorResult<{
+    handId: string;
+    view: HeroView;
+    created: boolean;
+  }> {
     const { setup, store } = this.options;
+    const unseen = this.unseenLatestHand(afterHandId);
+    if (unseen !== null) {
+      return {
+        ok: true,
+        value: {
+          handId: unseen,
+          view: this.heroViewOf(unseen),
+          created: false,
+        },
+      };
+    }
     const handId = this.options.nextHandId();
     if (this.hands.has(handId) || store.read(handId).length > 0) {
       throw new Error(`Hand ID が重複した: ${handId}`);
     }
     const seed = this.options.nextSeed();
-    // Button は Hand ごとに 1 席ずつ時計回りに動かす（Session の概念は後続 Issue。ここでは起動からの Hand 数で回す）。
-    const button = setup.players[this.handCount % setup.players.length];
-    this.handCount++;
+    const plan = this.planNextHand();
     const started = startHand({
       handId,
-      seats: setup.players.map((p) => ({
-        playerId: p.playerId,
-        stack: setup.startingStack,
-      })),
-      buttonPlayerId: (button as SeatPlayer).playerId,
+      seats: plan.seats,
+      buttonPlayerId: plan.buttonPlayerId,
       config: setup.table,
       deal: { seed },
     });
     if (!started.ok) return started;
-    store.append(handId, started.value.events);
+    store.append(handId, started.value.events, { sessionId: plan.sessionId });
+    this.session = { sessionId: plan.sessionId, lastHandId: handId };
 
+    // 座っている CPU にだけ Opponent を割り当てる。CPU の seed は卓の設定上の席番号から導く
+    // （Bust で席が詰まっても、同じ CPU には同じ導き方の seed が渡る）。
+    const seated = new Set(plan.seats.map((s) => s.playerId));
     const opponents = new Map<string, OpponentAgent>();
     setup.players.forEach((p, seatIndex) => {
-      if (p.kind === "cpu") {
+      if (p.kind === "cpu" && seated.has(p.playerId)) {
         opponents.set(
           p.playerId,
           this.options.createOpponent(deriveSeed(seed, seatIndex), p.playerId),
@@ -132,6 +195,7 @@ export class HandOrchestrator {
     });
     const rt: HandRuntime = {
       handId,
+      sessionId: plan.sessionId,
       opponents,
       listeners: new Set(),
       fallbacks: [],
@@ -140,7 +204,10 @@ export class HandOrchestrator {
     };
     this.hands.set(handId, rt);
     this.advance(rt);
-    return { ok: true, value: { handId, view: this.heroViewOf(handId) } };
+    return {
+      ok: true,
+      value: { handId, view: this.heroViewOf(handId), created: true },
+    };
   }
 
   /**
@@ -178,6 +245,11 @@ export class HandOrchestrator {
     return this.hands.has(handId) ? this.heroViewOf(handId) : null;
   }
 
+  /** その Hand から見た Session の状態。未知の Hand なら null。 */
+  sessionStatus(handId: string): SessionStatus | null {
+    return this.hands.has(handId) ? this.sessionAfter(handId).status : null;
+  }
+
   /** Hero の View が変わるたびに呼ばれる listener を登録する。戻り値で解除する。未知の Hand なら null。 */
   subscribe(handId: string, listener: HeroViewListener): (() => void) | null {
     const rt = this.hands.get(handId);
@@ -209,9 +281,101 @@ export class HandOrchestrator {
     return projectHeroView(this.events(handId), this.heroId);
   }
 
+  /**
+   * 新しい Hand を作らずに返すべき Hand（今の Session の最後の Hand）。無ければ null。
+   * 進行中なら常に、終わっていればクライアントがまだ見ていないとき（afterHandId が違う）だけ返す。
+   * 内部エラーで止まった Hand は返さない（新しい Session で始め直せるようにする）。
+   */
+  private unseenLatestHand(afterHandId: string | null): string | null {
+    const current = this.session;
+    if (current === null) return null;
+    const rt = this.hands.get(current.lastHandId);
+    if (rt === undefined || rt.failure !== null) return null;
+    const finished =
+      this.sessionAfter(current.lastHandId).status.state !== "in_hand";
+    return finished && afterHandId === current.lastHandId
+      ? null
+      : current.lastHandId;
+  }
+
+  /**
+   * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
+   * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
+   * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった）: 新しい Session。
+   *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）
+   */
+  private planNextHand(): HandPlan {
+    const current = this.session;
+    if (current !== null) {
+      const after = this.sessionAfter(current.lastHandId);
+      if (after.next !== null) {
+        return { sessionId: current.sessionId, ...after.next };
+      }
+    }
+    const { players, startingStack } = this.options.setup;
+    return {
+      sessionId: (this.options.nextSessionId ?? randomUUID)(),
+      seats: players.map((p) => ({
+        playerId: p.playerId,
+        stack: startingStack,
+      })),
+      buttonPlayerId: (players[0] as SeatPlayer).playerId,
+    };
+  }
+
+  /**
+   * Hand の終了後の Session の状態と、続くなら次 Hand の席。その Hand の Event Log だけから作る（D37）。
+   * 席順と Button は HAND_STARTED、Stack は HAND_FINISHED から読み、Bust の判定と Button の移動は Position Engine に任せる。
+   */
+  private sessionAfter(handId: string): {
+    status: SessionStatus;
+    next: Omit<HandPlan, "sessionId"> | null;
+  } {
+    const events = this.events(handId);
+    const started = events[0];
+    const finished = events.at(-1);
+    if (
+      started?.type !== "HAND_STARTED" ||
+      finished?.type !== "HAND_FINISHED"
+    ) {
+      return { status: { state: "in_hand" }, next: null };
+    }
+    const seating = nextHandSeating(
+      {
+        seatOrder: started.seats.map((s) => s.playerId),
+        stacks: finished.stacks,
+        buttonPlayerId: started.buttonPlayerId,
+      },
+      this.options.setup.table,
+    );
+    if (!seating.ok) {
+      throw new Error(`次 Hand の席を決められない: ${seating.error.message}`);
+    }
+    const heroStack =
+      finished.stacks.find((s) => s.playerId === this.heroId)?.amount ?? 0;
+    // Hero が Bust したら、CPU が何人残っていても Session を終える（D80）。
+    if (heroStack === 0) {
+      return { status: { state: "ended", reason: "hero_busted" }, next: null };
+    }
+    // Hero の Stack が残っていて次 Hand が無い＝残ったのは Hero だけ。
+    if (seating.value.kind === "no_next_hand") {
+      return {
+        status: { state: "ended", reason: "hero_last_standing" },
+        next: null,
+      };
+    }
+    return {
+      status: { state: "ready_for_next_hand" },
+      next: {
+        seats: seating.value.seats,
+        buttonPlayerId: seating.value.buttonPlayerId,
+      },
+    };
+  }
+
   /** Event を Log へ追記し、Hero の View を購読者へ配る。 */
   private commit(rt: HandRuntime, events: readonly HandEvent[]): void {
-    this.options.store.append(rt.handId, events);
+    this.options.store.append(rt.handId, events, { sessionId: rt.sessionId });
     if (rt.listeners.size === 0) return;
     const view = this.heroViewOf(rt.handId);
     for (const listener of rt.listeners) {

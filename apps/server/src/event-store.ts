@@ -12,6 +12,12 @@ export interface StoredHandEvent {
   readonly event: HandEvent;
 }
 
+/** 追記の付帯情報。Event そのものには入れない（Event の形は Engine が決める。docs/04 §3）。 */
+export interface AppendContext {
+  /** Hand が属する Session（D80）。Hand の最初の追記の値を使い、以降の追記では見ない。 */
+  readonly sessionId?: string;
+}
+
 export interface EventStore {
   /**
    * Hand の Event Log の末尾へ追記する。更新・削除の API は持たない（append-only）。
@@ -22,6 +28,7 @@ export interface EventStore {
   append(
     handId: string,
     events: readonly HandEvent[],
+    context?: AppendContext,
   ): readonly StoredHandEvent[];
   /** Hand の Event を seq 順で返す。未知の Hand なら空配列。 */
   read(handId: string): readonly StoredHandEvent[];

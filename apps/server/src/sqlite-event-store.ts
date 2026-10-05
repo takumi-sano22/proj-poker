@@ -17,6 +17,7 @@ import {
   deepFreeze,
   EventSeqConflictError,
   toStoredEvents,
+  type AppendContext,
   type EventStore,
   type StoredHandEvent,
 } from "./event-store.js";
@@ -38,7 +39,7 @@ export class UnsupportedEventSchemaError extends Error {
 export interface SqliteEventStoreOptions {
   readonly now?: () => Date;
   readonly newEventId?: () => string;
-  /** この Store が保存する Hand の Session。省略時は新しい UUID（起動ごとに 1 Session）。 */
+  /** 追記で Session を指定しなかった Hand の Session。省略時は新しい UUID。 */
   readonly sessionId?: string;
 }
 
@@ -50,13 +51,17 @@ interface EventRow {
   payload: string;
 }
 
+/** まだ HAND_FINISHED に達していない Hand（メモリだけ）。Session は Hand の最初の追記で決まる。 */
+interface PendingHand {
+  readonly sessionId: string;
+  readonly log: StoredHandEvent[];
+}
+
 export class SqliteEventStore implements EventStore {
-  /** まだ HAND_FINISHED に達していない Hand の Event（メモリだけ）。 */
-  private readonly pending = new Map<string, StoredHandEvent[]>();
+  private readonly pending = new Map<string, PendingHand>();
   private readonly now: () => Date;
   private readonly newEventId: () => string;
-  private readonly sessionId: string;
-  private readonly sessionStartedAt: string;
+  private readonly defaultSessionId: string;
   private readonly insertSession: StatementSync;
   private readonly insertHand: StatementSync;
   private readonly insertEvent: StatementSync;
@@ -77,9 +82,9 @@ export class SqliteEventStore implements EventStore {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newEventId = options.newEventId ?? randomUUID;
-    this.sessionId = options.sessionId ?? randomUUID();
-    this.sessionStartedAt = this.now().toISOString();
+    this.defaultSessionId = options.sessionId ?? randomUUID();
     // Session の行は、その Session で最初に Hand を保存するときに作る（Hand の無い Session を残さない）。
+    // started_at はその Hand の開始時刻（Session の最初の Hand の開始＝Session の開始）。
     this.insertSession = db.prepare(
       "INSERT OR IGNORE INTO sessions (session_id, started_at) VALUES (?, ?)",
     );
@@ -98,6 +103,7 @@ export class SqliteEventStore implements EventStore {
   append(
     handId: string,
     events: readonly HandEvent[],
+    context: AppendContext = {},
   ): readonly StoredHandEvent[] {
     const pending = this.pending.get(handId);
     if (pending === undefined && this.selectHand.get(handId) !== undefined) {
@@ -106,7 +112,9 @@ export class SqliteEventStore implements EventStore {
         `Hand ${handId} は終了して保存済みのため追記できない`,
       );
     }
-    const log = pending ?? [];
+    const log = pending?.log ?? [];
+    const sessionId =
+      pending?.sessionId ?? context.sessionId ?? this.defaultSessionId;
     assertAppendable(handId, log, events);
 
     const stored = toStoredEvents(
@@ -117,10 +125,10 @@ export class SqliteEventStore implements EventStore {
     );
     const next = [...log, ...stored];
     if (events.at(-1)?.type !== "HAND_FINISHED") {
-      this.pending.set(handId, next);
+      this.pending.set(handId, { sessionId, log: next });
     } else {
       // 書き込みに失敗したら例外のまま返し、メモリ側も変えない（Hand は未完了のまま残る）。
-      this.persist(handId, next);
+      this.persist(handId, sessionId, next);
       this.pending.delete(handId);
     }
     return stored;
@@ -129,7 +137,7 @@ export class SqliteEventStore implements EventStore {
   read(handId: string): readonly StoredHandEvent[] {
     const pending = this.pending.get(handId);
     // 呼び出し側が配列を書き換えても Log が変わらないよう、写しを返す。
-    if (pending !== undefined) return [...pending];
+    if (pending !== undefined) return [...pending.log];
     return this.readPersisted(handId);
   }
 
@@ -140,18 +148,17 @@ export class SqliteEventStore implements EventStore {
   }
 
   /** 終わった Hand の全 Event を 1 トランザクションで書く。 */
-  private persist(handId: string, log: readonly StoredHandEvent[]): void {
+  private persist(
+    handId: string,
+    sessionId: string,
+    log: readonly StoredHandEvent[],
+  ): void {
     const first = log[0];
     const last = log.at(-1);
     if (first === undefined || last === undefined) return;
     inTransaction(this.db, () => {
-      this.insertSession.run(this.sessionId, this.sessionStartedAt);
-      this.insertHand.run(
-        handId,
-        this.sessionId,
-        first.recordedAt,
-        last.recordedAt,
-      );
+      this.insertSession.run(sessionId, first.recordedAt);
+      this.insertHand.run(handId, sessionId, first.recordedAt, last.recordedAt);
       for (const s of log) {
         this.insertEvent.run(
           s.eventId,
