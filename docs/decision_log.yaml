@@ -1,4 +1,4 @@
-# D01〜D88の採用済み人間判断。
+# D01〜D93の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -354,3 +354,23 @@
   choice: "障害時の Session 終了と Emergency Bot の登録は Phase 5 の Resume で Event 化を設計する（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "AI障害時に選んだSession終了と、Emergency Botに切り替えたCPUのSession単位の登録は、Phase 3ではOrchestratorのメモリに持つ（既存の内部エラーと同じ扱い）。Event Logへの記録（Handの打ち切り・切り替えのEvent化）はPhase 5のSession ResumeのIssueで、Handの中断・再開と合わせて設計する。それまで途中で終えたHandはHAND_FINISHEDの無いHandとして残る。Emergency Botが判断した各ActionにはAI_FALLBACK_USEDを残す（D83）。"
+- id: D89
+  choice: "Phase 4 を 7 つの子 Issue に分解（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 4（Live Mechanics）を#62〜#68の7つの子Issueに分解する（1 Chipの額面PresetとStackの構成表示 / 2 Ruling Engine / 3 宣言・物理操作・裁定のEvent（版5）/ 4 ChipのClick・Dragと宣言ButtonのUI / 5 Dealer FeedbackとPoker Vocabulary / 6 BB補助表示の切り替えとFast Forward / 7 ReplayとREADME）。"
+- id: D90
+  choice: "PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING を Event Log に残し版 5 に上げる（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "宣言・物理的なChip操作・Dealerの裁定をPLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULINGとしてEvent Logに残し、Eventのschema_versionを5に上げる。版1〜4は読み込めるままにし、保存済みの行は書き換えない（D76）。実装は#64。"
+- id: D91
+  choice: "Ruling は TDA 準拠の 3 種（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Rulingは、Oversized Chip（宣言なしで大きいChipを1枚出したらCall、相手のBetが無ければその額のBet）・String Bet（宣言なしで複数回に分けて出したら最初の1回の量で確定）・Out-of-Turn（手番を戻して警告し、その間に状況が変わらなければOOTのActionを拘束、変われば撤回できる）のTDA準拠の3種を、版付きRule Profileの暫定値とする（OI-008の暫定値。永久仕様にしない）。物理的な誤操作をするのはHeroだけとする。実装は#63。"
+- id: D92
+  choice: "Chip の額面は 1/5/25/100/500 の 5 種（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Chipの額面は1（白）・5（赤）・25（緑）・100（黒）・500（紫）の5種をPresetの暫定値とし、額からChipの構成を自動で組む（OI-004の暫定値。永久仕様にしない）。実装は#62。"
+- id: D93
+  choice: "Replay は Hero 視点の一手ずつ・Fast Forward は待ちの短縮（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "ReplayはHand一覧から選び、保存済みEventをHeroの視点でPrevious / Next / Play / Pauseで再生する（Showdownで公開された札は公開時点から見える）。Learning-only Full RevealとJump to Important SpotはPhase 5のReviewで扱う。Fast ForwardはHero Fold後に演出とCPUの待ちを縮め、Claudeの応答時間そのものは縮めない。実装は#67・#68。"

@@ -1,4 +1,11 @@
 // 画面の表示の設定。値は暫定値（Open Item。永久仕様ではない）。
+import { PHASE1_CASH_PRESET } from "@proj-poker/engine";
+
+/**
+ * Chip の額面と色の対応（Table Config の Preset。D92・OI-004 の暫定値）。額面・色は Config 側が持ち、
+ * 表示コンポーネントには書かない。色の名前に対応する実際の色は styles.css のトークン（`--color-chip-<名前>`）が持つ。
+ */
+export const CHIP_DENOMINATIONS = PHASE1_CASH_PRESET.chipDenominations;
 
 /**
  * CPU の手番がこれより長く続いたら「AI応答が遅延しています」を補足する（ミリ秒。docs/06 §11・D86）。

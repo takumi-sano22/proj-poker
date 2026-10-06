@@ -44,8 +44,17 @@
   --color-card-back-mark: #e6c7a0;
   --color-suit-red: #c62828;
   --color-suit-black: #1b1f23;
-  --color-chip: #c8373b;
-  --color-chip-edge: #f5efe6;
+  /* Chip の色。名前は Table Config の額面 Preset（ChipColor。D92）と 1 対 1。縁は面と区別できる明暗にする */
+  --color-chip-white: #ece8df;
+  --color-chip-white-edge: #8f8a7d;
+  --color-chip-red: #c8373b;
+  --color-chip-red-edge: #f5efe6;
+  --color-chip-green: #1f8f57;
+  --color-chip-green-edge: #e8f4ec;
+  --color-chip-black: #23272b;
+  --color-chip-black-edge: #d9d9d9;
+  --color-chip-purple: #6b3fa0;
+  --color-chip-purple-edge: #eadcf7;
   --color-dealer-button: #f7f5ef;
   --color-on-dealer-button: #1b1f23;
 
@@ -86,6 +95,8 @@
   --seat-ry: 44%;
   --bet-rx: 27%;
   --bet-ry: 25%;
+  --chip-d: 14px;
+  --chip-step: 3px;
   --card-sm-w: 30px;
   --card-md-w: 46px;
   --card-lg-w: 64px;
@@ -504,14 +515,80 @@ input {
   transform: translate(-50%, -50%);
 }
 
+/* Chip の積み（Stack Composition）。1 本の積みは額面ごと。Chip は下から --i 番目に、--chip-step ずつずらして重ねる */
+.chip-stack {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  min-height: var(--chip-d);
+}
+
+.seat__plate .chip-stack {
+  margin-top: 4px;
+}
+
+.chip-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.chip-column__pile {
+  position: relative;
+  display: block;
+  width: var(--chip-d);
+  height: calc(var(--chip-d) + (var(--n) - 1) * var(--chip-step));
+}
+
+.chip-column__count {
+  color: var(--color-on-surface-muted);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.bet .chip-column__count {
+  color: var(--color-on-felt-muted);
+}
+
 .chip {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 3px dashed var(--color-chip-edge);
+  position: absolute;
+  left: 0;
+  bottom: calc(var(--i) * var(--chip-step));
+  width: var(--chip-d);
+  height: var(--chip-d);
+  box-sizing: border-box;
+  border: 2px dashed var(--chip-edge);
   border-radius: 50%;
-  background: var(--color-chip);
-  box-shadow: 0 0 0 1px var(--color-chip);
+  background: var(--chip-face);
+  /* 外側の輪郭と下の厚みで、同じ色の面（フェルト・席の面）とも区別する */
+  box-shadow:
+    0 0 0 1px rgba(var(--ink), 0.55),
+    0 1px 0 1px rgba(var(--ink), 0.55);
+}
+
+.chip--white {
+  --chip-face: var(--color-chip-white);
+  --chip-edge: var(--color-chip-white-edge);
+}
+
+.chip--red {
+  --chip-face: var(--color-chip-red);
+  --chip-edge: var(--color-chip-red-edge);
+}
+
+.chip--green {
+  --chip-face: var(--color-chip-green);
+  --chip-edge: var(--color-chip-green-edge);
+}
+
+.chip--black {
+  --chip-face: var(--color-chip-black);
+  --chip-edge: var(--color-chip-black-edge);
+}
+
+.chip--purple {
+  --chip-face: var(--color-chip-purple);
+  --chip-edge: var(--color-chip-purple-edge);
 }
 
 /* ───────── Card ───────── */
@@ -596,6 +673,8 @@ input {
     --seat-ry: 45%;
     --bet-rx: 20%;
     --bet-ry: 29%;
+    --chip-d: 11px;
+    --chip-step: 2px;
     --card-sm-w: 24px;
     --card-md-w: 34px;
     --card-lg-w: 52px;

@@ -25,6 +25,9 @@ export type { Rng } from "./rng.js";
 export { HandCategory, compareHands, evaluateHand } from "./hand-evaluator.js";
 export type { HandValue } from "./hand-evaluator.js";
 
+export { DEFAULT_CHIP_DENOMINATIONS, composeChips } from "./chips.js";
+export type { ChipColor, ChipCount, ChipDenomination } from "./chips.js";
+
 export {
   MAX_PLAYERS,
   MIN_PLAYERS,

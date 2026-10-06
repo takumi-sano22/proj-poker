@@ -1,9 +1,12 @@
 // 部品の静的な描画を確かめる（DOM 環境を足さず、react-dom/server の文字列で見る）。
+import { DEFAULT_CHIP_DENOMINATIONS } from "@proj-poker/engine";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { preflopHeroToAct, seat } from "../testing/fixtures.js";
 import { ActionBar } from "./ActionBar.js";
 import { Amount } from "./Amount.js";
+import { ChipStack } from "./ChipStack.js";
 import { OutageDialog } from "./OutageDialog.js";
 import { Table } from "./Table.js";
 
@@ -22,6 +25,71 @@ describe("Amount", () => {
     const html = renderToStaticMarkup(<Amount value={37} bigBlind={2} />);
     expect(html).toContain('amount__real">37<');
     expect(html).toContain('amount__bb">18.5 BB<');
+  });
+});
+
+describe("ChipStack（額から組んだ Chip の構成を色付きの積みで描く。D92）", () => {
+  /** 描いた積みを [額面, 枚数, 描いた Chip の数] の列にする。 */
+  function columns(html: string): [number, number, number][] {
+    return [
+      ...html.matchAll(
+        /data-denomination="(\d+)" data-count="(\d+)"[^>]*>(?:<span class="chip-column__count">[^<]*<\/span>)?<span class="chip-column__pile">(.*?)<\/span><\/span><\/span>/g,
+      ),
+    ].map((m) => [
+      Number(m[1]),
+      Number(m[2]),
+      (m[3]?.match(/class="chip /g) ?? []).length,
+    ]);
+  }
+
+  it("大きい額面から、額面に対応する色で描く（額面と色は Config の Preset）", () => {
+    const html = renderToStaticMarkup(<ChipStack amount={1234} />);
+    expect(columns(html)).toEqual([
+      [500, 2, 2],
+      [100, 2, 2],
+      [25, 1, 1],
+      [5, 1, 1],
+      [1, 4, 4],
+    ]);
+    expect(html).toContain("chip chip--purple");
+    expect(html).toContain("chip chip--black");
+    expect(html).toContain("chip chip--green");
+    expect(html).toContain("chip chip--red");
+    expect(html).toContain("chip chip--white");
+  });
+
+  it("額が 0 なら何も描かない。多い枚数は重ねる数に上限を置き、枚数（×N）で示す", () => {
+    expect(renderToStaticMarkup(<ChipStack amount={0} />)).toBe("");
+    const html = renderToStaticMarkup(<ChipStack amount={500 * 20} />);
+    expect(columns(html)).toEqual([[500, 20, 5]]);
+    expect(html).toContain("×20");
+    // 上限以下は枚数を数えられるので ×N は付けない
+    expect(renderToStaticMarkup(<ChipStack amount={500 * 5} />)).not.toContain(
+      "chip-column__count",
+    );
+  });
+
+  it("渡した額面で組む（既定の Preset ではなく Config の値に従う）", () => {
+    const html = renderToStaticMarkup(
+      <ChipStack
+        amount={30}
+        denominations={[
+          { value: 1, color: "white" },
+          { value: 10, color: "purple" },
+        ]}
+      />,
+    );
+    expect(columns(html)).toEqual([[10, 3, 3]]);
+    expect(html).not.toContain("chip--red");
+  });
+
+  it("Preset の色にはすべて CSS の面と縁の定義がある（色の名前が表示側とずれない）", () => {
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    for (const { color } of DEFAULT_CHIP_DENOMINATIONS) {
+      expect(css).toContain(`.chip--${color} {`);
+      expect(css).toContain(`--color-chip-${color}:`);
+      expect(css).toContain(`--color-chip-${color}-edge:`);
+    }
   });
 });
 
@@ -154,6 +222,9 @@ describe("Table（他者の札はサーバーが公開したものだけを表�
     expect(html).toContain("ポット（Pot）");
     expect(html).toContain('amount__real">3<');
     expect(html).toContain('amount__real">199<');
+    // Stack 200 は 100 の Chip 2 枚、Bet 2（BB）は 1 の Chip 2 枚。実額は積みの隣に常時出ている
+    expect(html).toContain('data-denomination="100" data-count="2"');
+    expect(html).toContain('data-denomination="1" data-count="2"');
     expect(html).toContain('title="ボタン（BTN）"');
     expect(html).toContain('title="スモールブラインド（SB）"');
     expect(html).toContain('title="ビッグブラインド（BB）"');
