@@ -38,7 +38,7 @@ Phase 3（AI Opponents）の子 Issue。CPU が判断を返せない「障害」
 - **Hero に返すのは playerId・種類・revision だけ**: 本文は資格情報のパスやトークン断片を含みうる。種類は「ログインし直す」「枠が戻るまで待つ」を案内するのに要る分だけ分けた。本文は server のログ（`outageOf`）には残す。
 - **revision を足した**: 障害は Log を進めないので View の seq では新旧を比べられない。また、Retry で同じ手番にまた障害が起きると seq も Player も同じになり、古いダイアログからの選択（特に Emergency Bot・Session 終了の二重送信）を区別できない。障害が起きる・解けるたびに進む番号にすると、REST と SSE の到着順の吸収と、選択の古さの判定を 1 つで扱える。
 - **Emergency Bot の記録は手番ごと**: D86「Flag を残す」と docs/06 §12「Opponent Quality 分析で通常 Hand と混同しない」を満たすには、Emergency Bot が決めた Action ごとに分かる必要がある。自動 Fallback と同じく記録の直後にその Action を置く。`reason` にはきっかけの種類だけを入れ、本文は入れない（Event Log は DB に残るため）。
-- **Emergency Bot の登録はメモリ**: Event Log から導くには Session の全 Hand を読む必要がある（その CPU に手番が来なかった Hand には記録が残らない）。再起動後の Resume は Phase 5 なので、今は Session のポインタに持ち、Resume 時に `AI_FALLBACK_USED`（`emergency_bot`）から戻す想定を docs/03 §6 に書いた。
+- **Emergency Bot の登録はメモリ**: Event Log から導くには Session の全 Hand を読む必要がある（その CPU に手番が来なかった Hand には記録が残らない）。再起動後の Resume は Phase 5 なので、今は Session のポインタに持つ（D88）。
 - **Session 終了は Hand を打ち切る**: Event を足すと Event の形が変わる（停止条件）ので足さない。内部エラーで止まった Hand と同じく「持ち越す Stack が決まらない Hand」として扱い、次は新しい Session（均等 Stack）にする。打ち切った Hand の Pot の Chip は Session ごと捨てる（新しい Session の中で Chip 総量は保たれる）。
 - **遅延表示の閾値 10 秒**: #50 の実測（中央値 約 7.2 秒・p90 約 8.6 秒）で、普段の待ちでは出さず p90 を超えたら出す値。障害として止める 30 秒より短い。暫定値として web の Config に置いた（OI-001）。
 
@@ -51,8 +51,13 @@ Phase 3（AI Opponents）の子 Issue。CPU が判断を返せない「障害」
   - `BOT_THINK_DELAY_MS=12000`（RuleBot）: 3 秒時点「CPU 1 の手番…」、11 秒時点「CPU 1 の手番…（AI応答が遅延しています）」、次の CPU の手番で補足が消える。
 - dev サーバーは確認後に停止した。
 
+## レビュー
+
+- 自己レビュー: P0 / P1 なし。P3 2 件（320×568 でダイアログ下端が Hero の欄に重なる／Correction 中の障害を Retry すると同じ手番に attempt 1 の `AI_ACTION_INVALID` が 2 件並びうる）は残課題として記録し、直していない。
+- Codex 1 回目（`findings`）: [P1] Session 終了が Event Log に残らない（D37）。直すには Event の形の変更が要るため人間判断に回し、推奨案 (B)「Phase 3 はメモリのまま、Event 化は Phase 5 の Session Resume で設計する」が採用された（D88。2026-10-06・AskUserQuestion）。`docs/decision_log.yaml` に D88 を追記し、範囲表記（D01〜D88）を decision_log・docs/00・docs/10・README で揃え、docs/04 §10・docs/03 §6・Orchestrator のコメントに D88 を書いた。
+
 ## 残課題
 
 - 320×568 のような低い画面では、ダイアログの下端が Hero の欄に重なる（スクロールで押せる）。卓 UI のデザイン体系（#5）で Hero の欄の高さと合わせて見直す候補。
-- 再起動後の Resume（Phase 5）で、Emergency Bot の登録を Event Log から戻す。
+- Phase 5 の Session Resume で、Session 終了（Hand の打ち切り）と Emergency Bot の切り替えの Event 化を、Hand の中断・再開と合わせて設計する（D88）。
 - 遅延表示の閾値・判断待ちの上限は OI-001 の暫定値のまま。

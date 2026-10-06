@@ -157,7 +157,7 @@ interface HandRuntime {
   outage: OpponentOutage | null;
   /** 障害の状態が変わった回数（OutageStatus.revision）。 */
   outageRevision: number;
-  /** 障害の後に Hero が Session 終了を選んだ。この Hand は途中で打ち切り、以降は動かさない。 */
+  /** 障害の後に Hero が Session 終了を選んだ。この Hand は途中で打ち切り、以降は動かさない（メモリだけに持つ。D88）。 */
   abandoned: boolean;
 }
 
@@ -181,8 +181,7 @@ interface HandPlan {
 
 /**
  * 今の Session。持つのは ID の参照と Emergency Bot の選択だけで、Stack・席・Button は lastHandId の Event Log から読む（D37）。
- * Emergency Bot の選択はメモリにだけ持つ（再起動後の Resume は Phase 5。そのときは Session の Hand の
- * AI_FALLBACK_USED〔emergency_bot〕から戻す）。
+ * Emergency Bot の選択はメモリにだけ持つ（D88。Event Log への記録は Phase 5 の Session Resume で設計する）。
  */
 interface SessionPointer {
   readonly sessionId: string;

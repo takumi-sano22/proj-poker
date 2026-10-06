@@ -225,8 +225,8 @@ Fallback利用Hand / ActionにはFlagを付けます。
 実装（#52・D86）: 障害（§5）で止まったHandは、Heroが選ぶまで止めたままです（Pause＝ダイアログを出したまま止める形。再起動後のResumeはPhase 5）。選択は`HandOrchestrator.resolveOutage(handId, revision, choice)`（API は`POST /api/hands/:handId/outage`。§1の表）で受けます。
 
 - **Retry**: 同じ手番を、同じ`KnowledgeState`とLegal Actionでもう一度CPUに求めます。また障害なら同じ手番でまた止まります（`revision`が進む）。
-- **Emergency Botで続行**: そのCPUを、Sessionの終わりまでそのCPUの`RuleBot`（そのCPUのPersonaのまま。§2 `opponents/persona.ts`）で動かします。CPUには判断を求めず、手番ごとに`AI_FALLBACK_USED`（`fallbackKind: emergency_bot`・`reason`はきっかけの障害の種類。内部のエラー本文は入れない）とそのActionを1回の追記で置きます（Opponent Qualityの分析で通常の判断と混同しないFlag。`docs/06` §12）。選んだ記録はSession（Orchestratorのメモリ）に持ち、同じSessionの次のHandにも続きます。新しいSessionでは解除します。再起動後のResume（Phase 5）では、SessionのHandの`AI_FALLBACK_USED`（`emergency_bot`）から戻す想定です。
-- **Session終了**: そのHandを途中で打ち切り（Eventは足さず、Logはその時点のまま）、Sessionを終えます（`SessionStatus`は`ended`・`reason: ai_outage`）。打ち切ったHandは開始の再送でも返さず、次の開始は新しいSession（均等Stack）です。打ち切ったHandのPotに入っていたChipは、そのSessionとともに捨てます（次のSessionは均等Stackで始まるので、Chip総量は新しいSessionの中で保たれます）。
+- **Emergency Botで続行**: そのCPUを、Sessionの終わりまでそのCPUの`RuleBot`（そのCPUのPersonaのまま。§2 `opponents/persona.ts`）で動かします。CPUには判断を求めず、手番ごとに`AI_FALLBACK_USED`（`fallbackKind: emergency_bot`・`reason`はきっかけの障害の種類。内部のエラー本文は入れない）とそのActionを1回の追記で置きます（Opponent Qualityの分析で通常の判断と混同しないFlag。`docs/06` §12）。選んだ記録はSession（Orchestratorのメモリ）に持ち、同じSessionの次のHandにも続きます。新しいSessionでは解除します。Event Logへの記録（切り替えのEvent化）はPhase 5のSession Resumeで設計します（D88）。
+- **Session終了**: そのHandを途中で打ち切り（Eventは足さず、Logはその時点のまま。打ち切りのEvent化はPhase 5のSession Resumeで設計する。D88）、Sessionを終えます（`SessionStatus`は`ended`・`reason: ai_outage`）。打ち切ったHandは開始の再送でも返さず、次の開始は新しいSession（均等Stack）です。打ち切ったHandのPotに入っていたChipは、そのSessionとともに捨てます（次のSessionは均等Stackで始まるので、Chip総量は新しいSessionの中で保たれます）。
 
 Heroに返すのは「どのCPUの手番か・障害の種類」（`OutageStatus`）だけで、内部のエラー本文（資格情報やパスを含みうる）・Persona・CPUの出力は返しません（server のログには本文を残します）。Eventの形・DBのスキーマは変えていません。
 
