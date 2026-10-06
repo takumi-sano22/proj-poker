@@ -39,13 +39,13 @@ interface Hand {
   events: HandEvent[];
 }
 
-function start(): Hand {
+function start(boardCards: string = board): Hand {
   const result = startHand({
     handId: "summary",
     seats,
     buttonPlayerId: "btn",
     config: PHASE1_CASH_PRESET,
-    deal: { deck: stackedDeck(seats, "btn", holes, board) },
+    deal: { deck: stackedDeck(seats, "btn", holes, boardCards) },
   });
   if (!result.ok) throw new Error(result.error.message);
   return { state: result.value.state, events: [...result.value.events] };
@@ -89,8 +89,8 @@ const fold: PlayerAction = { type: "fold" };
 const cardsIn = (value: unknown) => collectCards(value).map(cardToString);
 
 /** utg（AA）が Preflop に Raise、Flop に Bet、Turn に Check、River に Bet し、btn（22）と Showdown する。 */
-function fullHand(): Hand {
-  return play(start(), [
+function fullHand(boardCards: string = board): Hand {
+  return play(start(boardCards), [
     ["utg", { type: "raise", amount: 6 }],
     ["btn", call],
     ["sb", fold],
@@ -166,6 +166,16 @@ describe("Hero の判断と判断時点の Information Set", () => {
     // River の判断時点の Pot・Call 額（判断時点の Math）。
     expect(sets[3]?.knowledge.pot).toBe(39);
     expect(sets[3]?.knowledge.math.callAmount).toBe(0);
+  });
+
+  it("River の Card だけを入れ替えても、Turn までの判断の Information Set は変わらない（Hindsight を読まない）", () => {
+    const original = heroInformationSets(fullHand().events, "utg");
+    const swapped = heroInformationSets(
+      fullHand("Ks Qs 9h 8h 2s").events,
+      "utg",
+    );
+    expect(swapped.slice(0, 3)).toEqual(original.slice(0, 3));
+    expect(swapped[3]?.knowledge.board.map(cardToString).at(-1)).toBe("2s");
   });
 
   it("判断より後の Event を切り落としても、Information Set は変わらない（Hindsight を読まない）", () => {

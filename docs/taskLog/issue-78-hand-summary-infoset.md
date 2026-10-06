@@ -25,7 +25,7 @@ Phase 5 の 2 つ目の子 Issue。Event Log（正本。D37）から、Hand Summ
 - `packages/engine/src/learning-reveal.ts`（新規）: `projectLearningReveal`。
 - `packages/engine/src/index.ts`: 上記を公開。
 - `packages/engine/src/testing/view-leaks.ts`: `hiddenMarkers` に Session の system Event の種別名と `learning_only` を足した。`tamperHiddenEvents` で Session の system Event の中身も差し替える。
-- `packages/engine/src/hand-summary.test.ts`（新規・Scenario 16 件）: 判断と判断時点・未来の Board / 他者の札 / 結果が入らないこと・切り落としても同じ・裁定と Out-of-Turn の扱い・Important Spot の各理由としきい値・Summary（Pot・Showdown・収支・system Event・打ち切り・進行中）・Learning-only Reveal と INV-TEST-008 相当。
+- `packages/engine/src/hand-summary.test.ts`（新規・Scenario 17 件）: 判断と判断時点・River の Card だけを入れ替えても Turn までの判断は同じ・未来の Board / 他者の札 / 結果が入らないこと・切り落としても同じ・裁定と Out-of-Turn の扱い・Important Spot の各理由としきい値・Summary（Pot・Showdown・収支・system Event・打ち切り・進行中）・Learning-only Reveal と INV-TEST-008 相当。
 - `packages/engine/src/hand-summary.property.test.ts`（新規）: Hero が Canonical Action と物理的な操作（Out-of-Turn を含む）を混ぜ、CPU の手番に system の記録を置き、時々打ち切る Hand で、全判断の Information Set に未来の Card・他者の Hidden Cards・system / engine の Event・Learning-only Reveal が入らないこと（判断時点の全情報の State との比較・見えない Event の差し替え・判断後の切り落とし）、Summary の Chip 保存、Reveal でだけ見える札がどの CPU の KnowledgeState（全 prefix）にも入らないことを確かめる。空振りしていないこと（裁定・OOT の拘束・打ち切り・River・Important Spot・system を通った）も確かめる。
 - `apps/server/src/replay.ts`: `ReplayHand.importantSpots`（`stepIndex` / `decisionIndex` / `street` / `reasons`）と `replayImportantSpots`。step が見つからなければ黙って落とさず投げる。
 - `apps/server/src/routes/replay.test.ts`: 各 Important Spot の step が判断の直前（Hero の手番・Action は未反映）であること、裁定の入った判断が Spot になることを確かめる。
