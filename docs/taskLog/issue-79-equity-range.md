@@ -15,7 +15,7 @@ Phase 5 の子 Issue。決定論の Math / Equity Engine と Range Model を Eng
 ## 設計方針
 
 - **Pot Odds は `pot-math.ts` の `potOdds` 1 か所**。KnowledgeState の `math`・Decision Analysis・web の Dealer Feedback / Vocabulary が同じ関数を使う。`breakEvenFoldFrequency`（F = B / (P + B)）も同じ場所。
-- **Equity の方式**（`equity.ts`）: 相手 1 人で「Combo 数 × 残りの Board の出方」が `maxExactEvaluations`（120 万）以内なら全列挙（Flop・Turn・River はすべて入る）。Preflop と Multiway は seed 固定の Monte Carlo（既定 seed 1・2 万回。標準誤差は約 0.35%）。乱数は `rng.ts` の seed 付き RNG だけで、同じ入力・同じ seed・同じ回数なら同じ結果。
+- **Equity の方式**（`equity.ts`）: Multiway の Monte Carlo は、相手全員の Combo を各 Range から独立に一様に選び、どれかが重なれば組ごと選び直す（Codex の指摘で、1 人ずつ選び直す方式が Range の並び順で偏ることを直した）。相手 1 人で「Combo 数 × 残りの Board の出方」が `maxExactEvaluations`（120 万）以内なら全列挙（Flop・Turn・River はすべて入る）。Preflop と Multiway は seed 固定の Monte Carlo（既定 seed 1・2 万回。標準誤差は約 0.35%）。乱数は `rng.ts` の seed 付き RNG だけで、同じ入力・同じ seed・同じ回数なら同じ結果。
 - **速い役の強さ**（`hand-strength.ts` の `handScore`）: Card を整数コードで持ち、Rank の枚数と Suit ごとの Rank の bit から直接役を決める。返す値は `evaluateHand(...).score` と同じ式で畳み、一致を Property Test で確かめる（Equity の勝敗判定が Hand Evaluator と食い違わないことの担保）。
 - **Range Model**（`range.ts` / `range-config.ts` / `range-model.ts`）: Range の略記（`TT+`・`ATs+`・`A5s-A2s`・`random` など）を展開する。Config の `RangeProfile` は Position ごとの open と、limp / call_open / three_bet / call_three_bet / four_bet_plus の Range、Postflop の絞り込みの割合を持つ。標準（standard）に加え、D08 の別想定として狭い（tight）・広い（loose）を同じ形で持つ。中身は暫定値で、根拠（docs/research/02 §8〜§10 と SOURCES の出典）をコメントに書いた。Solver の出力や特定の Chart の転記ではないことも明記した。
 - 相手の Preflop の分類は、公開された Action の履歴から「その相手の最後の Preflop の Action と、それより前の Raise の回数」で決める。まだ Action していない相手と BB の Check は絞る材料が無いので `random`。All-in はその時点の最高額を超えれば Raise として数える。
@@ -55,7 +55,7 @@ Phase 5 の子 Issue。決定論の Math / Equity Engine と Range Model を Eng
 ## 実行した確認
 
 - `pnpm lint` / `pnpm typecheck` / `pnpm format:check`: 通過。
-- `pnpm test`: engine 324・web 109・server 195 件が通過。engine のテストは 3 回続けて実行し、すべて通過（Property Test・性能の上限を含む）。
+- `pnpm test`: engine 326・web 109・server 195 件が通過。engine のテストは 3 回続けて実行し、すべて通過（Property Test・性能の上限を含む）。
 - 性能の実測（vitest の各テストの所要時間）: Flop の手札 vs 全 1326 Combo の全列挙 約 160ms、Preflop の手札 vs BTN の Open Range（Monte Carlo 2 万回）約 10ms、Flop の 3-way（Monte Carlo 2 万回）約 20ms。上限は 500ms。
 - web を `vite build` し、バンドルに Engine の Equity・Range のコードが入っていないこと（Pot Odds の関数だけ）を確かめた。
 

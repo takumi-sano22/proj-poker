@@ -114,6 +114,30 @@ describe("equityVsRanges: 既知の値", () => {
   });
 });
 
+describe("equityVsRanges: Multiway の組の重み", () => {
+  // River の Board 2c 7d 9s Jh 3h、Hero QsQh（Q のワンペア）。
+  // 相手 1 の Range: A = KcKd（Hero の負け）・B = 4c4d（Hero の勝ち）。
+  // 相手 2 の Range: C1 = Kc5s（A と Kc が重なる）・C2 = 5c6c・C3 = 8c8d（どれも Hero の勝ち。5-6-7 は 4 か 8 が無く Straight にならない）。
+  // 重ならない組は (A,C2)・(A,C3)・(B,C1)・(B,C2)・(B,C3) の 5 通りで、各 Range 独立の条件付き分布ではどれも等しい重み。
+  // Hero が勝つのは相手 1 が B の 3 通り → Equity = 3 / 5。相手 1 を先に一様に選ぶ偏った抽選だと 1 / 2 になる。
+  const hero = cards("Qs Qh");
+  const board = cards("2c 7d 9s Jh 3h");
+  const first = [combo("Kc Kd"), combo("4c 4d")];
+  const second = [combo("Kc 5s"), combo("5c 6c"), combo("8c 8d")];
+
+  it("重ならない組の上で一様に選ぶ（3 / 5 に近い）", () => {
+    const result = equityVsRanges(hero, board, [first, second]);
+    expect(result.method).toBe("monte_carlo");
+    // 2 万回の標準誤差は約 0.35%。±1.5% で 1/2 とははっきり分かれる。
+    expect(Math.abs(result.equity - 3 / 5)).toBeLessThan(0.015);
+  });
+
+  it("Range の並び順を入れ替えても同じ分布になる", () => {
+    const result = equityVsRanges(hero, board, [second, first]);
+    expect(Math.abs(result.equity - 3 / 5)).toBeLessThan(0.015);
+  });
+});
+
 describe("equityVsRanges: 決定論", () => {
   it("同じ入力・同じ seed なら同じ結果になる", () => {
     const range = parseRange(STANDARD_RANGE_PROFILE.open.CO);

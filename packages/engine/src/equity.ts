@@ -155,10 +155,10 @@ function exactHeadsUp(
   };
 }
 
-// 相手の Combo を選び直す回数の上限（他の相手・Board と重なったとき）。届かない試行は数えない。
+// 相手全員の Combo の組を選び直す回数の上限（相手同士で重なったとき）。届かない試行は数えない。
 const MAX_REDRAWS = 100;
 
-/** seed 固定の Monte Carlo。相手の Combo を Range から一様に選び、残りの Board を残りの Card から一様に配る。 */
+/** seed 固定の Monte Carlo。相手の Combo の組を「重ならない組」の上で一様に選び、残りの Board を残りの Card から一様に配る。 */
 function monteCarlo(
   hero: readonly CardCode[],
   board: readonly CardCode[],
@@ -180,23 +180,27 @@ function monteCarlo(
   let ties = 0;
   let trials = 0;
   for (let s = 0; s < options.samples; s++) {
-    used.fill(0);
-    let ok = true;
-    for (let v = 0; v < ranges.length && ok; v++) {
-      const range = ranges[v] as RangeCodes;
-      ok = false;
-      for (let t = 0; t < MAX_REDRAWS; t++) {
+    // 相手全員の Combo を各 Range から独立に一様に選び、どれかが重なれば組ごと選び直す（組ごとの棄却）。
+    // 1 人ずつ選んで重なった相手だけを選び直すと、先に選ぶ相手の Combo の確率が後の相手の Range との重なり方を
+    // 反映せず、Range の並び順で結果が偏る。組ごとに棄却すれば「重ならない組」の上で一様（各 Range 独立の条件付き分布）になる。
+    let ok = false;
+    for (let t = 0; t < MAX_REDRAWS && !ok; t++) {
+      used.fill(0);
+      ok = true;
+      for (let v = 0; v < ranges.length; v++) {
+        const range = ranges[v] as RangeCodes;
         const [a, b] = range[randomInt(rng, range.length)] as readonly [
           CardCode,
           CardCode,
         ];
-        if (used[a] || used[b]) continue;
+        if (used[a] || used[b]) {
+          ok = false;
+          break;
+        }
         used[a] = 1;
         used[b] = 1;
         (villains[v] as CardCode[])[0] = a;
         (villains[v] as CardCode[])[1] = b;
-        ok = true;
-        break;
       }
     }
     if (!ok) continue;
