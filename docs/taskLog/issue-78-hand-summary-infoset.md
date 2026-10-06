@@ -33,7 +33,7 @@ Phase 5 の 2 つ目の子 Issue。Event Log（正本。D37）から、Hand Summ
 
 ## 実行した確認
 
-- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 254・server 195・web 109 件が通過）/ `pnpm format:check`: すべて通過。
+- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 255・server 195・web 109 件が通過）/ `pnpm format:check`: すべて通過。
 - Property テストは 3 回続けて実行し通過（空振り検査を含む）。
 
 ## 残課題
