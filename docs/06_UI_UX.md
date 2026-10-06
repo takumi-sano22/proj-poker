@@ -155,7 +155,7 @@ Option:
 
 Handが終わるまではLearning-only Hidden Cardsを見せません。
 
-実装（#67。D12・D15・D93）: Heroが Fold した後（またはHandから外れている間）のHandの途中だけ、Heroの欄に「Fast Forward」のON / OFFを出します（`components/FastForward.tsx`）。ONにすると、そのHandの残りのCPUの思考待ち（`BOT_THINK_DELAY_MS`の演出。待っている最中の分も今すぐ終える）を0にし、卓の動きの演出（transition）も止めます。縮むのは演出の待ちだけで、AI（Claude）の応答を待つ時間そのものは縮まず、`OPPONENT_TIMEOUT_MS`の上限も変わりません。速くなると誤解させないよう、Fast Forward中もCPUの手番の案内は「<CPU 名> の手番…」のまま出し（遅延が長引けば「AI応答が遅延しています」の補足も同じ）、操作の横に「CPU の思考の待ちを短くします。AI の応答を待つ時間そのものは短くなりません。」を常に添えます。Handが終わったら自動で通常の速さに戻り、次のHandはOFFで始まります。観戦中のViewは通常どおりSSEで届くHeroのViewだけで、Showdownで公開された札以外は伏せたままです。FastForwardの操作はEventに残さない運用の状態で、serverのメモリにだけ持ちます（Emergency Botの選択と同じ扱い。D88）。
+実装（#67。D12・D15・D93）: Heroが Fold した後（またはHandから外れている間）のHandの途中だけ、Heroの欄に「Fast Forward」のON / OFFを出します（`components/FastForward.tsx`）。ONにすると、そのHandの残りのCPUの思考待ち（`BOT_THINK_DELAY_MS`の演出。待っている最中の分も今すぐ終える）を0にし、卓の動きの演出（transition）も止めます。縮むのは演出の待ちだけで、AI（Claude）の応答を待つ時間そのものは縮まず、`OPPONENT_TIMEOUT_MS`の上限も変わりません。速くなると誤解させないよう、Fast Forward中もCPUの手番の案内は「<CPU 名> の手番…」のまま出し（遅延が長引けば「AI応答が遅延しています」の補足も同じ）、操作の横に「CPU の思考の待ちを短くします。AI の応答を待つ時間そのものは短くなりません。」を常に添えます。Handが終わったら自動で通常の速さに戻り、次のHandはOFFで始まります。観戦中のViewは通常どおりSSEで届くHeroのViewだけで、Showdownで公開された札以外は伏せたままです。FastForwardの操作はEventに残さない演出の状態で、serverのメモリにだけ持ちます。
 
 ## 9. Hint UI
 
@@ -200,7 +200,7 @@ Replay:
 - Play / Pause
 - Jump to Important Spot
 
-実装（#68・D93）: 見出しの「Replay を見る」で Hand の一覧（開始の新しい順。開始時刻・Hero の札・Hero の収支〔実額 + BB 補助〕、途中で終わった Hand は「未完了」）を開き、選んだ Hand を Hero の視点で一手ずつ再生します（`components/ReplayScreen.tsx`）。操作は「前へ（Previous）」「再生（Play）」「一時停止（Pause）」「次へ（Next）」で、再生は最後の step で止まり、最後の step で「再生」を押すと最初から再生し直します。卓・進行ログ・Chip の構成・Dealer Feedback・用語の詳細は卓の画面と同じ部品で出し、他者の札は Showdown で公開された step から表に向きます。Hero の宣言・Chip の操作・裁定もそれぞれ 1 step です（Action に決まった裁定はその Action と同じ step）。狭い画面でも 3 つの操作 Button が 1 行に並ぶよう、ラベルは日本語と英語の 2 段にしています。Jump to Important Spot と Learning-only Full Reveal は Phase 5 の Review で扱います（D93）。
+実装（#68・D93）: 見出しの「Replay を見る」で Hand の一覧（開始の新しい順。開始時刻・Hero の札・Hero の収支〔実額 + BB 補助〕、途中で止まった Hand は「未完了」、AI の障害で Session を終えて打ち切った Hand は「打ち切り」〔#77〕）を開き、選んだ Hand を Hero の視点で一手ずつ再生します（`components/ReplayScreen.tsx`）。操作は「前へ（Previous）」「再生（Play）」「一時停止（Pause）」「次へ（Next）」で、再生は最後の step で止まり、最後の step で「再生」を押すと最初から再生し直します。卓・進行ログ・Chip の構成・Dealer Feedback・用語の詳細は卓の画面と同じ部品で出し、他者の札は Showdown で公開された step から表に向きます。Hero の宣言・Chip の操作・裁定もそれぞれ 1 step です（Action に決まった裁定はその Action と同じ step）。狭い画面でも 3 つの操作 Button が 1 行に並ぶよう、ラベルは日本語と英語の 2 段にしています。Jump to Important Spot と Learning-only Full Reveal は Phase 5 の Review で扱います（D93）。
 
 ## 11. CPU待ち時間
 
