@@ -8,6 +8,7 @@ import {
   type PlayerChips,
 } from "@proj-poker/engine";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readAppVersion } from "./app-version.js";
 import { PHASE1_TABLE_SETUP, buildTableSetup } from "./config.js";
 import { InMemoryEventStore, type AppendContext } from "./event-store.js";
 import {
@@ -24,7 +25,10 @@ import {
   createClaudeOpponentFactory,
   type ClaudeQuery,
 } from "./opponents/claude-opponent.js";
-import { PERSONA_PRESETS } from "./opponents/persona.js";
+import {
+  PERSONA_PRESETS,
+  PERSONA_PROFILE_VERSION,
+} from "./opponents/persona.js";
 import { RuleBot, createRuleBot } from "./opponents/rule-bot.js";
 import { forbiddenKeys, leakedCards, personaTerms } from "./testing/leaks.js";
 
@@ -131,6 +135,14 @@ function finishedOf(events: readonly HandEvent[]) {
   if (finished?.type !== "HAND_FINISHED")
     throw new Error("HAND_FINISHED が無い");
   return finished;
+}
+
+/** Log の HAND_METADATA_RECORDED（Hand ごとの Metadata。#97）。HAND_STARTED の直後（seq 1）にある。 */
+function metadataOf(events: readonly HandEvent[]) {
+  const metadata = events[1];
+  if (metadata?.type !== "HAND_METADATA_RECORDED")
+    throw new Error("HAND_METADATA_RECORDED が seq 1 に無い");
+  return metadata;
 }
 
 function startedOf(events: readonly HandEvent[]) {
@@ -1142,6 +1154,21 @@ describe("HandOrchestrator", () => {
           orchestrator.outageStatus(next.value.handId)?.current,
         ).toBeNull();
         await playOut(orchestrator, next.value.handId, next.value.view);
+        // Hand の開始時の Metadata（#97）: 切り替えた Hand は開始時の実装のまま、次の Hand からその CPU は emergency_bot。
+        const providerOf = (id: string) =>
+          metadataOf(events(id)).cpuSeats.find((c) => c.playerId === cpu);
+        expect(providerOf(handId)?.provider).toBe("rule_bot");
+        expect(providerOf(next.value.handId)).toEqual({
+          playerId: cpu,
+          provider: "emergency_bot",
+          modelRole: null,
+          model: null,
+        });
+        expect(
+          metadataOf(events(next.value.handId))
+            .cpuSeats.filter((c) => c.playerId !== cpu)
+            .every((c) => c.provider === "rule_bot"),
+        ).toBe(true);
 
         for (const id of [handId, next.value.handId]) {
           const log = events(id);
@@ -1423,34 +1450,37 @@ describe("HandOrchestrator", () => {
   });
 });
 
+/** Claude を呼ばない Fake: Prompt を CPU ごとに prompts へ記録し、call / check / fold の順に選べるものを返す。 */
+function recordingClaudeQuery(prompts: Map<string, string[]>): ClaudeQuery {
+  return (params) => {
+    const viewer = /あなたの ID は (\w+)/.exec(params.prompt)?.[1] ?? "?";
+    prompts.set(viewer, [...(prompts.get(viewer) ?? []), params.prompt]);
+    const schema = params.options.outputFormat as unknown as {
+      schema: { properties: { action: { enum: string[] } } };
+    };
+    const allowed = schema.schema.properties.action.enum;
+    const action =
+      ["call", "check", "fold"].find((a) => allowed.includes(a)) ?? "fold";
+    return (async function* () {
+      await Promise.resolve();
+      yield {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "",
+        structured_output: { action },
+      } as never;
+    })();
+  };
+}
+
 describe("Persona（#51）", () => {
   it("Claude の Prompt には自分の Persona だけが入り、CPU の入力（KnowledgeState）・Event Log・Hero の View には誰の Persona も入らない", async () => {
     const prompts = new Map<string, string[]>();
-    // Claude を呼ばない Fake: Prompt を CPU ごとに記録し、call / check / fold の順に選べるものを返す。
-    const query: ClaudeQuery = (params) => {
-      const viewer = /あなたの ID は (\w+)/.exec(params.prompt)?.[1] ?? "?";
-      prompts.set(viewer, [...(prompts.get(viewer) ?? []), params.prompt]);
-      const schema = params.options.outputFormat as unknown as {
-        schema: { properties: { action: { enum: string[] } } };
-      };
-      const allowed = schema.schema.properties.action.enum;
-      const action =
-        ["call", "check", "fold"].find((a) => allowed.includes(a)) ?? "fold";
-      return (async function* () {
-        await Promise.resolve();
-        yield {
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          result: "",
-          structured_output: { action },
-        } as never;
-      })();
-    };
     const claude = createClaudeOpponentFactory({
       model: "test-model",
       env: {},
-      query,
+      query: recordingClaudeQuery(prompts),
     });
     const inputs: OpponentInput[] = [];
     const spy: OpponentFactory = (seed, playerId, persona) => {
@@ -1498,6 +1528,105 @@ describe("Persona（#51）", () => {
     // Event Log（DB に保存される正本）には Deck の記録もあるので、Persona の語だけを見る。
     expect(personaTerms(events(started.value.handId))).toEqual([]);
     expect(forbiddenKeys(finalView)).toEqual([]);
+  });
+});
+
+describe("Hand ごとの Metadata（#97）", () => {
+  it("Hand の開始時に HAND_STARTED の直後へ system の Metadata を置き、座った CPU を席順に残す（Hero は入れない）", async () => {
+    const { orchestrator, events } = setup();
+    const first = await orchestrator.startHand(null);
+    if (!first.ok) throw new Error(first.error.message);
+    await playOut(orchestrator, first.value.handId, first.value.view);
+    const second = await orchestrator.startHand(first.value.handId);
+    if (!second.ok) throw new Error(second.error.message);
+    for (const id of [first.value.handId, second.value.handId]) {
+      const log = events(id);
+      const started = startedOf(log);
+      expect(metadataOf(log)).toEqual({
+        type: "HAND_METADATA_RECORDED",
+        seq: 1,
+        visibility: { type: "system" },
+        // App Version は apps/server の package.json の version（省略時の既定）。
+        appVersion: readAppVersion(),
+        ruleProfileVersion: PHASE1_TABLE_SETUP.table.ruleProfile,
+        cpuProfileVersion: PERSONA_PROFILE_VERSION,
+        // 既定の実装は RuleBot（Model を使わないので null）。
+        cpuSeats: started.seats
+          .filter((s) => s.playerId !== HERO)
+          .map((s) => ({
+            playerId: s.playerId,
+            provider: "rule_bot",
+            modelRole: null,
+            model: null,
+          })),
+      });
+      // 1 Hand に 1 つだけ。
+      expect(
+        log.filter((e) => e.type === "HAND_METADATA_RECORDED"),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("Claude の CPU は Model Role と解決した具体モデルを残し、Prompt・CPU の入力・Hero の View には Metadata が入らない", async () => {
+    const prompts = new Map<string, string[]>();
+    const claude = createClaudeOpponentFactory({
+      model: "meta-test-model",
+      env: {},
+      query: recordingClaudeQuery(prompts),
+    });
+    const inputs: OpponentInput[] = [];
+    const spy: OpponentFactory = (seed, playerId, persona) => {
+      const inner = claude(seed, playerId, persona);
+      return {
+        decide(input, signal) {
+          inputs.push(input);
+          return inner.decide(input, signal);
+        },
+      };
+    };
+    const { orchestrator, events } = setup({
+      createOpponent: spy,
+      opponentInfo: {
+        provider: "claude",
+        modelRole: "opponent_fast",
+        model: "meta-test-model",
+      },
+      appVersion: "9.8.7-meta",
+    });
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const finalView = await playOut(
+      orchestrator,
+      started.value.handId,
+      started.value.view,
+    );
+
+    const metadata = metadataOf(events(started.value.handId));
+    expect(metadata.appVersion).toBe("9.8.7-meta");
+    expect(metadata.cpuSeats).toHaveLength(5);
+    for (const seat of metadata.cpuSeats) {
+      expect(seat).toMatchObject({
+        provider: "claude",
+        modelRole: "opponent_fast",
+        model: "meta-test-model",
+      });
+    }
+    // Metadata は system Visibility: Opponent の Prompt・KnowledgeState・Hero の View・SSE の View に入らない。
+    expect(prompts.size).toBeGreaterThan(0);
+    const leaked =
+      /HAND_METADATA|cpuSeats|appVersion|9\.8\.7-meta|meta-test-model|opponent_fast/;
+    for (const list of prompts.values()) {
+      for (const prompt of list) expect(prompt).not.toMatch(leaked);
+    }
+    expect(inputs.length).toBeGreaterThan(0);
+    for (const input of inputs) {
+      expect(forbiddenKeys(input)).toEqual([]);
+      expect(JSON.stringify(input)).not.toMatch(leaked);
+    }
+    expect(forbiddenKeys(finalView)).toEqual([]);
+    expect(JSON.stringify(finalView)).not.toMatch(leaked);
+    // Event Log には Persona の割り当てを入れない（Metadata は Preset 一式の版だけ）。
+    expect(personaTerms(events(started.value.handId))).toEqual([]);
   });
 });
 

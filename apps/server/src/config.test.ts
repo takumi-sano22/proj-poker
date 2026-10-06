@@ -16,6 +16,7 @@ import {
   PHASE1_TABLE_SETUP,
   buildTableSetup,
   fixedSeedSequence,
+  opponentInfoOf,
   parseBotDelayMs,
   parseFixedSeed,
   parseOpponentProvider,
@@ -183,6 +184,21 @@ describe("parseOpponentProvider", () => {
     for (const raw of ["Claude", "anthropic", "true"]) {
       expect(() => parseOpponentProvider(raw)).toThrow(RangeError);
     }
+  });
+});
+
+describe("opponentInfoOf（Hand ごとの Metadata。#97）", () => {
+  it("RuleBot は Model を持たず、Claude は opponent_fast を role-based config で解決したモデル名を持つ", () => {
+    expect(opponentInfoOf("rulebot")).toEqual({
+      provider: "rule_bot",
+      modelRole: null,
+      model: null,
+    });
+    expect(opponentInfoOf("claude")).toEqual({
+      provider: "claude",
+      modelRole: "opponent_fast",
+      model: MODEL_ROLES.opponent_fast,
+    });
   });
 });
 

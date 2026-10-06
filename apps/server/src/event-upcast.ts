@@ -2,9 +2,18 @@
 // 保存済みの行は書き換えない（events は append-only。D37）。読むたびに同じ変換をする。
 import type { HandEvent } from "@proj-poker/engine";
 
+/** 版 1〜6 に無い Event（Hand ごとの Best-effort Metadata。版 7 で足した。#97）。 */
+type MetadataEventV7 = Extract<HandEvent, { type: "HAND_METADATA_RECORDED" }>;
+
+/**
+ * 版 6 の Event。版 7 は Event の種類（HAND_METADATA_RECORDED）を足しただけで、版 6 にあった Event の形は変えていないので、
+ * 版 6 の Event はそのまま版 7 の Event として読める（変換は要らない）。
+ */
+export type HandEventV6 = Exclude<HandEvent, MetadataEventV7>;
+
 /** 版 1〜5 に無い Event（Session の開始・終了・Hand の打ち切り・Emergency Bot への切り替え。版 6 で足した。D95）。 */
 type SessionEventV6 = Extract<
-  HandEvent,
+  HandEventV6,
   {
     type:
       | "SESSION_STARTED"
@@ -18,7 +27,7 @@ type SessionEventV6 = Extract<
  * 版 5 の Event。版 6 は Event の種類（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED / EMERGENCY_BOT_ENGAGED）を足しただけで、
  * 版 5 にあった Event の形は変えていないので、版 5 の Event はそのまま版 6 の Event として読める（変換は要らない）。
  */
-export type HandEventV5 = Exclude<HandEvent, SessionEventV6>;
+export type HandEventV5 = Exclude<HandEventV6, SessionEventV6>;
 
 /** 版 1〜4 に無い Event（Hero の宣言・Chip の操作・Dealer の裁定。版 5 で足した。D90）。 */
 type LiveEventV5 = Extract<

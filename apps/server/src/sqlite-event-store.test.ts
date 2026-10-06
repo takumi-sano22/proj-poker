@@ -570,12 +570,51 @@ describe("SqliteEventStore（保存の経路）", () => {
     orchestrator.close();
     const before = store.read("hand-1").map((s) => s.event);
     expect(before.at(-1)?.type).toBe("HAND_FINISHED");
+    // Hand ごとの Metadata（#97）も現在の版で一緒に保存する（events のテーブル・列は変えない）。
+    expect(before[1]?.type).toBe("HAND_METADATA_RECORDED");
 
     expect(
       reopen()
         .read("hand-1")
         .map((s) => s.event),
     ).toEqual(before);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT type, schema_version FROM events WHERE hand_id = 'hand-1' AND seq = 1",
+          )
+          .all(),
+      ).toEqual([
+        {
+          type: "HAND_METADATA_RECORDED",
+          schema_version: EVENT_SCHEMA_VERSION,
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("版 6 の行（Metadata の無い Hand）は変換せずに読み、Metadata を作り直さない。行は書き換えない（D76・#97）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const v6 = [...started, ...rest];
+    expect(v6.some((e) => e.type === "HAND_METADATA_RECORDED")).toBe(false);
+    insertRows("h1", 6, v6);
+    expect(
+      open()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(v6);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 6 }]);
+    } finally {
+      db.close();
+    }
   });
 });
 
@@ -800,7 +839,7 @@ describe("SqliteEventStore（Session の永続化と Resume。#77・D95）", () 
   });
 });
 
-/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4〜6 で足した種類は版 2 に無いので渡さない。 */
+/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4〜7 で足した種類は版 2 に無いので渡さない。 */
 function toV2(events: readonly HandEvent[]): HandEventV2[] {
   return events.map((e): HandEventV2 => {
     if (
@@ -812,7 +851,8 @@ function toV2(events: readonly HandEvent[]): HandEventV2[] {
       e.type === "SESSION_STARTED" ||
       e.type === "SESSION_ENDED" ||
       e.type === "HAND_ABORTED" ||
-      e.type === "EMERGENCY_BOT_ENGAGED"
+      e.type === "EMERGENCY_BOT_ENGAGED" ||
+      e.type === "HAND_METADATA_RECORDED"
     ) {
       throw new Error(`版 2 に無い Event: ${e.type}`);
     }

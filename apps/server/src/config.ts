@@ -189,6 +189,40 @@ export type ModelRole = keyof typeof MODEL_ROLES;
 /** CPU の判断に使う実装。既定は RuleBot（D71）。"claude" のときだけ Claude（Agent SDK・OAuth。D87）を使う。 */
 export type OpponentProvider = "rulebot" | "claude";
 
+/**
+ * CPU の判断に使う実装の記録用の説明（Hand ごとの Metadata の席ごとの provider / Model Role / Concrete Model。#97）。
+ * createOpponent と組で決め、Orchestrator が HAND_METADATA_RECORDED に写す。Emergency Bot は Orchestrator が席ごとに上書きする。
+ */
+export type OpponentInfo =
+  | {
+      readonly provider: "rule_bot";
+      readonly modelRole: null;
+      readonly model: null;
+    }
+  | {
+      readonly provider: "claude";
+      readonly modelRole: ModelRole;
+      readonly model: string;
+    };
+
+/** RuleBot の説明（既定。D71）。 */
+export const RULE_BOT_INFO: OpponentInfo = {
+  provider: "rule_bot",
+  modelRole: null,
+  model: null,
+};
+
+/** OPPONENT_PROVIDER の値から記録用の説明を作る。Claude のモデルは role-based config（opponent_fast）で解決する。 */
+export function opponentInfoOf(provider: OpponentProvider): OpponentInfo {
+  return provider === "claude"
+    ? {
+        provider: "claude",
+        modelRole: "opponent_fast",
+        model: MODEL_ROLES.opponent_fast,
+      }
+    : RULE_BOT_INFO;
+}
+
 /** 環境変数 OPPONENT_PROVIDER の値を読む。未設定・空なら RuleBot。知らない値は起動時に誤りとして止める（黙って RuleBot にしない）。 */
 export function parseOpponentProvider(
   raw: string | undefined,
