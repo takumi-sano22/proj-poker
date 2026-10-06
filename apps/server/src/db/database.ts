@@ -62,6 +62,43 @@ export const MIGRATIONS: readonly string[] = [
     CHECK ((state = 'ended') = (end_reason IS NOT NULL))
   ) STRICT;
   `,
+  // v3: Review（docs/04 §8・D95・D39）。Hand の判断ごとの Review を Version 付きで追記し、上書きしない（UPDATE は Trigger で拒否）。
+  // 再生成は同じ Hand・判断・Pass の次の version の行になる（(hand_id, decision_index, pass, version) が一意）。既存のテーブル・行は変えない。
+  // evidence は Review AI に渡した構造化 Evidence（判断時点の情報だけ）、explanation は説明（Practical → Theory → Exploit と結論が変わる条件）、
+  // assumptions・evidence_ids は JSON。concrete_model は Review AI を呼ばなかった（Gate で止めた）とき NULL、
+  // solver_version は Supported の Solver Evidence を使わなかったとき NULL、failure は出力の検証に失敗したときだけ持つ。
+  `
+  CREATE TABLE reviews (
+    review_id      TEXT PRIMARY KEY,
+    hand_id        TEXT NOT NULL REFERENCES hands (hand_id),
+    decision_index INTEGER NOT NULL CHECK (decision_index >= 0),
+    action_seq     INTEGER NOT NULL CHECK (action_seq >= 0),
+    pass           TEXT NOT NULL CHECK (pass IN ('decision')),
+    version        INTEGER NOT NULL CHECK (version >= 1),
+    created_at     TEXT NOT NULL,
+    depth          TEXT NOT NULL CHECK (depth IN ('standard', 'deep')),
+    model_role     TEXT NOT NULL CHECK (model_role IN ('review_standard', 'review_deep')),
+    concrete_model TEXT,
+    kb_version     TEXT NOT NULL,
+    solver_version TEXT,
+    generated_by   TEXT NOT NULL CHECK (generated_by IN ('review_ai', 'sufficiency_gate', 'invalid_output_fallback')),
+    assessment     TEXT NOT NULL CHECK (assessment IN ('strong', 'reasonable', 'mixed_marginal', 'improvement_suggested', 'major_leak', 'insufficient_evidence')),
+    confidence     TEXT NOT NULL CHECK (confidence IN ('low', 'medium', 'high')),
+    assumptions    TEXT NOT NULL CHECK (json_valid(assumptions)),
+    evidence_ids   TEXT NOT NULL CHECK (json_valid(evidence_ids)),
+    explanation    TEXT NOT NULL CHECK (json_valid(explanation)),
+    evidence       TEXT NOT NULL CHECK (json_valid(evidence)),
+    failure        TEXT CHECK (failure IS NULL OR json_valid(failure)),
+    UNIQUE (hand_id, decision_index, pass, version)
+  ) STRICT;
+
+  -- 過去の Review を上書きしない（D39）。削除は Hand History Delete（docs/04 §11）と一緒に設計するため、ここでは塞がない。
+  CREATE TRIGGER reviews_append_only
+  BEFORE UPDATE ON reviews
+  BEGIN
+    SELECT RAISE(ABORT, 'reviews is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

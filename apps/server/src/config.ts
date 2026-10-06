@@ -175,10 +175,13 @@ export function resolveDbPath(raw: string | undefined): string {
 
 /**
  * Model Role ごとの具体モデル名（role-based config。docs/03 §3・docs/05 §13）。Domain Logic にモデル名を書かず、ここで解決する。
- * 値は暫定値（D85・OI-001。確定ではない）。Review の Role（review_standard / review_deep）は Review を作る Issue で足す。
+ * 値は暫定値（OI-001。確定ではない）。opponent_fast は D85、review_standard / review_deep は D97
+ * （review_deep は Hero が「詳しく」を選んだ Spot だけに使う）。
  */
 export const MODEL_ROLES = {
   opponent_fast: "claude-haiku-4-5",
+  review_standard: "claude-sonnet-5-5",
+  review_deep: "claude-opus-5-5",
 } as const;
 
 export type ModelRole = keyof typeof MODEL_ROLES;
@@ -208,10 +211,12 @@ export function resolveSolverHome(raw: string | undefined): string | null {
 
 /**
  * Solver の 1 回の Solve を待つ上限（ミリ秒）。暫定値（永久仕様ではない）。
- * #76 の実測（amaster97・WSL2・200 Iteration）で Turn が 5.7〜8.0 秒（中央値 7.7 秒）、River が約 0.9 秒だったため、Turn の最大の約 2.5 倍に置く。
+ * #76 の実測（amaster97・WSL2・200 Iteration・固定 Spot の狭い Range）で Turn が 5.7〜8.0 秒、River が約 0.9 秒だったため 20 秒に置いた。
+ * #82 で Review が Range Model の Range（SB の Call 221 Combo 対 BTN の Open 449 Combo・SPR 約 14）の Turn を解くと約 33 秒かかり（1 回の実測。Evidence の組み立て全体）、
+ * 20 秒では Timeout したため、その約 1.8 倍の 60 秒に見直した（Review の生成は非同期で、Hand の進行を止めない）。
  * 超えたら結果なしとして Fallback する。環境変数 SOLVER_TIMEOUT_MS で上書きできる。
  */
-export const DEFAULT_SOLVER_TIMEOUT_MS = 20_000;
+export const DEFAULT_SOLVER_TIMEOUT_MS = 60_000;
 
 /** 環境変数の値を Solve の上限として読む。未設定・不正（0 以下・小数・文字列）なら既定値に戻す。 */
 export function parseSolverTimeoutMs(raw: string | undefined): number {
@@ -233,6 +238,18 @@ export const DEFAULT_SOLVER_ITERATIONS = 200;
 
 export function parseSolverIterations(raw: string | undefined): number {
   return parsePositiveInt(raw, DEFAULT_SOLVER_ITERATIONS);
+}
+
+/**
+ * Review AI の 1 回の呼び出し（Claude の 1 問い合わせ。構造化出力の直しの 1 ターンを含む）を待つ上限（ミリ秒）。
+ * 暫定値（OI-001 の Latency Policy。永久仕様ではない）。超えたら呼び出しを止め、その Review の生成は失敗（timeout）として
+ * 再要求を待つ（Hand の進行は止めない）。#82 の手動の実測（claude-sonnet-5-5・Review Eval の 4 判断 × 3 回）は 12.5〜24.3 秒で、
+ * JSON の直しで 2 ターンになる回・review_deep（Opus）の遅さを見込んで最大の約 5 倍に置いた。環境変数 REVIEW_TIMEOUT_MS で上書きできる。
+ */
+export const DEFAULT_REVIEW_TIMEOUT_MS = 120_000;
+
+export function parseReviewTimeoutMs(raw: string | undefined): number {
+  return parsePositiveInt(raw, DEFAULT_REVIEW_TIMEOUT_MS);
 }
 
 /** 正の整数として読む。未設定・不正なら既定値に戻す（parseOpponentTimeoutMs と同じ作法）。 */
