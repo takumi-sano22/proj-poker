@@ -18,6 +18,12 @@ import { createRuleBot } from "./opponents/rule-bot.js";
 import { loadKb, type LoadedKb } from "./kb/index.js";
 import { ReplayService } from "./replay.js";
 import {
+  InMemoryFollowUpStore,
+  InMemoryRevealReviewStore,
+  type FollowUpStore,
+  type RevealReviewStore,
+} from "./review/reveal-store.js";
+import {
   InMemoryReviewStore,
   type ReviewStore,
 } from "./review/review-store.js";
@@ -28,9 +34,13 @@ import { registerReviewRoutes } from "./routes/reviews.js";
 import { createAmaster97Adapter } from "./solver/amaster97-adapter.js";
 import type { SolverAdapter } from "./solver/types.js";
 
-/** Review（#82）の組み立て。起動時（index.ts）は SQLite の Store・環境変数の Solver・SDK の query() を渡す。 */
+/** Review（#82・#83）の組み立て。起動時（index.ts）は SQLite の Store・環境変数の Solver・SDK の query() を渡す。 */
 export interface ReviewAppOptions {
   readonly store?: ReviewStore;
+  /** Pass B（Reveal Review）の Store。 */
+  readonly revealStore?: RevealReviewStore;
+  /** Follow-up の履歴の Store。 */
+  readonly followUpStore?: FollowUpStore;
   readonly kb?: LoadedKb;
   readonly solver?: SolverAdapter;
   /** Claude を呼ぶ子プロセスの環境（buildClaudeEnv の結果）。 */
@@ -98,6 +108,8 @@ export function buildApp(options: AppOptions = {}) {
   const reviews = new ReviewService({
     events: store,
     reviews: review.store ?? new InMemoryReviewStore(),
+    reveals: review.revealStore ?? new InMemoryRevealReviewStore(),
+    followUps: review.followUpStore ?? new InMemoryFollowUpStore(),
     heroId,
     kb: review.kb ?? loadKb(),
     solver:

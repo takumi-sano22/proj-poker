@@ -118,7 +118,8 @@ export function allEvidenceIds(evidence: ReviewEvidence): Set<string> {
   ]);
 }
 
-function decisionContext(
+/** 判断時点の卓（Decision Context）。Pass B（reveal-evidence.ts）も同じ形で使う。 */
+export function decisionContext(
   set: HeroInformationSet,
   importantSpotReasons: readonly ImportantSpotReason[],
   prefix: string,
@@ -290,6 +291,6 @@ function spotKindOf(knowledge: KnowledgeState): KbSpotKind {
     : "postflop_checked_to";
 }
 
-function yieldToEventLoop(): Promise<void> {
+export function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }

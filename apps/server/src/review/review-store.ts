@@ -3,13 +3,20 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import { inTransaction } from "../db/database.js";
-import type { ReviewDraft, ReviewPass, ReviewRecord } from "./types.js";
+import type { ReviewDraft, ReviewRecord } from "./types.js";
+
+/** reviews テーブルが持つ Pass（Pass A だけ。Pass B は reveal_reviews。reveal-store.ts）。 */
+type DecisionPass = ReviewDraft["pass"];
 
 export interface ReviewStore {
   /** 次の Version を付けて追記する（同じ Hand・判断・Pass の最大 Version + 1）。 */
   append(draft: ReviewDraft): ReviewRecord;
   /** その判断の Review を Version の昇順で返す。無ければ空配列。 */
-  list(handId: string, decisionIndex: number, pass: ReviewPass): ReviewRecord[];
+  list(
+    handId: string,
+    decisionIndex: number,
+    pass: DecisionPass,
+  ): ReviewRecord[];
 }
 
 export interface ReviewStoreOptions {
@@ -45,7 +52,7 @@ export class InMemoryReviewStore implements ReviewStore {
   list(
     handId: string,
     decisionIndex: number,
-    pass: ReviewPass,
+    pass: DecisionPass,
   ): ReviewRecord[] {
     return this.records
       .filter(
@@ -63,7 +70,7 @@ interface ReviewRow {
   hand_id: string;
   decision_index: number;
   action_seq: number;
-  pass: ReviewPass;
+  pass: DecisionPass;
   version: number;
   created_at: string;
   depth: ReviewRecord["depth"];
@@ -155,7 +162,7 @@ export class SqliteReviewStore implements ReviewStore {
   list(
     handId: string,
     decisionIndex: number,
-    pass: ReviewPass,
+    pass: DecisionPass,
   ): ReviewRecord[] {
     const rows = this.select.all(
       handId,
