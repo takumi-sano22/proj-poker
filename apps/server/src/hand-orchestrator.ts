@@ -1,15 +1,18 @@
 // Hand Orchestrator（docs/03 §4）。Engine・Event Store・CPU（Opponent Agent）をつなぎ、1 Hand を最後まで進める。
 // - State は毎回 Event Log（Event Store）から畳み込んで作る。Orchestrator は「もう一つの State」を持たない（D37）。
-// - Session（D80）も同じ: Orchestrator が持つのは「今の Session の ID と最後の Hand の ID」だけで、
-//   次 Hand の席・Button・持ち越す Stack は、最後の Hand の HAND_STARTED と HAND_FINISHED から Position Engine で決める。
+// - Session（D80）も同じ: Orchestrator が持つのは「今の Session の ID と最後の Hand の ID」と、Event の写し（Emergency Bot の CPU）・
+//   Session の開始時の設定（Persona の割り当て）だけで、次 Hand の席・Button・持ち越す Stack は、最後の Hand の HAND_STARTED と
+//   HAND_FINISHED から Position Engine で決める。Session の開始・終了は SESSION_STARTED / SESSION_ENDED として Event Log に残す（D95）。
+// - 再起動の前に Hand の合間で止まった Session は、Session Projection と最後の Hand の Event から戻して続ける（Resume。D62・D95）。
 // - 合法性は Engine だけが判定する。CPU の出力も Hero の入力も applyAction で検証する（D40）。
 // - CPU の判断は非同期（LLM を差し込めるように）。出力は Schema → Legal Action → Amount Range で検証し、
 //   不正なら理由を付けて 1 回だけ再要求、再度不正なら RuleBot の判断で続行する（D41）。
 //   不正な出力と Fallback の利用は AI_ACTION_INVALID / AI_FALLBACK_USED として Event Log に残す（D83。system Visibility で、
 //   Hero の View と CPU の KnowledgeState には入らない）。
 //   例外・応答時間の超過は「障害」として Hand を止め、RuleBot へ自動で切り替えない（D86）。
-//   続け方は Hero が選ぶ（resolveOutage。#52）: Retry（同じ手番をもう一度）/ Emergency Bot（その CPU を Session の終わりまで
-//   RuleBot にし、手番ごとに AI_FALLBACK_USED の emergency_bot を残す）/ Session 終了（その Hand を打ち切り、次は新しい Session）。
+//   続け方は Hero が選ぶ（resolveOutage。#52）: Retry（同じ手番をもう一度）/ Emergency Bot（EMERGENCY_BOT_ENGAGED を残し、その CPU を
+//   Session の終わりまで RuleBot にし、手番ごとに AI_FALLBACK_USED の emergency_bot を残す）/ Session 終了（その Hand を HAND_ABORTED で
+//   打ち切って SESSION_ENDED を続け、次は新しい Session）。選んだ結果は Event Log に残す（D95。メモリだけの状態にしない）。
 //   選ぶまでは止めたまま（Pause）。Hero に返す障害の情報は「どの CPU の手番か・障害の種類」だけで、エラー本文は返さない。
 // - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
 // - Hero の物理的な操作（宣言・Chip を出す・足す）は Ruling Engine で Canonical Action に裁定し、操作と裁定も Event Log に残す
@@ -24,6 +27,7 @@ import {
   projectHeroView,
   projectKnowledgeState,
   recordAiEvent,
+  recordSessionEvent,
   resolvePendingOutOfTurn,
   startHand,
   type EngineError,
@@ -35,6 +39,7 @@ import {
   type PhysicalAction,
   type PlayerAction,
   type SeatInit,
+  type SessionEndReason,
 } from "@proj-poker/engine";
 import type { SeatPlayer, TableSetup } from "./config.js";
 import type { EventStore } from "./event-store.js";
@@ -46,7 +51,11 @@ import {
   type OutageKind,
 } from "./opponents/opponent-agent.js";
 import { checkOpponentOutput } from "./opponents/opponent-output.js";
-import { PERSONA_PRESETS } from "./opponents/persona.js";
+import {
+  isPersonaPresetId,
+  PERSONA_PRESETS,
+  type PersonaPresetId,
+} from "./opponents/persona.js";
 import { RuleBot } from "./opponents/rule-bot.js";
 
 /** Orchestrator が返す失敗。Engine の拒否理由はそのまま通す。 */
@@ -60,14 +69,8 @@ export type OrchestratorError =
   /** Fast Forward は Hero が Hand から外れている間（Fold 後）だけ入れられる。Hero がまだ Hand にいる、または Hand が終わっている。 */
   | { readonly kind: "not_spectating"; readonly message: string };
 
-/**
- * Session が終わった理由（D80）。
- * - hero_busted: Hero の Stack が 0 になった
- * - hero_last_standing: CPU が全員 Bust し、Hero だけが残った
- * - ai_outage: CPU の障害のダイアログで Hero が Session 終了を選んだ（その Hand は途中で打ち切る。D86）
- */
-export type SessionEndReason =
-  "hero_busted" | "hero_last_standing" | "ai_outage";
+/** Session が終わった理由（D80・D86）。SESSION_ENDED の Event にも残すので、型は Engine の Event と共有する（D95）。 */
+export type { SessionEndReason };
 
 /**
  * ある Hand から見た Session の状態。Hero に返してよい情報（Hero 自身の結果と、次 Hand があるか）だけを持つ。
@@ -150,7 +153,7 @@ interface HandRuntime {
   readonly listeners: Set<HeroViewListener>;
   readonly outageListeners: Set<OutageListener>;
   /**
-   * Hero が Emergency Bot を選んだ CPU → 選んだきっかけの障害の種類。Session の終わりまで続くので、
+   * Hero が Emergency Bot を選んだ CPU → 選んだきっかけの障害の種類（EMERGENCY_BOT_ENGAGED の写し）。Session の終わりまで続くので、
    * 同じ Session の Hand は同じ Map を共有する（SessionPointer.emergencyBots）。
    */
   readonly emergencyBots: Map<string, OutageKind>;
@@ -164,12 +167,10 @@ interface HandRuntime {
   outage: OpponentOutage | null;
   /** 障害の状態が変わった回数（OutageStatus.revision）。 */
   outageRevision: number;
-  /** 障害の後に Hero が Session 終了を選んだ。この Hand は途中で打ち切り、以降は動かさない（メモリだけに持つ。D88）。 */
-  abandoned: boolean;
   /**
    * Fast Forward（D12・D15・D93）。Hero が Hand から外れている間だけ入れられ、その Hand の残りの CPU の思考待ち（演出）を 0 にする。
    * CPU の判断そのものの待ち（Claude の応答）は縮めない。Hand が終わる（commit が HAND_FINISHED を追記する）と切れる。
-   * 運用の状態なのでメモリにだけ持ち、Event には残さない（D88 の Emergency Bot と同じ扱い）。
+   * 演出の状態なのでメモリにだけ持ち、Event には残さない。
    */
   fastForward: boolean;
   /** 今の思考待ち（演出）を今すぐ終わらせる。思考待ちの最中でなければ null（判断待ち・アプリ終了の打ち切りとは別）。 */
@@ -190,18 +191,29 @@ type AskOutcome =
 /** 次 Hand の席・Button と、その Hand が属する Session。 */
 interface HandPlan {
   readonly sessionId: string;
+  /** 新しい Session の最初の Hand（SESSION_STARTED を置く）。 */
+  readonly newSession: boolean;
+  readonly personas: Readonly<Record<string, PersonaPresetId>>;
   readonly seats: readonly SeatInit[];
   readonly buttonPlayerId: string;
 }
 
 /**
- * 今の Session。持つのは ID の参照と Emergency Bot の選択だけで、Stack・席・Button は lastHandId の Event Log から読む（D37）。
- * Emergency Bot の選択はメモリにだけ持つ（D88。Event Log への記録は Phase 5 の Session Resume で設計する）。
+ * 今の Session。持つのは ID の参照と Emergency Bot の選択（EMERGENCY_BOT_ENGAGED の写し）と Persona の割り当てだけで、
+ * Stack・席・Button は lastHandId の Event Log から読む（D37）。再起動後は Session Projection から戻す（resumeSession。D95）。
  */
 interface SessionPointer {
   readonly sessionId: string;
   readonly lastHandId: string;
   readonly emergencyBots: Map<string, OutageKind>;
+  /** CPU の Persona の割り当て（Session の開始時の設定。Session の途中で設定を変えて再起動しても変えない）。 */
+  readonly personas: Readonly<Record<string, PersonaPresetId>>;
+}
+
+/** Hand の終わりから見た Session の状態と、続くなら次 Hand の席。 */
+interface SessionAfter {
+  readonly status: SessionStatus;
+  readonly next: Omit<HandPlan, "sessionId" | "newSession" | "personas"> | null;
 }
 
 const silentLogger: OrchestratorLogger = { warn: () => {}, error: () => {} };
@@ -232,6 +244,62 @@ export class HandOrchestrator {
     }
     this.heroId = hero.playerId;
     this.logger = options.logger ?? silentLogger;
+    this.session = this.resumeSession();
+  }
+
+  /**
+   * 再起動の前に Hand の合間で止まった Session を、最後に Hand が終わった Session の Session Projection と、その最後の Hand の
+   * Event から戻す（Resume。D62・D95）。戻すのは Projection が ready_for_next_hand で、最後の Hand の席の Player が今の卓の設定に
+   * そろっている（Hero が座っている）ときだけ。人数・Player の設定を変えて起動したら続けられないので、新しい Session で始める。
+   * 途中で止まった Hand（保存は Hand の終わり）は戻さない（Hand 途中の完全復帰は求めない）。
+   */
+  private resumeSession(): SessionPointer | null {
+    const projection = this.options.store.latestSessionProjection();
+    if (projection === null || projection.state !== "ready_for_next_hand") {
+      return null;
+    }
+    const known = new Set(this.options.setup.players.map((p) => p.playerId));
+    let resumable = false;
+    let cause: unknown = null;
+    try {
+      const started = this.events(projection.lastHandId)[0];
+      const seated =
+        started?.type === "HAND_STARTED"
+          ? started.seats.map((s) => s.playerId)
+          : [];
+      resumable =
+        seated.includes(this.heroId) &&
+        seated.every((id) => known.has(id)) &&
+        this.sessionAfter(projection.lastHandId).next !== null;
+    } catch (error) {
+      // 最後の Hand を読めない・次 Hand の席を決められない（保存済みの Event と今の卓の設定が合わない）。
+      // 起動は止めず、新しい Session で始める（理由は下の warn に残す）。
+      cause = error;
+    }
+    if (!resumable) {
+      this.logger.warn(
+        {
+          sessionId: projection.sessionId,
+          lastHandId: projection.lastHandId,
+          ...(cause === null ? {} : { err: cause }),
+        },
+        "前回の Session は今の卓の設定では続けられないため、新しい Session で始める",
+      );
+      return null;
+    }
+    // 保存した Preset ID のうち、今のアプリが知るものだけを使う（知らない ID の CPU は Persona なしで動く）。
+    const personas: Record<string, PersonaPresetId> = {};
+    for (const [playerId, presetId] of Object.entries(projection.personas)) {
+      if (isPersonaPresetId(presetId)) personas[playerId] = presetId;
+    }
+    return {
+      sessionId: projection.sessionId,
+      lastHandId: projection.lastHandId,
+      emergencyBots: new Map(
+        projection.emergencyBots.map((b) => [b.playerId, b.cause]),
+      ),
+      personas,
+    };
   }
 
   get players(): readonly SeatPlayer[] {
@@ -282,7 +350,22 @@ export class HandOrchestrator {
       deal: { seed },
     });
     if (!started.ok) return started;
-    store.append(handId, started.value.events, { sessionId: plan.sessionId });
+    // 新しい Session の最初の Hand には、開始の Event に続けて SESSION_STARTED を置く（D95）。
+    // Session の最初の Hand は全員が均等 Stack（Big Blind より多い）で始まるので、開始の時点では終わっていない。
+    const opening = plan.newSession
+      ? [
+          ...started.value.events,
+          ...recordSessionEvent(started.value.state, {
+            type: "SESSION_STARTED",
+            sessionId: plan.sessionId,
+          }).events,
+        ]
+      : started.value.events;
+    // 開始直後に Hand が終わる（Blind で All-in が決まる）こともあるので、Session の終わりもここで判定する。
+    store.append(handId, this.withSessionEnd(handId, plan.sessionId, opening), {
+      sessionId: plan.sessionId,
+      personas: plan.personas,
+    });
     // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
     const emergencyBots =
       this.session?.sessionId === plan.sessionId
@@ -292,6 +375,7 @@ export class HandOrchestrator {
       sessionId: plan.sessionId,
       lastHandId: handId,
       emergencyBots,
+      personas: plan.personas,
     };
 
     // 座っている CPU にだけ Opponent（と Fallback 用の RuleBot）を割り当てる。CPU の seed は卓の設定上の席番号から導く
@@ -304,7 +388,7 @@ export class HandOrchestrator {
     setup.players.forEach((p, seatIndex) => {
       if (p.kind === "cpu" && seated.has(p.playerId)) {
         const cpuSeed = deriveSeed(seed, seatIndex);
-        const presetId = setup.personas[p.playerId];
+        const presetId = plan.personas[p.playerId];
         const persona =
           presetId === undefined ? undefined : PERSONA_PRESETS[presetId];
         opponents.set(
@@ -327,7 +411,6 @@ export class HandOrchestrator {
       failure: null,
       outage: null,
       outageRevision: 0,
-      abandoned: false,
       fastForward: false,
       endThinkWait: null,
     };
@@ -413,11 +496,9 @@ export class HandOrchestrator {
     return this.hands.has(handId) ? this.heroViewOf(handId) : null;
   }
 
-  /** その Hand から見た Session の状態。未知の Hand なら null。 */
+  /** その Hand から見た Session の状態（Event Log から作る）。未知の Hand なら null。 */
   sessionStatus(handId: string): SessionStatus | null {
-    const rt = this.hands.get(handId);
-    if (rt === undefined) return null;
-    if (rt.abandoned) return { state: "ended", reason: "ai_outage" };
+    if (!this.hands.has(handId)) return null;
     return this.sessionAfter(handId).status;
   }
 
@@ -455,9 +536,10 @@ export class HandOrchestrator {
    * 障害で止まった Hand の続け方を Hero が選ぶ（D86）。revision は Hero が見ていた OutageStatus の revision。
    * 障害が無い・revision が違う（二重送信・古いダイアログ）なら stale_outage で拒否する。
    * - retry: 同じ手番をもう一度 CPU に求める（また障害なら、また止まる）
-   * - emergency_bot: その CPU を Session の終わりまで RuleBot（その CPU の Persona のまま）で動かす。
+   * - emergency_bot: EMERGENCY_BOT_ENGAGED を残し、その CPU を Session の終わりまで RuleBot（その CPU の Persona のまま）で動かす。
    *   手番ごとに AI_FALLBACK_USED（emergency_bot）を残す（Opponent Quality の分析で通常の判断と混同しない）
-   * - end_session: その Hand を途中で打ち切り、Session を終える。次の開始は新しい Session（均等 Stack）になる
+   * - end_session: その Hand を HAND_ABORTED で打ち切り、SESSION_ENDED を続けて Session を終える（Hand は保存され Replay の一覧に残る）。
+   *   次の開始は新しい Session（均等 Stack）になる
    * 選んだ後は、Hero の手番か Hand の終了まで CPU を進めた時点の View を返す（思考待ちがあれば後から SSE で届く）。
    */
   async resolveOutage(
@@ -477,10 +559,32 @@ export class HandOrchestrator {
         },
       };
     }
+    // 選んだ結果は、障害の状態を解く（購読者へ配る）前に Event Log へ残す（D95）。追記に失敗したら障害のまま残し、選び直せる。
+    // 障害で止まった手番はその CPU のまま（Hero の Out-of-Turn の操作は手番を変えない）。
     if (choice === "emergency_bot") {
+      this.record(
+        rt,
+        recordSessionEvent(foldHandEvents(this.events(handId)), {
+          type: "EMERGENCY_BOT_ENGAGED",
+          playerId: outage.playerId,
+          cause: outage.kind,
+        }),
+      );
       rt.emergencyBots.set(outage.playerId, outage.kind);
     } else if (choice === "end_session") {
-      rt.abandoned = true;
+      const aborted = recordSessionEvent(foldHandEvents(this.events(handId)), {
+        type: "HAND_ABORTED",
+        reason: "ai_outage",
+      });
+      const ended = recordSessionEvent(aborted.state, {
+        type: "SESSION_ENDED",
+        sessionId: rt.sessionId,
+        reason: "ai_outage",
+      });
+      // HAND_ABORTED で Hand が終わるので、ここで Hand と Session Projection が保存される。
+      this.options.store.append(handId, [...aborted.events, ...ended.events], {
+        sessionId: rt.sessionId,
+      });
     }
     this.logger.warn(
       { handId, playerId: outage.playerId, kind: outage.kind, choice },
@@ -489,7 +593,8 @@ export class HandOrchestrator {
     this.setOutage(rt, null);
     // 障害で止まった進行の後始末（running の解除）が済んでから進める（済む前だと advance が何もしない）。
     if (rt.running !== null) await rt.running;
-    if (!rt.abandoned) await this.proceed(rt);
+    // 打ち切った Hand は終わっている（State は complete）ので進めない。
+    if (choice !== "end_session") await this.proceed(rt);
     return { ok: true, value: this.heroViewOf(handId) };
   }
 
@@ -552,15 +657,17 @@ export class HandOrchestrator {
   /**
    * 新しい Hand を作らずに返すべき Hand（今の Session の最後の Hand）。無ければ null。
    * 進行中なら常に、終わっていればクライアントがまだ見ていないとき（afterHandId が違う）だけ返す。
-   * 内部エラーで止まった Hand・障害の後に Session 終了を選んだ Hand は返さない（新しい Session で始め直せるようにする）。
+   * 内部エラーで止まった Hand・障害の後に Session 終了を選んで打ち切った Hand・再起動前の Hand（Resume した Session の最後の Hand）は
+   * 返さない（新しい Hand で始め直せるようにする）。
    */
   private unseenLatestHand(afterHandId: string | null): string | null {
     const current = this.session;
     if (current === null) return null;
     const rt = this.hands.get(current.lastHandId);
-    if (rt === undefined || rt.failure !== null || rt.abandoned) return null;
-    const finished =
-      this.sessionAfter(current.lastHandId).status.state !== "in_hand";
+    if (rt === undefined || rt.failure !== null) return null;
+    const events = this.events(current.lastHandId);
+    if (events.some((e) => e.type === "HAND_ABORTED")) return null;
+    const finished = this.sessionAfterEvents(events).status.state !== "in_hand";
     return finished && afterHandId === current.lastHandId
       ? null
       : current.lastHandId;
@@ -570,19 +677,27 @@ export class HandOrchestrator {
    * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
-   *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）
+   *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）。
+   *   Persona は今の卓の設定の割り当てを使う
    */
   private planNextHand(): HandPlan {
     const current = this.session;
     if (current !== null) {
       const after = this.sessionAfter(current.lastHandId);
       if (after.next !== null) {
-        return { sessionId: current.sessionId, ...after.next };
+        return {
+          sessionId: current.sessionId,
+          newSession: false,
+          personas: current.personas,
+          ...after.next,
+        };
       }
     }
-    const { players, startingStack } = this.options.setup;
+    const { players, startingStack, personas } = this.options.setup;
     return {
       sessionId: (this.options.nextSessionId ?? randomUUID)(),
+      newSession: true,
+      personas,
       seats: players.map((p) => ({
         playerId: p.playerId,
         stack: startingStack,
@@ -591,17 +706,23 @@ export class HandOrchestrator {
     };
   }
 
+  /** Hand の終了後の Session の状態と、続くなら次 Hand の席。その Hand の Event Log だけから作る（D37）。 */
+  private sessionAfter(handId: string): SessionAfter {
+    return this.sessionAfterEvents(this.events(handId));
+  }
+
   /**
-   * Hand の終了後の Session の状態と、続くなら次 Hand の席。その Hand の Event Log だけから作る（D37）。
-   * 席順と Button は HAND_STARTED、Stack は HAND_FINISHED から読み、Bust の判定と Button の移動は Position Engine に任せる。
+   * Hand の Event から Session の状態を作る。SESSION_ENDED があればその理由で終わり（D95）。
+   * 無ければ、席順と Button は HAND_STARTED、Stack は HAND_FINISHED から読み、Bust の判定と Button の移動は Position Engine に任せる
+   * （SESSION_ENDED を置くかどうかも、HAND_FINISHED を追記する前にこの判定で決める。withSessionEnd）。
    */
-  private sessionAfter(handId: string): {
-    status: SessionStatus;
-    next: Omit<HandPlan, "sessionId"> | null;
-  } {
-    const events = this.events(handId);
+  private sessionAfterEvents(events: readonly HandEvent[]): SessionAfter {
+    const ended = events.find((e) => e.type === "SESSION_ENDED");
+    if (ended?.type === "SESSION_ENDED") {
+      return { status: { state: "ended", reason: ended.reason }, next: null };
+    }
     const started = events[0];
-    const finished = events.at(-1);
+    const finished = events.find((e) => e.type === "HAND_FINISHED");
     if (
       started?.type !== "HAND_STARTED" ||
       finished?.type !== "HAND_FINISHED"
@@ -642,7 +763,28 @@ export class HandOrchestrator {
   }
 
   /**
-   * CPU の判断の経緯（system Visibility の Event）を Log へ追記する。Hero の View は変わらないので配らない。
+   * Hand が終わり Session も終わるなら、HAND_FINISHED の直後に SESSION_ENDED を足した Event を返す（D80・D95）。
+   * 終わらなければ events をそのまま返す。Session の終わりは Hand の Event だけで決まるので、Hand の保存と同じ追記で置く。
+   */
+  private withSessionEnd(
+    handId: string,
+    sessionId: string,
+    events: readonly HandEvent[],
+  ): readonly HandEvent[] {
+    if (!events.some((e) => e.type === "HAND_FINISHED")) return events;
+    const log = [...this.events(handId), ...events];
+    const { status } = this.sessionAfterEvents(log);
+    if (status.state !== "ended") return events;
+    const ended = recordSessionEvent(foldHandEvents(log), {
+      type: "SESSION_ENDED",
+      sessionId,
+      reason: status.reason,
+    });
+    return [...events, ...ended.events];
+  }
+
+  /**
+   * CPU の判断の経緯・Emergency Bot への切り替え（system Visibility の Event）を Log へ追記する。Hero の View は変わらないので配らない。
    * 追記後の State（seq だけが進む）を返す。
    */
   private record(rt: HandRuntime, progress: HandProgress): HandState {
@@ -654,7 +796,11 @@ export class HandOrchestrator {
 
   /** Event を Log へ追記し、Hero の View を購読者へ配る。 */
   private commit(rt: HandRuntime, events: readonly HandEvent[]): void {
-    this.options.store.append(rt.handId, events, { sessionId: rt.sessionId });
+    this.options.store.append(
+      rt.handId,
+      this.withSessionEnd(rt.handId, rt.sessionId, events),
+      { sessionId: rt.sessionId },
+    );
     // Hand が終わったら通常の速さに戻す（Fast Forward はその Hand だけ）。
     if (events.some((e) => e.type === "HAND_FINISHED")) rt.fastForward = false;
     if (rt.listeners.size === 0) return;
@@ -729,10 +875,9 @@ export class HandOrchestrator {
     this.commit(rt, resolved.value.events);
   }
 
+  // 打ち切った Hand は State が complete になる（HAND_ABORTED）ので、手番が無くなって止まる。
   private canRun(rt: HandRuntime): boolean {
-    return (
-      !this.closed && rt.failure === null && rt.outage === null && !rt.abandoned
-    );
+    return !this.closed && rt.failure === null && rt.outage === null;
   }
 
   /** 障害の状態を変え、購読者（SSE）へ配る。 */

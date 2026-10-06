@@ -52,7 +52,7 @@ export function leakedCards(
 }
 
 /**
- * Deck・seed・engine / system Visibility の Event（CPU の判断の経緯を含む）・CPU の Persona を指す語が
+ * Deck・seed・engine / system Visibility の Event（CPU の判断の経緯・Session の運用の記録を含む）・CPU の Persona を指す語が
  * JSON に含まれていないか（Card 以外の経路の漏れ）。
  */
 export function forbiddenKeys(payload: unknown): string[] {
@@ -65,6 +65,10 @@ export function forbiddenKeys(payload: unknown): string[] {
       '"engine"',
       "AI_ACTION_INVALID",
       "AI_FALLBACK_USED",
+      "SESSION_STARTED",
+      "SESSION_ENDED",
+      "HAND_ABORTED",
+      "EMERGENCY_BOT_ENGAGED",
       '"system"',
     ].filter((k) => json.includes(k)),
     ...personaTerms(payload),

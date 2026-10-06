@@ -1,6 +1,6 @@
 // Replay の API の統合テスト（#68・D38・D93）。Hand API で実際に Hand を進め、保存済みの Event を Replay の API で読む。
 // 一覧と再生のどの応答にも Hero に見えない情報（Showdown で公開されていない他者の札・Deck・seed・system の記録・
-// CPU の Persona）が入らないこと、HAND_FINISHED の無い Hand（D88）でも壊れないことを確かめる。
+// CPU の Persona）が入らないこと、HAND_FINISHED の無い Hand（未完了・打ち切り。D95）でも壊れないことを確かめる。
 import {
   projectHeroView,
   visibleEvents,
@@ -295,7 +295,7 @@ describe("Replay API（完了した Hand）", () => {
   });
 });
 
-describe("Replay API（HAND_FINISHED の無い Hand。D88）", () => {
+describe("Replay API（HAND_FINISHED の無い Hand。D95）", () => {
   it("進行中の Hand は未完了として一覧に出し、その時点までを再生する（収支は null）", async () => {
     const { app, events } = makeApp(42, sometimesInvalid);
     const { handId, view } = await start(app);
@@ -315,7 +315,7 @@ describe("Replay API（HAND_FINISHED の無い Hand。D88）", () => {
     expectStepsArePrefixes(hand, events(handId));
   });
 
-  it("AI 障害の後に Session 終了で打ち切った Hand も未完了として一覧に出し、再生できる。エラー本文は出ない", async () => {
+  it("AI 障害の後に Session 終了で打ち切った Hand も打ち切り（aborted）として一覧に出し、再生できる。エラー本文は出ない", async () => {
     const { app, events } = makeApp(42, brokenFirstCpu());
     const { handId } = await start(app);
     const ended = await app.inject({
@@ -329,10 +329,18 @@ describe("Replay API（HAND_FINISHED の無い Hand。D88）", () => {
 
     const list = await getList(app);
     expect(list.map((h) => h.handId)).toEqual([next.handId, handId]);
-    expect(list[1]).toMatchObject({ complete: false, heroNet: null });
+    expect(list[1]).toMatchObject({
+      complete: false,
+      aborted: true,
+      finishedAt: null,
+      heroNet: null,
+    });
+    expect(list[0]?.aborted).toBe(false);
 
     const hand = await getHand(app, handId);
     expect(hand.complete).toBe(false);
+    expect(hand.aborted).toBe(true);
+    // 打ち切りの Event（system）は step に入らない（Hero に見える Event の prefix だけ）。
     expectStepsArePrefixes(hand, events(handId));
   });
 });

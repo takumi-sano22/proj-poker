@@ -47,7 +47,7 @@ class SessionRecordingStore extends InMemoryEventStore {
     if (!this.sessionOf.has(handId)) {
       this.sessionOf.set(handId, context?.sessionId);
     }
-    return super.append(handId, events);
+    return super.append(handId, events, context);
   }
 }
 
@@ -388,6 +388,21 @@ describe("HandOrchestrator", () => {
       state: "ended",
       reason: "hero_busted",
     });
+    // Session の終わりは HAND_FINISHED の直後の SESSION_ENDED（system）として同じ追記で残る（D95）。
+    expect(events(handId).slice(-2)).toMatchObject([
+      { type: "HAND_FINISHED" },
+      {
+        type: "SESSION_ENDED",
+        sessionId: store.sessionOf.get(handId),
+        reason: "hero_busted",
+        visibility: { type: "system" },
+      },
+    ]);
+    expect(store.latestSessionProjection()).toMatchObject({
+      lastHandId: handId,
+      state: "ended",
+      endReason: "hero_busted",
+    });
 
     const next = await orchestrator.startHand(handId);
     if (!next.ok) throw new Error(next.error.message);
@@ -406,13 +421,17 @@ describe("HandOrchestrator", () => {
   });
 
   it("CPU が全員 Bust して Hero だけが残ったら Session を終える", async () => {
-    const { orchestrator, handId } = await firstHandWhere(
+    const { orchestrator, events, handId } = await firstHandWhere(
       { cpu1: "shove", cpu2: "shove" },
       (stacks) =>
         stackOf(stacks, "cpu1") === 0 && stackOf(stacks, "cpu2") === 0,
     );
     expect(orchestrator.sessionStatus(handId)).toEqual({
       state: "ended",
+      reason: "hero_last_standing",
+    });
+    expect(events(handId).at(-1)).toMatchObject({
+      type: "SESSION_ENDED",
       reason: "hero_last_standing",
     });
   });
@@ -1084,7 +1103,7 @@ describe("HandOrchestrator", () => {
       });
 
       it("Emergency Bot: その CPU を Session の終わりまで RuleBot で動かし、手番ごとに AI_FALLBACK_USED（emergency_bot）を残す", async () => {
-        const { orchestrator, events, handId, cpu, inputs } =
+        const { orchestrator, events, store, handId, cpu, inputs } =
           await startBroken();
         const result = await orchestrator.resolveOutage(
           handId,
@@ -1095,6 +1114,22 @@ describe("HandOrchestrator", () => {
         expect(orchestrator.outageStatus(handId)).toEqual({
           revision: 2,
           current: null,
+        });
+        // 切り替えは、障害で止まった手番の位置に EMERGENCY_BOT_ENGAGED（system）として残る（D95）。
+        const outageSeq = events(handId).findIndex(
+          (e) => e.type === "EMERGENCY_BOT_ENGAGED",
+        );
+        expect(events(handId)[outageSeq]).toEqual({
+          type: "EMERGENCY_BOT_ENGAGED",
+          playerId: cpu,
+          cause: "error",
+          seq: outageSeq,
+          visibility: { type: "system" },
+        });
+        expect(events(handId)[outageSeq + 1]).toMatchObject({
+          type: "AI_FALLBACK_USED",
+          playerId: cpu,
+          fallbackKind: "emergency_bot",
         });
         const first = await playOut(orchestrator, handId, result.value);
         expect(first.status).toBe("complete");
@@ -1131,6 +1166,15 @@ describe("HandOrchestrator", () => {
           }
           expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
         }
+        // 切り替えの記録は切り替えた Hand にだけあり、Session Projection が次の Hand へ引き継ぐ。
+        expect(
+          events(next.value.handId).some(
+            (e) => e.type === "EMERGENCY_BOT_ENGAGED",
+          ),
+        ).toBe(false);
+        expect(store.latestSessionProjection()?.emergencyBots).toEqual([
+          { playerId: cpu, cause: "error" },
+        ]);
         // 障害の CPU に判断を求めたのは、障害を起こした 1 回だけ。ほかの CPU には引き続き求める。
         expect(inputs.filter((i) => i.knowledge.viewerId === cpu)).toHaveLength(
           1,
@@ -1159,14 +1203,38 @@ describe("HandOrchestrator", () => {
           revision: 2,
           current: null,
         });
-        // 打ち切った Hand は進めない（Log は変わらず、CPU にも求めない）。
-        expect(events(handId)).toHaveLength(before);
+        // 打ち切りと Session の終わりを Event で残し（D95）、以降は進めない（CPU にも求めない）。
+        expect(events(handId).slice(before)).toEqual([
+          {
+            type: "HAND_ABORTED",
+            reason: "ai_outage",
+            seq: before,
+            visibility: { type: "system" },
+          },
+          {
+            type: "SESSION_ENDED",
+            sessionId: store.sessionOf.get(handId),
+            reason: "ai_outage",
+            seq: before + 1,
+            visibility: { type: "system" },
+          },
+        ]);
         expect(inputs).toHaveLength(1);
         expect(
           await orchestrator.heroAction(handId, lastSeq(result.value), {
             type: "fold",
           }),
-        ).toMatchObject({ ok: false, error: { kind: "not_actor" } });
+        ).toMatchObject({ ok: false, error: { kind: "hand_complete" } });
+        expect(events(handId)).toHaveLength(before + 2);
+        // 打ち切った Hand は終わった Hand として一覧に残り、Session Projection は ai_outage で終わる。
+        expect(store.listHands(1)).toMatchObject([
+          { handId, finishedAt: null, aborted: true },
+        ]);
+        expect(store.latestSessionProjection()).toMatchObject({
+          lastHandId: handId,
+          state: "ended",
+          endReason: "ai_outage",
+        });
 
         // 開始は（結果を見ていなくても）新しい Session として均等 Stack で始める。
         const next = await orchestrator.startHand(null);
@@ -1812,5 +1880,216 @@ describe("Fast Forward（#67・D12・D15・D93）", () => {
     expect(orchestrator.outageStatus(handId)?.current).toMatchObject({
       kind: "timeout",
     });
+  });
+});
+
+describe("Session の Event と Resume（#77・D95）", () => {
+  /** 同じ Store で Orchestrator を作り直す（再起動の代わり。保存の境界は sqlite-event-store.test.ts で見る）。 */
+  function restart(
+    store: SessionRecordingStore,
+    overrides: Partial<HandOrchestratorOptions> = {},
+  ) {
+    let handNo = 100;
+    return new HandOrchestrator({
+      store,
+      setup: PHASE1_TABLE_SETUP,
+      createOpponent: createRuleBot,
+      botDelayMs: 0,
+      opponentTimeoutMs: 1000,
+      nextSeed: () => 7,
+      nextHandId: () => `resumed-${++handNo}`,
+      nextSessionId: () => `resumed-session-${handNo}`,
+      ...overrides,
+    });
+  }
+
+  /** 1 Hand を始めて最後まで進め、Hand ID を返す。 */
+  async function playHand(
+    orchestrator: HandOrchestrator,
+    afterHandId: string | null,
+  ): Promise<string> {
+    const started = await orchestrator.startHand(afterHandId);
+    if (!started.ok) throw new Error(started.error.message);
+    await playOut(orchestrator, started.value.handId, started.value.view);
+    return started.value.handId;
+  }
+
+  it("SESSION_STARTED は Session の最初の Hand にだけ、開始の Event に続けて置く（system）", async () => {
+    const { orchestrator, events, store } = setup();
+    const first = await playHand(orchestrator, null);
+    const second = await playHand(orchestrator, first);
+    const startedAt = events(first).findIndex(
+      (e) => e.type === "SESSION_STARTED",
+    );
+    expect(events(first)[startedAt]).toEqual({
+      type: "SESSION_STARTED",
+      sessionId: store.sessionOf.get(first),
+      seq: startedAt,
+      visibility: { type: "system" },
+    });
+    // 開始の Event（startHand の結果）の直後で、最初の Action より前。
+    expect(events(first)[startedAt - 1]?.type).toBe("HOLE_CARD_DEALT");
+    expect(
+      events(first)
+        .slice(0, startedAt)
+        .some((e) => e.type === "ACTION_TAKEN"),
+    ).toBe(false);
+    expect(events(second).some((e) => e.type === "SESSION_STARTED")).toBe(
+      false,
+    );
+    expect(store.sessionOf.get(second)).toBe(store.sessionOf.get(first));
+    expect(store.latestSessionProjection()).toMatchObject({
+      sessionId: store.sessionOf.get(first),
+      lastHandId: second,
+      state: "ready_for_next_hand",
+      personas: PHASE1_TABLE_SETUP.personas,
+      emergencyBots: [],
+    });
+  });
+
+  it("再起動後、Hand の合間で止まった Session を同じ Session として続ける（Stack・Button を持ち越し、SESSION_STARTED は置かない）", async () => {
+    const { orchestrator, events, store } = setup();
+    const first = await playHand(orchestrator, null);
+    orchestrator.close();
+
+    const resumed = restart(store);
+    // クライアントは再起動前の Hand を覚えていない（null）か、最後に見た Hand を送る。どちらでも次の Hand を作る。
+    const next = await resumed.startHand(null);
+    if (!next.ok) throw new Error(next.error.message);
+    expect(next.value.created).toBe(true);
+    const handId = next.value.handId;
+    expect(store.sessionOf.get(handId)).toBe(store.sessionOf.get(first));
+    expect(events(handId).some((e) => e.type === "SESSION_STARTED")).toBe(
+      false,
+    );
+    const opening = startedOf(events(handId));
+    expect(opening.seats).toEqual(
+      finishedOf(events(first)).stacks.map((s) => ({
+        playerId: s.playerId,
+        stack: s.amount,
+      })),
+    );
+    expect(opening.buttonPlayerId).not.toBe(
+      startedOf(events(first)).buttonPlayerId,
+    );
+    await playOut(resumed, handId, next.value.view);
+    expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
+  });
+
+  it("再起動後も Emergency Bot の CPU は RuleBot のまま（Session Projection から戻す）", async () => {
+    const broken = { playerId: null as string | null };
+    const asked: string[] = [];
+    // 最初に判断を求められた CPU だけが、再起動の前に 1 回障害を起こす。
+    const flaky: OpponentFactory = (seed, playerId, persona) => {
+      const bot = createRuleBot(seed, playerId, persona);
+      return {
+        decide: (input, signal) => {
+          asked.push(playerId);
+          if (broken.playerId === null) {
+            broken.playerId = playerId;
+            return Promise.reject(new Error("down"));
+          }
+          return bot.decide(input, signal);
+        },
+      };
+    };
+    const { orchestrator, events, store } = setup({ createOpponent: flaky });
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const resolved = await orchestrator.resolveOutage(
+      started.value.handId,
+      1,
+      "emergency_bot",
+    );
+    if (!resolved.ok) throw new Error(resolved.error.message);
+    await playOut(orchestrator, started.value.handId, resolved.value);
+    orchestrator.close();
+    const cpu = broken.playerId;
+    if (cpu === null) throw new Error("障害が起きていない");
+
+    asked.length = 0;
+    const resumed = restart(store, { createOpponent: flaky });
+    const handId = await playHand(resumed, null);
+    expect(store.sessionOf.get(handId)).toBe(
+      store.sessionOf.get(started.value.handId),
+    );
+    // 再起動後も、その CPU には判断を求めず、手番ごとに emergency_bot の記録を残す。
+    expect(asked).not.toContain(cpu);
+    const cpuActions = events(handId).filter(
+      (e) => e.type === "ACTION_TAKEN" && e.playerId === cpu,
+    );
+    expect(cpuActions.length).toBeGreaterThan(0);
+    expect(
+      fallbacksIn(events(handId)).filter((f) => f.playerId === cpu),
+    ).toHaveLength(cpuActions.length);
+  });
+
+  it("再起動後も Session の Persona の割り当てを使う（設定の割り当てを変えて起動しても、続ける Session では変えない）", async () => {
+    const seen = new Map<string, string | undefined>();
+    const recordPersona: OpponentFactory = (seed, playerId, persona) => {
+      seen.set(playerId, persona?.id);
+      return createRuleBot(seed, playerId, persona);
+    };
+    const { orchestrator, store } = setup({ createOpponent: recordPersona });
+    const first = await playHand(orchestrator, null);
+    orchestrator.close();
+    const before = new Map(seen);
+
+    // 割り当て順を変えた設定で起動する。続ける Session では前の割り当てのまま。
+    const changed = buildTableSetup(6, ["maniac"]);
+    seen.clear();
+    const resumed = restart(store, {
+      setup: changed,
+      createOpponent: recordPersona,
+    });
+    const second = await playHand(resumed, null);
+    expect(store.sessionOf.get(second)).toBe(store.sessionOf.get(first));
+    for (const [playerId, presetId] of seen) {
+      expect(presetId).toBe(before.get(playerId));
+    }
+    expect([...seen.values()]).not.toContain("maniac");
+  });
+
+  it("終わった Session（Bust・AI 障害での Session 終了）は再起動後に続けず、新しい Session で始める", async () => {
+    const { store, handId } = await firstHandWhere(
+      { cpu1: "shove", cpu2: "fold" },
+      (stacks) => stackOf(stacks, "hero") === 0,
+    );
+    const resumed = restart(store, {
+      setup: buildTableSetup(3),
+      createOpponent: scriptedCpus({ cpu1: "fold", cpu2: "fold" }),
+    });
+    const next = await resumed.startHand(null);
+    if (!next.ok) throw new Error(next.error.message);
+    expect(store.sessionOf.get(next.value.handId)).not.toBe(
+      store.sessionOf.get(handId),
+    );
+    const events = store.read(next.value.handId).map((s) => s.event);
+    expect(events.some((e) => e.type === "SESSION_STARTED")).toBe(true);
+    expect(
+      startedOf(events).seats.every(
+        (s) => s.stack === buildTableSetup(3).startingStack,
+      ),
+    ).toBe(true);
+  });
+
+  it("卓の設定（人数）を変えて起動したら、前の Session は続けられないので新しい Session で始め、warn を残す", async () => {
+    const { orchestrator, store } = setup();
+    const first = await playHand(orchestrator, null);
+    orchestrator.close();
+    const warn = vi.fn();
+    const resumed = restart(store, {
+      setup: buildTableSetup(3),
+      logger: { warn, error: () => {} },
+    });
+    const next = await resumed.startHand(null);
+    if (!next.ok) throw new Error(next.error.message);
+    expect(store.sessionOf.get(next.value.handId)).not.toBe(
+      store.sessionOf.get(first),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ lastHandId: first }),
+      expect.stringContaining("新しい Session"),
+    );
   });
 });

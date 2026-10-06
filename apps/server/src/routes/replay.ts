@@ -1,6 +1,7 @@
 // Replay の API（#68・D38・D93）。保存済みの Event を Hero の視点で一手ずつ再生する材料を返す（読み取りだけ）。
 // 返すのは Hero に見える Event から作った値だけ（他者の Hole Cards は Showdown で公開されたものだけ・Deck・seed・
-// engine / system Visibility の Event・CPU の Persona を含めない）。HAND_FINISHED の無い Hand（D88）も同じ形で返す。
+// engine / system Visibility の Event・CPU の Persona を含めない）。HAND_FINISHED の無い Hand も同じ形で返し、
+// AI 障害の後に打ち切った Hand は aborted: true にする（D95）。
 import type { FastifyInstance } from "fastify";
 import type { ReplayService } from "../replay.js";
 
@@ -18,7 +19,7 @@ export function registerReplayRoutes(
   app: FastifyInstance,
   replay: ReplayService,
 ): void {
-  // Hand の一覧（開始の新しい順）。未完了の Hand は complete: false・heroNet: null。
+  // Hand の一覧（開始の新しい順）。未完了の Hand は complete: false・heroNet: null（打ち切った Hand は aborted: true）。
   app.get("/api/replay/hands", () => ({ hands: replay.list() }));
 
   // 1 Hand の再生の材料。steps は Hero に見える Event の prefix ごとの Hero の視点（replaySteps）。

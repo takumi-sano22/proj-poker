@@ -44,6 +44,24 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'events is append-only');
   END;
   `,
+  // v2: Session Projection（docs/04 §10・D95）。Session の最後に終わった Hand の時点の状態で、Hand の保存と同じトランザクションで
+  // 書き替える（Event Log から作り直せる派生データ。D37）。再起動後の Resume の入口に使う。既存のテーブル・行は変えない（D76）。
+  // stacks・personas・emergency_bots は JSON（席順の Stack / CPU → Persona の Preset ID / 切り替えた CPU ときっかけの障害の種類）。
+  // personas は Hero への応答・CPU の入力には出さない（他 CPU の Secret Persona。#51）。
+  `
+  CREATE TABLE session_projections (
+    session_id     TEXT PRIMARY KEY REFERENCES sessions (session_id),
+    last_hand_id   TEXT NOT NULL REFERENCES hands (hand_id),
+    state          TEXT NOT NULL CHECK (state IN ('ready_for_next_hand', 'ended')),
+    end_reason     TEXT CHECK (end_reason IN ('hero_busted', 'hero_last_standing', 'ai_outage')),
+    stacks         TEXT NOT NULL CHECK (json_valid(stacks)),
+    personas       TEXT NOT NULL CHECK (json_valid(personas)),
+    emergency_bots TEXT NOT NULL CHECK (json_valid(emergency_bots)),
+    updated_at     TEXT NOT NULL,
+    -- 終わった Session だけが理由を持つ（state は NOT NULL、IS NOT NULL は NULL にならないので比較は真偽のどちらかになる）。
+    CHECK ((state = 'ended') = (end_reason IS NOT NULL))
+  ) STRICT;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */
