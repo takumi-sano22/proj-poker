@@ -9,6 +9,7 @@ import {
   DEFAULT_OPPONENT_TIMEOUT_MS,
   DEFAULT_REVIEW_TIMEOUT_MS,
   PHASE1_TABLE_SETUP,
+  type OpponentInfo,
   type TableSetup,
 } from "./config.js";
 import { InMemoryEventStore, type EventStore } from "./event-store.js";
@@ -63,6 +64,8 @@ export interface AppOptions {
   readonly setup?: TableSetup;
   readonly store?: EventStore;
   readonly createOpponent?: OpponentFactory;
+  /** createOpponent の実装の記録用の説明（Hand ごとの Metadata。#97）。省略時は RuleBot（createOpponent の既定と同じ）。 */
+  readonly opponentInfo?: OpponentInfo;
   readonly nextSeed?: () => number;
   readonly nextHandId?: () => string;
   readonly review?: ReviewAppOptions;
@@ -86,6 +89,9 @@ export function buildApp(options: AppOptions = {}) {
     store,
     setup,
     createOpponent: options.createOpponent ?? createRuleBot,
+    ...(options.opponentInfo === undefined
+      ? {}
+      : { opponentInfo: options.opponentInfo }),
     botDelayMs: options.botDelayMs ?? DEFAULT_BOT_THINK_DELAY_MS,
     opponentTimeoutMs: options.opponentTimeoutMs ?? DEFAULT_OPPONENT_TIMEOUT_MS,
     // seed はサーバーだけが持つ。クライアントから受け取らず、レスポンスにも出さない（Deck を推測させない）。

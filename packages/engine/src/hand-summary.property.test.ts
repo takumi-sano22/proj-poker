@@ -37,6 +37,7 @@ import {
   hiddenMarkers,
   leakedCards,
   tamperHiddenEvents,
+  testMetadata,
 } from "./testing/view-leaks.js";
 
 const MAX_STEPS = 500;
@@ -93,6 +94,8 @@ function playHand(
     buttonPlayerId: (seats[seed % seats.length] as SeatInit).playerId,
     config: PHASE1_CASH_PRESET,
     deal: { seed },
+    // system Visibility の Metadata（#97）も混ぜ、View・KnowledgeState・Hero Information Set に届かないことを一緒に確かめる。
+    metadata: testMetadata(seats),
   });
   if (!started.ok) throw new Error(started.error.message);
   let state: HandState = started.value.state;

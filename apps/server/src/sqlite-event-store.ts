@@ -44,8 +44,10 @@ import {
  *   既存の Event の形は変えていないので、版 4 の行も変換せずに読む（版 1〜4 の行にこの 3 種類は無い）
  * - 6: Session の開始・終了・Hand の打ち切り・Emergency Bot への切り替え SESSION_STARTED / SESSION_ENDED / HAND_ABORTED /
  *   EMERGENCY_BOT_ENGAGED を足す（D95）。既存の Event の形は変えていないので、版 5 の行も変換せずに読む（版 1〜5 の行にこの 4 種類は無い）
+ * - 7: Hand ごとの Best-effort Metadata HAND_METADATA_RECORDED を足す（#97）。既存の Event の形は変えていないので、版 6 の行も
+ *   変換せずに読む（版 1〜6 の行にこの種類は無く、作り直しもしない）
  */
-export const EVENT_SCHEMA_VERSION = 6;
+export const EVENT_SCHEMA_VERSION = 7;
 
 /** 保存済みの Event の schema_version を、このアプリが読めない。 */
 export class UnsupportedEventSchemaError extends Error {
@@ -316,7 +318,8 @@ export class SqliteEventStore implements EventStore {
     }
     // 版 1 の行は Hand の前の Event（Fold の有無）を見て upcast するので、Hand 単位でまとめて変換し、
     // 版 1 の行にだけ変換結果を使う（1 Hand は 1 トランザクションで同じ版で書くが、混在しても新しい版の行を変えない）。
-    // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。版 3 → 4・4 → 5・5 → 6 は変換が要らない（Event の種類を足しただけ）。
+    // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。版 3 → 4・4 → 5・5 → 6・6 → 7 は変換が要らない
+    // （Event の種類を足しただけ）。
     const parsed = rows.map((row) => JSON.parse(row.payload) as HandEventV1);
     const asV2 = rows.some((row) => row.schema_version === 1)
       ? upcastV1ToV2(parsed)

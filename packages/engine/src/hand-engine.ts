@@ -40,6 +40,15 @@ import {
   type TableConfig,
 } from "./table-config.js";
 
+/**
+ * Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）のうち、呼び出し側（Server）が渡す値。
+ * ruleProfileVersion は config.ruleProfile から Engine が写すので渡さない。
+ */
+export type HandMetadataInput = Omit<
+  Extract<HandEventBody, { type: "HAND_METADATA_RECORDED" }>,
+  "type" | "ruleProfileVersion"
+>;
+
 export interface StartHandInput {
   readonly handId: string;
   /** 席順（時計回り）。 */
@@ -48,6 +57,11 @@ export interface StartHandInput {
   readonly config: TableConfig;
   /** seed で Deck をシャッフルするか、配布順の 52 枚を直接渡す（Scenario Test 用）。 */
   readonly deal: { readonly seed: number } | { readonly deck: readonly Card[] };
+  /**
+   * 渡したときだけ、HAND_STARTED の直後に HAND_METADATA_RECORDED（system Visibility）を置く（#97）。
+   * 省略すると置かない（Scenario Test・Opponent Eval の Spot は Metadata なしで同じ Event 列のまま）。
+   */
+  readonly metadata?: HandMetadataInput;
 }
 
 /** Command の結果。events はこの Command で新たに発行した分だけ（呼び出し側が Event Log へ追記する）。 */
@@ -105,6 +119,22 @@ export function startHand(input: StartHandInput): EngineResult<HandProgress> {
   };
   let acc: HandProgress = { state: initialState(started), events: [started] };
 
+  // Metadata は Hand の開始の記録なので、Hand が開始直後に終わる（Blind で All-in が決まる）場合も Hand の終わりより前に置けるよう、
+  // HAND_STARTED の直後に置く。入力の配列を Event に共有させない。
+  if (input.metadata !== undefined) {
+    acc = emit(acc, {
+      type: "HAND_METADATA_RECORDED",
+      appVersion: input.metadata.appVersion,
+      ruleProfileVersion: config.ruleProfile,
+      cpuProfileVersion: input.metadata.cpuProfileVersion,
+      cpuSeats: input.metadata.cpuSeats.map((c) => ({
+        playerId: c.playerId,
+        provider: c.provider,
+        modelRole: c.modelRole,
+        model: c.model,
+      })),
+    });
+  }
   acc = emit(acc, { type: "DECK_SHUFFLED", seed, deck });
   acc = postBlind(acc, sb, "small", config.smallBlind);
   acc = postBlind(acc, bb, "big", config.bigBlind);
@@ -511,6 +541,16 @@ function validateStartInput(input: StartHandInput): string | null {
   }
   if (!ids.has(input.buttonPlayerId)) {
     return `Button が卓にいない: ${input.buttonPlayerId}`;
+  }
+  if (input.metadata !== undefined) {
+    // Metadata の CPU は、この Hand に座った Player の中で重複しないこと（記録の取り違えを Event にしない）。
+    const cpuIds = input.metadata.cpuSeats.map((c) => c.playerId);
+    if (
+      new Set(cpuIds).size !== cpuIds.length ||
+      cpuIds.some((id) => !ids.has(id))
+    ) {
+      return "Metadata の CPU が卓にいないか重複している";
+    }
   }
   if (config.oddChipRule !== "first_left_of_button") {
     return `未対応の oddChipRule: ${String(config.oddChipRule)}`;

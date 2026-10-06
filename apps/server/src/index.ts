@@ -3,6 +3,7 @@ import { buildApp } from "./app.js";
 import {
   MODEL_ROLES,
   buildTableSetup,
+  opponentInfoOf,
   fixedSeedSequence,
   parseBotDelayMs,
   parseFixedSeed,
@@ -36,12 +37,13 @@ const PORT = Number(process.env["PORT"] ?? 3001);
 
 // CPU の判断に使う実装（既定 RuleBot。D71）。OPPONENT_PROVIDER=claude のときだけ Claude（Agent SDK・OAuth。D87）にする（不正な値は DB を開く前に起動を止める）。
 // Claude の子プロセスには API 課金に切り替わる変数（ANTHROPIC_API_KEY 等）を外した環境を渡す。
+// 実装の説明（opponentInfo）は Hand ごとの Metadata に残す（#97）。モデル名は role-based config（opponent_fast）で解決した値を共有する。
 const provider = parseOpponentProvider(process.env["OPPONENT_PROVIDER"]);
-const opponentModel = MODEL_ROLES.opponent_fast;
+const opponentInfo = opponentInfoOf(provider);
 const claudeEnv = buildClaudeEnv(process.env);
 const createOpponent =
-  provider === "claude"
-    ? createClaudeOpponentFactory({ model: opponentModel, env: claudeEnv })
+  opponentInfo.provider === "claude"
+    ? createClaudeOpponentFactory({ model: opponentInfo.model, env: claudeEnv })
     : createRuleBot;
 
 // Review AI の実装（既定 Claude）。REVIEW_PROVIDER=fake は E2E 用の固定応答で、Claude を呼ばない（D98。本番では使わない）。
@@ -72,6 +74,7 @@ const app = buildApp({
   ),
   store,
   createOpponent,
+  opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),
   // Review AI は Claude（Agent SDK・OAuth。D87・D97）。API 課金に切り替わる変数を外した環境で呼ぶ（REVIEW_PROVIDER=fake のときだけ E2E 用の固定応答）。
   review: {
@@ -111,7 +114,9 @@ if (fixedSeed !== null) {
   app.log.warn({ seed: fixedSeed }, "山札の seed を固定している（E2E 用）");
 }
 app.log.info(
-  provider === "claude" ? { provider, model: opponentModel } : { provider },
+  opponentInfo.provider === "claude"
+    ? { provider, model: opponentInfo.model }
+    : { provider },
   "CPU の判断に使う実装",
 );
 

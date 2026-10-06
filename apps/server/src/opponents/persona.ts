@@ -43,6 +43,13 @@ export interface Persona {
   readonly leaks: readonly string[];
 }
 
+/**
+ * Preset 一式（PERSONA_PRESETS の ID・traits・leaks）の版。Hand ごとの Metadata（HAND_METADATA_RECORDED。#97）に残す。
+ * Preset の値を変えたら上げる（後から「どの版の性格で打った Hand か」を見分けるため）。どの CPU にどの Preset を割り当てたかは
+ * この版に含めない（Secret Persona。割り当ては Session Projection にだけ置く。docs/04 §10）。
+ */
+export const PERSONA_PROFILE_VERSION = "phase3_provisional_v1";
+
 /** 6 つの Preset（D85）。数値はすべて OI-005 の暫定値（確定ではない）。 */
 export const PERSONA_PRESETS: Readonly<Record<PersonaPresetId, Persona>> = {
   tag_regular: {

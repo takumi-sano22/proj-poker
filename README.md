@@ -244,7 +244,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D99の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D100の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -280,7 +280,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 できていること:
 
-- 設計ドキュメント（`docs/`）と人間判断（D01〜D99）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D100）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
 - Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
 - テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）。Ruling も固定 Scenario と Property Test で確かめます
@@ -306,6 +306,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - Reveal Review（Pass B）と Follow-up（#83・D99）: Hand 後に全員の札を学習用にだけ見せて答え合わせをし（評価は付け直さない・CPU には渡さない）、Review の Version ごとに追加質問を続けられます
   - Review の画面と Jump to Important Spot（#84）: Important Spot を先に並べた Review の一覧・Pass A / Pass B のタブ・Evidence・Version の選択・Follow-up と、Replay の Important Spot へのジャンプ
   - 6-max Session の E2E（#85・D98）: Playwright で Play → Review → Replay → 次の Hand → 再起動して Resume までを CI で通します（CPU は RuleBot、Review AI は固定応答）
+  - Hand ごとの Metadata（#97・D100）: Hand の開始時に App Version・Rule Profile・Persona の Preset 一式の版と、席ごとの CPU の実装（RuleBot / Claude とモデル / Emergency Bot）を system の Event に残します（`schema_version` 7。Hero の画面・CPU・Replay には出ません）。AI の Request / Response の本文は保存しません
 
 制約・未実装:
 

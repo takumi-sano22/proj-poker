@@ -17,6 +17,9 @@
 // - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
 // - Hero の物理的な操作（宣言・Chip を出す・足す）は Ruling Engine で Canonical Action に裁定し、操作と裁定も Event Log に残す
 //   （heroPhysicalAction。D90・D91）。手番でない操作は保留し、Hero の手番が来た時点で拘束か撤回かを裁定する（runCpuTurns）。
+// - Hand の開始時に、App Version・Rule Profile・Persona の Preset 一式の版と、席ごとの CPU の実装（RuleBot / Claude と
+//   Model Role・具体モデル / Emergency Bot）を HAND_METADATA_RECORDED（system Visibility）として残す（#97・docs/04 §9）。
+//   Best-effort な Debug / Re-analysis 用で、AI の Request / Response の生データは残さない（D100）。
 import { randomUUID } from "node:crypto";
 import {
   applyAction,
@@ -30,9 +33,11 @@ import {
   recordSessionEvent,
   resolvePendingOutOfTurn,
   startHand,
+  type CpuSeatMetadata,
   type EngineError,
   type FallbackKind,
   type HandEvent,
+  type HandMetadataInput,
   type HandProgress,
   type HandState,
   type HeroView,
@@ -41,7 +46,13 @@ import {
   type SeatInit,
   type SessionEndReason,
 } from "@proj-poker/engine";
-import type { SeatPlayer, TableSetup } from "./config.js";
+import { APP_VERSION } from "./app-version.js";
+import {
+  RULE_BOT_INFO,
+  type OpponentInfo,
+  type SeatPlayer,
+  type TableSetup,
+} from "./config.js";
 import type { EventStore } from "./event-store.js";
 import {
   OpponentOutageError,
@@ -54,6 +65,7 @@ import { checkOpponentOutput } from "./opponents/opponent-output.js";
 import {
   isPersonaPresetId,
   PERSONA_PRESETS,
+  PERSONA_PROFILE_VERSION,
   type PersonaPresetId,
 } from "./opponents/persona.js";
 import { RuleBot } from "./opponents/rule-bot.js";
@@ -126,6 +138,13 @@ export interface HandOrchestratorOptions {
   readonly store: EventStore;
   readonly setup: TableSetup;
   readonly createOpponent: OpponentFactory;
+  /**
+   * createOpponent が作る CPU の実装の記録用の説明（HAND_METADATA_RECORDED の席ごとの provider / Model Role / 具体モデル。#97）。
+   * 省略時は RuleBot（createOpponent の既定と同じ）。
+   */
+  readonly opponentInfo?: OpponentInfo;
+  /** HAND_METADATA_RECORDED に残すアプリの版。省略時は apps/server の package.json の version。 */
+  readonly appVersion?: string;
   /**
    * CPU が行動するまでの待ち時間（演出用）。0 なら startHand / heroAction は CPU の手番が尽きるまで待ってから返す。
    * 0 より大きければ、CPU の手番は応答の後に 1 手ずつ進み、購読者（SSE）へ届く。
@@ -342,12 +361,18 @@ export class HandOrchestrator {
     }
     const seed = this.options.nextSeed();
     const plan = this.planNextHand();
+    // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
+    const emergencyBots =
+      this.session?.sessionId === plan.sessionId
+        ? this.session.emergencyBots
+        : new Map<string, OutageKind>();
     const started = startHand({
       handId,
       seats: plan.seats,
       buttonPlayerId: plan.buttonPlayerId,
       config: setup.table,
       deal: { seed },
+      metadata: this.handMetadata(plan.seats, emergencyBots),
     });
     if (!started.ok) return started;
     // 新しい Session の最初の Hand には、開始の Event に続けて SESSION_STARTED を置く（D95）。
@@ -366,11 +391,6 @@ export class HandOrchestrator {
       sessionId: plan.sessionId,
       personas: plan.personas,
     });
-    // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
-    const emergencyBots =
-      this.session?.sessionId === plan.sessionId
-        ? this.session.emergencyBots
-        : new Map<string, OutageKind>();
     this.session = {
       sessionId: plan.sessionId,
       lastHandId: handId,
@@ -703,6 +723,45 @@ export class HandOrchestrator {
         stack: startingStack,
       })),
       buttonPlayerId: (players[0] as SeatPlayer).playerId,
+    };
+  }
+
+  /**
+   * Hand の開始時の Metadata（HAND_METADATA_RECORDED。#97）。座っている CPU を席順に、その時点の実装で残す。
+   * Emergency Bot を選んだ CPU は emergency_bot（Model は使わないので null）、それ以外は createOpponent の実装（opponentInfo）。
+   * Hand の途中で Emergency Bot に切り替えた CPU は、その Hand では開始時の実装のまま（切り替えは EMERGENCY_BOT_ENGAGED に残る）。
+   */
+  private handMetadata(
+    seats: readonly SeatInit[],
+    emergencyBots: ReadonlyMap<string, OutageKind>,
+  ): HandMetadataInput {
+    const cpuIds = new Set(
+      this.options.setup.players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => p.playerId),
+    );
+    const info = this.options.opponentInfo ?? RULE_BOT_INFO;
+    const cpuSeats = seats
+      .filter((s) => cpuIds.has(s.playerId))
+      .map((s): CpuSeatMetadata =>
+        emergencyBots.has(s.playerId)
+          ? {
+              playerId: s.playerId,
+              provider: "emergency_bot",
+              modelRole: null,
+              model: null,
+            }
+          : {
+              playerId: s.playerId,
+              provider: info.provider,
+              modelRole: info.modelRole,
+              model: info.model,
+            },
+      );
+    return {
+      appVersion: this.options.appVersion ?? APP_VERSION,
+      cpuProfileVersion: PERSONA_PROFILE_VERSION,
+      cpuSeats,
     };
   }
 
