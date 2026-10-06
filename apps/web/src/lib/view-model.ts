@@ -7,7 +7,7 @@ import type {
   LegalAction,
   SeatView,
 } from "@proj-poker/engine";
-import type { SessionStatus } from "./api.js";
+import type { OutageKind, OutageStatus, SessionStatus } from "./api.js";
 import {
   ACTION_TERMS,
   STREET_TERMS,
@@ -100,12 +100,93 @@ export function parseSessionStatus(raw: string): SessionStatus | null {
       return { state: "ready_for_next_hand" };
     case "ended":
       return v["reason"] === "hero_busted" ||
-        v["reason"] === "hero_last_standing"
+        v["reason"] === "hero_last_standing" ||
+        v["reason"] === "ai_outage"
         ? { state: "ended", reason: v["reason"] }
         : null;
     default:
       return null;
   }
+}
+
+/** どの Hand から見た障害の状態か。 */
+export interface HandOutageStatus {
+  readonly handId: string;
+  readonly status: OutageStatus;
+}
+
+/**
+ * REST の応答と SSE の outage イベントのどちらが先に届いても、新しい障害の状態を残す。
+ * - 別の Hand の状態（前の Hand の遅れて届いた応答）は捨てる
+ * - 同じ Hand なら revision が進んでいる方を採る（遅れて届いた古い状態でダイアログを出し直さない・消さない）
+ */
+export function selectOutageStatus(
+  current: HandOutageStatus | null,
+  incoming: HandOutageStatus,
+  activeHandId: string | null,
+): HandOutageStatus | null {
+  if (incoming.handId !== activeHandId) return current;
+  if (current === null || current.handId !== activeHandId) return incoming;
+  return incoming.status.revision >= current.status.revision
+    ? incoming
+    : current;
+}
+
+const OUTAGE_KINDS: readonly OutageKind[] = [
+  "timeout",
+  "unauthenticated",
+  "usage_limit",
+  "error",
+];
+
+/** SSE の outage イベントの data を受け取ってよいかの検査（受け側の whitelist）。知っている項目だけで組み直す。 */
+export function parseOutageStatus(raw: string): OutageStatus | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const revision = v["revision"];
+  if (typeof revision !== "number" || !Number.isSafeInteger(revision)) {
+    return null;
+  }
+  const current = v["current"];
+  if (current === null) return { revision, current: null };
+  if (typeof current !== "object" || current === undefined) return null;
+  const c = current as Record<string, unknown>;
+  const playerId = c["playerId"];
+  const kind = OUTAGE_KINDS.find((k) => k === c["kind"]);
+  if (typeof playerId !== "string" || kind === undefined) return null;
+  return { revision, current: { playerId, kind } };
+}
+
+/** 障害の種類ごとの、ダイアログの説明（内部実装の名前・エラー本文は出さない。docs/06 §11）。 */
+export function outageReasonText(kind: OutageKind): string {
+  switch (kind) {
+    case "timeout":
+      return "応答が時間内に返りませんでした。";
+    case "unauthenticated":
+      return "AI にログインしていないため、判断を受け取れませんでした。ログインし直してから「もう一度試す」を選んでください。";
+    case "usage_limit":
+      return "AI の利用枠の上限に達したため、判断を受け取れませんでした。枠が戻ってから「もう一度試す」か、Emergency Bot で続けてください。";
+    case "error":
+      return "AI の呼び出しが失敗し、判断を受け取れませんでした。";
+  }
+}
+
+/**
+ * CPU の手番を待っている間の案内（docs/06 §11）。通常は「<CPU 名> の手番…」だけにし、
+ * 長く待っているとき（delayed）だけ「AI応答が遅延しています」を補足する。内部実装（どの API を呼んでいるか）は出さない。
+ */
+export function waitingMessage(
+  actorName: string | null,
+  delayed: boolean,
+): string {
+  const turn = actorName === null ? "進行中…" : `${actorName} の手番…`;
+  return delayed ? `${turn}（AI応答が遅延しています）` : turn;
 }
 
 /** Blind を払った Player（公開 Event の BLIND_POSTED から読む。位置を自前で計算しない）。 */

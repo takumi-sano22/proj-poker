@@ -1,17 +1,21 @@
 // Basic UI: Hero として Hand を続けて遊ぶ画面。Stack は Hand をまたいで持ち越し、Hero の Bust か
 // CPU の全員 Bust で Session が終わる（D80）。
 // 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
+// CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback } from "react";
 import { ActionBar } from "./components/ActionBar.js";
 import { Amount } from "./components/Amount.js";
 import { HandLog } from "./components/HandLog.js";
+import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
 import { Table } from "./components/Table.js";
+import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import type { SessionStatus } from "./lib/api.js";
+import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
-import { heroSeatOf, lastSeqOf } from "./lib/view-model.js";
+import { heroSeatOf, lastSeqOf, waitingMessage } from "./lib/view-model.js";
 
 export function App() {
   const session = useHandSession();
@@ -55,9 +59,7 @@ export function App() {
                 view={view}
                 nameOf={nameOf}
                 center={
-                  view.status === "complete" ? (
-                    <HandResult view={view} nameOf={nameOf} session={session} />
-                  ) : null
+                  <TableCenter view={view} nameOf={nameOf} session={session} />
                 }
               />
             </div>
@@ -76,6 +78,43 @@ interface ViewProps {
   readonly view: HeroView;
   readonly nameOf: (playerId: string) => string;
   readonly session: HandSession;
+}
+
+/**
+ * 卓の中央の欄: Hand の結果、CPU の障害のダイアログ、障害で Session を終えた後の案内のどれか（無ければ何も出さない）。
+ */
+function TableCenter({ view, nameOf, session }: ViewProps) {
+  if (view.status === "complete") {
+    return <HandResult view={view} nameOf={nameOf} session={session} />;
+  }
+  const status = session.sessionStatus;
+  if (status?.state === "ended") {
+    return (
+      <div className="result" role="status">
+        <p className="result__session">{sessionEndMessage(status)}</p>
+        <button
+          type="button"
+          className="btn btn--primary btn--md"
+          disabled={session.pending}
+          onClick={session.start}
+        >
+          新しい Session を始める
+        </button>
+      </div>
+    );
+  }
+  const outage = session.outage?.current;
+  if (outage != null) {
+    return (
+      <OutageDialog
+        actorName={nameOf(outage.playerId)}
+        kind={outage.kind}
+        disabled={session.pending}
+        onChoose={session.resolveOutage}
+      />
+    );
+  }
+  return null;
 }
 
 /** 画面下に固定する Hero の欄: Hole Cards と Declaration Button、待ち・観戦の案内。 */
@@ -108,6 +147,20 @@ function HeroDock({ view, nameOf, session }: ViewProps) {
 }
 
 function DockBody({ view, nameOf, session }: ViewProps) {
+  const outage = session.outage;
+  // CPU の手番を待っている間だけ数える（手番・障害の状態が変われば数え直す）。障害で止まっている間・Session 終了後は数えない。
+  const cpuWaiting =
+    view.status !== "complete" &&
+    view.legalActions === null &&
+    view.actorId !== null &&
+    outage?.current == null &&
+    session.sessionStatus?.state !== "ended";
+  const delayed = useDelayed(
+    cpuWaiting
+      ? `${view.handId}:${lastSeqOf(view)}:${view.actorId}:${outage?.revision ?? 0}`
+      : null,
+    AI_DELAY_NOTICE_MS,
+  );
   if (view.status === "complete") {
     return (
       <p className="dock__message">
@@ -129,9 +182,22 @@ function DockBody({ view, nameOf, session }: ViewProps) {
       />
     );
   }
+  if (session.sessionStatus?.state === "ended") {
+    return <p className="dock__message">Session が終了しました。</p>;
+  }
+  if (outage?.current != null) {
+    return (
+      <p className="dock__message">
+        {nameOf(outage.current.playerId)} の判断を待てず、Hand
+        を一時停止しています。卓の中央で続け方を選んでください。
+      </p>
+    );
+  }
   const hero = heroSeatOf(view);
-  const waiting =
-    view.actorId === null ? "進行中…" : `${nameOf(view.actorId)} の手番…`;
+  const waiting = waitingMessage(
+    view.actorId === null ? null : nameOf(view.actorId),
+    delayed,
+  );
   if (hero?.folded) {
     // Fold 後も観戦を続ける（docs/06 §8）。他者の札は Showdown で公開されたものだけが表に向く。
     return (
@@ -147,9 +213,14 @@ function DockBody({ view, nameOf, session }: ViewProps) {
 function sessionEndMessage(
   status: Extract<SessionStatus, { state: "ended" }>,
 ): string {
-  return status.reason === "hero_busted"
-    ? "Hero の Stack がなくなりました（Bust）。この Session は終了です。"
-    : "CPU が全員 Bust し、Hero が勝ち残りました。この Session は終了です。";
+  switch (status.reason) {
+    case "hero_busted":
+      return "Hero の Stack がなくなりました（Bust）。この Session は終了です。";
+    case "hero_last_standing":
+      return "CPU が全員 Bust し、Hero が勝ち残りました。この Session は終了です。";
+    case "ai_outage":
+      return "AI の判断を受け取れなかったため、この Hand を打ち切って Session を終了しました。";
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { preflopHeroToAct, seat } from "../testing/fixtures.js";
 import { ActionBar } from "./ActionBar.js";
 import { Amount } from "./Amount.js";
+import { OutageDialog } from "./OutageDialog.js";
 import { Table } from "./Table.js";
 
 const noop = () => {};
@@ -160,5 +161,33 @@ describe("Table（他者の札はサーバーが公開したものだけを表�
     expect(html).toContain("手番");
     // Board はまだ配られていないので 5 枠とも空
     expect(html.match(/card-slot/g)).toHaveLength(5);
+  });
+});
+
+describe("OutageDialog（CPU の障害の続け方。D86）", () => {
+  it("止まった CPU の名前と 3 つの選択肢を出し、内部実装の名前は出さない", () => {
+    const html = renderToStaticMarkup(
+      <OutageDialog
+        actorName="CPU 3"
+        kind="unauthenticated"
+        disabled={false}
+        onChoose={noop}
+      />,
+    );
+    expect(html).toContain('role="alertdialog"');
+    expect(html).toContain("CPU 3 の判断を受け取れませんでした");
+    expect(html).toContain("もう一度試す（Retry）");
+    expect(html).toContain("Emergency Bot で続行");
+    expect(html).toContain("Session を終了");
+    expect(html).toContain("一時停止");
+    expect(html).not.toMatch(/Claude|SDK|haiku/i);
+    expect(html).not.toContain("disabled");
+  });
+
+  it("送信中は選べない", () => {
+    const html = renderToStaticMarkup(
+      <OutageDialog actorName="CPU 3" kind="error" disabled onChoose={noop} />,
+    );
+    expect(html.match(/disabled=""/g)).toHaveLength(3);
   });
 });

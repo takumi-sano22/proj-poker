@@ -2,22 +2,30 @@
 // クライアントで状態を進めない（Bust や Session 終了をクライアントで判定しない）。
 // - 受信経路は 2 つ（REST の応答と SSE の Push）。どちらが先に届いても seq の新しい方だけを残す
 // - 送信中は ref と state の 2 層で二重送信を止める（state は描画用、ref は同じ tick 内の連打用）
+// - CPU の障害の状態（D86）も REST の応答と SSE の outage イベントの両方から受け、revision の新しい方だけを残す
 import type { HeroView, PlayerAction } from "@proj-poker/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  chooseOutage,
   handStreamUrl,
   sendHeroAction,
   startHand,
+  type HeroActionResponse,
+  type OutageChoice,
+  type OutageStatus,
   type SessionStatus,
   type TablePlayer,
 } from "../lib/api.js";
 import {
   lastSeqOf,
   parseHeroView,
+  parseOutageStatus,
   parseSessionStatus,
   selectLatestView,
+  selectOutageStatus,
   selectSessionStatus,
+  type HandOutageStatus,
   type HandSessionStatus,
 } from "../lib/view-model.js";
 
@@ -35,11 +43,15 @@ export interface HandSession {
   readonly view: HeroView | null;
   /** 表示中の Hand から見た Session の状態。まだ届いていなければ null。 */
   readonly sessionStatus: SessionStatus | null;
+  /** 表示中の Hand の CPU の障害の状態。まだ届いていなければ null。 */
+  readonly outage: OutageStatus | null;
   readonly pending: boolean;
   readonly notice: SessionNotice | null;
   readonly connection: ConnectionState;
   readonly start: () => void;
   readonly act: (action: PlayerAction) => void;
+  /** 表示中の障害の続け方を選ぶ（Retry / Emergency Bot / Session 終了）。 */
+  readonly resolveOutage: (choice: OutageChoice) => void;
   readonly retry: () => void;
 }
 
@@ -51,6 +63,12 @@ function noticeOf(error: unknown): SessionNotice {
       return {
         message: "サーバーに届きませんでした。もう一度送ってください。",
         retryable: true,
+      };
+    case "stale_outage":
+      return {
+        message:
+          "AI の状態が先に変わっていました。最新の表示を見て、もう一度選んでください。",
+        retryable: false,
       };
     case "stale_view":
       return {
@@ -89,6 +107,7 @@ export function useHandSession(): HandSession {
   const [players, setPlayers] = useState<readonly TablePlayer[]>([]);
   const [view, setView] = useState<HeroView | null>(null);
   const [session, setSession] = useState<HandSessionStatus | null>(null);
+  const [outage, setOutage] = useState<HandOutageStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
@@ -109,6 +128,12 @@ export function useHandSession(): HandSession {
         lastSeq: number;
         action: PlayerAction;
       }
+    | {
+        kind: "outage";
+        handId: string;
+        revision: number;
+        choice: OutageChoice;
+      }
     | null
   >(null);
 
@@ -123,6 +148,22 @@ export function useHandSession(): HandSession {
       selectSessionStatus(current, incoming, activeHandId.current),
     );
   }, []);
+
+  const acceptOutage = useCallback((incoming: HandOutageStatus) => {
+    setOutage((current) =>
+      selectOutageStatus(current, incoming, activeHandId.current),
+    );
+  }, []);
+
+  /** Action・障害の選択の応答（View・Session・障害の状態）を受け取る。 */
+  const acceptResponse = useCallback(
+    (sentFor: string, res: HeroActionResponse) => {
+      accept(res.view);
+      acceptSession({ handId: sentFor, status: res.session });
+      acceptOutage({ handId: sentFor, status: res.outage });
+    },
+    [accept, acceptOutage, acceptSession],
+  );
 
   // 結果（complete の View）まで見た最後の Hand。開始の要求で送り、サーバーが再送と「次の Hand」を区別する。
   const seenComplete = useRef<string | null>(null);
@@ -147,6 +188,7 @@ export function useHandSession(): HandSession {
           setPlayers(res.players);
           accept(res.view);
           acceptSession({ handId: res.handId, status: res.session });
+          acceptOutage({ handId: res.handId, status: res.outage });
           setConnection("idle");
           // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。
           setStreamEpoch((n) => n + 1);
@@ -160,7 +202,7 @@ export function useHandSession(): HandSession {
           setPending(false);
         });
     },
-    [accept, acceptSession],
+    [accept, acceptOutage, acceptSession],
   );
 
   const start = useCallback(
@@ -168,28 +210,27 @@ export function useHandSession(): HandSession {
     [requestStart],
   );
 
-  /** Action を送る。lastSeq は「この操作を選んだときに見ていた View」の値。 */
-  const send = useCallback(
-    (sentFor: string, lastSeq: number, action: PlayerAction) => {
+  /**
+   * Hand に対する操作（Action・障害の選択）を送る。二重送信を止め、応答を受け取り、失敗したら再送用に覚える。
+   * failed は失敗したときに再送で同じ値を送るための記録。
+   */
+  const submit = useCallback(
+    (
+      sentFor: string,
+      request: () => Promise<HeroActionResponse>,
+      failed: NonNullable<typeof lastFailed.current>,
+    ) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setPending(true);
       setNotice(null);
       lastFailed.current = null;
-      sendHeroAction(sentFor, lastSeq, action)
-        .then((res) => {
-          accept(res.view);
-          acceptSession({ handId: sentFor, status: res.session });
-        })
+      request()
+        .then((res) => acceptResponse(sentFor, res))
         .catch((error: unknown) => {
           // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。
           if (activeHandId.current !== sentFor) return;
-          lastFailed.current = {
-            kind: "action",
-            handId: sentFor,
-            lastSeq,
-            action,
-          };
+          lastFailed.current = failed;
           setNotice(noticeOf(error));
         })
         .finally(() => {
@@ -197,7 +238,31 @@ export function useHandSession(): HandSession {
           setPending(false);
         });
     },
-    [accept, acceptSession],
+    [acceptResponse],
+  );
+
+  /** Action を送る。lastSeq は「この操作を選んだときに見ていた View」の値。 */
+  const send = useCallback(
+    (sentFor: string, lastSeq: number, action: PlayerAction) =>
+      submit(sentFor, () => sendHeroAction(sentFor, lastSeq, action), {
+        kind: "action",
+        handId: sentFor,
+        lastSeq,
+        action,
+      }),
+    [submit],
+  );
+
+  /** 障害の続け方を送る。revision は「この選択をしたときに見ていた障害の状態」の値（再送でも同じ値を送る）。 */
+  const sendOutageChoice = useCallback(
+    (sentFor: string, revision: number, choice: OutageChoice) =>
+      submit(sentFor, () => chooseOutage(sentFor, revision, choice), {
+        kind: "outage",
+        handId: sentFor,
+        revision,
+        choice,
+      }),
+    [submit],
   );
 
   const act = useCallback(
@@ -208,12 +273,23 @@ export function useHandSession(): HandSession {
     [handId, send, view],
   );
 
+  const currentOutage = outage?.handId === handId ? outage.status : null;
+  const resolveOutage = useCallback(
+    (choice: OutageChoice) => {
+      if (handId === null || currentOutage?.current == null) return;
+      sendOutageChoice(handId, currentOutage.revision, choice);
+    },
+    [currentOutage, handId, sendOutageChoice],
+  );
+
   const retry = useCallback(() => {
     const failed = lastFailed.current;
     if (failed?.kind === "start") requestStart(failed.afterHandId);
     else if (failed?.kind === "action")
       send(failed.handId, failed.lastSeq, failed.action);
-  }, [requestStart, send]);
+    else if (failed?.kind === "outage")
+      sendOutageChoice(failed.handId, failed.revision, failed.choice);
+  }, [requestStart, send, sendOutageChoice]);
 
   // SSE: 接続直後に現在の View が 1 回届き、以後は Log が進むたびに届く。complete を受けたら閉じる。
   // Session の状態（session イベント）は complete の View の直前に届く。
@@ -226,6 +302,13 @@ export function useHandSession(): HandSession {
       // 形の合わない data は描画に流さない（受け側の whitelist）。
       if (status === null) return;
       acceptSession({ handId, status });
+    });
+    source.addEventListener("outage", (event) => {
+      const data: unknown = event.data;
+      const status = typeof data === "string" ? parseOutageStatus(data) : null;
+      // 形の合わない data は描画に流さない（受け側の whitelist）。
+      if (status === null) return;
+      acceptOutage({ handId, status });
     });
     source.addEventListener("view", (event) => {
       const data: unknown = event.data;
@@ -243,18 +326,20 @@ export function useHandSession(): HandSession {
       );
     });
     return () => source.close();
-  }, [accept, acceptSession, handId, streamEpoch]);
+  }, [accept, acceptOutage, acceptSession, handId, streamEpoch]);
 
   return {
     handId,
     players,
     view,
     sessionStatus: session?.handId === handId ? session.status : null,
+    outage: currentOutage,
     pending,
     notice,
     connection,
     start,
     act,
+    resolveOutage,
     retry,
   };
 }
