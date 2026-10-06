@@ -29,6 +29,7 @@ import {
   formatChips,
   termLabel,
 } from "../lib/format.js";
+import { useShowBB } from "./BbDisplay.js";
 import { ChipPile } from "./ChipStack.js";
 
 interface ChipControlsProps {
@@ -264,6 +265,7 @@ function DeclarationButton({
   disabled,
   onClick,
 }: DeclarationButtonProps) {
+  const showBB = useShowBB();
   const legal = view.legalActions?.actions.find((a) => a.type === kind);
   let amount: number | null = null;
   let suffix = "";
@@ -293,9 +295,11 @@ function DeclarationButton({
         <span className="declaration__amount">
           {formatChips(amount)}
           {suffix}
-          <span className="declaration__bb">
-            {formatBB(amount, view.bigBlind)}
-          </span>
+          {showBB && (
+            <span className="declaration__bb">
+              {formatBB(amount, view.bigBlind)}
+            </span>
+          )}
         </span>
       )}
     </button>

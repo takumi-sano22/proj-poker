@@ -18,6 +18,7 @@ import {
 import { createPortal } from "react-dom";
 import { termLabel } from "../lib/format.js";
 import { VOCABULARY, type VocabId } from "../lib/vocabulary.js";
+import { useShowBB } from "./BbDisplay.js";
 
 /** Hover で開くまでの待ち（流し見で明滅させない）と、離れてから閉じるまでの猶予（用語から詳細の面へ移る間）。 */
 const HOVER_OPEN_MS = 250;
@@ -346,13 +347,14 @@ interface BodyProps {
 
 /** 詳細の中身（4 項目）。静的な描画のテストでも使えるよう、位置・focus の制御から分けている。 */
 export function VocabBody({ id, view, nameOf, onSelect }: BodyProps) {
+  const showBB = useShowBB();
   const entry = VOCABULARY[id];
   return (
     <dl className="vocab__body">
       <dt>意味（Definition）</dt>
       <dd>{entry.definition}</dd>
       <dt>この Hand では（Current Hand Example）</dt>
-      <dd>{entry.example({ view, nameOf })}</dd>
+      <dd>{entry.example({ view, nameOf, showBB })}</dd>
       <dt>関連（Related Concept）</dt>
       <dd>
         <ul className="vocab__related">

@@ -5,9 +5,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { preflopHeroToAct, seat } from "../testing/fixtures.js";
 import { Amount } from "./Amount.js";
+import { BbDisplayProvider, BbDisplayToggle } from "./BbDisplay.js";
 import { ChipControls } from "./ChipControls.js";
 import { ChipPile, ChipStack } from "./ChipStack.js";
 import { DealerFeedback } from "./DealerFeedback.js";
+import { FastForward } from "./FastForward.js";
 import { HandLog } from "./HandLog.js";
 import { OutageDialog } from "./OutageDialog.js";
 import { Table } from "./Table.js";
@@ -28,6 +30,109 @@ describe("Amount", () => {
     const html = renderToStaticMarkup(<Amount value={37} bigBlind={2} />);
     expect(html).toContain('amount__real">37<');
     expect(html).toContain('amount__bb">18.5 BB<');
+  });
+});
+
+describe("BB 補助表示の切り替え（実額は常に出す。D49）", () => {
+  it("OFF では BB 換算を出さず、実額はそのまま出す。Context が無ければ（既定）出す", () => {
+    const off = renderToStaticMarkup(
+      <BbDisplayProvider value={false}>
+        <Amount value={37} bigBlind={2} />
+      </BbDisplayProvider>,
+    );
+    expect(off).toContain('amount__real">37<');
+    expect(off).not.toContain("amount__bb");
+    expect(off).not.toContain("BB");
+    const on = renderToStaticMarkup(
+      <BbDisplayProvider value={true}>
+        <Amount value={37} bigBlind={2} inline />
+      </BbDisplayProvider>,
+    );
+    expect(on).toContain('amount__bb">18.5 BB<');
+  });
+
+  it("OFF では Table の Stack・Pot・Bet のどこにも BB 換算が出ず、実額は全部出る", () => {
+    const view = preflopHeroToAct();
+    const off = renderToStaticMarkup(
+      <BbDisplayProvider value={false}>
+        <Table view={view} nameOf={nameOf} />
+      </BbDisplayProvider>,
+    );
+    expect(off).not.toContain("amount__bb");
+    expect(off).toContain('amount__real">3<');
+    expect(off).toContain('amount__real">199<');
+    expect(off).toContain('amount__real">198<');
+    const on = renderToStaticMarkup(<Table view={view} nameOf={nameOf} />);
+    expect(on).toContain("amount__bb");
+  });
+
+  it("OFF では宣言 Button の BB 換算も出さず、実額（200 まで）は出す", () => {
+    const view = preflopHeroToAct();
+    const render = (showBB: boolean) =>
+      renderToStaticMarkup(
+        <BbDisplayProvider value={showBB}>
+          <ChipControls
+            view={view}
+            hero={view.seats[0]!}
+            disabled={false}
+            onSubmit={noop}
+          />
+        </BbDisplayProvider>,
+      );
+    expect(render(true)).toContain("declaration__bb");
+    const off = render(false);
+    expect(off).not.toContain("declaration__bb");
+    expect(off).toContain('declaration__amount">200 まで<');
+  });
+
+  it("Poker Vocabulary の例も、OFF では実額だけで書く（Pot の例）", () => {
+    const render = (showBB: boolean) =>
+      renderToStaticMarkup(
+        <BbDisplayProvider value={showBB}>
+          <VocabBody
+            id="pot"
+            view={preflopHeroToAct()}
+            nameOf={nameOf}
+            onSelect={noop}
+          />
+        </BbDisplayProvider>,
+      );
+    expect(render(true)).toContain("今の Pot は 3（1.5 BB）。");
+    expect(render(false)).toContain("今の Pot は 3。");
+  });
+
+  it("切り替えボタンは押された状態（aria-pressed）と ON / OFF で状態を伝える", () => {
+    const on = renderToStaticMarkup(
+      <BbDisplayToggle showBB={true} onChange={noop} />,
+    );
+    expect(on).toContain('aria-pressed="true"');
+    expect(on).toContain("BB 補助表示");
+    expect(on).toContain(">ON<");
+    const off = renderToStaticMarkup(
+      <BbDisplayToggle showBB={false} onChange={noop} />,
+    );
+    expect(off).toContain('aria-pressed="false"');
+    expect(off).toContain(">OFF<");
+  });
+});
+
+describe("Fast Forward（D12・D93）", () => {
+  it("押された状態を示し、AI の応答時間は縮まないことをいつも添える（ON でも OFF でも）", () => {
+    for (const active of [true, false]) {
+      const html = renderToStaticMarkup(
+        <FastForward active={active} disabled={false} onChange={noop} />,
+      );
+      expect(html).toContain(`aria-pressed="${active}"`);
+      expect(html).toContain("Fast Forward");
+      expect(html).toContain("AI の応答を待つ時間そのものは短くなりません");
+    }
+  });
+
+  it("送信中は押せない", () => {
+    const html = renderToStaticMarkup(
+      <FastForward active={false} disabled={true} onChange={noop} />,
+    );
+    expect(html).toContain("disabled");
   });
 });
 
@@ -226,6 +331,25 @@ describe("Table（他者の札はサーバーが公開したものだけを表�
     expect(html).toContain('aria-label="ダイヤの Q"');
     // Hero の札は画面下の欄に出すため、卓の上には描かない
     expect(html).not.toContain('aria-label="スペードの A"');
+  });
+
+  it("Hero が Fold した後の観戦中も、Hand が終わるまで他者の札は全部裏向きのまま（表の札は描かない）", () => {
+    const base = preflopHeroToAct();
+    const spectating = preflopHeroToAct({
+      actorId: "cpu1",
+      legalActions: null,
+      seats: [
+        // Fold した Hero の札は本人のものなので Hero の欄に出る（卓の上には描かない）
+        { ...base.seats[0]!, folded: true },
+        ...base.seats.slice(1).map((s) => ({ ...s, holeCards: null })),
+      ],
+    });
+    const html = renderToStaticMarkup(
+      <Table view={spectating} nameOf={nameOf} />,
+    );
+    // 残っている CPU 5 席は 2 枚ずつ裏向き。表向きの札（aria-label が「…の A」等）は 1 枚も無い
+    expect(html.match(/aria-label="伏せた札"/g)).toHaveLength(10);
+    expect(html).not.toMatch(/aria-label="(クラブ|ダイヤ|ハート|スペード)の/);
   });
 
   it.each([2, 8])(

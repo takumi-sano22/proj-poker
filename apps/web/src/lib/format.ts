@@ -20,6 +20,18 @@ export function formatBB(amount: number, bigBlind: number): string {
   return `${bbFormat.format(amount / bigBlind)} BB`;
 }
 
+/**
+ * 実額に BB 換算を添えた文章用の表記（例: "37（18.5 BB）"）。showBB が false なら実額だけ（BB 補助表示の OFF。実額は常に出す。D49）。
+ */
+export function formatChipsWithBB(
+  amount: number,
+  bigBlind: number,
+  showBB = true,
+): string {
+  const bb = showBB ? formatBB(amount, bigBlind) : "";
+  return bb === "" ? formatChips(amount) : `${formatChips(amount)}（${bb}）`;
+}
+
 /** 比率（0〜1）を整数の % にする（表示の目安。Chip の移動には使わない）。 */
 export function formatPercent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;

@@ -56,7 +56,9 @@ export type OrchestratorError =
   /** Hero が見ていた卓の状態より Log が進んでいる（二重送信・古い画面からの送信）。 */
   | { readonly kind: "stale_view"; readonly message: string }
   /** 選んだ障害がもう無い・別の障害に変わっている（二重送信・古いダイアログからの送信）。 */
-  | { readonly kind: "stale_outage"; readonly message: string };
+  | { readonly kind: "stale_outage"; readonly message: string }
+  /** Fast Forward は Hero が Hand から外れている間（Fold 後）だけ入れられる。Hero がまだ Hand にいる、または Hand が終わっている。 */
+  | { readonly kind: "not_spectating"; readonly message: string };
 
 /**
  * Session が終わった理由（D80）。
@@ -164,6 +166,14 @@ interface HandRuntime {
   outageRevision: number;
   /** 障害の後に Hero が Session 終了を選んだ。この Hand は途中で打ち切り、以降は動かさない（メモリだけに持つ。D88）。 */
   abandoned: boolean;
+  /**
+   * Fast Forward（D12・D15・D93）。Hero が Hand から外れている間だけ入れられ、その Hand の残りの CPU の思考待ち（演出）を 0 にする。
+   * CPU の判断そのものの待ち（Claude の応答）は縮めない。Hand が終わる（commit が HAND_FINISHED を追記する）と切れる。
+   * 運用の状態なのでメモリにだけ持ち、Event には残さない（D88 の Emergency Bot と同じ扱い）。
+   */
+  fastForward: boolean;
+  /** 今の思考待ち（演出）を今すぐ終わらせる。思考待ちの最中でなければ null（判断待ち・アプリ終了の打ち切りとは別）。 */
+  endThinkWait: (() => void) | null;
 }
 
 /** CPU に 1 回判断を求めた結果。 */
@@ -318,6 +328,8 @@ export class HandOrchestrator {
       outage: null,
       outageRevision: 0,
       abandoned: false,
+      fastForward: false,
+      endThinkWait: null,
     };
     this.hands.set(handId, rt);
     await this.proceed(rt);
@@ -481,6 +493,44 @@ export class HandOrchestrator {
     return { ok: true, value: this.heroViewOf(handId) };
   }
 
+  /** その Hand の Fast Forward が入っているか（Hand が終わっていれば false）。未知の Hand なら null。 */
+  fastForwardOf(handId: string): boolean | null {
+    const rt = this.hands.get(handId);
+    return rt === undefined ? null : rt.fastForward;
+  }
+
+  /**
+   * Fast Forward を入れる・切る（D12・D15・D93）。入れられるのは Hero が Hand から外れている間（Fold 後）で、Hand が終われば自動で切れる
+   * （次の Hand は通常の速さ）。入れると、その Hand の残りの CPU の思考待ち（演出。botDelayMs）を 0 にし、待っている最中の分も今すぐ終える。
+   * CPU の判断の待ち（Claude の応答。opponentTimeoutMs の範囲）は縮めない。切るのは Hand が終わった後でも受け付ける（何も起きない）。
+   */
+  setFastForward(
+    handId: string,
+    enabled: boolean,
+  ): OrchestratorResult<{ fastForward: boolean }> {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return notFound(handId);
+    if (!enabled) {
+      rt.fastForward = false;
+      return { ok: true, value: { fastForward: false } };
+    }
+    const view = this.heroViewOf(handId);
+    const hero = view.seats.find((s) => s.playerId === this.heroId);
+    if (view.status === "complete" || (hero !== undefined && !hero.folded)) {
+      return {
+        ok: false,
+        error: {
+          kind: "not_spectating",
+          message:
+            "Fast Forward は Hero が Fold した後、Hand の終了までの間だけ使える",
+        },
+      };
+    }
+    rt.fastForward = true;
+    rt.endThinkWait?.();
+    return { ok: true, value: { fastForward: true } };
+  }
+
   /** CPU の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。以降は CPU を進めない。遅れて届いた判断も適用しない。 */
   close(): void {
     this.closed = true;
@@ -605,6 +655,8 @@ export class HandOrchestrator {
   /** Event を Log へ追記し、Hero の View を購読者へ配る。 */
   private commit(rt: HandRuntime, events: readonly HandEvent[]): void {
     this.options.store.append(rt.handId, events, { sessionId: rt.sessionId });
+    // Hand が終わったら通常の速さに戻す（Fast Forward はその Hand だけ）。
+    if (events.some((e) => e.type === "HAND_FINISHED")) rt.fastForward = false;
     if (rt.listeners.size === 0) return;
     const view = this.heroViewOf(rt.handId);
     for (const listener of rt.listeners) {
@@ -655,7 +707,8 @@ export class HandOrchestrator {
           continue;
         }
         const expectedSeq = events.length;
-        if (this.options.botDelayMs > 0) {
+        // Fast Forward 中は思考待ち（演出）だけを飛ばす。cpuTurn の判断待ち（Claude の応答）はそのまま待つ。
+        if (this.options.botDelayMs > 0 && !rt.fastForward) {
           await this.wait(rt, this.options.botDelayMs);
         }
         await this.cpuTurn(rt, expectedSeq);
@@ -910,10 +963,13 @@ export class HandOrchestrator {
       const done = () => {
         clearTimeout(timer);
         rt.cancelWait = null;
+        rt.endThinkWait = null;
         resolve();
       };
       const timer = setTimeout(done, ms);
       rt.cancelWait = done;
+      // Fast Forward を入れたとき、待っている最中の思考待ちも終えられるようにする。
+      rt.endThinkWait = done;
     });
   }
 

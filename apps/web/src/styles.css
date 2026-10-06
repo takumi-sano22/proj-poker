@@ -163,9 +163,18 @@ input {
 
 .app__title {
   margin: 0;
+  white-space: nowrap;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.app__header-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8px 16px;
 }
 
 .app__meta {
@@ -287,6 +296,57 @@ input {
 .btn:active:not(:disabled) {
   box-shadow: none;
   transform: translateY(1px);
+}
+
+/* ───────── 切り替え（BB 補助表示・Fast Forward） ───────── */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--color-on-surface-muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.toggle[aria-pressed="true"] {
+  border-color: var(--color-brand-500);
+  color: var(--color-on-surface);
+}
+
+.toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.toggle__state {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.fast-forward {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+
+.fast-forward__note {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+/* Fast Forward 中は卓の動きの演出を止める（待ちの短縮はサーバー側。AI の応答時間は縮まらない） */
+.app--fast-forward {
+  --duration-fast: 0ms;
+  --duration-base: 0ms;
 }
 
 /* ───────── 金額（実額が正本、BB は補助） ───────── */
