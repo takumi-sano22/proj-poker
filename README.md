@@ -152,7 +152,7 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 - 資格情報は Claude Code が `~/.claude/` に持つものを使います。リポジトリ・`.env`・`apps/web`（ブラウザ）へ置かない・コピーしない・渡しません。Claude を呼ぶのはローカルの `apps/server` だけです（`claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` は使いません）。
 - 本人のログインを本人がローカルで使う前提です。第三者が自分の製品で claude.ai ログインを提供することは公式に認められていないので、配布・共有はしないでください。
 - サブスクの利用枠は、開発で使う Claude Code と**共有**です。CPU の判断を Claude にすると、そのぶん開発側の枠も減ります。
-- ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まります（卓の選択ダイアログは #52 で実装予定）。対処は、ログイン切れなら `claude` で `/login` し直す／上限なら枠が戻るまで待つ／すぐ続けたいときは Emergency Bot（RuleBot）で続行する、のいずれかです。
+- ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まり、卓の中央に続け方を選ぶダイアログが出ます（Retry / Emergency Bot で続行 / Session を終了）。対処は、ログイン切れなら `claude` で `/login` し直してから Retry／上限なら枠が戻るまで待って Retry／すぐ続けたいときは Emergency Bot（その CPU を Session の終わりまで RuleBot で動かす）、のいずれかです。
 - CI と `pnpm test` は Claude を呼びません（Fake と録画済み応答だけ）。開発中の実呼び出しは制限しません。
 
 ## 開発コマンド

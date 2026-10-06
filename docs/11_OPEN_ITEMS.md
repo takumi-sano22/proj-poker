@@ -21,6 +21,8 @@ Role-based Configで実装します。
 
 Latency Policy の暫定値（#47 で 15000ms、#50 で見直し。確定ではない）: CPU の 1 回の判断を待つ上限は 30000ms（`apps/server` の Config `OPPONENT_TIMEOUT_MS`）。#50 の実測（Agent SDK・OAuth・`claude-haiku-4-5`・3 人卓・2026-10-06）は 63 回で中央値 約 7.2 秒・p90 約 8.6 秒・最大 15.5 秒（子プロセスの起動〜初期化は約 0.7 秒で、残りは API の応答）。15000ms では 63 回中 1 回が超え、障害で Hand が止まるため、最大の約 2 倍に上げた。詳細は `docs/taskLog/issue-50-agent-sdk-adapter.md`。
 
+遅延表示の暫定値（#52。確定ではない）: CPU の同じ手番がこれを超えて続いたら、卓に「AI応答が遅延しています」を補足する（docs/06 §11・D86）。10000ms（`apps/web` の `lib/config.ts` `AI_DELAY_NOTICE_MS`）。上の実測の p90（約 8.6 秒）を超えて待つときに出し、障害として止める上限（30000ms）より短くした。
+
 ## OI-002 — Primary Solver
 
 MVPで実Solver統合は必須です。
