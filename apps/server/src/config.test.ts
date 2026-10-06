@@ -15,12 +15,15 @@ import {
   MODEL_ROLES,
   PHASE1_TABLE_SETUP,
   buildTableSetup,
+  fixedSeedSequence,
   parseBotDelayMs,
+  parseFixedSeed,
   parseOpponentProvider,
   parseOpponentTimeoutMs,
   parsePersonaRotation,
   parseSolverIterations,
   parseSolverMaxConcurrency,
+  parseReviewProvider,
   parseReviewTimeoutMs,
   parseSolverTimeoutMs,
   parseTableSize,
@@ -225,5 +228,30 @@ describe("Solver の設定（#81）", () => {
     }
     // 既定の同時実行数は 1（Solver は CPU・メモリを使う）。
     expect(DEFAULT_SOLVER_MAX_CONCURRENCY).toBe(1);
+  });
+});
+
+describe("E2E 用の設定（#85・D98）", () => {
+  it("REVIEW_PROVIDER: 未設定・空なら claude、fake は固定応答、知らない値は起動時に止める", () => {
+    expect(parseReviewProvider(undefined)).toBe("claude");
+    expect(parseReviewProvider(" ")).toBe("claude");
+    expect(parseReviewProvider("claude")).toBe("claude");
+    expect(parseReviewProvider(" fake ")).toBe("fake");
+    expect(() => parseReviewProvider("recorded")).toThrow(RangeError);
+  });
+
+  it("POKER_SEED: 未設定・空なら null（乱数）、0〜2^32-1 の整数だけを受け付け、不正な値は起動時に止める", () => {
+    expect(parseFixedSeed(undefined)).toBeNull();
+    expect(parseFixedSeed("")).toBeNull();
+    expect(parseFixedSeed("0")).toBe(0);
+    expect(parseFixedSeed("4294967295")).toBe(2 ** 32 - 1);
+    for (const raw of ["-1", "1.5", "abc", "4294967296"]) {
+      expect(() => parseFixedSeed(raw)).toThrow(RangeError);
+    }
+  });
+
+  it("固定した seed の並びは start から 1 ずつ進み、2^32 で折り返す", () => {
+    const next = fixedSeedSequence(2 ** 32 - 2);
+    expect([next(), next(), next()]).toEqual([2 ** 32 - 2, 2 ** 32 - 1, 0]);
   });
 });

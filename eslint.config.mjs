@@ -58,6 +58,9 @@ export default defineConfig(
       "docs/**",
       ".claude/**",
       "apps/web/public/**",
+      // Playwright（E2E）の結果（機械生成）
+      "e2e/test-results/**",
+      "e2e/playwright-report/**",
     ],
   },
 

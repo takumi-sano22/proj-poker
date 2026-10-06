@@ -25,3 +25,36 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm format:check
+
+  # 6-max Session の E2E（docs/09 §8・D98）。check を遅くしないよう別のジョブで並行して動かす。
+  # CPU は RuleBot、Review AI は固定応答（REVIEW_PROVIDER=fake）で Claude を呼ばない。ブラウザは Chromium の headless shell だけ。
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # ブラウザの取得は Playwright の版ごとにキャッシュする（版は e2e/package.json で厳密に固定している）。
+      - name: Playwright の版
+        id: playwright
+        run: echo "version=$(node -p "require('./e2e/package.json').devDependencies['@playwright/test']")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}-chromium-shell
+      # キャッシュがあればダウンロードは省かれ、OS の依存パッケージだけを入れる。
+      - run: pnpm --filter @proj-poker/e2e exec playwright install --with-deps --only-shell chromium
+      - run: pnpm e2e
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7

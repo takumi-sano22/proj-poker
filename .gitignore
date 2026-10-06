@@ -14,3 +14,7 @@ dist/
 
 # SQLite の DB ファイル（apps/server の既定の置き場所。POKER_DB_PATH で変更できる）
 apps/server/data/
+
+# Playwright（E2E）の結果
+e2e/test-results/
+e2e/playwright-report/

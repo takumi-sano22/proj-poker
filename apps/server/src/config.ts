@@ -258,3 +258,47 @@ function parsePositiveInt(raw: string | undefined, fallback: number): number {
   const value = Number(raw);
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
+
+/**
+ * Review AI の実装。既定は Claude（Agent SDK・OAuth。D87・D97）。"fake" は E2E 用の固定応答（Claude を呼ばない。D98）で、
+ * CI の E2E と手元の E2E の実行でだけ使う（本番の既定は変えない）。
+ */
+export type ReviewProvider = "claude" | "fake";
+
+/** 環境変数 REVIEW_PROVIDER の値を読む。未設定・空なら Claude。知らない値は起動時に誤りとして止める（黙って既定にしない）。 */
+export function parseReviewProvider(raw: string | undefined): ReviewProvider {
+  if (raw === undefined || raw.trim() === "") return "claude";
+  const value = raw.trim();
+  if (value === "claude" || value === "fake") return value;
+  throw new RangeError(
+    `REVIEW_PROVIDER は claude か fake: ${JSON.stringify(raw)}`,
+  );
+}
+
+/**
+ * 環境変数 POKER_SEED の値を、Hand の山札の seed の始まりとして読む（E2E を決定論にするため。D98）。未設定・空なら null（毎回乱数）。
+ * 0〜2^32-1 の整数だけを受け付け、不正な値は起動時に誤りとして止める（黙って乱数に戻すと E2E が気付かず不安定になる）。
+ */
+export function parseFixedSeed(raw: string | undefined): number | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0 || value >= 2 ** 32) {
+    throw new RangeError(
+      `POKER_SEED は 0〜${2 ** 32 - 1} の整数: ${JSON.stringify(raw)}`,
+    );
+  }
+  return value;
+}
+
+/**
+ * seed を固定したときの Hand ごとの seed（start, start+1, … を 2^32 で折り返す）。起動ごとに start から数え直すので、
+ * 同じ操作なら同じ山札が配られる（Resume の後の Hand も、起動後の何 Hand 目かで決まる）。
+ */
+export function fixedSeedSequence(start: number): () => number {
+  let next = start;
+  return () => {
+    const seed = next;
+    next = (next + 1) % 2 ** 32;
+    return seed;
+  };
+}
