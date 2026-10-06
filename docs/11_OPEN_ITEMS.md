@@ -113,7 +113,7 @@ MVPでは代表的なCore Rulingを扱います。
 
 Versioned Rule Profileで拡張可能にします。
 
-暫定値（永久仕様ではない。確定は人間判断を経て D 番号で行う）: Split Potの端数の配り方（D75）、Short All-inのReopenは累積Full Raise（D79）、BustしたCPUの退席とButtonの移動（D80）、RulingはTDA準拠のOversized Chip・String Bet・Out-of-Turnの3種（暫定値は D91。確定ではない）。
+暫定値（永久仕様ではない。確定は人間判断を経て D 番号で行う）: Split Potの端数の配り方（D75）、Short All-inのReopenは累積Full Raise（D79）、BustしたCPUの退席とButtonの移動（D80）、RulingはTDA準拠のOversized Chip・String Bet・Out-of-Turnの3種（暫定値は D91。確定ではない）。宣言の優先と合法範囲への寄せ方・Multiple Chip（50%規則）・Out-of-Turnの「状況が変わる」の判定条件は、#63でTDAに沿ってRule Profile `phase4_provisional_v1` に置いた暫定値（docs/02 §3。TDAとの差もそこに書く）。
 
 ## OI-009 — Multiway Deep Solver
 
