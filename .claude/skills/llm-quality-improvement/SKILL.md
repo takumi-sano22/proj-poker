@@ -9,14 +9,14 @@ LLM 機能の品質を「感覚」ではなく「測定」で改善するため�
 
 ## proj-poker での適用対象
 
-プロバイダは Claude API（Opponent = Haiku 級 / Review = 上位モデル。具体的な Model 名は role-based config で、未確定は OI-001。モデル ID をコードへ直書きしない）。評価対象は 2 つ（一次情報は `docs/09_TEST_STRATEGY.md` §5・§6、設計は `docs/05_AI_OPPONENTS_AND_REVIEW.md`）。Poker Engine の正しさはこの skill の対象外（決定論テストで担保。`poker-engine-testing`）。
+プロバイダは Claude（Claude Code の OAuth・サブスク枠を Claude Agent SDK 経由で使う。API キーは使わない・D87。Opponent = Haiku 級 / Review = 上位モデル。具体的な Model 名は role-based config で、未確定は OI-001。モデル ID をコードへ直書きしない）。評価対象は 2 つ（一次情報は `docs/09_TEST_STRATEGY.md` §5・§6、設計は `docs/05_AI_OPPONENTS_AND_REVIEW.md`）。Poker Engine の正しさはこの skill の対象外（決定論テストで担保。`poker-engine-testing`）。
 
 | 評価 | 測定する指標（決定論で測れるものは決定論で） | 判定の軸（Judge を使う場合） |
 |---|---|---|
 | **AI Opponent Eval** | Structured Output Valid 率・Illegal Action 率（合法候補外の選択）・Retry 率・Latency・Hidden Information Leakage（他者 Hole Cards 等の言及/利用） | Persona Differentiation・Action Diversity・Strategic Incoherence の有無 |
 | **Review Eval** | Pass A の Hindsight Leak 件数・Math の正しさ（Pot Odds / Equity 等を再計算で照合）・Solver Capability Gate の動作・Source Grounding（KB 引用の実在）・Hidden CPU Setting を Evidence に使っていないか | Uncertainty の表現・Assumption 変更で Recommendation が適切に変わるか |
 
-代表 Spot / Human-reviewed Hand を固定 Regression Case として持つ。Eval の実装場所・コマンドは未確定。Phase 0 には LLM 呼び出しが無いため決めていない。LLM を呼ぶのは `apps/server`（D67）なので、最初の Eval を作る Issue（AI Opponent を入れる Phase 3 の見込み）で置き場と実行コマンドを決め、ここへ追記する。
+代表 Spot / Human-reviewed Hand を固定 Regression Case として持つ。AI Opponent の Eval は `apps/server/src/testing/opponent-eval/` にある（#53）。CI は録画済み応答（`recordings/opponent-eval.json`）を再生して指標を集計し、Claude を呼ばない。実際に Claude を呼ぶ手動実行は `pnpm --filter @proj-poker/server eval:opponent`。合格ライン（暫定）は `docs/09_TEST_STRATEGY.md` §5。Review の Eval は Phase 5 で置き場を決め、ここへ追記する。
 
 ## 全体プロセス
 

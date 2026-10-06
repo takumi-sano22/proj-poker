@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: Phase 2（Full Poker Engine）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊べます**（Stack は Hand をまたいで持ち越し、Bust した CPU は退席）。Side Pot・Short All-in の Reopen・Heads-Up への移行を Engine が扱います。終わった Hand の Event Log は SQLite に残ります（Replay・Review・AI の CPU はまだありません）
+> 現在の状態: Phase 3（AI Opponents）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊べます**。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられ、6 種の Persona で性格が分かれます。CPU の出力は Engine の合法 Action で検証し、不正なら 1 回 Retry → RuleBot で続行、障害時は卓のダイアログで続け方を選べます。終わった Hand の Event Log は SQLite に残ります（Replay・Review はまだありません）
 
 ## このプロジェクトを作る理由
 
@@ -145,7 +145,8 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 1. **ログイン**: ターミナルで `claude` を起動し、`/login` でサブスクリプションのアカウントにログインします。
 2. **動作確認**: `claude -p "OK とだけ返して"` が応答すれば、ログインできています。
 3. **`ANTHROPIC_API_KEY` が無いことの確認**: server を起動するシェルで `[ -z "${ANTHROPIC_API_KEY:-}" ] && echo "未設定（OK）" || echo "設定あり（unset してください）"` を実行します。環境に `ANTHROPIC_API_KEY` があると、Agent SDK はそちらを優先し、サブスク枠ではなく **API 課金** になります（server は Claude を呼ぶ子プロセスの環境から外しますが〔#50〕、シェル側にも置かないでください）。
-4. **CPU を Claude に切り替える**: server を起動するシェルで `OPPONENT_PROVIDER=claude` を設定して起動します（例: `OPPONENT_PROVIDER=claude pnpm dev`）。モデルは `opponent_fast` Role（暫定値 `claude-haiku-4-5`）です。起動ログに `"provider":"claude"` が出れば切り替わっています。
+4. **CPU を Claude に切り替える**: server を起動するシェルで `OPPONENT_PROVIDER=claude` を設定して起動します（例: `OPPONENT_PROVIDER=claude pnpm dev`）。モデルは `opponent_fast` Role（暫定値 `claude-haiku-4-5`）です。起動ログに `"provider":"claude"` が出れば切り替わっています。CPU ごとの Persona は `CPU_PERSONAS` で選べます（例: `OPPONENT_PROVIDER=claude CPU_PERSONAS=maniac,calling_station TABLE_SIZE=3 pnpm dev`）。
+5. **Eval（任意）**: `pnpm --filter @proj-poker/server eval:opponent` で、代表 Spot（Preflop の Open・3-bet に直面・Flop の C-bet・River の大きな Bet に直面）× 6 Persona の判断を実際に集め、出力の正しさ・Retry 率・Latency・Persona の差・情報漏れを表示します（`docs/09` §5）。1 回あたり数分かかり、利用枠を使います。
 
 守ること:
 
@@ -153,6 +154,7 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 - 本人のログインを本人がローカルで使う前提です。第三者が自分の製品で claude.ai ログインを提供することは公式に認められていないので、配布・共有はしないでください。
 - サブスクの利用枠は、開発で使う Claude Code と**共有**です。CPU の判断を Claude にすると、そのぶん開発側の枠も減ります。
 - ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まり、卓の中央に続け方を選ぶダイアログが出ます（Retry / Emergency Bot で続行 / Session を終了）。対処は、ログイン切れなら `claude` で `/login` し直してから Retry／上限なら枠が戻るまで待って Retry／すぐ続けたいときは Emergency Bot（その CPU を Session の終わりまで RuleBot で動かす）、のいずれかです。
+- **CPU の 1 手に数秒〜十数秒かかります**（子プロセスの起動を含む。実測は [`docs/taskLog/issue-53-opponent-eval.md`](./docs/taskLog/issue-53-opponent-eval.md)）。待ちが長いと卓に「AI応答が遅延しています」が出ます。判断待ちの上限は `OPPONENT_TIMEOUT_MS` です。
 - CI と `pnpm test` は Claude を呼びません（Fake と録画済み応答だけ）。開発中の実呼び出しは制限しません。
 
 ## 開発コマンド
@@ -229,26 +231,36 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 2 — Full Poker Engine** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
+**Phase 3 — AI Opponents** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
 
 できていること:
 
 - 設計ドキュメント（`docs/`）と人間判断（D01〜D88）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
-- 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 1 は 6-max・均等Stack・単一Pot）
-- Position Engine（D80・OI-008 の暫定値）: 前 Hand の結果から次 Hand の席と Button を決めます。Bust（Stack 0）した Player を外し、Button は時計回りで次の生存席へ（Dead Button なし）。3 人→Heads-Up の移行もここで扱います
+- 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
+- Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
 - テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）
-- Session（Server の Hand Orchestrator）: Stack を Hand 間で持ち越し、Bust した CPU は退席します。Hero の Bust か、Hero だけが残ったら Session を終えます（D80）。席・Stack・Button は直前の Hand の Event Log から作ります
 - ブラウザで遊べる Basic UI（`apps/web`）: 2Dの卓（2〜8 席）・実額表示（BBは補助）・合法Actionだけの宣言ボタン・進行ログ・Hero Fold 後の観戦・Session 終了の表示
-- 暫定CPU（D71）: seed付きの決定論ルールBot。そのCPUに見える情報だけで合法Actionから選びます
+- 既定の CPU（D71）: seed付きの決定論ルールBot（RuleBot）。そのCPUに見える情報だけで合法Actionから選びます。Claude の CPU の Fallback・Emergency Bot にも使います
+- **AI Opponents（Phase 3）**:
+  - CPU ごとの KnowledgeState（#46・D28）: その CPU に見える Event だけから作り、他者の Hole Cards・未来のカード・他 CPU の Persona を渡しません
+  - Claude の CPU（#50・D87）: Claude Agent SDK で、ローカルでログイン済みの Claude Code の OAuth（サブスク枠）を使います。`OPPONENT_PROVIDER=claude` で切り替え（既定は RuleBot）。手順は上の「Claudeの認証」
+  - Persona（#51・D85）: TAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreational の 6 種（多軸のパラメータ。数値は OI-005 の暫定値）。席順に割り当て、`CPU_PERSONAS` で変えられます。Persona は画面に出しません
+  - 出力の検証と Fallback（#47・D40・D41）: CPU の出力を Schema → 合法 Action → 額の範囲の順に検証し、不正なら理由を付けて 1 回 Retry、再度不正なら RuleBot の判断で続けます。合法性は Engine が判定し、LLM には判断させません
+  - AI の Event（#48・D83）: 不正な出力と Fallback の利用を Event Log に残します（版 4）
+  - 障害時の 3 択（#52・D86）: ログイン切れ・利用枠の上限・応答時間の超過で CPU が判断できないと Hand を止め、卓のダイアログで Retry / Emergency Bot で続行 / Session を終了 を選べます。長く待つ手番には「AI応答が遅延しています」を出します
+  - AI Opponent Eval（#53・`docs/09` §5）: 代表 Spot × Persona の判断を集めて Structured Output Valid 率・Illegal Action 率・Retry 率・Latency・Persona Differentiation・Action Diversity・Hidden Information Leakage を集計します。CI は録画済み応答を再生して集計し、Claude を呼びません
 - Event Log（D37）: Handの進行はすべてEventで表し、終わったHandのEventをSQLiteへ1トランザクションで保存します（Completed Handが保存の境界。D62）
 
 制約・未実装:
 
+- Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
+- 障害時に選んだ Session 終了と Emergency Bot への切り替えは、まだ Event Log に残りません（サーバーのメモリだけ。Phase 5 の Session Resume で Event 化を設計。D88）
+- Persona の数値（OI-005）・モデル名 `claude-haiku-4-5` と判断待ちの上限（OI-001）・Eval の合格ライン（`docs/09` §5）は暫定値です。Tilt（一時的な状態）・CPU の観察記憶は Phase 7 です
 - 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）・Session 終了の Event はまだありません
 - サーバーを再起動すると新しい Session から始まります（再起動後の Session Resume は Phase 5）
-- Optional BB 表示・Fast Forward は Phase 4、Chip 操作（Click + Drag）・Dealer Feedback・Ruling（Oversized Chip・String Bet / Raise・Out of Turn）は Phase 4、Ante・Blind Level は Phase 8（Tournament）です
-- 保存したHandを画面から開くReplay・Hand Review・LLMのCPU は未実装です
+- Optional BB 表示・Fast Forward・Chip 操作（Click + Drag）・Dealer Feedback・Ruling（Oversized Chip・String Bet / Raise・Out of Turn）は Phase 4、Ante・Blind Level は Phase 8（Tournament）です
+- 保存したHandを画面から開くReplay・Hand Review は未実装です
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
 - MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
 
-次は **Phase 3 — AI Opponents**（Model Adapter・KnowledgeState・Basic Persona・Structured Action・Retry / Fallback）です。
+次は **Phase 4 — Live Mechanics**（Chip Physical Action・Declaration・Ruling Engine・Dealer Feedback・Replay）です。

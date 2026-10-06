@@ -220,6 +220,11 @@ export function outputSchema(input: OpponentInput): Record<string, unknown> {
   };
 }
 
+/**
+ * Legal Action を Prompt の 1 行にする。call / all_in は額が決まっているので「amount は付けない」と行ごとに書く。
+ * #51・#53 の実測で、call の行の額（または to 額）を amount に写して Schema の不正（→ Retry）になる回があった。
+ * 検証は緩めず（D40）、迷いやすい行の上で指示する。
+ */
 function describeLegalAction(
   action: OpponentInput["legal"]["actions"][number],
 ): string {
@@ -228,9 +233,9 @@ function describeLegalAction(
     case "check":
       return `- ${action.type}`;
     case "call":
-      return `- call（追加で ${action.amount} 出す）`;
+      return `- call（追加で ${action.amount} 出す。amount は付けない）`;
     case "all_in":
-      return `- all_in（この Street の累計が ${action.amount} になる）`;
+      return `- all_in（この Street の累計が ${action.amount} になる。amount は付けない）`;
     case "bet":
     case "raise":
       return `- ${action.type}（amount = この Street の累計額。${action.min}〜${action.max}）`;
