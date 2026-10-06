@@ -16,8 +16,3 @@ export function Amount({ value, bigBlind, inline = false }: AmountProps) {
     </span>
   );
 }
-
-/** Chip の構造描画（D60: CSS で描く）。Chip Drag は Phase 4 で扱う。 */
-export function ChipIcon() {
-  return <span className="chip" aria-hidden="true" />;
-}

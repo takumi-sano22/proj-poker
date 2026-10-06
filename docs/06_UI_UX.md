@@ -70,6 +70,8 @@ Card / Chipは構造描画します。
 
 Chip操作は `PhysicalAction` を生成します。
 
+Stack Composition表示（#62）: 席のStackとBetを、額から自動で組んだChipの構成（額面ごとの色付きの積み。額面は1白・5赤・25緑・100黒・500紫の暫定値。D92・OI-004）で描きます。実額が正本で、積みは補助です（D49）。多い枚数は重ねる数に上限を置き、枚数（×N）で示します。Click・Drag・Betting Areaへの投入は#65で扱います。
+
 Primary Numeric Bet Boxは作りません。
 
 ## 5. Declaration UI

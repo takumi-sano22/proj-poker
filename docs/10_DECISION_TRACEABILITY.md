@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D88の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D93の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -23,6 +23,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D82〜D86 | Phase 3 の分解、AIのEvent（AI_ACTION_INVALID / AI_FALLBACK_USED・schema_version 4）、APIキーの置き場所と実API呼び出しの扱い（D84。D87で変更）、opponent_fastのModelとPersonaの暫定値、AI障害時のUser Choice |
 | D87 | Claudeの認証をClaude CodeのOAuth（サブスク枠）にする（ユーザー指示。D84を変更）。Agent SDK経由・資格情報はリポジトリとブラウザに置かない・ANTHROPIC_API_KEYは子プロセスから外す |
 | D88 | AI障害時のSession終了とEmergency BotのSession単位の登録はPhase 3ではメモリに持ち、Event Logへの記録はPhase 5のSession Resumeで設計する（Emergency Botの各ActionはAI_FALLBACK_USED） |
+| D89〜D93 | Phase 4 の分解（D89）、宣言・物理的なChip操作・裁定のEvent（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING・schema_version 5。D90）、Rulingは TDA準拠の3種（D91）、Chipの額面Preset（1/5/25/100/500。D92）、ReplayとFast Forwardの範囲（D93） |
 
 ## 特に重要なClosed Decision
 

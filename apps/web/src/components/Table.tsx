@@ -8,7 +8,8 @@ import {
   seatDirections,
   type SeatDirection,
 } from "../lib/view-model.js";
-import { Amount, ChipIcon } from "./Amount.js";
+import { Amount } from "./Amount.js";
+import { ChipStack } from "./ChipStack.js";
 import { CardSlot, PlayingCard } from "./PlayingCard.js";
 
 const BOARD_SIZE = 5;
@@ -162,6 +163,7 @@ export function Seat({
           >
             <Amount value={seat.stack} bigBlind={bigBlind} inline />
           </div>
+          <ChipStack amount={seat.stack} />
           <SeatStatus seat={seat} isActor={isActor} />
         </div>
       </div>
@@ -171,7 +173,7 @@ export function Seat({
           style={placement}
           aria-label={`${name} のベット ${formatChips(seat.streetCommitted)}`}
         >
-          <ChipIcon />
+          <ChipStack amount={seat.streetCommitted} />
           <Amount value={seat.streetCommitted} bigBlind={bigBlind} inline />
         </div>
       )}

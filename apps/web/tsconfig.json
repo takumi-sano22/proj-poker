@@ -6,7 +6,7 @@
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
     "types": ["vite/client"],
-    // Engine は型だけを import する（ルールの判定はサーバーが行い、ブラウザで Engine のロジックを動かさない）。
+    // Engine の型と、Chip の額面・構成の関数（表示用）だけを import する（ルールの判定はサーバーが行い、ブラウザで Engine の判定ロジックを動かさない）。
     // 型は build せずに src から読む（packages/engine の exports の条件。apps/server の tsconfig と同じ）。
     "customConditions": ["@proj-poker/source"],
     "noEmit": true

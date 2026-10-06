@@ -1,6 +1,7 @@
 // 卓の設定（Blind・Rule Profile）と Phase 1 の暫定 Preset。
 // Chip は「最小単位の整数（number）」で表す。Blind・Stack・Bet はすべて同じ単位で持ち、浮動小数は使わない
 // （D74。Chip 総量の保存〔INV-TEST-002 / 005〕を完全一致で検証できるようにするため）。
+import { DEFAULT_CHIP_DENOMINATIONS, type ChipDenomination } from "./chips.js";
 
 /**
  * Split Pot で割り切れない端数（Odd Chip）の配り方（Rule Profile の設定値。docs/02 §5）。
@@ -29,6 +30,7 @@ export type ButtonRule = "simple_moving";
  * 卓の Betting 設定。Rule Profile は ID と、Engine が分岐に使う設定値を持つ（docs/02 §3）。
  * Hand の中で使う設定値（Blind・oddChipRule・reopenRule）は HAND_STARTED に残す。buttonRule は Hand と Hand の間
  * （nextHandSeating）でだけ使い、その結果は次 Hand の HAND_STARTED の席順・buttonPlayerId に残るので Event には持たせない。
+ * chipDenominations は Chip の額面と色（表示用。D92）。額の計算には使わず、Event にも持たせない。
  */
 export interface TableConfig {
   readonly ruleProfile: string;
@@ -37,12 +39,13 @@ export interface TableConfig {
   readonly oddChipRule: OddChipRule;
   readonly reopenRule: ReopenRule;
   readonly buttonRule: ButtonRule;
+  readonly chipDenominations: readonly ChipDenomination[];
 }
 
 /**
  * 暫定の Cash Preset。startingStack は Session 開始時に全員へ配る Stack（100BB）で、
  * 2 Hand 目以降は前 Hand の Stack を持ち越す（Bust した Player は退席。D80）。
- * 値は OI-004（Chip Preset）・OI-008（Rule Profile の範囲）の暫定値で、永久仕様ではない（Chip を整数で持つこと自体は D74）。
+ * 値は OI-004（Chip Preset。額面は D92）・OI-008（Rule Profile の範囲）の暫定値で、永久仕様ではない（Chip を整数で持つこと自体は D74）。
  */
 export const PHASE1_CASH_PRESET: TableConfig & {
   readonly startingStack: number;
@@ -53,6 +56,7 @@ export const PHASE1_CASH_PRESET: TableConfig & {
   oddChipRule: "first_left_of_button",
   reopenRule: "cumulative_full_raise",
   buttonRule: "simple_moving",
+  chipDenominations: DEFAULT_CHIP_DENOMINATIONS,
   startingStack: 200,
 };
 

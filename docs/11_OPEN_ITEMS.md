@@ -56,6 +56,8 @@ Multiway Supportを推測で決めないでください。
 
 複数の実額Presetは必須。
 
+暫定値は D92（確定ではない。永久仕様にしない）: 額面は1（白）・5（赤）・25（緑）・100（黒）・500（紫）の5種（D92）。額からChipの構成を自動で組む。
+
 未確定:
 - 初期Denomination
 - Color
@@ -111,7 +113,7 @@ MVPでは代表的なCore Rulingを扱います。
 
 Versioned Rule Profileで拡張可能にします。
 
-暫定値（永久仕様ではない。確定は人間判断を経て D 番号で行う）: Split Potの端数の配り方（D75）、Short All-inのReopenは累積Full Raise（D79）、BustしたCPUの退席とButtonの移動（D80）。
+暫定値（永久仕様ではない。確定は人間判断を経て D 番号で行う）: Split Potの端数の配り方（D75）、Short All-inのReopenは累積Full Raise（D79）、BustしたCPUの退席とButtonの移動（D80）、RulingはTDA準拠のOversized Chip・String Bet・Out-of-Turnの3種（暫定値は D91。確定ではない）。
 
 ## OI-009 — Multiway Deep Solver
 
