@@ -50,6 +50,11 @@ describe("openDatabase（マイグレーション）", () => {
       "events",
       "events_append_only",
       "hands",
+      "reveal_reviews",
+      "reveal_reviews_append_only",
+      "review_followups",
+      "review_followups_append_only",
+      "review_followups_target",
       "reviews",
       "reviews_append_only",
       "session_projections",
@@ -120,6 +125,122 @@ describe("openDatabase（マイグレーション）", () => {
             'review_standard', NULL, '1.0.0', NULL, 'sufficiency_gate', 'strong', 'low', '[]', '{}', '{}', '{}', NULL)`,
         ),
       ).toThrow(/FOREIGN KEY/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("版 3 の DB に版 4（reveal_reviews・review_followups）を当てても、reviews を含む既存の行は変わらない（D76）", () => {
+    const legacyPath = join(dir, "v3.sqlite");
+    const v3 = new DatabaseSync(legacyPath);
+    const reviewRow = `('r1', 'h1', 0, 5, 'decision', 1, '2026-10-05T00:02:00.000Z', 'standard', 'review_standard',
+      'claude-sonnet-5-5', '1.0.0', NULL, 'review_ai', 'reasonable', 'medium', '[]', '{}', '{}', '{}', NULL)`;
+    try {
+      for (const sql of MIGRATIONS.slice(0, 3)) v3.exec(sql);
+      v3.exec("PRAGMA user_version = 3");
+      v3.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO reviews VALUES ${reviewRow};
+      `);
+    } finally {
+      v3.close();
+    }
+    const before = new DatabaseSync(legacyPath);
+    const reviewsBefore = before.prepare("SELECT * FROM reviews").all();
+    const schemaBefore = before
+      .prepare("SELECT sql FROM sqlite_master WHERE name = 'reviews'")
+      .get();
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(db.prepare("SELECT * FROM reviews").all()).toEqual(reviewsBefore);
+      // reviews の定義（列・CHECK）も変えない。
+      expect(
+        db
+          .prepare("SELECT sql FROM sqlite_master WHERE name = 'reviews'")
+          .get(),
+      ).toEqual(schemaBefore);
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM reveal_reviews").get(),
+      ).toEqual({ n: 0 });
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM review_followups").get(),
+      ).toEqual({ n: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reveal_reviews は追記だけで Assessment の列を持たない。同じ Hand・判断の同じ Version は一意制約で拒否する（D39・LC-022）", () => {
+    const db = openDatabase(":memory:");
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+      `);
+      const columns = (
+        db.prepare("PRAGMA table_info(reveal_reviews)").all() as {
+          name: string;
+        }[]
+      ).map((c) => c.name);
+      expect(columns).not.toContain("assessment");
+      expect(columns).not.toContain("confidence");
+      const insert = db.prepare(
+        `INSERT INTO reveal_reviews VALUES (?, ?, 0, 5, ?, '2026-10-05T00:02:00.000Z', 'standard', 'review_standard',
+          'claude-sonnet-5-5', ?, '{}', '{}', '{}', NULL)`,
+      );
+      insert.run("v1", "h1", 1, "review_ai");
+      expect(() => insert.run("v2", "h1", 1, "review_ai")).toThrow(/UNIQUE/);
+      expect(() => insert.run("v3", "h1", 2, "unknown")).toThrow(/CHECK/);
+      expect(() => insert.run("v4", "nope", 1, "review_ai")).toThrow(
+        /FOREIGN KEY/,
+      );
+      expect(() =>
+        db.exec(
+          "UPDATE reveal_reviews SET explanation = '{}' WHERE review_id = 'v1'",
+        ),
+      ).toThrow(/append-only/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("review_followups は実在する Review の Version（pass に合うテーブルの行）だけを指し、追記だけ", () => {
+    const db = openDatabase(":memory:");
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO reviews VALUES ('r1', 'h1', 0, 5, 'decision', 1, '2026-10-05T00:02:00.000Z', 'standard', 'review_standard',
+          'claude-sonnet-5-5', '1.0.0', NULL, 'review_ai', 'reasonable', 'medium', '[]', '{}', '{}', '{}', NULL);
+        INSERT INTO reveal_reviews VALUES ('v1', 'h1', 0, 5, 1, '2026-10-05T00:03:00.000Z', 'standard', 'review_standard',
+          'claude-sonnet-5-5', 'review_ai', '{}', '{}', '{}', NULL);
+      `);
+      const insert = db.prepare(
+        `INSERT INTO review_followups VALUES (?, ?, ?, 'h1', 0, ?, ?, '2026-10-05T00:04:00.000Z', 'standard', 'review_standard',
+          'claude-sonnet-5-5', 'review_ai', '質問', '{}', NULL)`,
+      );
+      insert.run("f1", "decision", "r1", 1, 1);
+      insert.run("f2", "reveal", "v1", 1, 1);
+      expect(() => insert.run("f3", "decision", "r1", 1, 1)).toThrow(/UNIQUE/);
+      // Pass が合わない・Version が違う・無い Review は拒否する。
+      for (const [pass, reviewId, version] of [
+        ["reveal", "r1", 1],
+        ["decision", "v1", 1],
+        ["decision", "r1", 2],
+        ["decision", "nope", 1],
+      ] as const) {
+        expect(() => insert.run("fx", pass, reviewId, version, 9)).toThrow(
+          /existing review version/,
+        );
+      }
+      expect(() =>
+        db.exec(
+          "UPDATE review_followups SET question = 'x' WHERE followup_id = 'f1'",
+        ),
+      ).toThrow(/append-only/);
     } finally {
       db.close();
     }

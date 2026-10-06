@@ -6,6 +6,10 @@ import { InMemoryEventStore } from "../event-store.js";
 import { loadKb } from "../kb/index.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
 import { SB_VS_BTN, playScriptedHand } from "../testing/review-eval/hands.js";
+import {
+  InMemoryFollowUpStore,
+  InMemoryRevealReviewStore,
+} from "./reveal-store.js";
 import { InMemoryReviewStore } from "./review-store.js";
 import { ReviewService } from "./review-service.js";
 
@@ -56,6 +60,8 @@ function setup(query: ClaudeQuery, timeoutMs: number) {
   const service = new ReviewService({
     events,
     reviews,
+    reveals: new InMemoryRevealReviewStore(),
+    followUps: new InMemoryFollowUpStore(),
     heroId: "hero",
     kb,
     solver,
