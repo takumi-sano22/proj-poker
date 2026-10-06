@@ -21,10 +21,15 @@ export function e2eServerEnv(dbPath: string): Record<string, string> {
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
   }
-  // 手元の環境に Solver・Claude の設定が残っていても E2E には持ち込まない。
-  delete env["POKER_SOLVER_HOME"];
-  delete env["ANTHROPIC_API_KEY"];
-  delete env["ANTHROPIC_AUTH_TOKEN"];
+  // 手元の環境に Solver・Claude・Persona の設定が残っていても E2E には持ち込まない（Persona の順番は RuleBot の判断を変える）。
+  for (const key of [
+    "POKER_SOLVER_HOME",
+    "CPU_PERSONAS",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+  ]) {
+    delete env[key];
+  }
   return {
     ...env,
     PORT: String(E2E_SERVER_PORT),
@@ -43,8 +48,23 @@ export interface RunningServer {
   readonly output: () => string;
 }
 
+async function healthy(): Promise<boolean> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${E2E_SERVER_PORT}/api/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** server を起動し、/api/health が応答するまで待つ。 */
 export async function startServer(dbPath: string): Promise<RunningServer> {
+  // 別の server がポートを使っていると、その応答を起動の完了と取り違える（違う DB・設定で通ってしまう）ので、先に止める。
+  if (await healthy()) {
+    throw new Error(
+      `127.0.0.1:${E2E_SERVER_PORT} で別の server が動いている。止めてから E2E を実行する`,
+    );
+  }
   // tsx のローダーで src を直接動かす（dev と同じく Engine は build せずに src から読む）。watch はしない。
   const child = spawn(
     process.execPath,
@@ -60,12 +80,7 @@ export async function startServer(dbPath: string): Promise<RunningServer> {
     if (child.exitCode !== null) {
       throw new Error(`server が起動前に終了した:\n${output}`);
     }
-    try {
-      const res = await fetch(`http://127.0.0.1:${E2E_SERVER_PORT}/api/health`);
-      if (res.ok) return server;
-    } catch {
-      // まだ待ち受けていない。
-    }
+    if (await healthy()) return server;
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   await stopServer(server);
