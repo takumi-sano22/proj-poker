@@ -62,6 +62,10 @@ Phase 5 の子 Issue。#82（Pass A）・#83（Pass B・Follow-up）の API を 
   - 375px の最初の版では、Jump のボタンと Review のボタンが折り返して Hero 欄（画面下に固定）が高くなり、卓をほぼ隠した。→ 狭い画面では 1 行に並べ、溢れた分はその行の中だけで横に送るようにして直した。
   - dev サーバーは確認後に停止した（3001 / 5173 の LISTEN が無いことを `ss -ltnp` で確認）。
 
+## レビュー対応
+
+- Codex（1 回目・`STATUS=clean`・P2 1 件）: 生成の待ちの間に状態の GET が 1 回でも失敗すると `usePolled` の読み直しが止まり、待ちの表示のまま操作できなくなる（再読み込みのボタンも出ない）。CONFIRMED。→ 待ちの間は失敗しても読み直しを続けるようにした（失敗のたびに状態の値が新しくなるので次の読み直しが仕掛け直される）。同根の箇所（Pass A / Pass B / Follow-up / 一覧の行）はすべて `usePolled` を通るので、この 1 か所で直る。Playwright で、生成の待ちの間の GET を 2 回続けて落としても、その後に段階評価が出ることを確かめた。
+
 ## 残課題
 
 - 当時の User Read（Review Interview・docs/05 §12）と、Good Decisions / Improvement Opportunities のまとめ（docs/06 §10 の初期表示）はまだ無い。

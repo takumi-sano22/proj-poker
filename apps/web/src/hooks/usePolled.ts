@@ -10,7 +10,7 @@ import type { ReviewGeneration } from "../lib/review-api.js";
 export interface Polled<T> {
   /** 読めた値（まだ無い・path が変わった直後は null）。 */
   readonly data: T | null;
-  /** 最後の読み込みに失敗したか（失敗した間は読み直さない。refresh で読み直す）。 */
+  /** 最後の読み込みに失敗したか（生成の待ちの間は失敗しても読み直しを続ける。それ以外は refresh で読み直す）。 */
   readonly failed: boolean;
   readonly refresh: () => void;
   /** POST 等の応答を状態として採る。失敗は呼び出し側へそのまま返す。 */
@@ -73,14 +73,15 @@ export function usePolled<T extends object>(path: string | null): Polled<T> {
     refresh();
   }, [refresh]);
 
-  // 生成の待ちの間だけ、間隔をあけて読み直す（応答のたびに次を仕掛ける）。
+  // 生成の待ちの間だけ、間隔をあけて読み直す（応答のたびに次を仕掛ける）。読み直しが一時的に失敗しても止めない
+  // （待ちの表示のまま操作できなくなるのを防ぐ）。失敗のたびに snapshot が新しくなるので、次の読み直しも仕掛け直される。
   const data = current.data;
-  const pending = isPending(data) && !current.failed;
+  const pending = isPending(data);
   useEffect(() => {
     if (!pending) return;
     const timer = setTimeout(refresh, REVIEW_POLL_MS);
     return () => clearTimeout(timer);
-  }, [pending, data, refresh]);
+  }, [pending, snapshot, refresh]);
 
   return { data, failed: current.failed, refresh, mutate };
 }
