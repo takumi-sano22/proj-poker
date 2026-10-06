@@ -163,7 +163,12 @@ export type {
   RangeProfile,
 } from "./range-config.js";
 
-export { classifyPreflop, positionName, villainRange } from "./range-model.js";
+export {
+  classifyPreflop,
+  heroRange,
+  positionName,
+  villainRange,
+} from "./range-model.js";
 export type {
   PostflopNarrowing,
   RangeAssumption,

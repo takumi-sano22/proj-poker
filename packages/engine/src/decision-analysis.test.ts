@@ -2,7 +2,7 @@
 // 積んだ Deck で 6-max の Hand を進め、判断時点の Hero Information Set（#78）から作る値を手計算で確かめる。
 // Hindsight Leak が無いこと（判断より後の Card・相手の実際の札を変えても結果が変わらない）も確かめる（不変条件 3）。
 import { describe, expect, it } from "vitest";
-import { cardToString } from "./card.js";
+import { cardToString, parseCards } from "./card.js";
 import { analyzeDecision, compareRangeProfiles } from "./decision-analysis.js";
 import { DEFAULT_EQUITY_OPTIONS } from "./equity.js";
 import type { HandEvent, SeatInit } from "./hand-events.js";
@@ -12,7 +12,7 @@ import type { HandState } from "./hand-state.js";
 import { cardCode, handScore } from "./hand-strength.js";
 import type { PlayerAction } from "./legal-actions.js";
 import { STANDARD_RANGE_PROFILE, TIGHT_RANGE_PROFILE } from "./range-config.js";
-import { villainRange } from "./range-model.js";
+import { heroRange, villainRange } from "./range-model.js";
 import { comboKey, parseRange, type Combo } from "./range.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
 import { stackedDeck } from "./testing/stacked-deck.js";
@@ -301,5 +301,45 @@ describe("villainRange: Postflop の絞り込み", () => {
     if (flop === undefined) throw new Error("Flop の判断が無い");
     expect(() => villainRange(flop.knowledge, "hero")).toThrow(RangeError);
     expect(() => villainRange(flop.knowledge, "nobody")).toThrow(RangeError);
+  });
+});
+
+describe("heroRange: 相手から見た Hero の Range（#82: Solver に渡す Hero 側）", () => {
+  // Turn の判断: Hero（BTN）は CO の Open に Call し、Flop の Bet にも Call した。
+  const hand = play(toFlopCall("Kc Kd", BOARD), [
+    ["co", check],
+    ["hero", check],
+  ]);
+  const turn = heroInformationSets(hand.events, "hero")[2];
+  if (turn === undefined) throw new Error("Turn の判断が無い");
+
+  it("相手と同じ作り方: Preflop は Call の Range、Flop の Call で 1 回絞る。Board の札は除く", () => {
+    const range = heroRange(turn.knowledge);
+    expect(range.assumption).toMatchObject({
+      playerId: "hero",
+      position: "BTN",
+      preflopSpot: "call_open",
+      preflopNotation: STANDARD_RANGE_PROFILE.callOpen,
+    });
+    expect(range.assumption.postflop).toHaveLength(1);
+    expect(range.assumption.postflop[0]).toMatchObject({
+      street: "flop",
+      action: "call",
+    });
+    const board = new Set(turn.knowledge.board.map(cardToString));
+    expect(
+      range.combos.every(
+        ([a, b]) => !board.has(cardToString(a)) && !board.has(cardToString(b)),
+      ),
+    ).toBe(true);
+    expect(range.assumption.comboCount).toBe(range.combos.length);
+  });
+
+  it("Hero の実際の札は使わない（札を差し替えても同じ Range。相手は Hero の札を知らない）", () => {
+    const swapped = {
+      ...turn.knowledge,
+      holeCards: parseCards("Jc Tc"),
+    };
+    expect(heroRange(swapped)).toEqual(heroRange(turn.knowledge));
   });
 });
