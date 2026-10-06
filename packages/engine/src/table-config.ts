@@ -78,7 +78,7 @@ export interface RulingRules {
  * chipDenominations は Chip の額面と色（D92）。Pot・Stack の額の計算には使わず、Event にも持たせない
  * （Ruling Engine が、Hero が出した Chip が額面にあるかと Oversized Chip の判定に使う）。
  * ruling は Hero の物理的な操作の裁定規則。裁定の結果は Canonical Action（ACTION_TAKEN）として残り、Rule Profile の ID
- * （ruleProfile）で版が分かるので、Event には項目を足さない（buttonRule と同じ扱い。裁定の記録は #64 の DEALER_RULING）。
+ * （ruleProfile）で版が分かるので、Event には項目を足さない（buttonRule と同じ扱い。裁定ごとの記録は DEALER_RULING。D90）。
  */
 export interface TableConfig {
   readonly ruleProfile: string;

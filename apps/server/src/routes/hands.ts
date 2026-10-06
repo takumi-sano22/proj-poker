@@ -1,9 +1,15 @@
 // Hand の API（D73: Hero の Action は REST の POST、卓の状態は SSE で Push）。
+// Hero の Action の入口は 2 つ: Canonical Action（/actions。Ruling を通さない互換の入口）と、
+// 物理的な操作（/physical-actions。Ruling Engine で裁定し、操作と裁定も Event Log に残す。D90・D91）。
 // 入力の形は JSON Schema で検証し、合法性（手番・Action の種類・額）は Engine が判定する（D40）。
 // 返す・Push するのは projectHeroView の結果と、Session の状態（Hero 自身の結果と次 Hand の有無）と、
 // CPU の障害の状態（どの CPU の手番か・障害の種類だけ。D86）だけ
 // （他者の Hole Cards・Deck・seed・CPU の Persona・内部のエラー本文を含めない）。
-import type { HeroView, PlayerAction } from "@proj-poker/engine";
+import type {
+  HeroView,
+  PhysicalAction,
+  PlayerAction,
+} from "@proj-poker/engine";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type {
   HandOrchestrator,
@@ -26,6 +32,13 @@ interface HeroActionBody {
   /** クライアントが見ていた HeroView の log の最後の seq（古い画面・二重送信の検出に使う）。 */
   lastSeq: number;
   action: PlayerAction;
+}
+
+interface HeroPhysicalActionBody {
+  /** クライアントが見ていた HeroView の log の最後の seq（古い画面・二重送信の検出に使う）。 */
+  lastSeq: number;
+  /** 1 回の手番の操作（した順）。 */
+  actions: PhysicalAction[];
 }
 
 interface OutageChoiceBody {
@@ -81,6 +94,70 @@ const heroActionBodySchema = {
           },
         },
       ],
+    },
+  },
+} as const;
+
+// Hero の物理的な操作（docs/02 §4）の形。合法性・額面に有るか・Stack を超えないかは Engine（Ruling Engine）が判定する。
+// 列の長さの上限は、1 回の手番の操作として十分な数で、入力の大きさを抑えるための値。
+const declarationSchema = {
+  oneOf: [
+    {
+      type: "object",
+      required: ["kind"],
+      additionalProperties: false,
+      properties: { kind: { enum: ["fold", "check", "call", "all_in"] } },
+    },
+    {
+      type: "object",
+      required: ["kind"],
+      additionalProperties: false,
+      properties: {
+        kind: { enum: ["bet", "raise"] },
+        // この Street の累計（to 額）。省略すると Chip の量で決める。
+        amount: { type: "integer", minimum: 0 },
+      },
+    },
+  ],
+} as const;
+
+const heroPhysicalActionBodySchema = {
+  type: "object",
+  required: ["lastSeq", "actions"],
+  additionalProperties: false,
+  properties: {
+    lastSeq: { type: "integer", minimum: 0 },
+    actions: {
+      type: "array",
+      minItems: 1,
+      maxItems: 20,
+      items: {
+        oneOf: [
+          {
+            type: "object",
+            required: ["type", "declaration"],
+            additionalProperties: false,
+            properties: {
+              type: { enum: ["declare"] },
+              declaration: declarationSchema,
+            },
+          },
+          {
+            type: "object",
+            required: ["type", "chips"],
+            additionalProperties: false,
+            properties: {
+              type: { enum: ["chip_push", "chip_add"] },
+              chips: {
+                type: "array",
+                minItems: 1,
+                maxItems: 100,
+                items: { type: "integer", minimum: 1 },
+              },
+            },
+          },
+        ],
+      },
     },
   },
 } as const;
@@ -162,6 +239,31 @@ export function registerHandRoutes(
       const { handId } = request.params;
       const { lastSeq, action } = request.body;
       const result = await orchestrator.heroAction(handId, lastSeq, action);
+      if (!result.ok) return sendError(reply, result.error);
+      return reply.send({
+        view: result.value,
+        session: orchestrator.sessionStatus(handId),
+        outage: orchestrator.outageStatus(handId),
+      });
+    },
+  );
+
+  // Hero の物理的な操作（宣言・Chip を出す・足す）。Ruling Engine で裁定し、操作・裁定・決まった Action を Event Log に残す（D90）。
+  // 手番でなければ Out-of-Turn として保留し、Hero の手番が来た時点で拘束か撤回かを裁定する（D91）。
+  // 応答は /actions と同じ形（裁定は view.log の DEALER_RULING に入る）。
+  app.post<{ Params: HandParams; Body: HeroPhysicalActionBody }>(
+    "/api/hands/:handId/physical-actions",
+    {
+      schema: { params: handParamsSchema, body: heroPhysicalActionBodySchema },
+    },
+    async (request, reply) => {
+      const { handId } = request.params;
+      const { lastSeq, actions } = request.body;
+      const result = await orchestrator.heroPhysicalAction(
+        handId,
+        lastSeq,
+        actions,
+      );
       if (!result.ok) return sendError(reply, result.error);
       return reply.send({
         view: result.value,

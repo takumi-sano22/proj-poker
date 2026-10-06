@@ -1,7 +1,9 @@
 import {
+  composeChips,
   type HandEvent,
   type HeroView,
   type LegalActionSet,
+  type PhysicalAction,
   type PlayerAction,
   type PlayerChips,
 } from "@proj-poker/engine";
@@ -1428,5 +1430,226 @@ describe("Persona（#51）", () => {
     // Event Log（DB に保存される正本）には Deck の記録もあるので、Persona の語だけを見る。
     expect(personaTerms(events(started.value.handId))).toEqual([]);
     expect(forbiddenKeys(finalView)).toEqual([]);
+  });
+});
+
+describe("Hero の物理的な操作（#64・D90・D91）", () => {
+  /** 額ちょうどの Chip の額面の列（大きい額面から）。 */
+  const chipsFor = (amount: number): number[] =>
+    composeChips(amount).flatMap((c) =>
+      Array.from({ length: c.count }, () => c.denomination.value),
+    );
+
+  /** Hero: Call 額ちょうどの Chip を宣言なしで出す（→ Call）。Call が無ければ Check を宣言する。 */
+  function physicalHero(view: HeroView): PhysicalAction[] {
+    const call = view.legalActions?.actions.find((a) => a.type === "call");
+    return call?.type === "call"
+      ? [{ type: "chip_push", chips: chipsFor(call.amount) }]
+      : [{ type: "declare", declaration: { kind: "check" } }];
+  }
+
+  /** CPU の Call か Check（出力の形）。 */
+  const passiveOutput = (legal: LegalActionSet): OpponentOutput =>
+    legal.actions.some((a) => a.type === "call")
+      ? { action: "call" }
+      : { action: "check" };
+
+  /**
+   * 最初の 1 回の判断だけ release() まで返さない CPU（Hero が CPU の手番を見ている間を作る）。
+   * respond は判断の中身（省略時は Call か Check）。渡された入力は inputs に残る。
+   */
+  function gatedCpus(
+    respond: (input: OpponentInput) => OpponentOutput = (input) =>
+      passiveOutput(input.legal),
+  ) {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const inputs: OpponentInput[] = [];
+    const factory: OpponentFactory = () => ({
+      decide: async (input) => {
+        inputs.push(input);
+        if (first) {
+          first = false;
+          await gate;
+        }
+        return respond(input);
+      },
+    });
+    return { factory, inputs, release: () => release() };
+  }
+
+  /** Event を種類・Player・裁定の要点の文字列にする（並びを比べる）。 */
+  function outline(events: readonly HandEvent[]): string[] {
+    return events.map((e) => {
+      switch (e.type) {
+        case "DEALER_RULING":
+          return `${e.type} ${e.playerId} ${e.basis} ${e.outcome}${e.action === null ? "" : ` ${e.action.type}`}`;
+        case "ACTION_TAKEN":
+          return `${e.type} ${e.playerId} ${e.action}`;
+        case "PLAYER_DECLARED":
+        case "PHYSICAL_CHIP_ACTION":
+          return `${e.type} ${e.playerId}`;
+        default:
+          return e.type;
+      }
+    });
+  }
+
+  it("手番の操作は裁定して Canonical Action を適用し、操作・裁定・Action を Log に残して Hand を最後まで進める", async () => {
+    const { orchestrator, events } = setup();
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    let view = started.value.view;
+    const { handId } = started.value;
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      expect(view.actorId).toBe(HERO);
+      const result = await orchestrator.heroPhysicalAction(
+        handId,
+        lastSeq(view),
+        physicalHero(view),
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      view = result.value;
+      // Hero の View の log に裁定が入る（public）。
+      expect(view.log.some((e) => e.type === "DEALER_RULING")).toBe(true);
+    }
+    const log = events(handId);
+    expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
+    // 裁定で Action が決まったら、直後が同じ Player のその Action。
+    log.forEach((e, i) => {
+      if (e.type !== "DEALER_RULING") return;
+      expect(e.playerId).toBe(HERO);
+      expect(e.visibility).toEqual({ type: "public" });
+      expect(e.outcome).toBe("action");
+      expect(log[i + 1]).toMatchObject({
+        type: "ACTION_TAKEN",
+        playerId: HERO,
+        action: e.action?.type,
+      });
+    });
+  });
+
+  it("古い画面からの操作は stale_view で拒否し、何も残さない", async () => {
+    const { orchestrator, events } = setup();
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const { handId, view } = started.value;
+    const before = events(handId).length;
+    const result = await orchestrator.heroPhysicalAction(
+      handId,
+      lastSeq(view) - 1,
+      physicalHero(view),
+    );
+    expect(result.ok ? null : result.error.kind).toBe("stale_view");
+    expect(events(handId)).toHaveLength(before);
+    expect(
+      (await orchestrator.heroPhysicalAction("nope", 0, physicalHero(view))).ok,
+    ).toBe(false);
+  });
+
+  it("Out-of-Turn: CPU の手番の操作は保留して警告し、間が Call だけなら Hero の手番で拘束する。CPU は保留を公開の事実として見る", async () => {
+    const cpus = gatedCpus();
+    const { orchestrator, events } = setup({ createOpponent: cpus.factory });
+    // 6 人卓の Preflop は UTG（cpu3）から。最初の判断で止まっている間に、Hero（Button）が Call を宣言する。
+    const starting = orchestrator.startHand(null);
+    const seen = orchestrator.heroView("hand-1");
+    if (seen === null) throw new Error("Hand が無い");
+    expect(seen.actorId).toBe("cpu3");
+    const acting = orchestrator.heroPhysicalAction("hand-1", lastSeq(seen), [
+      { type: "declare", declaration: { kind: "call" } },
+    ]);
+    cpus.release();
+    const result = await acting;
+    if (!result.ok) throw new Error(result.error.message);
+    await starting;
+
+    const log = events("hand-1");
+    const warned = log.findIndex(
+      (e) => e.type === "DEALER_RULING" && e.outcome === "out_of_turn",
+    );
+    expect(outline(log.slice(warned - 1, warned + 6))).toEqual([
+      "PLAYER_DECLARED hero",
+      "DEALER_RULING hero operations out_of_turn",
+      "ACTION_TAKEN cpu3 call",
+      "ACTION_TAKEN cpu4 call",
+      "ACTION_TAKEN cpu5 call",
+      "DEALER_RULING hero pending_out_of_turn action call",
+      "ACTION_TAKEN hero call",
+    ]);
+    expect(log[warned + 4]).toMatchObject({ notes: ["out_of_turn_binding"] });
+
+    // 保留の前に求めた判断は捨て、保留を含む KnowledgeState でもう一度求める（Log が進んだため）。
+    const [beforeWarning, afterWarning] = cpus.inputs;
+    expect(beforeWarning?.knowledge).not.toHaveProperty("rulingHistory");
+    expect(afterWarning?.knowledge.viewerId).toBe("cpu3");
+    expect(afterWarning?.knowledge.rulingHistory).toEqual([
+      {
+        playerId: HERO,
+        street: "preflop",
+        basis: "operations",
+        operations: [{ type: "declare", declaration: { kind: "call" } }],
+        outcome: "out_of_turn",
+        action: null,
+        notes: ["out_of_turn"],
+      },
+    ]);
+    // CPU の入力に入るのは公開の事実だけ（他者の札・Deck・system の記録・Persona は入らない）。
+    for (const input of cpus.inputs) {
+      expect(Object.keys(input).sort()).toEqual(["knowledge", "legal"]);
+      expect(forbiddenKeys(input)).toEqual([]);
+    }
+    expect(personaTerms(log)).toEqual([]);
+    expect(forbiddenKeys(result.value)).toEqual([]);
+
+    // 続きは普通に最後まで進む。
+    const final = await playOut(orchestrator, "hand-1", result.value);
+    expect(final.status).toBe("complete");
+    expect(finishedStacks(events("hand-1"))).toBe(TOTAL_CHIPS);
+  });
+
+  it("Out-of-Turn: 間の CPU が Raise したら撤回し、Hero の手番で選び直させる（2 回目の操作は保留中なら not_actor）", async () => {
+    // UTG（cpu3）だけが最小 Raise し、他は Call か Check。
+    const cpus = gatedCpus((input) => {
+      const raise = input.legal.actions.find((a) => a.type === "raise");
+      return input.knowledge.viewerId === "cpu3" && raise?.type === "raise"
+        ? { action: "raise", amount: raise.min }
+        : passiveOutput(input.legal);
+    });
+    const { orchestrator, events } = setup({ createOpponent: cpus.factory });
+    const starting = orchestrator.startHand(null);
+    const seen = orchestrator.heroView("hand-1");
+    if (seen === null) throw new Error("Hand が無い");
+    const acting = orchestrator.heroPhysicalAction("hand-1", lastSeq(seen), [
+      { type: "chip_push", chips: [1, 1] },
+    ]);
+    // 保留中の 2 回目の操作は受け付けない（Log が進んでいるので、見ていた seq を取り直して送る）。
+    const pendingView = orchestrator.heroView("hand-1");
+    if (pendingView === null) throw new Error("Hand が無い");
+    const again = await orchestrator.heroPhysicalAction(
+      "hand-1",
+      lastSeq(pendingView),
+      [{ type: "declare", declaration: { kind: "fold" } }],
+    );
+    expect(again.ok ? null : again.error.kind).toBe("not_actor");
+    cpus.release();
+    const result = await acting;
+    if (!result.ok) throw new Error(result.error.message);
+    await starting;
+
+    const view = result.value;
+    expect(view.actorId).toBe(HERO);
+    expect(outline(view.log.slice(-1))).toEqual([
+      "DEALER_RULING hero pending_out_of_turn no_action",
+    ]);
+    expect(view.log.at(-1)).toMatchObject({ notes: ["out_of_turn_released"] });
+    // 撤回したので、Hero は Raise に対する全部の選択肢から選べる。
+    expect(view.legalActions?.actions.map((a) => a.type)).toContain("call");
+    const final = await playOut(orchestrator, "hand-1", view);
+    expect(final.status).toBe("complete");
+    expect(finishedStacks(events("hand-1"))).toBe(TOTAL_CHIPS);
   });
 });

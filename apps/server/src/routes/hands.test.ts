@@ -203,6 +203,122 @@ describe("Hand API（REST）", () => {
   });
 });
 
+describe("Hand API（Hero の物理的な操作。#64・D90）", () => {
+  it("POST /api/hands/:handId/physical-actions で Chip を出して Hand が最後まで終わり、裁定が view.log に入り、どの応答にも漏れが無い", async () => {
+    const { app, events } = makeApp(7);
+    const created = await startRequest(app, null);
+    const body = created.json<{ handId: string; view: HeroView }>();
+    let view = body.view;
+    const payloads: { payload: unknown; view: HeroView }[] = [];
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      // Call 額を 1 の Chip で出す（宣言なし → Call）か、Call が無ければ Check を宣言する。
+      const call = view.legalActions?.actions.find((a) => a.type === "call");
+      const actions =
+        call?.type === "call" && call.amount <= 100
+          ? [
+              {
+                type: "chip_push",
+                chips: Array.from({ length: call.amount }, () => 1),
+              },
+            ]
+          : call?.type === "call"
+            ? [{ type: "declare", declaration: { kind: "call" } }]
+            : [{ type: "declare", declaration: { kind: "check" } }];
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/hands/${body.handId}/physical-actions`,
+        payload: { lastSeq: lastSeq(view), actions },
+      });
+      expect(res.statusCode).toBe(200);
+      const json = res.json<{ view: HeroView; session: { state: string } }>();
+      expectSessionMatches(json.view, json.session);
+      expect(json.view.log.some((e) => e.type === "DEALER_RULING")).toBe(true);
+      payloads.push({ payload: json, view: json.view });
+      view = json.view;
+    }
+    const log = events(body.handId);
+    expect(log.some((e) => e.type === "PHYSICAL_CHIP_ACTION")).toBe(true);
+    for (const { payload, view: v } of payloads) {
+      expectNoLeak(payload, v, log);
+      expect(personaTerms(payload)).toEqual([]);
+    }
+  });
+
+  it("入力の形が不正なら 400（schema）、額面に無い Chip なら 422（Engine）、古い画面なら 409、未知の Hand なら 404", async () => {
+    const { app, events } = makeApp();
+    const created = await startRequest(app, null);
+    const { handId, view } = created.json<{ handId: string; view: HeroView }>();
+    const post = (payload: unknown) =>
+      app.inject({
+        method: "POST",
+        url: `/api/hands/${handId}/physical-actions`,
+        payload: payload as object,
+      });
+    const seq = lastSeq(view);
+    for (const bad of [
+      { lastSeq: seq, actions: [] },
+      { lastSeq: seq, actions: [{ type: "chip_push", chips: [] }] },
+      { lastSeq: seq, actions: [{ type: "chip_push", chips: ["5"] }] },
+      { lastSeq: seq, actions: [{ type: "chip_push", chips: [0] }] },
+      { lastSeq: seq, actions: [{ type: "chip_push" }] },
+      { lastSeq: seq, actions: [{ type: "shove", chips: [5] }] },
+      {
+        lastSeq: seq,
+        actions: [
+          { type: "declare", declaration: { kind: "fold", amount: 5 } },
+        ],
+      },
+      {
+        lastSeq: seq,
+        actions: [
+          { type: "declare", declaration: { kind: "raise", amount: "9" } },
+        ],
+      },
+      {
+        lastSeq: seq,
+        actions: [{ type: "declare", declaration: { kind: "fold" } }],
+        extra: true,
+      },
+      { lastSeq: seq, action: { type: "fold" } },
+      {
+        lastSeq: seq,
+        actions: Array.from({ length: 21 }, () => ({
+          type: "declare",
+          declaration: { kind: "fold" },
+        })),
+      },
+    ]) {
+      expect((await post(bad)).statusCode).toBe(400);
+    }
+    const before = events(handId).length;
+    const invalid = await post({
+      lastSeq: seq,
+      actions: [{ type: "chip_push", chips: [7] }],
+    });
+    expect(invalid.statusCode).toBe(422);
+    expect(invalid.json()).toMatchObject({ error: { kind: "invalid_input" } });
+    expect(events(handId)).toHaveLength(before);
+
+    const stale = await post({
+      lastSeq: seq - 1,
+      actions: [{ type: "declare", declaration: { kind: "fold" } }],
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { kind: "stale_view" } });
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/hands/unknown/physical-actions",
+      payload: {
+        lastSeq: 0,
+        actions: [{ type: "declare", declaration: { kind: "fold" } }],
+      },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
+});
+
 /** SSE の本文を、イベント名と data の組の列にする。 */
 function parseSseEvents(text: string): { name: string; data: unknown }[] {
   return text

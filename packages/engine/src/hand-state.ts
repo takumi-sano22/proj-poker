@@ -3,6 +3,7 @@
 // 他者の Hole Cards と Deck は最初から State に入らない（docs/04 §5 の whitelist）。
 import type { Card } from "./card.js";
 import type { HandEvent, PlayerChips, Street } from "./hand-events.js";
+import type { PendingOutOfTurn, PhysicalAction } from "./ruling.js";
 import type { OddChipRule, ReopenRule } from "./table-config.js";
 
 export interface PlayerState {
@@ -50,6 +51,16 @@ export interface HandState {
   readonly status: "in_progress" | "complete";
   /** この Hand で配分した額の Player ごとの合計（Main / Side Pot を合算。最初に受け取った順）。 */
   readonly awards: readonly PlayerChips[];
+  /**
+   * まだ裁定していない Hero の操作（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION をした順に積む）。
+   * 同じ追記の DEALER_RULING で空に戻るので、追記の境目では常に空。
+   */
+  readonly operations: readonly PhysicalAction[];
+  /**
+   * Out-of-Turn で保留した操作（DEALER_RULING の out_of_turn で入り、pending_out_of_turn の裁定で消える。D91）。
+   * Event の並びだけから復元できる（Replay の前提）。無ければ null。
+   */
+  readonly pendingOutOfTurn: PendingOutOfTurn | null;
   /** 次に発行する Event の seq。 */
   readonly nextSeq: number;
 }
@@ -101,6 +112,8 @@ export function initialState(event: HandEvent): HandState {
     actorIndex: null,
     status: "in_progress",
     awards: [],
+    operations: [],
+    pendingOutOfTurn: null,
     nextSeq: event.seq + 1,
   };
 }
@@ -218,6 +231,44 @@ function applyBody(state: HandState, event: HandEvent): HandState {
     case "AI_FALLBACK_USED":
       // 判断の経緯の記録で、卓の State（Chip・手番）は変えない（seq だけが進む）。
       return state;
+
+    // Hero の操作と Dealer の裁定（D90）。Chip・手番は変えず、裁定を待つ操作と保留中の Out-of-Turn だけを持つ。
+    case "PLAYER_DECLARED":
+      return {
+        ...state,
+        operations: [
+          ...state.operations,
+          { type: "declare", declaration: event.declaration },
+        ],
+      };
+
+    case "PHYSICAL_CHIP_ACTION":
+      return {
+        ...state,
+        operations: [
+          ...state.operations,
+          { type: event.motion, chips: event.chips },
+        ],
+      };
+
+    case "DEALER_RULING":
+      if (event.basis === "pending_out_of_turn") {
+        return { ...state, pendingOutOfTurn: null };
+      }
+      // 手番でない操作は、その時点の Street と最高額と一緒に保留する（Hero の手番で状況が変わったかを比べる）。
+      return {
+        ...state,
+        operations: [],
+        pendingOutOfTurn:
+          event.outcome === "out_of_turn"
+            ? {
+                playerId: event.playerId,
+                street: state.street,
+                currentBet: state.currentBet,
+                actions: state.operations,
+              }
+            : state.pendingOutOfTurn,
+      };
   }
 }
 

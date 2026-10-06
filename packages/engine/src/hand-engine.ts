@@ -26,6 +26,12 @@ import {
 } from "./legal-actions.js";
 import { splitPot } from "./pot-split.js";
 import { createShuffledDeck } from "./rng.js";
+import {
+  resolveOutOfTurn,
+  rulePhysicalActions,
+  type PhysicalAction,
+  type RulingResult,
+} from "./ruling.js";
 import { buildPots } from "./side-pots.js";
 import {
   MAX_PLAYERS,
@@ -123,11 +129,132 @@ export function applyAction(
 ): EngineResult<HandProgress> {
   const resolved = resolveAction(state, playerId, action);
   if (!resolved.ok) return resolved;
+  // 保留中の Out-of-Turn は、手番が来たら先に裁定する（resolvePendingOutOfTurn）。Canonical Action で飛ばさせない。
+  if (state.pendingOutOfTurn?.playerId === playerId) {
+    return pendingRejection(playerId);
+  }
   const acc = emit(
     { state, events: [] },
     { type: "ACTION_TAKEN", ...resolved.value },
   );
   return progress(acc);
+}
+
+/** Hero の物理的な操作の結果。Event と State に加え、裁定の結果（呼び出し側が応答・記録に使う）を返す。 */
+export interface PhysicalProgress extends HandProgress {
+  readonly ruling: RulingResult;
+}
+
+/**
+ * Hero の 1 回の物理的な操作（した順の列）を裁定し、Event にする（D90・D91）。
+ * 操作ごとに PLAYER_DECLARED / PHYSICAL_CHIP_ACTION、続けて DEALER_RULING を置き、Canonical Action に決まったら
+ * その ACTION_TAKEN（と、そこから自動で進む Street・Showdown）まで同じ結果に入れる。呼び出し側は 1 回で追記する。
+ * 手番でなければ Out-of-Turn として保留し（State の pendingOutOfTurn）、その Player の手番で resolvePendingOutOfTurn する。
+ * 保留中にもう一度操作したら not_actor（保留は 1 つだけ。手番が来たら裁定する）。
+ */
+export function applyPhysicalActions(
+  state: HandState,
+  playerId: string,
+  actions: readonly PhysicalAction[],
+  config: Pick<TableConfig, "chipDenominations" | "ruling">,
+): EngineResult<PhysicalProgress> {
+  const ruled = rulePhysicalActions(state, playerId, actions, config);
+  if (!ruled.ok) return ruled;
+  if (state.pendingOutOfTurn?.playerId === playerId) {
+    return pendingRejection(playerId);
+  }
+  let acc: HandProgress = { state, events: [] };
+  for (const a of actions) {
+    // 入力の値を Event に共有させない（呼び出し側が後で書き換えても Event Log が変わらないように）。
+    acc = emit(
+      acc,
+      a.type === "declare"
+        ? {
+            type: "PLAYER_DECLARED",
+            playerId,
+            street: state.street,
+            declaration: { ...a.declaration },
+          }
+        : {
+            type: "PHYSICAL_CHIP_ACTION",
+            playerId,
+            street: state.street,
+            motion: a.type,
+            chips: [...a.chips],
+          },
+    );
+  }
+  return settleRuling(acc, playerId, "operations", ruled.value);
+}
+
+/**
+ * 保留中の Out-of-Turn の操作を、その Player の手番が来た時点で裁定する（D91）。
+ * 状況が変わっていなければ拘束して Canonical Action を適用し、変わっていれば撤回する（no_action。Player が選び直す）。
+ * DEALER_RULING（basis: pending_out_of_turn）を置き、保留は消える。保留が無い・まだ手番でないなら失敗する。
+ */
+export function resolvePendingOutOfTurn(
+  state: HandState,
+  config: Pick<TableConfig, "chipDenominations" | "ruling">,
+): EngineResult<PhysicalProgress> {
+  const pending = state.pendingOutOfTurn;
+  if (pending === null) {
+    return {
+      ok: false,
+      error: { kind: "invalid_input", message: "保留中の Out-of-Turn が無い" },
+    };
+  }
+  const ruled = resolveOutOfTurn(state, pending, config);
+  if (!ruled.ok) return ruled;
+  return settleRuling(
+    { state, events: [] },
+    pending.playerId,
+    "pending_out_of_turn",
+    ruled.value,
+  );
+}
+
+/** DEALER_RULING を置き、Canonical Action に決まったらそれを適用する。 */
+function settleRuling(
+  acc: HandProgress,
+  playerId: string,
+  basis: "operations" | "pending_out_of_turn",
+  ruling: RulingResult,
+): EngineResult<PhysicalProgress> {
+  const ruled = emit(acc, {
+    type: "DEALER_RULING",
+    playerId,
+    street: acc.state.street,
+    basis,
+    outcome: ruling.kind,
+    action: ruling.kind === "action" ? { ...ruling.action } : null,
+    notes: [...ruling.notes],
+  });
+  if (ruling.kind !== "action")
+    return { ok: true, value: { ...ruled, ruling } };
+  // 裁定は必ず Legal Action に寄せてある（D40）ので、ここで拒否されたら Ruling Engine の誤り。理由はそのまま返す。
+  const applied = applyAction(ruled.state, playerId, ruling.action);
+  if (!applied.ok) return applied;
+  return {
+    ok: true,
+    value: {
+      state: applied.value.state,
+      events: [...ruled.events, ...applied.value.events],
+      ruling,
+    },
+  };
+}
+
+function pendingRejection(playerId: string): {
+  ok: false;
+  error: EngineError;
+} {
+  return {
+    ok: false,
+    error: {
+      kind: "not_actor",
+      message: `Out-of-Turn の操作を保留中（手番が来たら裁定する）: ${playerId}`,
+    },
+  };
 }
 
 /** CPU の判断の経緯として Orchestrator が残す Event の中身（D83）。 */

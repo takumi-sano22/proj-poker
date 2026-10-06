@@ -1,6 +1,7 @@
 // Ruling Engine。Hero の物理的な操作（PhysicalAction）を、Rule Profile の規則（TableConfig.ruling）に従って
 // Canonical Action に裁定する（docs/02 §3・§4。FR-LIVE-004）。合法性は getLegalActions だけが決める（D40）ので、
-// 裁定の結果は必ず Legal Action のどれかに寄せる。純粋関数で、State も Event も作らない（Event 化は #64）。
+// 裁定の結果は必ず Legal Action のどれかに寄せる。純粋関数で、State も Event も作らない
+// （操作と裁定の Event 化は hand-engine.ts の applyPhysicalActions / resolvePendingOutOfTurn。D90）。
 // 物理的な誤操作をするのは Hero だけ（D91）。CPU は Canonical Action を直接出す。
 import type { EngineResult } from "./hand-engine.js";
 import type { Street } from "./hand-events.js";

@@ -129,7 +129,7 @@ type CanonicalAction =
 
 - 実装した `PhysicalAction` は `chip_push`（Chipの最初の動作）・`chip_add`（2回目以降の動作）・`declare`（宣言。bet / raiseの額はこのStreetの累計〔to額〕で、省略可）の3種です。Chipは額面（Table Configの `chipDenominations`。D92）の列で持ち、Oversized Chip・Multiple Chipの判定に使います。
 - `OutOfTurnAttempt` は操作の種類として持たず、手番でないときの操作をRuling Engineが判定します。`CardMuckAttempt` / `ShowCards` はPhase 4のRuling（D91の3種）の範囲外で、まだ持ちません。
-- 裁定はStateもEventも作りません。宣言・物理的な操作・裁定をEvent Logに残すのは#64です（D90）。
+- 裁定そのものはStateもEventも作りません。宣言・物理的な操作・裁定をEvent Logに残すのは `hand-engine.ts` の `applyPhysicalActions`（操作ごとに `PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION`、続けて `DEALER_RULING`、Actionが決まればその `ACTION_TAKEN`）と `resolvePendingOutOfTurn`（保留したOOTの拘束・撤回の `DEALER_RULING`）です（#64・D90）。保留したOOTはEventの並びから復元でき（Stateの `pendingOutOfTurn`）、保留中の2回目の操作と、Canonical Actionでの上書きは受け付けません。Eventの形は `docs/04` §3。
 
 例:
 
