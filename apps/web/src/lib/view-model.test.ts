@@ -4,16 +4,18 @@ import { preflopHeroToAct } from "../testing/fixtures.js";
 import {
   blindsOf,
   describeEvent,
+  heroRulingStatus,
   lastSeqOf,
+  operationKey,
   outageReasonText,
   parseHeroView,
   parseOutageStatus,
   parseSessionStatus,
+  rulingText,
   seatDirections,
   selectLatestView,
   selectOutageStatus,
   selectSessionStatus,
-  sizingPresets,
   waitingMessage,
 } from "./view-model.js";
 
@@ -259,23 +261,108 @@ describe("seatDirections", () => {
   });
 });
 
-describe("sizingPresets（Bet / Raise の Preset。to 額）", () => {
-  it("Pot 比は Call 後の Pot に対する Raise 幅で出す", () => {
-    const view = preflopHeroToAct();
-    const presets = sizingPresets(view, 2, { type: "raise", min: 4, max: 200 });
-    // Pot 3 + Call 2 = 5。½ → 2 + 3（2.5 を丸め）、¾ → 2 + 4、Pot → 2 + 5
-    expect(presets.map((p) => [p.key, p.amount])).toEqual([
-      ["min", 4],
-      ["half", 5],
-      ["three-quarters", 6],
-      ["pot", 7],
-    ]);
+describe("heroRulingStatus / operationKey（Hero への裁定を卓に反映する。#66 の文言の前の最低限）", () => {
+  const pub = { type: "public" } as const;
+  const base = preflopHeroToAct();
+  const declared: HandEvent = {
+    seq: 5,
+    visibility: pub,
+    type: "PHYSICAL_CHIP_ACTION",
+    playerId: "hero",
+    street: "preflop",
+    motion: "chip_push",
+    chips: [25],
+  };
+  const ruled = (
+    outcome: "action" | "out_of_turn" | "no_action",
+    seq = 6,
+  ): Extract<HandEvent, { type: "DEALER_RULING" }> => ({
+    seq,
+    visibility: pub,
+    type: "DEALER_RULING",
+    playerId: "hero",
+    street: "preflop",
+    basis: "operations",
+    outcome,
+    action: outcome === "action" ? { type: "call" } : null,
+    notes: outcome === "action" ? ["oversized_chip"] : ["out_of_turn"],
+  });
+  const called: HandEvent = {
+    seq: 7,
+    visibility: pub,
+    type: "ACTION_TAKEN",
+    playerId: "hero",
+    street: "preflop",
+    action: "call",
+    amount: 2,
+    toAmount: 2,
+    allIn: false,
+  };
+
+  it("裁定が無ければ何も出さない", () => {
+    expect(heroRulingStatus(base)).toBeNull();
   });
 
-  it("サーバーが返した min / max の範囲に丸める", () => {
-    const view = preflopHeroToAct({ pot: 400, currentBet: 0 });
-    const presets = sizingPresets(view, 0, { type: "bet", min: 2, max: 150 });
-    expect(presets.map((p) => p.amount)).toEqual([2, 150, 150, 150]);
+  it("Action に決まった裁定は、その結果の ACTION_TAKEN（実額）で出す", () => {
+    const view = preflopHeroToAct({
+      log: [...base.log, declared, ruled("action"), called],
+      actorId: "cpu1",
+      legalActions: null,
+    });
+    const status = heroRulingStatus(view);
+    expect(status).toEqual({ kind: "action", action: called });
+    expect(rulingText(status!)).toBe("Dealer の裁定: コール（Call） 2");
+    // 分類・理由（notes）の文言は #66 の担当なので出さない
+    expect(rulingText(status!)).not.toContain("oversized");
+  });
+
+  it("手番でない操作の保留は、Street が進んでも解けるまで出す", () => {
+    const view = preflopHeroToAct({
+      street: "flop",
+      log: [...base.log, declared, ruled("out_of_turn")],
+    });
+    expect(heroRulingStatus(view)).toEqual({ kind: "pending" });
+    expect(rulingText({ kind: "pending" })).toContain("保留");
+  });
+
+  it("Hero の Action で Street が進んでも直近の裁定を出し、Hand の終了後は出さない", () => {
+    const log = [...base.log, declared, ruled("action"), called];
+    expect(heroRulingStatus(preflopHeroToAct({ log, street: "flop" }))).toEqual(
+      {
+        kind: "action",
+        action: called,
+      },
+    );
+    const noAction = [...base.log, declared, ruled("no_action")];
+    expect(heroRulingStatus(preflopHeroToAct({ log: noAction }))).toEqual({
+      kind: "no_action",
+    });
+    expect(
+      heroRulingStatus(preflopHeroToAct({ log, status: "complete" })),
+    ).toBeNull();
+  });
+
+  it("他の Player の裁定は Hero の裁定として扱わない", () => {
+    const other: HandEvent = { ...ruled("out_of_turn"), playerId: "cpu1" };
+    expect(
+      heroRulingStatus(preflopHeroToAct({ log: [...base.log, other] })),
+    ).toBeNull();
+  });
+
+  it("下書きの単位は Hero への裁定が増えるか Street が進むと変わり、CPU の行動だけでは変わらない", () => {
+    const cpuActed: HandEvent = { ...called, seq: 5, playerId: "cpu1" };
+    const before = operationKey(base);
+    expect(
+      operationKey(preflopHeroToAct({ log: [...base.log, cpuActed] })),
+    ).toBe(before);
+    expect(
+      operationKey(
+        preflopHeroToAct({
+          log: [...base.log, declared, ruled("action"), called],
+        }),
+      ),
+    ).not.toBe(before);
+    expect(operationKey(preflopHeroToAct({ street: "flop" }))).not.toBe(before);
   });
 });
 

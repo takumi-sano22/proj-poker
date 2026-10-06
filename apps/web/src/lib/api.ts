@@ -1,5 +1,5 @@
 // Runtime の Hand API（D73: Hero の Action は REST、卓の状態は SSE）。ブラウザは同一 origin の /api だけを呼ぶ（D67）。
-import type { HeroView, PlayerAction } from "@proj-poker/engine";
+import type { HeroView, PhysicalAction } from "@proj-poker/engine";
 
 /** 卓に座る Player の表示情報（POST /api/hands の players）。 */
 export interface TablePlayer {
@@ -131,15 +131,20 @@ export function startHand(
   return postJson<StartHandResponse>("/api/hands", { afterHandId });
 }
 
-/** lastSeq は Hero が見ていた View の log の最後の seq（古い画面・二重送信をサーバーが弾く）。 */
-export function sendHeroAction(
+/**
+ * Hero の 1 回の手番の物理的な操作（宣言・Chip を出す・足す。した順）を送る（D90・D91）。裁定はサーバーの Ruling Engine が行い、
+ * 結果は応答の view.log の DEALER_RULING に入る。手番でない操作もそのまま送る（サーバーが Out-of-Turn として保留する）。
+ * lastSeq は Hero が見ていた View の log の最後の seq（古い画面・二重送信をサーバーが弾く）。
+ * Canonical Action の入口（/actions）はサーバーに互換のために残っているが、画面からは使わない（docs/06 §4）。
+ */
+export function sendHeroPhysicalActions(
   handId: string,
   lastSeq: number,
-  action: PlayerAction,
+  actions: readonly PhysicalAction[],
 ): Promise<HeroActionResponse> {
   return postJson<HeroActionResponse>(
-    `/api/hands/${encodeURIComponent(handId)}/actions`,
-    { lastSeq, action },
+    `/api/hands/${encodeURIComponent(handId)}/physical-actions`,
+    { lastSeq, actions },
   );
 }
 

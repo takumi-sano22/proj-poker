@@ -3,13 +3,13 @@
 // - 受信経路は 2 つ（REST の応答と SSE の Push）。どちらが先に届いても seq の新しい方だけを残す
 // - 送信中は ref と state の 2 層で二重送信を止める（state は描画用、ref は同じ tick 内の連打用）
 // - CPU の障害の状態（D86）も REST の応答と SSE の outage イベントの両方から受け、revision の新しい方だけを残す
-import type { HeroView, PlayerAction } from "@proj-poker/engine";
+import type { HeroView, PhysicalAction } from "@proj-poker/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
   chooseOutage,
   handStreamUrl,
-  sendHeroAction,
+  sendHeroPhysicalActions,
   startHand,
   type HeroActionResponse,
   type OutageChoice,
@@ -49,7 +49,8 @@ export interface HandSession {
   readonly notice: SessionNotice | null;
   readonly connection: ConnectionState;
   readonly start: () => void;
-  readonly act: (action: PlayerAction) => void;
+  /** Hero の 1 回の手番の物理的な操作（した順）を送る。手番でなくても送る（裁定はサーバー）。 */
+  readonly operate: (actions: readonly PhysicalAction[]) => void;
   /** 表示中の障害の続け方を選ぶ（Retry / Emergency Bot / Session 終了）。 */
   readonly resolveOutage: (choice: OutageChoice) => void;
   readonly retry: () => void;
@@ -77,8 +78,17 @@ function noticeOf(error: unknown): SessionNotice {
         retryable: false,
       };
     case "not_actor":
+      // 物理的な操作では、保留中の Out-of-Turn があるのにもう一度操作したときに返る（保留は Hero の手番で裁定する）。
       return {
-        message: "今は Hero の手番ではありません。卓の進行を待っています。",
+        message:
+          "前の操作を保留しています。Hero の手番で Dealer が裁定するまでお待ちください。",
+        retryable: false,
+      };
+    case "invalid_input":
+      // 持っている額を超える Chip など、物理的に出せない操作（同じ内容の再送では通らない）。
+      return {
+        message:
+          "その操作は受け付けられませんでした。卓の表示を見て、操作し直してください。",
         retryable: false,
       };
     case "hand_complete":
@@ -118,15 +128,15 @@ export function useHandSession(): HandSession {
   const activeHandId = useRef<string | null>(null);
   const inFlight = useRef(false);
   // 再送ボタンで同じ操作をやり直すために、最後に失敗した操作を覚えておく。
-  // Action は送ったときの handId と lastSeq ごと覚え、再送でも同じ値を送る。応答だけが失われて実は適用済みだった場合、
+  // 操作は送ったときの handId と lastSeq ごと覚え、再送でも同じ値を送る。応答だけが失われて実は適用済みだった場合、
   // サーバーが stale_view で弾くので、次の手番へ誤って適用されない（現在の View の lastSeq で送り直さない）。
   const lastFailed = useRef<
     | { kind: "start"; afterHandId: string | null }
     | {
-        kind: "action";
+        kind: "operation";
         handId: string;
         lastSeq: number;
-        action: PlayerAction;
+        actions: readonly PhysicalAction[];
       }
     | {
         kind: "outage";
@@ -241,15 +251,14 @@ export function useHandSession(): HandSession {
     [acceptResponse],
   );
 
-  /** Action を送る。lastSeq は「この操作を選んだときに見ていた View」の値。 */
+  /** 物理的な操作を送る。lastSeq は「この操作を送ると決めたときに見ていた View」の値。 */
   const send = useCallback(
-    (sentFor: string, lastSeq: number, action: PlayerAction) =>
-      submit(sentFor, () => sendHeroAction(sentFor, lastSeq, action), {
-        kind: "action",
-        handId: sentFor,
-        lastSeq,
-        action,
-      }),
+    (sentFor: string, lastSeq: number, actions: readonly PhysicalAction[]) =>
+      submit(
+        sentFor,
+        () => sendHeroPhysicalActions(sentFor, lastSeq, actions),
+        { kind: "operation", handId: sentFor, lastSeq, actions },
+      ),
     [submit],
   );
 
@@ -265,10 +274,10 @@ export function useHandSession(): HandSession {
     [submit],
   );
 
-  const act = useCallback(
-    (action: PlayerAction) => {
-      if (view === null || handId === null) return;
-      send(handId, lastSeqOf(view), action);
+  const operate = useCallback(
+    (actions: readonly PhysicalAction[]) => {
+      if (view === null || handId === null || actions.length === 0) return;
+      send(handId, lastSeqOf(view), actions);
     },
     [handId, send, view],
   );
@@ -285,8 +294,8 @@ export function useHandSession(): HandSession {
   const retry = useCallback(() => {
     const failed = lastFailed.current;
     if (failed?.kind === "start") requestStart(failed.afterHandId);
-    else if (failed?.kind === "action")
-      send(failed.handId, failed.lastSeq, failed.action);
+    else if (failed?.kind === "operation")
+      send(failed.handId, failed.lastSeq, failed.actions);
     else if (failed?.kind === "outage")
       sendOutageChoice(failed.handId, failed.revision, failed.choice);
   }, [requestStart, send, sendOutageChoice]);
@@ -338,7 +347,7 @@ export function useHandSession(): HandSession {
     notice,
     connection,
     start,
-    act,
+    operate,
     resolveOutage,
     retry,
   };
