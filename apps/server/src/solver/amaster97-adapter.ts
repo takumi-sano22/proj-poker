@@ -166,17 +166,8 @@ export function createAmaster97Adapter(
     spot: AnalysisSpot,
     options: SolveOptions = {},
   ): Promise<SolverEvidence> {
-    // supports を通らない Spot は解かない（呼び出し側が supports を先に呼ぶ約束。ここでも二重に確かめる）。
-    const support = supports(spot);
-    if (!support.supported) {
-      throw new SolverError("unsupported", support.detail);
-    }
-    if (!config.install.installed) {
-      throw new SolverError("unsupported", config.install.detail);
-    }
-    const install = config.install.info;
-
-    // 不正な入力は Solver に渡さない（#76: Board の重複・Board と衝突する手を Solver は弾かない）。
+    // 不正な入力は Capability の判定より先に弾く（壊れた Spot を Unsupported の Fallback に紛れさせない。docs/09 §7）。
+    // Solver にも渡さない（#76: Board の重複・Board と衝突する手を Solver は弾かない）。
     const errors = validateSpot(spot);
     const timeoutMs = options.timeoutMs ?? config.timeoutMs;
     const iterations = options.iterations ?? config.iterations;
@@ -193,6 +184,16 @@ export function createAmaster97Adapter(
     if (errors.length > 0) {
       throw new SolverError("invalid_input", errors.join(" / "));
     }
+
+    // supports を通らない Spot は解かない（呼び出し側が supports を先に呼ぶ約束。ここでも二重に確かめる）。
+    const support = supports(spot);
+    if (!support.supported) {
+      throw new SolverError("unsupported", support.detail);
+    }
+    if (!config.install.installed) {
+      throw new SolverError("unsupported", config.install.detail);
+    }
+    const install = config.install.info;
 
     const request = buildRequest(spot, iterations);
     const command = config.command ?? {

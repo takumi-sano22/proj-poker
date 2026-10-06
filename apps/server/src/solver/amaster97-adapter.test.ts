@@ -412,6 +412,17 @@ describe("Invalid Input（Solver には渡さない）", () => {
         betTree: { ...RIVER_SPOT.betTree, raiseMultipliers: [1] },
       },
     ],
+    // Capability 外の値でも壊れていれば Unsupported ではなく invalid_input（Fallback に紛れさせない）。
+    ["人数が 1", { ...RIVER_SPOT, playerCount: 1 }],
+    [
+      "知らない Street",
+      { ...RIVER_SPOT, street: "showdown" } as unknown as AnalysisSpot,
+    ],
+    [
+      "知らない mode",
+      { ...RIVER_SPOT, mode: "mixed" } as unknown as AnalysisSpot,
+    ],
+    ["Rake の割合が 1", { ...RIVER_SPOT, rakeRate: 1 }],
   ];
   it.each(cases)("%s", async (_name, spot) => {
     await expectSolverError(

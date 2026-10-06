@@ -17,7 +17,7 @@ Phase 5 の子 Issue。Primary Solver（amaster97/poker_solver。D96）を包む
 - **置き場所**: 子プロセスを使うので Engine（純粋 TS）ではなく `apps/server/src/solver/`。Python の runner と導入スクリプトは `apps/server/solver/`（KB の `apps/server/kb/` と同じく TS の外の資産）。
 - **導入**: `apps/server/solver/setup-amaster97.sh` が固定 commit（`f78f1b2b…`。#76 で計測した版）を `POKER_SOLVER_HOME`（既定はリポジトリ外の `~/.local/share/proj-poker/amaster97-poker-solver`）へ clone し、venv に `pip install` して、`install.json`（solver・repository・commit・version・python）を書く。導入先がリポジトリ（worktree と本体）の中なら拒否する。Adapter は起動時に `install.json` と Python の有無を確かめ、無ければ `solver_not_installed`。
 - **supports の順序**: Player 数 → Street → Mode → Rake → Bet Tree → 導入の有無。Multiway の Spot で「未導入」より「HU だけ」を先に出す（理由として情報が多い）。Bet Tree は Solver が表せる範囲（Bet Size 1〜5 種で % が重ならない・Raise 倍率 1〜5 種・攻撃 4 回まで〔計測した値〕）。
-- **Invalid Input は Unsupported と分ける**（implementation-guidance async・docs/09 §7）: `supports` は Capability だけを見て、値の正しさは `analyze` が `validateSpot` で確かめて `SolverError("invalid_input")` にする。Solver は一度も起動しない。
+- **Invalid Input は Unsupported と分ける**（implementation-guidance async・docs/09 §7）: `supports` は Capability だけを見て、値の正しさは `analyze` が `validateSpot` で確かめて `SolverError("invalid_input")` にする。`analyze` では検証を Capability の判定より先に行う（人数 1・未知の Street 等の壊れた Spot を Unsupported の Fallback に紛れさせない。Codex 2 回目の P2 で修正）。Solver は一度も起動しない。
 - **失敗は `SolverError` の code**（`unsupported` / `invalid_input` / `timeout` / `cancelled` / `process_failed` / `parse_failure`）。Timeout・Cancel は途中結果が無いので「結果なし」で、呼び出し側は Unsupported と同じく Fallback する。
 - **子プロセス**（`process.ts`）: Timeout と AbortSignal で SIGKILL し、`close`（プロセスの回収）を待ってから返す。stdout / stderr は 4 MiB を上限にし、超えたら止める。SIGTERM での穏当な停止は #76 で未検証なので使わない。
 - **同時実行数**: Adapter 内の Limiter（既定 1）。待っている間も Cancel が効き、待ち行列から外す。Timeout は枠を取ってからの Solve の時間に掛ける（待ち時間で Timeout しない）。
@@ -54,7 +54,7 @@ Phase 5 の子 Issue。Primary Solver（amaster97/poker_solver。D96）を包む
 
 ## 実行した確認
 
-- 品質チェック（worktree のルート）: `pnpm lint`（エラーなし）・`pnpm typecheck`（3 パッケージ Done）・`pnpm test`（engine 326 / web 109 / server 289 passed）・`pnpm format:check`（All matched files use Prettier code style!）。`pnpm -r build` も通った。
+- 品質チェック（worktree のルート）: `pnpm lint`（エラーなし）・`pnpm typecheck`（3 パッケージ Done）・`pnpm test`（engine 326 / web 109 / server 296 passed。Codex の指摘の修正後）・`pnpm format:check`（All matched files use Prettier code style!）。`pnpm -r build` も通った。
 - 導入スクリプト: `POKER_SOLVER_HOME=<scratchpad>/solver-home bash apps/server/solver/setup-amaster97.sh` → `導入した: amaster97/poker_solver 1.11.0 (f78f1b2bc338dd8cbb5226ecb8398bbdb3635676)`。clone 済みの状態での再実行も exit 0。導入先をリポジトリの中（本体・worktree）にすると `POKER_SOLVER_HOME はリポジトリの外に置く` で exit 1、ディレクトリは作られない。
 - **実 Solver での手動確認**（WSL2・Ubuntu 24.04・Ryzen 5 7500F、`POKER_SOLVER_HOME=… pnpm --filter @proj-poker/server smoke:solver`、200 Iteration）:
 
