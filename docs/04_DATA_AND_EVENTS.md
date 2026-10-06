@@ -203,6 +203,8 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 
 Replayそのものは保存済みEventだけで再生します。
 
+実装（#68・D38・D93）: Replay Service（`apps/server/src/replay.ts`）は、Event Store の `read` で読んだEventの、Heroに見える分（public と Hero 宛ての private）の先頭からのprefixを `projectHeroView` に渡して、一手ずつのHeroの視点を作ります。Engine・CPU・AIは動かしません。stepはHeroに見えるEvent 1件ごとで、Actionに決まった `DEALER_RULING` だけは直後の `ACTION_TAKEN` と1 stepにまとめます。Hand の一覧は Event Store の `listHands`（`hands` テーブルの行と、メモリにある `HAND_FINISHED` の無い Hand）から作ります。テーブル・列・Event の形・`schema_version` は変えていません。`HAND_FINISHED` の無い Hand（§10・D88）は「未完了」として同じ形で返し、再起動すると消えます。下のMetadataはReplayには使いません。
+
 Best-effortなDebug / Re-analysis用Metadata:
 
 - RNG Seed

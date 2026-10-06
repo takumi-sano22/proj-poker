@@ -200,6 +200,8 @@ Replay:
 - Play / Pause
 - Jump to Important Spot
 
+実装（#68・D93）: 見出しの「Replay を見る」で Hand の一覧（開始の新しい順。開始時刻・Hero の札・Hero の収支〔実額 + BB 補助〕、途中で終わった Hand は「未完了」）を開き、選んだ Hand を Hero の視点で一手ずつ再生します（`components/ReplayScreen.tsx`）。操作は「前へ（Previous）」「再生（Play）」「一時停止（Pause）」「次へ（Next）」で、再生は最後の step で止まり、最後の step で「再生」を押すと最初から再生し直します。卓・進行ログ・Chip の構成・Dealer Feedback・用語の詳細は卓の画面と同じ部品で出し、他者の札は Showdown で公開された step から表に向きます。Hero の宣言・Chip の操作・裁定もそれぞれ 1 step です（Action に決まった裁定はその Action と同じ step）。狭い画面でも 3 つの操作 Button が 1 行に並ぶよう、ラベルは日本語と英語の 2 段にしています。Jump to Important Spot と Learning-only Full Reveal は Phase 5 の Review で扱います（D93）。
+
 ## 11. CPU待ち時間
 
 通常:

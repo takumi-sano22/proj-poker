@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: Phase 3（AI Opponents）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊べます**。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられ、6 種の Persona で性格が分かれます。CPU の出力は Engine の合法 Action で検証し、不正なら 1 回 Retry → RuleBot で続行、障害時は卓のダイアログで続け方を選べます。終わった Hand の Event Log は SQLite に残ります（Replay・Review はまだありません）
+> 現在の状態: Phase 4（Live Mechanics）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊べます**。Bet は **実際の Chip の額面を Click / Drag で出す操作と宣言**で行い、Dealer が Oversized Chip・String Bet・Out of Turn を TDA 準拠で裁定して、理由・作法・学習の補足を出します。卓の用語は開くと説明が出ます。終わった Hand（と途中で終わった Hand）は **Replay** で Hero の視点のまま一手ずつ見返せます。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられます（Hand Review はまだありません）
 
 ## このプロジェクトを作る理由
 
@@ -128,6 +128,10 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 
 ブラウザで Vite が表示するURL（既定は `http://127.0.0.1:5173`）を開き、「Hand を始める」を押すと、Hero として遊べます（既定は 6-max で CPU 5 人。人数は `TABLE_SIZE`）。Hand が終わったら「次の Hand へ」で Stack を持ち越して続けます。Hero が Bust するか、CPU が全員 Bust すると Session が終わり、「新しい Session を始める」で均等 Stack から始め直せます。
 
+- **Bet の操作**: 画面下の Hero 欄で Stack の Chip（額面 1 / 5 / 25 / 100 / 500）を Click で手に取り（Click の回数が枚数）、Click か Drag で Betting Area に出して「確定して Dealer に渡す」で送ります。宣言 Button だけでも、宣言と Chip の組み合わせでも操作できます。裁定はサーバーの Ruling Engine が行います。
+- **見出しの切り替え**: 「BB 補助表示」で BB 換算の表示を ON / OFF できます（実額は常に出ます。設定はこのブラウザに保存）。「Replay を見る」で保存済みの Hand の一覧を開き、選んだ Hand を「前へ / 再生 / 一時停止 / 次へ」で一手ずつ見返せます。「卓に戻る」で卓の画面に戻ります（Replay を見ている間も卓の Hand はそのまま続きます）。
+- **Fast Forward**: Hero が Fold した後の観戦中だけ、Hero 欄の Fast Forward で CPU の思考の待ち（演出）を縮められます。Claude の応答時間そのものは縮みません。
+
 | 環境変数 | 既定 | 内容 |
 |---|---|---|
 | `POKER_DB_PATH` | `apps/server/data/poker.sqlite`（gitignore 済み） | Event Log を保存する SQLite ファイル。`:memory:` なら保存しない |
@@ -231,36 +235,37 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 3 — AI Opponents** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。
+**Phase 4 — Live Mechanics** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。MVP の完成条件のうち 1〜4（Session を遊べる・2D UI と Chip 操作・Event Log の保存・Replay）が動き、5〜8（Review・全 Hole Cards の学習用の確認・解析・追加質問）は Phase 5 です。
 
 できていること:
 
 - 設計ドキュメント（`docs/`）と人間判断（D01〜D93）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
 - Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
-- テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）
-- ブラウザで遊べる Basic UI（`apps/web`）: 2Dの卓（2〜8 席）・実額表示（BBは補助）・合法Actionだけの宣言ボタン・進行ログ・Hero Fold 後の観戦・Session 終了の表示
-- 既定の CPU（D71）: seed付きの決定論ルールBot（RuleBot）。そのCPUに見える情報だけで合法Actionから選びます。Claude の CPU の Fallback・Emergency Bot にも使います
-- **AI Opponents（Phase 3）**:
-  - CPU ごとの KnowledgeState（#46・D28）: その CPU に見える Event だけから作り、他者の Hole Cards・未来のカード・他 CPU の Persona を渡しません
-  - Claude の CPU（#50・D87）: Claude Agent SDK で、ローカルでログイン済みの Claude Code の OAuth（サブスク枠）を使います。`OPPONENT_PROVIDER=claude` で切り替え（既定は RuleBot）。手順は上の「Claudeの認証」
-  - Persona（#51・D85）: TAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreational の 6 種（多軸のパラメータ。数値は OI-005 の暫定値）。席順に割り当て、`CPU_PERSONAS` で変えられます。Persona は画面に出しません
-  - 出力の検証と Fallback（#47・D40・D41）: CPU の出力を Schema → 合法 Action → 額の範囲の順に検証し、不正なら理由を付けて 1 回 Retry、再度不正なら RuleBot の判断で続けます。合法性は Engine が判定し、LLM には判断させません
-  - AI の Event（#48・D83）: 不正な出力と Fallback の利用を Event Log に残します（版 4）
-  - 障害時の 3 択（#52・D86）: ログイン切れ・利用枠の上限・応答時間の超過で CPU が判断できないと Hand を止め、卓のダイアログで Retry / Emergency Bot で続行 / Session を終了 を選べます。長く待つ手番には「AI応答が遅延しています」を出します
-  - AI Opponent Eval（#53・`docs/09` §5）: 代表 Spot × Persona の判断を集めて Structured Output Valid 率・Illegal Action 率・Retry 率・Latency・Persona Differentiation・Action Diversity・Hidden Information Leakage を集計します。CI は録画済み応答を再生して集計し、Claude を呼びません
+- テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）。Ruling も固定 Scenario と Property Test で確かめます
+- ブラウザの卓（`apps/web`）: 2Dの卓（2〜8 席）・実額表示（BBは補助）・Stack と Bet の Chip の構成表示・進行ログ・Hero Fold 後の観戦・Session 終了の表示
+- **AI Opponents（Phase 3）**: CPU ごとの KnowledgeState（他者の Hole Cards・未来のカード・他 CPU の Persona を渡さない。D28）・Claude の CPU（Claude Agent SDK・OAuth。D87）・6 種の Persona（D85）・出力の検証と 1 回の Retry → RuleBot の Fallback（D40・D41）・不正な出力と Fallback の Event（D83）・障害時の 3 択（Retry / Emergency Bot で続行 / Session を終了。D86）・AI Opponent Eval（`docs/09` §5）。既定の CPU は seed 付きの決定論ルール Bot（RuleBot。D71）です
+- **Live Mechanics（Phase 4）**:
+  - Chip の額面と構成（#62・D92）: 1（白）・5（赤）・25（緑）・100（黒）・500（紫）の Preset から、額の Chip の構成を自動で組んで卓に描きます
+  - Chip の Click / Drag と宣言（#65）: Hero の Bet は、Chip を Betting Area へ出す操作と宣言 Button で行います（数値入力の Bet Box は使いません）。手番でなくても操作でき、Out of Turn として裁定されます
+  - Ruling Engine（#63・D91）: 版付き Rule Profile `phase4_provisional_v1` で、TDA 準拠の 3 種を裁定します。**Oversized Chip**（宣言なしで Call 額を超える Chip を 1 枚出したら Call。相手の Bet が無ければその額の Bet）・**String Bet / Raise**（宣言なしで複数回に分けて出したら最初の 1 回の量で確定し、2 回目以降は返す）・**Out of Turn**（手番を戻して警告し、その間に最高額が変わらなければ拘束、変われば撤回して選び直し）。宣言と Chip は先にした方が Action を決め、宣言の額は合法な最も近い Action に寄せます（規則の一覧は `docs/02` の Preset の表）
+  - 宣言・Chip の操作・裁定の Event（#64・D90）: `PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING` を Event Log に残します（`schema_version` 5。版 1〜4 の行もそのまま読めます）
+  - Dealer Feedback（#66）: 裁定を **裁定（Ruling）・作法（Etiquette）・学習（Coaching）** の 3 分類で、分けて出します（文言は決定論で作り、LLM は使いません。Coaching は判断時点の情報だけを使います）
+  - Poker Vocabulary（#66・D45）: 卓の用語（日本語 + 標準 Term）を Hover / Click / キーボードで開くと、定義・今の Hand の例・関連する概念・補足が出ます
+  - BB 補助表示の切り替えと Fast Forward（#67・D49・D93）: BB 換算の ON / OFF（実額は常に表示）と、Hero Fold 後の CPU の思考待ちの短縮（Claude の応答時間は縮まない）
+  - **Replay**（#68・D38・D93）: Hand の一覧（開始の新しい順・最大 100 件）から選び、保存済みの Event を Hero の視点で一手ずつ再生します（前へ / 再生 / 一時停止 / 次へ）。AI や Engine で作り直さず（Re-simulation ではない）、他者の札は Showdown で公開された時点から見えます。宣言・Chip の操作・裁定も一手ずつ再生し、Dealer Feedback・Chip の構成・用語の説明は卓と同じものを出します
 - Event Log（D37）: Handの進行はすべてEventで表し、終わったHandのEventをSQLiteへ1トランザクションで保存します（Completed Handが保存の境界。D62）
 
 制約・未実装:
 
+- Ruling の規則（Oversized Chip・String Bet・Multiple Chip・宣言・Out of Turn）は OI-008 の暫定値、Chip の額面は OI-004 の暫定値です（永久仕様ではありません）。物理的な誤操作をするのは Hero だけで、CPU は Canonical Action で行動します（D91）
+- Replay の Hand 一覧に出る「未完了」の Hand（進行中・AI 障害の後に Session 終了で打ち切った Hand）はサーバーのメモリにだけあり、サーバーを再起動すると消えます。Learning-only Full Reveal（全員の札の学習用の公開）と Jump to Important Spot は Phase 5 の Review で扱います（D93）
 - Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
 - 障害時に選んだ Session 終了と Emergency Bot への切り替えは、まだ Event Log に残りません（サーバーのメモリだけ。Phase 5 の Session Resume で Event 化を設計。D88）
 - Persona の数値（OI-005）・モデル名 `claude-haiku-4-5` と判断待ちの上限（OI-001）・Eval の合格ライン（`docs/09` §5）は暫定値です。Tilt（一時的な状態）・CPU の観察記憶は Phase 7 です
-- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）・Session 終了の Event はまだありません
+- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）・Session 終了の Event はまだありません。Ante・Blind Level は Phase 8（Tournament）です
 - サーバーを再起動すると新しい Session から始まります（再起動後の Session Resume は Phase 5）
-- Optional BB 表示・Fast Forward・Chip 操作（Click + Drag）・Dealer Feedback・Ruling（Oversized Chip・String Bet / Raise・Out of Turn）は Phase 4、Ante・Blind Level は Phase 8（Tournament）です
-- 保存したHandを画面から開くReplay・Hand Review は未実装です
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
-- MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
+- Hand Review（判断時点の情報だけの Decision Review・Reveal Review・解析・追加質問）は未実装です。MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
 
-次は **Phase 4 — Live Mechanics**（Chip Physical Action・Declaration・Ruling Engine・Dealer Feedback・Replay）です。
+次は **Phase 5 — MVP Review**（Decision Reconstruction・Math / Equity・KB・Review AI・Solver Adapter・Reveal Review・Follow-up）です。
