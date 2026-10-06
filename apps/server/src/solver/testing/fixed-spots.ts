@@ -22,6 +22,7 @@ function pocSpot(
   return {
     street,
     playerCount: 2,
+    sidePot: false,
     mode: "cash",
     board,
     pot,

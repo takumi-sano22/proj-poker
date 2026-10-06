@@ -165,6 +165,7 @@ describe("Supported Spot", () => {
       pot: 48,
       effectiveStack: 64,
       playerCount: 2,
+      sidePot: false,
       rakeRate: 0,
     });
   });
@@ -204,6 +205,8 @@ describe("Unsupported Spot（正常系として理由つきで返す）", () => 
     ["Multiway（3 人）", { ...RIVER_SPOT, playerCount: 3 }, "player_count"],
     ["Tournament", { ...RIVER_SPOT, mode: "tournament" }, "mode"],
     ["Rake あり", { ...RIVER_SPOT, rakeRate: 0.05 }, "rake"],
+    // 3 人目が All-in 済みで 2 人だけが行動できる Turn 等。単一の Pot として解かない。
+    ["Side Pot あり", { ...TURN_SPOT, sidePot: true }, "side_pot"],
     [
       "Bet Size が 6 種",
       {
@@ -423,6 +426,10 @@ describe("Invalid Input（Solver には渡さない）", () => {
       { ...RIVER_SPOT, mode: "mixed" } as unknown as AnalysisSpot,
     ],
     ["Rake の割合が 1", { ...RIVER_SPOT, rakeRate: 1 }],
+    [
+      "sidePot が真偽値でない",
+      { ...RIVER_SPOT, sidePot: undefined } as unknown as AnalysisSpot,
+    ],
   ];
   it.each(cases)("%s", async (_name, spot) => {
     await expectSolverError(

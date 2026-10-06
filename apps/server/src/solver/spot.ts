@@ -62,6 +62,9 @@ export function validateSpot(spot: AnalysisSpot): string[] {
   if (!Number.isSafeInteger(spot.playerCount) || spot.playerCount < 2) {
     errors.push(`人数は 2 以上の整数: ${spot.playerCount}`);
   }
+  if (typeof spot.sidePot !== "boolean") {
+    errors.push(`sidePot は真偽値: ${String(spot.sidePot)}`);
+  }
   if (spot.mode !== "cash" && spot.mode !== "tournament") {
     errors.push(`mode が不正: ${String(spot.mode)}`);
   }

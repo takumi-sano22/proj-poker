@@ -47,8 +47,13 @@ export interface SpotRange {
 /** 解きたい Spot（正規化した Solver Request。docs/research/05 §5）。額は Chip の最小単位の整数（D74）。 */
 export interface AnalysisSpot {
   readonly street: Street;
-  /** この Street の開始時点で Hand に残っている人数（Fold していない人数）。 */
+  /** この Street の開始時点で Hand に残っている人数（Fold していない人数。All-in 済みの Player も数える）。 */
   readonly playerCount: number;
+  /**
+   * この Street の時点で Side Pot があるか（Pot ごとに参加資格が違う）。Solver は単一の Pot しか解けないので、
+   * あれば Unsupported にする（人数を誤って数えても Pot 全額を単一の Pot として解かないための明示の印）。
+   */
+  readonly sidePot: boolean;
   readonly mode: "cash" | "tournament";
   /** 判断時点の Board（Street に応じた枚数）。 */
   readonly board: readonly Card[];
@@ -74,6 +79,7 @@ export type UnsupportedReason =
   | "street"
   | "mode"
   | "rake"
+  | "side_pot"
   | "bet_tree"
   | "solver_not_installed";
 
@@ -139,6 +145,7 @@ export interface SolverEvidence {
     readonly pot: number;
     readonly effectiveStack: number;
     readonly playerCount: number;
+    readonly sidePot: boolean;
     readonly rakeRate: number;
   };
   readonly betTree: BetTree;

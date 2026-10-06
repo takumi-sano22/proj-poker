@@ -167,7 +167,7 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 
 ### Solver の導入（任意）
 
-Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poker_solver**（MIT）を使います（D96）。解けるのは **Heads-Up の Turn と River** だけで、Flop・Multiway（3 人以上）・Rake あり・Tournament の Spot は Solver を使わず、Math・Range・KB に切り替えます（Unsupported は正常な動きです。HU の Solver の結果を Multiway の Exact GTO として扱いません）。導入しなくてもアプリは動きます。
+Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poker_solver**（MIT）を使います（D96）。解けるのは **Heads-Up の Turn と River** だけで、Flop・Multiway（3 人以上）・Side Pot あり・Rake あり・Tournament の Spot は Solver を使わず、Math・Range・KB に切り替えます（Unsupported は正常な動きです。HU の Solver の結果を Multiway の Exact GTO として扱いません）。導入しなくてもアプリは動きます。
 
 前提: `git`・`python3`（venv が使えること）・Rust の stable（[rustup](https://rustup.rs/)）。WSL2（Ubuntu 24.04）で確認しています。Windows ネイティブは未確認です。
 

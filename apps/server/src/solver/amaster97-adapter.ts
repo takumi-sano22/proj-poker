@@ -280,6 +280,13 @@ function unsupportedReason(
         "Solver は Rake を扱えない（Rake ありの Spot は Math・Range・KB で代える）",
     };
   }
+  if (spot.sidePot && !cap.sidePotSupport) {
+    return {
+      reason: "side_pot",
+      detail:
+        "Solver は単一の Pot だけを解く。Side Pot のある Spot は Math・Range・KB で代える",
+    };
+  }
   const tree = spot.betTree;
   const percents = tree.betPotFractions.map((f) => Math.round(f * 100));
   if (
@@ -525,6 +532,7 @@ function toEvidence(
       pot: spot.pot,
       effectiveStack: spot.effectiveStack,
       playerCount: spot.playerCount,
+      sidePot: spot.sidePot,
       rakeRate: spot.rakeRate,
     },
     betTree: tree,
