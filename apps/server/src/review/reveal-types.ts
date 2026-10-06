@@ -33,6 +33,8 @@ export type MadeHand =
 /** Hand 後に見せた相手 1 人の札と、判断時点の読み（仮定した Range）との比較。 */
 export interface RevealVillainEvidence {
   readonly playerId: string;
+  /** Hero の画面に出ている名前（文ではこの名前で呼ぶ。#96）。 */
+  readonly displayName?: string;
   readonly position: PositionName;
   readonly holeCards: readonly Card[];
   /** 判断時点で Fold していなかった（Hero と Pot を争っていた）か。 */

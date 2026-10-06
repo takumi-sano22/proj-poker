@@ -13,11 +13,13 @@ import {
   buildClaudeEnv,
   type ClaudeQuery,
 } from "../claude/structured-query.js";
+import { PHASE1_TABLE_SETUP } from "../config.js";
 import { loadKb } from "../kb/index.js";
 import { buildReviewEvidence } from "../review/evidence.js";
 import { generateFollowUp } from "../review/followup.js";
 import { generateReview } from "../review/generate.js";
 import { generateRevealReview } from "../review/generate-reveal.js";
+import { toPlayerNames } from "../review/identifiers.js";
 import { buildRevealEvidence } from "../review/reveal-evidence.js";
 import type { FollowUpRecord, FollowUpTarget } from "../review/reveal-types.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
@@ -56,7 +58,9 @@ const reasons =
     ?.reasons ?? [];
 
 label = "Pass A";
+const playerNames = toPlayerNames(PHASE1_TABLE_SETUP.players);
 const decisionEvidence = await buildReviewEvidence(set, reasons, {
+  playerNames,
   kb: loadKb(),
   solver: createAmaster97Adapter({
     install: { installed: false, detail: "スモーク（Solver なし）" },
@@ -73,7 +77,13 @@ const decision = await generateReview(decisionEvidence, {
 console.log(`[Pass A] ${decision.generatedBy} / ${decision.assessment}`);
 
 label = "Pass B";
-const revealEvidence = await buildRevealEvidence(set, reveal, events, reasons);
+const revealEvidence = await buildRevealEvidence(
+  set,
+  reveal,
+  events,
+  reasons,
+  playerNames,
+);
 const revealDraft = await generateRevealReview(revealEvidence, {
   ...common,
   depth: "standard",

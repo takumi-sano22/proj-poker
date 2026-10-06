@@ -10,9 +10,15 @@ import {
   heroInformationSets,
 } from "@proj-poker/engine";
 import type { ClaudeQuery } from "../../claude/structured-query.js";
+import { PHASE1_TABLE_SETUP } from "../../config.js";
 import type { LoadedKb } from "../../kb/index.js";
 import { buildReviewEvidence } from "../../review/evidence.js";
 import { generateReview } from "../../review/generate.js";
+import {
+  findIdentifiers,
+  outputTexts,
+  toPlayerNames,
+} from "../../review/identifiers.js";
 import type { ReviewInvalidStage } from "../../review/review-ai.js";
 import type {
   Assessment,
@@ -75,6 +81,11 @@ export type ReviewEvalFinal =
       readonly cited: readonly string[];
       /** 説明の文（Practical・Theory・Exploit を順につないだもの。表示と語の検査に使う）。 */
       readonly text: string;
+      /** 内部の識別子の疑い（#96）。raw は Review AI の出力（置換の前）、residual は保存する Review（置換の後）に残っているもの。 */
+      readonly identifiers: {
+        readonly raw: readonly string[];
+        readonly residual: readonly string[];
+      };
     }
   /** Claude の呼び出しの失敗（本番なら Review を作らずに再実行を待つ）。 */
   | { readonly kind: "outage"; readonly message: string };
@@ -139,6 +150,7 @@ async function runCase(
     extractImportantSpots(sets).find((s) => s.decisionIndex === c.decisionIndex)
       ?.reasons ?? [];
   const evidence = await buildReviewEvidence(set, reasons, {
+    playerNames: toPlayerNames(PHASE1_TABLE_SETUP.players),
     kb: options.kb,
     solver: options.solver,
   });
@@ -164,6 +176,8 @@ async function runCase(
     return inner(params);
   };
   const attempts: ReviewEvalAttempt[] = [];
+  // 検証を通った出力の、置換の前の文（識別子の出方を見る）。
+  let rawTexts: string[] = [];
   try {
     const draft = await generateReview(evidence, {
       depth: options.depth ?? "standard",
@@ -176,6 +190,7 @@ async function runCase(
           : AbortSignal.timeout(options.timeoutMs),
       onAttempt: ({ prompt, output, check }) => {
         const params = sent.at(-1);
+        if (check.ok) rawTexts = outputTexts(check.value);
         // 実際に送った Prompt に、判断時点の Hero が知り得ない札の表記が無いか。
         createDeck()
           .map(cardToString)
@@ -206,6 +221,16 @@ async function runCase(
           draft.explanation.theory.text,
           draft.explanation.exploit.text,
         ].join("\n"),
+        identifiers: {
+          raw: [...new Set(rawTexts.flatMap(findIdentifiers))],
+          residual: [
+            ...new Set(
+              outputTexts([draft.explanation, draft.assumptions]).flatMap(
+                findIdentifiers,
+              ),
+            ),
+          ],
+        },
       },
       leaks: [...leaks],
     };

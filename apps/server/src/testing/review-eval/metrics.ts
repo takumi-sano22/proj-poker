@@ -26,6 +26,10 @@ export interface ReviewEvalSummary {
   readonly kbGroundingRate: number;
   /** "Exact GTO" / "厳密な GTO" を含む説明の数（否定の文脈でも数える。表示だけで人が読んで確かめる）。 */
   readonly exactGtoMentions: number;
+  /** 識別子の出現率（置換の前）: Review AI が書いた判断のうち、出力の文に内部の識別子（playerId・項目名・snake_case 等）があった割合。Prompt の効き。 */
+  readonly identifierMentionRate: number;
+  /** 識別子の残存率（置換の後）: 保存する Review の文にまだ識別子が残っていた割合。置換できなかった未知の識別子。0 が目標（#96・D101）。 */
+  readonly identifierResidualRate: number;
   readonly latencyMs: {
     readonly min: number;
     readonly median: number;
@@ -40,6 +44,8 @@ export interface ReviewEvalSummary {
   readonly solverStatus: Readonly<Record<string, string>>;
   readonly invalidOutputs: readonly string[];
   readonly leaks: readonly string[];
+  /** 判断 → 置換の後も残っていた識別子（人が見て、置換の対応表に足すか決める）。 */
+  readonly residualIdentifiers: readonly string[];
 }
 
 export interface ReviewEvalPopulation {
@@ -80,6 +86,8 @@ export function summarizeReviewEval(
   const byAi = records.filter(
     (r) => r.final.kind === "review" && r.final.generatedBy === "review_ai",
   );
+  const identifiersOf = (r: ReviewEvalRecord, which: "raw" | "residual") =>
+    r.final.kind === "review" ? r.final.identifiers[which] : [];
   const cited = (r: ReviewEvalRecord) =>
     r.final.kind === "review" ? r.final.cited : [];
   const assessmentCounts: Record<string, Record<string, number>> = {};
@@ -133,6 +141,14 @@ export function summarizeReviewEval(
         r.final.kind === "review" &&
         /exact\s*gto|厳密な\s*GTO/i.test(r.final.text),
     ).length,
+    identifierMentionRate: rate(
+      byAi.filter((r) => identifiersOf(r, "raw").length > 0).length,
+      byAi.length,
+    ),
+    identifierResidualRate: rate(
+      byAi.filter((r) => identifiersOf(r, "residual").length > 0).length,
+      byAi.length,
+    ),
     latencyMs: {
       min: quantile(ms, 0),
       median: quantile(ms, 0.5),
@@ -153,12 +169,15 @@ export function summarizeReviewEval(
     leaks: records.flatMap((r) =>
       r.leaks.map((l) => `${r.caseId}#${r.repeat}: ${l}`),
     ),
+    residualIdentifiers: records.flatMap((r) =>
+      identifiersOf(r, "residual").map((i) => `${r.caseId}#${r.repeat}: ${i}`),
+    ),
   };
 }
 
 /**
  * 合格ライン（暫定。docs/09 §6）。測定の前に決めて固定する（llm-quality-improvement 鉄則 2）。
- * Hindsight Leak と障害は 1 件でも不合格（鉄則 5）。それ以外は今の Prompt の目安で、Review の運用を見て見直す。
+ * Hindsight Leak と障害は 1 件でも不合格（鉄則 5）。識別子の残存（置換の後）も 1 件でも不合格で、置換の対応表（review/identifiers.ts）に足す。それ以外は今の Prompt の目安で、Review の運用を見て見直す。
  */
 export const REVIEW_EVAL_TARGETS = {
   hindsightLeaks: 0,
@@ -167,6 +186,7 @@ export const REVIEW_EVAL_TARGETS = {
   maxFallbackRate: 0.05,
   minMathGroundingRate: 0.9,
   minKbGroundingRate: 0.5,
+  maxIdentifierResidualRate: 0,
 } as const;
 
 /** 合格ラインに届かなかった指標の一覧（空なら合格）。 */
@@ -182,6 +202,8 @@ export function unmetReviewTargets(summary: ReviewEvalSummary): string[] {
     unmet.push("mathGroundingRate");
   if (summary.kbGroundingRate < t.minKbGroundingRate)
     unmet.push("kbGroundingRate");
+  if (summary.identifierResidualRate > t.maxIdentifierResidualRate)
+    unmet.push("identifierResidualRate");
   return unmet;
 }
 

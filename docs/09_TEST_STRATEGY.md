@@ -158,6 +158,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 
 - **Hindsight Leak / Hidden Information**（`evidence.test.ts`）: RuleBotの卓で進めた多数のHand（CPUの不正な出力で`system`のEventを含む）の全判断で、EvidenceとPromptに判断時点のHeroが知り得ない札（他者の札・後のBoard・Showdown）・Deck・seed・`system`の記録・CPUの出力の値・Personaが無いこと、判断より後のEventを切り落としても見えないEventの中身を差し替えてもEvidenceが変わらないことを確かめます。KBの本文は静的なCurated KBで、KBの項目そのものであることを確かめたうえで語の検査から外します。
 - **Math / Range / KB / Solver**: MathがEngineの`analyzeDecision`と同じ値であること、Important SpotだけRangeの想定の比較を持つこと、KBのEvidence IDがKBのVersionを含むこと、SolverはPreflop / Multiway / 未導入をFallbackし、HUのRootの判断だけを解き（Betへの直面・IPは解かない）、失敗の本文をEvidenceに入れないこと（`solver-evidence.test.ts`）。
+- **識別子の置換**（`identifiers.test.ts`・`generate.test.ts`・`reveal.test.ts`・`harness.test.ts`。#96）: playerId → 表示名・項目名 → 説明（値付きのboolean・`cpu1`と`cpu10`・別の語の一部・未知の識別子は残す）、根拠のidとenumを触らないこと、Pass Aの項目の説明にHand後の項目を出さないこと、識別子があってもRetryしないこと（Pass A・Pass B・Follow-up）、置換前後の指標（出現率・残存率）。
 - **出力の検証と生成**（`generate.test.ts`）: Schema（形・enum・文字数）とGrounding（実在しないEvidence ID・Solverの結果が無いのに`solver`・Observationが無いのに`observation`）の不正、1回のRetry、2回続けて不正ならInsufficient Evidence（失敗の記録）、Evidence Sufficiency GateでReview AIを呼ばないこと、`depth`ごとのModel Role、Claudeの呼び出しの失敗を例外のまま伝えること。
 - **保存とAPI**（`review-store.test.ts`・`review-service.test.ts`・`routes/reviews.test.ts`）: Versionの追記と上書きの拒否（メモリ内とSQLiteの両方）、非同期の生成（202・pending）、二重の要求で1回だけ作ること、上限の超過（timeout）・アプリの終了で子プロセスを止めること、生成を1つずつ順に進めること、失敗の種類だけを返すこと、404 / 409 / 400。
 
@@ -179,6 +180,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 | Hindsight Leak | EvidenceかPromptに判断時点のHeroが知り得ない情報が入っていた判断の数 | 0件（1件でも不合格） |
 | Math Grounding率 | Review AIが書いた判断のうち、Math EvidenceのIDを根拠に挙げた割合 | 0.9以上 |
 | KB Grounding率 | Review AIが書いた判断のうち、KBの項目（実在するID）を根拠に挙げた割合 | 0.5以上 |
+| 識別子の出現率 / 残存率（#96・D101） | Review AIが書いた判断のうち、出力の文に内部の識別子（playerId・Evidenceの項目名・snake_case・Evidenceのid）があった割合（置換の前＝Promptの効き）/ 保存するReviewの文にまだ識別子が残っていた割合（置換の後。置換の対応表に無い未知の識別子） | 残存率 0（1件でも不合格。残った識別子は`residualIdentifiers`に出るので、`review/identifiers.ts`の対応表に足す） |
 | Exact GTOの言及 | 説明に「Exact GTO」「厳密なGTO」を含む判断の数（否定の文脈も数える） | 表示のみ（人が読んで確かめる） |
 | Latency | 呼び出しごとの所要時間のmin / median / p90 / max | 表示のみ（上限は`REVIEW_TIMEOUT_MS`。OI-001） |
 

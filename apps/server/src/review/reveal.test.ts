@@ -12,7 +12,7 @@ import {
 } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
 import type { ClaudeQuery } from "../claude/structured-query.js";
-import { MODEL_ROLES } from "../config.js";
+import { MODEL_ROLES, PHASE1_TABLE_SETUP } from "../config.js";
 import { loadKb } from "../kb/index.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
 import {
@@ -37,7 +37,13 @@ import {
   generateFollowUp,
 } from "./followup.js";
 import { generateRevealReview } from "./generate-reveal.js";
-import { checkRevealOutput, revealOutputSchema } from "./reveal-ai.js";
+import { toPlayerNames } from "./identifiers.js";
+import {
+  REVEAL_SYSTEM_PROMPT,
+  buildRevealPrompt,
+  checkRevealOutput,
+  revealOutputSchema,
+} from "./reveal-ai.js";
 import {
   allRevealEvidenceIds,
   buildRevealEvidence,
@@ -49,6 +55,7 @@ import type {
 } from "./reveal-types.js";
 import type { ReviewEvidence } from "./types.js";
 
+const playerNames = toPlayerNames(PHASE1_TABLE_SETUP.players);
 const kb = loadKb();
 const notInstalled = createAmaster97Adapter({
   install: { installed: false, detail: "テスト" },
@@ -75,7 +82,13 @@ async function fixture(
   const reasons =
     extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
       ?.reasons ?? [];
-  const evidence = await buildRevealEvidence(set, reveal, events, reasons);
+  const evidence = await buildRevealEvidence(
+    set,
+    reveal,
+    events,
+    reasons,
+    playerNames,
+  );
   return { events, set, reveal, evidence };
 }
 
@@ -322,7 +335,7 @@ async function decisionTarget(): Promise<
   const evidence: ReviewEvidence = await buildReviewEvidence(
     sets[3] as HeroInformationSet,
     [],
-    { kb, solver: notInstalled },
+    { playerNames, kb, solver: notInstalled },
   );
   return {
     pass: "decision",
@@ -374,6 +387,75 @@ function turn(n: number, question: string, answer: string): FollowUpRecord {
     failure: null,
   };
 }
+
+describe("識別子の置換（#96・D101）: Pass B・Follow-up も Pass A と同じ", () => {
+  it("Pass B の Evidence の席・相手に表示名が添い、Prompt に項目の説明（Pass B の項目を含む）が入る", () => {
+    expect(
+      river.evidence.reveal.villains.map((v) => [v.playerId, v.displayName]),
+    ).toContainEqual(["cpu3", "CPU 3"]);
+    expect(
+      river.evidence.context.seats.find((s) => s.playerId === "cpu3")
+        ?.displayName,
+    ).toBe("CPU 3");
+    const prompt = buildRevealPrompt(river.evidence);
+    expect(prompt).toContain("- inAssumedRange:");
+    expect(REVEAL_SYSTEM_PROMPT).toContain("内部の識別子");
+  });
+
+  it("generateRevealReview: 識別子があっても Retry せず、説明を置換して保存する", async () => {
+    const fake = scriptedQuery([
+      {
+        ...validReveal(),
+        readComparison: "cpu3 は inAssumedRange=false。",
+        takeaways: ["cpu3 の Range の幅を考える"],
+      },
+    ]);
+    const draft = await generateRevealReview(river.evidence, {
+      depth: "standard",
+      actionSeq: river.set.decision.actionSeq,
+      env: {},
+      query: fake.query,
+    });
+    expect(fake.calls).toHaveLength(1);
+    expect(draft.explanation).toMatchObject({
+      readComparison:
+        "CPU 3 は 実際の札は判断時点に仮定した Range に入っていなかった。",
+      takeaways: ["CPU 3 の Range の幅を考える"],
+    });
+    expect(draft.evidenceIds.cited).toEqual([
+      river.evidence.reveal.id,
+      river.evidence.equity.id,
+    ]);
+  });
+
+  it("Follow-up: Pass A の Prompt に Pass B の項目の説明を出さない。答えは置換して保存する", async () => {
+    const target = await decisionTarget();
+    const prompt = buildFollowUpPrompt(target, [], "相手の動きは？");
+    expect(prompt).toContain("## Evidence の項目の説明");
+    expect(prompt).not.toContain("inAssumedRange");
+    expect(buildFollowUpPrompt(revealTarget, [], "読みは？")).toContain(
+      "- inAssumedRange:",
+    );
+    const fake = scriptedQuery([
+      {
+        scope: "answered",
+        answer: "cpu3 の betTree は分かりません。potOdds=0.3 です。",
+        evidenceIds: [target.evidence.math.id],
+      },
+    ]);
+    const draft = await generateFollowUp(target, [], "相手の動きは？", {
+      depth: "standard",
+      env: {},
+      query: fake.query,
+    });
+    expect(fake.calls).toHaveLength(1);
+    expect(draft.answer).toEqual({
+      scope: "answered",
+      text: "CPU 3 の Bet Tree は分かりません。Pot Odds 0.3 です。",
+      evidenceIds: [target.evidence.math.id],
+    });
+  });
+});
 
 describe("Follow-up", () => {
   it("Pass A への質問の Prompt には、判断時点の Hero が知り得ない札（相手の実際の札・後の Board）が入らない", async () => {

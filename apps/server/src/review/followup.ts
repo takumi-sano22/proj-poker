@@ -7,6 +7,11 @@ import { MODEL_ROLES } from "../config.js";
 import { runStructuredQuery } from "../claude/structured-query.js";
 import { allEvidenceIds } from "./evidence.js";
 import {
+  evidenceGlossary,
+  replacementNamesOf,
+  sanitizeOutput,
+} from "./identifiers.js";
+import {
   REVIEW_MAX_TURNS,
   modelRoleFor,
   type GenerateReviewOptions,
@@ -52,6 +57,7 @@ const COMMON_RULES = [
   "- 数値は Evidence の値をそのまま使い、自分で計算し直したり作ったりしないでください。額は Chip の実額で書いてください。",
   "- Evidence に無いことを推測で作らないでください。Evidence で答えられない質問は scope を out_of_scope にし、何が無いので答えられないかを書いてください。",
   "- これまでの質問と答えがあれば、その流れを踏まえて答えてください。",
+  "- 文は Hero が読みます。内部の識別子（playerId・Evidence の項目名・英字と _ でつないだ値・Evidence の id）は文に書かず、席は seats の displayName、項目は「Evidence の項目の説明」の言葉で書いてください。Evidence の id は evidenceIds にだけ入れてください。",
 ];
 
 /** Pass ごとの範囲の指示（Pass で文ごと出し分ける）。 */
@@ -101,6 +107,7 @@ export function buildFollowUpPrompt(
     `## 対象の Review（${target.pass === "decision" ? "Decision Review" : "Reveal Review"}・Version ${target.version}）`,
     "### Evidence（Card は 2 文字で、As はスペードの A、Td はダイヤの 10）",
     JSON.stringify(target.evidence, cardReplacer),
+    evidenceGlossary(target.pass),
     "### Review の説明",
     JSON.stringify(target.explanation),
   ];
@@ -258,7 +265,11 @@ export async function generateFollowUp(
       return {
         ...base,
         generatedBy: "review_ai",
-        answer: check.value,
+        // 識別子の置換は Review と同じ（Retry はしない。#96）。
+        answer: sanitizeOutput(
+          check.value,
+          replacementNamesOf(target.evidence),
+        ),
         failure: null,
       };
     }

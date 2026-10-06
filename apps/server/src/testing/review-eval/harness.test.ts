@@ -13,7 +13,11 @@ import {
   runReviewEval,
   type ReviewEvalRecord,
 } from "./harness.js";
-import { assertReviewPopulation, summarizeReviewEval } from "./metrics.js";
+import {
+  assertReviewPopulation,
+  summarizeReviewEval,
+  unmetReviewTargets,
+} from "./metrics.js";
 import {
   REVIEW_RECORDING_URL,
   replayReviewQueryFor,
@@ -105,6 +109,43 @@ describe("runReviewEval（本番と同じ Evidence・生成・検証・Retry）"
       generatedBy: "invalid_output_fallback",
       assessment: "insufficient_evidence",
     });
+  });
+
+  it("識別子（#96）: 既知のものは置換されて保存する Review に残らず、置換前の出方は記録する。未知のものは残存として数える", async () => {
+    const withIds = (practical: string) => (prompt: string) => ({
+      ...validFrom(prompt),
+      practical,
+    });
+    const replaced = await runOne([
+      withIds("cpu3 の Bet に Call。inAssumedRange=false だった。"),
+    ]);
+    expect(replaced.final).toMatchObject({
+      kind: "review",
+      identifiers: { raw: ["cpu3", "inAssumedRange"], residual: [] },
+    });
+    expect(replaced.final.kind === "review" && replaced.final.text).toContain(
+      "CPU 3 の Bet に Call。",
+    );
+    const unknown = await runOne([withIds("mysteryField=1 が気になる。")]);
+    expect(unknown.final).toMatchObject({
+      identifiers: { raw: ["mysteryField"], residual: ["mysteryField"] },
+    });
+    const one = { cases: ["btn_vs_utg/d3"], repeats: 1 };
+    expect(summarizeReviewEval([replaced], one)).toMatchObject({
+      identifierMentionRate: 1,
+      identifierResidualRate: 0,
+      residualIdentifiers: [],
+    });
+    const summary = summarizeReviewEval([unknown], one);
+    expect(summary).toMatchObject({
+      identifierMentionRate: 1,
+      identifierResidualRate: 1,
+      residualIdentifiers: ["btn_vs_utg/d3#1: mysteryField"],
+    });
+    expect(unmetReviewTargets(summary)).toContain("identifierResidualRate");
+    expect(
+      unmetReviewTargets(summarizeReviewEval([replaced], one)),
+    ).not.toContain("identifierResidualRate");
   });
 
   it("呼び出しの例外は障害として記録する", async () => {
