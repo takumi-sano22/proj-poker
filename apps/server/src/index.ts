@@ -5,6 +5,7 @@ import {
   parseBotDelayMs,
   parseOpponentProvider,
   parseOpponentTimeoutMs,
+  parsePersonaRotation,
   parseTableSize,
   resolveDbPath,
 } from "./config.js";
@@ -40,7 +41,11 @@ const app = buildApp({
   // CPU の 1 回の判断を待つ上限（暫定値）。環境変数 OPPONENT_TIMEOUT_MS で上書きする。
   opponentTimeoutMs: parseOpponentTimeoutMs(process.env["OPPONENT_TIMEOUT_MS"]),
   // 卓の人数（2〜8。既定 6）。環境変数 TABLE_SIZE で選ぶ。
-  setup: buildTableSetup(parseTableSize(process.env["TABLE_SIZE"])),
+  // CPU の Persona は席順で割り当てる（OI-005 の暫定値）。環境変数 CPU_PERSONAS（Preset ID のカンマ区切り）で順番を上書きする。
+  setup: buildTableSetup(
+    parseTableSize(process.env["TABLE_SIZE"]),
+    parsePersonaRotation(process.env["CPU_PERSONAS"]),
+  ),
   store,
   createOpponent,
 });

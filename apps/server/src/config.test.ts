@@ -6,6 +6,7 @@ import {
   DEFAULT_BOT_THINK_DELAY_MS,
   DEFAULT_DB_PATH,
   DEFAULT_OPPONENT_TIMEOUT_MS,
+  DEFAULT_PERSONA_ROTATION,
   DEFAULT_TABLE_SIZE,
   MODEL_ROLES,
   PHASE1_TABLE_SETUP,
@@ -13,6 +14,7 @@ import {
   parseBotDelayMs,
   parseOpponentProvider,
   parseOpponentTimeoutMs,
+  parsePersonaRotation,
   parseTableSize,
   resolveDbPath,
 } from "./config.js";
@@ -76,6 +78,63 @@ describe("parseTableSize / buildTableSetup（卓の人数 2〜8）", () => {
       "cpu4",
       "cpu5",
     ]);
+  });
+});
+
+describe("Persona の割り当て（#51・OI-005 の暫定値）", () => {
+  it("既定の 6-max は CPU 1〜5 に席順で TAG Regular・LAG・Nit・Calling Station・Weak-tight Recreational を当てる（Hero には当てない）", () => {
+    expect(PHASE1_TABLE_SETUP.personas).toEqual({
+      cpu1: "tag_regular",
+      cpu2: "lag",
+      cpu3: "nit",
+      cpu4: "calling_station",
+      cpu5: "weak_tight_recreational",
+    });
+    expect(buildTableSetup(6)).toEqual(buildTableSetup(6));
+  });
+
+  it("CPU が割り当て順より多ければ先頭から繰り返し、少なければ先頭から使う", () => {
+    expect(buildTableSetup(8).personas).toEqual({
+      cpu1: "tag_regular",
+      cpu2: "lag",
+      cpu3: "nit",
+      cpu4: "calling_station",
+      cpu5: "weak_tight_recreational",
+      cpu6: "maniac",
+      cpu7: "tag_regular",
+    });
+    expect(buildTableSetup(2, ["maniac", "nit"]).personas).toEqual({
+      cpu1: "maniac",
+    });
+    expect(buildTableSetup(4, ["nit"]).personas).toEqual({
+      cpu1: "nit",
+      cpu2: "nit",
+      cpu3: "nit",
+    });
+    expect(() => buildTableSetup(6, [])).toThrow(RangeError);
+  });
+
+  it("Hero への応答に載る players には Persona を入れない（Secret Persona。D28）", () => {
+    for (const p of buildTableSetup(8).players) {
+      expect(Object.keys(p).sort()).toEqual([
+        "displayName",
+        "kind",
+        "playerId",
+      ]);
+    }
+  });
+
+  it("CPU_PERSONAS はカンマ区切りの Preset ID だけを受け付け、未設定・空なら既定、知らない ID は起動時の誤りにする", () => {
+    expect(parsePersonaRotation(undefined)).toBe(DEFAULT_PERSONA_ROTATION);
+    expect(parsePersonaRotation(" ")).toBe(DEFAULT_PERSONA_ROTATION);
+    expect(parsePersonaRotation("maniac, nit ,lag")).toEqual([
+      "maniac",
+      "nit",
+      "lag",
+    ]);
+    for (const raw of ["tag", "maniac,", "Maniac", "difficulty"]) {
+      expect(() => parsePersonaRotation(raw)).toThrow(RangeError);
+    }
   });
 });
 

@@ -135,6 +135,7 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | `BOT_THINK_DELAY_MS` | `600` | CPU の思考に見せる待ち時間（演出のみ） |
 | `OPPONENT_TIMEOUT_MS` | `30000`（暫定値） | CPU の 1 回の判断を待つ上限。超えたら障害として Hand を止める。1 以上の整数。不正値は既定に戻す |
 | `OPPONENT_PROVIDER` | `rulebot` | CPU の判断に使う実装。`claude` で Claude（下の「Claudeの認証」が前提）。それ以外の値は起動時にエラーで止める |
+| `CPU_PERSONAS` | `tag_regular,lag,nit,calling_station,weak_tight_recreational,maniac` | CPU の Persona を席順（CPU 1 から）に割り当てる順番。Preset ID（`tag_regular` / `lag` / `calling_station` / `nit` / `maniac` / `weak_tight_recreational`）のカンマ区切りで、CPU が多ければ先頭から繰り返す。知らない ID は起動時にエラーで止める。Persona は画面に出さない |
 | `PORT` | `3001` | `apps/server` の待ち受けポート（`127.0.0.1` 固定） |
 
 ### Claudeの認証（CPU を Claude にするとき）
