@@ -1,7 +1,9 @@
 // Review の API（#82・#83。UI は #84）。Hand ID と Hero の判断（decisionIndex: その Hand での Hero の判断の順番。0 始まり）を指定する。
 // - `/decisions/:decisionIndex`: Pass A（Decision Review）。GET は状態（最新の Version・Version の数・生成の状態）、POST は新しい
 //   Version の生成を始めて待ちの状態（202）を返す。生成は裏で進み、GET で終わりを確かめる。body は `{}` か `{ "depth": "deep" }`
+// - `/decisions/:decisionIndex/versions/:version`（GET）: Pass A の指定した Version（#84。画面で Version を選ぶ）
 // - `/decisions/:decisionIndex/reveal`: Pass B（Reveal Review。Hand 後の Learning-only Full Reveal で答え合わせ）。GET / POST は Pass A と同じ作法
+// - `/decisions/:decisionIndex/reveal/versions/:version`（GET）: Pass B の指定した Version（#84）
 // - `/decisions/:decisionIndex/passes/:pass/versions/:version/followups`: Pass（decision / reveal）と Version で指定した Review への
 //   Follow-up。GET は履歴（全ターン）と生成の状態、POST は `{ "question": "...", "depth"?: "deep" }` で答えの生成を始める（202）
 // Pass A とその Follow-up の応答は判断時点の Hero Information Set から作った Evidence と説明だけ（他者の札・Deck・seed・system の記録・
@@ -37,6 +39,21 @@ const reviewBodySchema = {
   properties: { depth: { type: "string", enum: ["standard", "deep"] } },
 } as const;
 
+interface VersionParams {
+  handId: string;
+  decisionIndex: string;
+  version: string;
+}
+
+/** Version は 1 以上の整数の表記だけ。 */
+const versionSchema = { type: "string", pattern: "^[1-9][0-9]{0,3}$" } as const;
+
+const versionParamsSchema = {
+  type: "object",
+  required: ["handId", "decisionIndex", "version"],
+  properties: { ...reviewParamsSchema.properties, version: versionSchema },
+} as const;
+
 interface FollowUpParams {
   handId: string;
   decisionIndex: string;
@@ -54,8 +71,7 @@ const followUpParamsSchema = {
   properties: {
     ...reviewParamsSchema.properties,
     pass: { type: "string", enum: ["decision", "reveal"] },
-    // Version は 1 以上の整数の表記だけ。
-    version: { type: "string", pattern: "^[1-9][0-9]{0,3}$" },
+    version: versionSchema,
   },
 } as const;
 
@@ -112,6 +128,38 @@ export function registerReviewRoutes(
         request.body.depth ?? "standard",
       );
       return send(reply, result, 202);
+    },
+  );
+
+  app.get<{ Params: VersionParams }>(
+    "/api/reviews/hands/:handId/decisions/:decisionIndex/versions/:version",
+    { schema: { params: versionParamsSchema } },
+    (request, reply) => {
+      const params = parseParams(request.params);
+      return send(
+        reply,
+        reviews.version(
+          params.handId,
+          params.decisionIndex,
+          Number(request.params.version),
+        ),
+      );
+    },
+  );
+
+  app.get<{ Params: VersionParams }>(
+    "/api/reviews/hands/:handId/decisions/:decisionIndex/reveal/versions/:version",
+    { schema: { params: versionParamsSchema } },
+    (request, reply) => {
+      const params = parseParams(request.params);
+      return send(
+        reply,
+        reviews.revealVersion(
+          params.handId,
+          params.decisionIndex,
+          Number(request.params.version),
+        ),
+      );
     },
   );
 

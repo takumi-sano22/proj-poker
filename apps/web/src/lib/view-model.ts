@@ -361,7 +361,10 @@ export function describeEvent(
 
 /** Action を「日本語（標準 Term） 実額」の 1 句にする（例: 「レイズ（Raise） 30 まで」）。 */
 export function describeAction(
-  event: Extract<HandEvent, { type: "ACTION_TAKEN" }>,
+  event: Pick<
+    Extract<HandEvent, { type: "ACTION_TAKEN" }>,
+    "action" | "amount" | "toAmount" | "allIn"
+  >,
 ): string {
   const label = termLabel(ACTION_TERMS[event.action]);
   // All-in になった Call / Bet / Raise には印を付ける（all_in 自体はラベルが表す）。

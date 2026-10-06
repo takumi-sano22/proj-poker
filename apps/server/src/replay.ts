@@ -4,14 +4,17 @@
 // 公開されたもの以外）・Deck・engine / system Visibility の Event・CPU の Persona は入らない（D28・INV-INFO-001）。
 // 例外として、AI 障害の後に Hero が選んだ打ち切り（HAND_ABORTED は system Visibility）だけは、Hero 自身の選択なので aborted として返す（D95）。
 // Jump to Important Spot（#84）の飛び先として、Important Spot（#78。判断時点の Hero Information Set から決定論で抽出）を
-// step の位置で返す。Learning-only Full Reveal は Phase 5 の Review で扱う（D93）。
+// step の位置で返す。Review の画面（#84）が判断を選べるよう、Hero の判断（Important Spot でないものも含む）も step の位置で返す。
+// Learning-only Full Reveal は Review の Pass B（#83）で扱い、Replay には入れない（D93）。
 import {
   extractImportantSpots,
+  heroDecisions,
   heroInformationSets,
   projectHeroView,
   visibleEvents,
   type Card,
   type HandEvent,
+  type ActionType,
   type HeroView,
   type ImportantSpotReason,
   type Street,
@@ -47,6 +50,22 @@ export interface ReplayImportantSpot {
   readonly reasons: readonly ImportantSpotReason[];
 }
 
+/**
+ * Hero の判断 1 つ（#84。Review の画面で判断を選ぶため）。stepIndex の step が、その判断の直前（Hero に手番が来た時点）の卓。
+ * decisionIndex は Review の API の decisionIndex と同じ番号。値は Hero 自身の Action だけ。
+ */
+export interface ReplayDecision {
+  readonly stepIndex: number;
+  readonly decisionIndex: number;
+  readonly street: Street;
+  readonly action: ActionType;
+  /** この Action で Stack から出した額。 */
+  readonly amount: number;
+  /** この Action の後の、この Street での累計 Commit（Bet / Raise の "to" 額）。 */
+  readonly toAmount: number;
+  readonly allIn: boolean;
+}
+
 /** 再生する 1 Hand。steps は Hero に見える Event の prefix ごとの Hero の視点（replaySteps）。 */
 export interface ReplayHand {
   readonly handId: string;
@@ -58,6 +77,8 @@ export interface ReplayHand {
   readonly steps: readonly HeroView[];
   /** Important Spot（判断の順）。step の位置で返す。 */
   readonly importantSpots: readonly ReplayImportantSpot[];
+  /** Hero の判断のすべて（判断の順）。step の位置で返す。 */
+  readonly decisions: readonly ReplayDecision[];
 }
 
 /**
@@ -99,24 +120,45 @@ export function replayImportantSpots(
   steps: readonly HeroView[],
 ): ReplayImportantSpot[] {
   return extractImportantSpots(heroInformationSets(events, heroId)).map(
-    (spot) => {
-      const stepIndex = steps.findIndex(
-        (s) => s.log.at(-1)?.seq === spot.decisionPointSeq,
-      );
-      // 上の理由で起きない。起きたら写し方の誤りなので、黙って落とさずに投げる。
-      if (stepIndex < 0) {
-        throw new Error(
-          `Important Spot の判断時点の step が無い: seq ${spot.decisionPointSeq}`,
-        );
-      }
-      return {
-        stepIndex,
-        decisionIndex: spot.decisionIndex,
-        street: spot.street,
-        reasons: spot.reasons,
-      };
-    },
+    (spot) => ({
+      stepIndex: decisionStepIndex(steps, spot.decisionPointSeq),
+      decisionIndex: spot.decisionIndex,
+      street: spot.street,
+      reasons: spot.reasons,
+    }),
   );
+}
+
+/** Hero の判断のすべてを、判断時点の step の位置へ写す（写し方は replayImportantSpots と同じ）。 */
+export function replayDecisions(
+  events: readonly HandEvent[],
+  heroId: string,
+  steps: readonly HeroView[],
+): ReplayDecision[] {
+  return heroDecisions(events, heroId).map((d) => ({
+    stepIndex: decisionStepIndex(steps, d.decisionPointSeq),
+    decisionIndex: d.index,
+    street: d.street,
+    action: d.action,
+    amount: d.amount,
+    toAmount: d.toAmount,
+    allIn: d.allIn,
+  }));
+}
+
+/** 末尾の Event の seq が判断時点（decisionPointSeq）の step の位置。 */
+function decisionStepIndex(
+  steps: readonly HeroView[],
+  decisionPointSeq: number,
+): number {
+  const stepIndex = steps.findIndex(
+    (s) => s.log.at(-1)?.seq === decisionPointSeq,
+  );
+  // 上の理由で起きない。起きたら写し方の誤りなので、黙って落とさずに投げる。
+  if (stepIndex < 0) {
+    throw new Error(`判断時点の step が無い: seq ${decisionPointSeq}`);
+  }
+  return stepIndex;
 }
 
 /** 一覧の 1 行を、その Hand の Event（Hero に見える分だけを使う）から作る。 */
@@ -187,6 +229,7 @@ export class ReplayService {
       ),
       steps,
       importantSpots: replayImportantSpots(events, this.heroId, steps),
+      decisions: replayDecisions(events, this.heroId, steps),
     };
   }
 

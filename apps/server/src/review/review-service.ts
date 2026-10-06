@@ -176,6 +176,22 @@ export class ReviewService {
     return { ok: true, value: this.snapshot(handId, decisionIndex) };
   }
 
+  /** その判断の Pass A の、指定した Version の Review（#84。Version を選んで読む）。 */
+  version(
+    handId: string,
+    decisionIndex: number,
+    version: number,
+  ): ServiceResult<ReviewRecord> {
+    const target = this.target(handId, decisionIndex);
+    if (!target.ok) return target;
+    const record = this.deps.reviews
+      .list(handId, decisionIndex, "decision")
+      .find((r) => r.version === version);
+    return record === undefined
+      ? reviewNotFound(handId, decisionIndex, "decision", version)
+      : { ok: true, value: record };
+  }
+
   /** その判断の Pass B（Reveal Review）の状態。 */
   revealStatus(handId: string, decisionIndex: number): RevealResult {
     const target = this.target(handId, decisionIndex);
@@ -208,6 +224,22 @@ export class ReviewService {
         ),
     );
     return { ok: true, value: this.revealSnapshot(handId, decisionIndex) };
+  }
+
+  /** その判断の Pass B の、指定した Version（#84。Version を選んで読む）。 */
+  revealVersion(
+    handId: string,
+    decisionIndex: number,
+    version: number,
+  ): ServiceResult<RevealReviewRecord> {
+    const target = this.target(handId, decisionIndex);
+    if (!target.ok) return target;
+    const record = this.deps.reveals
+      .list(handId, decisionIndex)
+      .find((r) => r.version === version);
+    return record === undefined
+      ? reviewNotFound(handId, decisionIndex, "reveal", version)
+      : { ok: true, value: record };
   }
 
   /** Pass と Version で指定した Review への Follow-up の状態（履歴の全ターン）。 */
@@ -349,10 +381,7 @@ export class ReviewService {
   ): ServiceResult<FollowUpTarget> {
     const target = this.target(handId, decisionIndex);
     if (!target.ok) return target;
-    const notFound = error(
-      "review_not_found",
-      `Review が無い: ${handId} の ${decisionIndex}（${pass}・Version ${version}）`,
-    );
+    const notFound = reviewNotFound(handId, decisionIndex, pass, version);
     if (pass === "decision") {
       const record = this.deps.reviews
         .list(handId, decisionIndex, "decision")
@@ -581,6 +610,18 @@ function error(
   message: string,
 ): { readonly ok: false; readonly error: ReviewServiceError } {
   return { ok: false, error: { kind, message } };
+}
+
+function reviewNotFound(
+  handId: string,
+  decisionIndex: number,
+  pass: ReviewPass,
+  version: number,
+): { readonly ok: false; readonly error: ReviewServiceError } {
+  return error(
+    "review_not_found",
+    `Review が無い: ${handId} の ${decisionIndex}（${pass}・Version ${version}）`,
+  );
 }
 
 function keyOf(handId: string, decisionIndex: number): string {

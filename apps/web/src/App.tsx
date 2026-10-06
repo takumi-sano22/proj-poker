@@ -3,6 +3,7 @@
 // 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
 // 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
+// Hand が終わったら、Hero の欄と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback, useState } from "react";
 import { Amount } from "./components/Amount.js";
@@ -18,10 +19,12 @@ import { HandLog } from "./components/HandLog.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
 import { ReplayScreen } from "./components/ReplayScreen.js";
+import { ReviewScreen } from "./components/ReviewScreen.js";
 import { Table } from "./components/Table.js";
 import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
+import type { ReplayStart } from "./hooks/useReplay.js";
 import type { SessionStatus } from "./lib/api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
@@ -34,10 +37,29 @@ import {
   waitingMessage,
 } from "./lib/view-model.js";
 
+/** 見ている画面。Replay は開く Hand と step を、Review は Hand と最初に開く判断を持てる。 */
+type Screen =
+  | { readonly kind: "table" }
+  | { readonly kind: "replay"; readonly start: ReplayStart | null }
+  | {
+      readonly kind: "review";
+      readonly handId: string;
+      readonly decisionIndex: number | null;
+    };
+
 export function App() {
   const session = useHandSession();
-  // 卓を見ているか、Replay を見ているか。
-  const [screen, setScreen] = useState<"table" | "replay">("table");
+  const [screen, setScreen] = useState<Screen>({ kind: "table" });
+  const openReview = useCallback(
+    (handId: string, decisionIndex: number | null) =>
+      setScreen({ kind: "review", handId, decisionIndex }),
+    [],
+  );
+  const openReplay = useCallback(
+    (handId: string, step: number) =>
+      setScreen({ kind: "replay", start: { handId, step } }),
+    [],
+  );
   const { view, players } = session;
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
   const [showBB, setShowBB] = useBbSetting();
@@ -54,7 +76,7 @@ export function App() {
         <header className="app__header">
           <h1 className="app__title">proj-poker</h1>
           <div className="app__header-end">
-            {screen === "table" && view !== null && (
+            {screen.kind === "table" && view !== null && (
               <p className="app__meta">
                 ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
                 {formatChips(view.bigBlind)}
@@ -64,15 +86,37 @@ export function App() {
             <button
               type="button"
               className="btn btn--ghost btn--sm"
-              onClick={() => setScreen(screen === "table" ? "replay" : "table")}
+              onClick={() =>
+                setScreen(
+                  screen.kind === "table"
+                    ? { kind: "replay", start: null }
+                    : { kind: "table" },
+                )
+              }
             >
-              {screen === "table" ? "Replay を見る" : "卓に戻る"}
+              {screen.kind === "table" ? "Replay を見る" : "卓に戻る"}
             </button>
           </div>
         </header>
 
-        {screen === "replay" ? (
-          <ReplayScreen />
+        {screen.kind === "replay" ? (
+          // 開く Hand・step が変わったら作り直す（Review から別の場面を開いたとき）。
+          <ReplayScreen
+            key={
+              screen.start === null
+                ? "list"
+                : `${screen.start.handId}:${screen.start.step}`
+            }
+            start={screen.start}
+            onOpenReview={openReview}
+          />
+        ) : screen.kind === "review" ? (
+          <ReviewScreen
+            key={`${screen.handId}:${screen.decisionIndex ?? "list"}`}
+            handId={screen.handId}
+            initialDecision={screen.decisionIndex}
+            onOpenReplay={openReplay}
+          />
         ) : view === null ? (
           <main className="app__empty">
             <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
@@ -107,7 +151,12 @@ export function App() {
                 <HandLog view={view} nameOf={nameOf} />
               </aside>
             </main>
-            <HeroDock view={view} nameOf={nameOf} session={session} />
+            <HeroDock
+              view={view}
+              nameOf={nameOf}
+              session={session}
+              onOpenReview={openReview}
+            />
           </VocabularyProvider>
         )}
       </div>
@@ -159,7 +208,15 @@ function TableCenter({ view, nameOf, session }: ViewProps) {
 }
 
 /** 画面下に固定する Hero の欄: Hole Cards と Chip・宣言の操作、裁定と待ち・観戦の案内。 */
-function HeroDock({ view, nameOf, session }: ViewProps) {
+/** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
+type OpenReview = (handId: string, decisionIndex: number | null) => void;
+
+function HeroDock({
+  view,
+  nameOf,
+  session,
+  onOpenReview,
+}: ViewProps & { readonly onOpenReview: OpenReview }) {
   const hero = heroSeatOf(view);
   const cards = hero?.holeCards ?? [];
   const folded = hero?.folded ?? false;
@@ -183,13 +240,23 @@ function HeroDock({ view, nameOf, session }: ViewProps) {
       </div>
       <div className="dock__controls">
         <Notice session={session} />
-        <DockBody view={view} nameOf={nameOf} session={session} />
+        <DockBody
+          view={view}
+          nameOf={nameOf}
+          session={session}
+          onOpenReview={onOpenReview}
+        />
       </div>
     </section>
   );
 }
 
-function DockBody({ view, nameOf, session }: ViewProps) {
+function DockBody({
+  view,
+  nameOf,
+  session,
+  onOpenReview,
+}: ViewProps & { readonly onOpenReview: OpenReview }) {
   const outage = session.outage;
   // CPU の手番を待っている間だけ数える（手番・障害の状態が変われば数え直す）。障害で止まっている間・Session 終了後は数えない。
   const cpuWaiting =
@@ -205,12 +272,23 @@ function DockBody({ view, nameOf, session }: ViewProps) {
     AI_DELAY_NOTICE_MS,
   );
   if (view.status === "complete") {
+    // 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く）。
+    // 卓の中央の結果の欄は狭い画面で席と重なるので、常に見える Hero の欄に置く。
     return (
-      <p className="dock__message">
-        {session.sessionStatus?.state === "ended"
-          ? "Session が終了しました。"
-          : "Hand が終了しました。"}
-      </p>
+      <div className="dock__done">
+        <p className="dock__message">
+          {session.sessionStatus?.state === "ended"
+            ? "Session が終了しました。"
+            : "Hand が終了しました。"}
+        </p>
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          onClick={() => onOpenReview(view.handId, null)}
+        >
+          この Hand の Review
+        </button>
+      </div>
     );
   }
   if (session.sessionStatus?.state === "ended") {
