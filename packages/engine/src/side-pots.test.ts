@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { buildPots, type PotContributor } from "./side-pots.js";
+import { propertyParams } from "./testing/property.js";
 
 const c = (
   playerId: string,
@@ -82,7 +83,7 @@ describe("buildPots", () => {
           }
         });
       }),
-      { numRuns: 300 },
+      propertyParams(300),
     );
   });
 });

@@ -26,6 +26,7 @@ import {
 } from "./ruling.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
 import { checkInvariants, initialChipTotal } from "./testing/invariants.js";
+import { propertyParams } from "./testing/property.js";
 
 const MAX_STEPS = 500;
 const HERO = "p0";
@@ -297,7 +298,7 @@ describe("Ruling Engine（Property）", () => {
           playWithRuling(seats, seed, choices);
         },
       ),
-      { numRuns: 300 },
+      propertyParams(300),
     );
   });
 
@@ -318,7 +319,7 @@ describe("Ruling Engine（Property）", () => {
           playWithEvents(seats, seed, choices);
         },
       ),
-      { numRuns: 300 },
+      propertyParams(300),
     );
   });
 });

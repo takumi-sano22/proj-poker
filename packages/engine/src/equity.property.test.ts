@@ -1,10 +1,11 @@
 // Equity の Property Test。全列挙の Hand vs Hand は、両者の Equity の和がちょうど 1 になる（引き分けは等分）。
-// fast-check の seed は実行ごとに変わる。失敗時は fast-check が seed と縮小済みの反例を出すので、equity.test.ts に固定で足す。
+// fast-check の seed は実行ごとに変わる（POKER_PROPERTY_SEED で固定。testing/property.ts）。失敗時は fast-check が seed と縮小済みの反例を出すので、equity.test.ts に固定で足す。
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createDeck, type Card } from "./card.js";
 import { equityVsRanges } from "./equity.js";
 import type { Combo } from "./range.js";
+import { propertyParams } from "./testing/property.js";
 
 const deck = createDeck();
 
@@ -27,7 +28,7 @@ describe("equityVsRanges: Property", () => {
           expect(ab.tie).toBe(ba.tie);
         },
       ),
-      { numRuns: 60 },
+      propertyParams(60),
     );
   });
 });

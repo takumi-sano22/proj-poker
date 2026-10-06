@@ -7,6 +7,7 @@ import {
   type ChipDenomination,
 } from "./chips.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
+import { propertyParams } from "./testing/property.js";
 
 const total = (stacks: readonly ChipCount[]) =>
   stacks.reduce((sum, s) => sum + s.denomination.value * s.count, 0);
@@ -84,6 +85,7 @@ describe("composeChips: Property", () => {
         expect(values).toEqual([...values].sort((a, b) => b - a));
         expect(new Set(values).size).toBe(values.length);
       }),
+      propertyParams(),
     );
   });
 
@@ -100,6 +102,7 @@ describe("composeChips: Property", () => {
           );
         }
       }),
+      propertyParams(),
     );
   });
 
@@ -124,6 +127,7 @@ describe("composeChips: Property", () => {
         const pieces = composeChips(amount).reduce((n, s) => n + s.count, 0);
         expect(pieces).toBe(best[amount]);
       }),
+      propertyParams(),
     );
   });
 });

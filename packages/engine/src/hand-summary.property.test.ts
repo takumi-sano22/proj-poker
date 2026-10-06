@@ -3,7 +3,7 @@
 // Hero（p0）は Canonical Action と物理的な操作（Out-of-Turn を含む）を混ぜ、CPU の手番には system の記録（不正な出力・
 // Fallback・Emergency Bot）を時々置き、時々 Hand を打ち切る（HAND_ABORTED。D95）。その Event Log の全判断について、
 // Information Set に未来の Card・他者の Hidden Cards・system / engine の Event・Learning-only Reveal が入らないことを確かめる。
-// fast-check の seed は実行ごとに変わる。失敗時は fast-check が seed と縮小済みの反例を出すので、Scenario へ昇格させる。
+// fast-check の seed は実行ごとに変わる（POKER_PROPERTY_SEED で固定。testing/property.ts）。失敗時は fast-check が seed と縮小済みの反例を出すので、Scenario へ昇格させる。
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { cardToString } from "./card.js";
@@ -39,6 +39,7 @@ import {
   tamperHiddenEvents,
   testMetadata,
 } from "./testing/view-leaks.js";
+import { propertyParams } from "./testing/property.js";
 
 const MAX_STEPS = 500;
 const HERO = "p0";
@@ -334,6 +335,7 @@ function checkHand(events: readonly HandEvent[]) {
 
 describe("判断時点の Hero Information Set・Hand Summary（Property）", () => {
   it("どの判断の Information Set にも、未来の Card・他者の Hidden Cards・system の Event・Learning-only Reveal が入らない", () => {
+    const params = propertyParams(150);
     fc.assert(
       fc.property(
         fc.integer({ min: 2, max: 6 }),
@@ -350,9 +352,10 @@ describe("判断時点の Hero Information Set・Hand Summary（Property）", ()
           checkHand(playHand(seats, seed, choices));
         },
       ),
-      { numRuns: 150 },
+      params,
     );
-    expect([...seen].sort()).toEqual([
+    // 網羅の確認が落ちたときも、seed から同じ入力で再現できるようメッセージへ入れる（#95）。
+    expect([...seen].sort(), `網羅の確認（seed=${params.seed}）`).toEqual([
       "aborted",
       "oot",
       "river",

@@ -1,6 +1,6 @@
 // Property テスト（docs/09 §9・poker-engine-testing §5）。Legal Action からランダムに選んで Hand を最後まで進め、
 // 各ステップで Invariant・Event の畳み込み・Projection の情報漏れを確かめる。
-// fast-check の seed は実行ごとに変わる。失敗時は fast-check が seed と縮小済みの反例を出すので、Scenario へ昇格させる。
+// fast-check の seed は実行ごとに変わる（POKER_PROPERTY_SEED で固定。testing/property.ts）。失敗時は fast-check が seed と縮小済みの反例を出すので、Scenario へ昇格させる。
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { HandEvent, SeatInit } from "./hand-events.js";
@@ -30,6 +30,7 @@ import {
   tamperHiddenEvents,
   testMetadata,
 } from "./testing/view-leaks.js";
+import { propertyParams } from "./testing/property.js";
 
 const MAX_STEPS = 500;
 
@@ -182,7 +183,7 @@ describe("Hand 進行: Property", () => {
           checkHandFinished(played.events, initialChipTotal(seats)),
         ).toEqual([]);
       }),
-      { numRuns: 150 },
+      propertyParams(150),
     );
   });
 
@@ -198,7 +199,7 @@ describe("Hand 進行: Property", () => {
         // Σ potTotal = Σ Commit、各 Player の終了時 Stack = 開始 − Commit + 配分（Event だけで数え直す）。
         expect(checkHandFinished(played.events, total)).toEqual([]);
       }),
-      { numRuns: 200 },
+      propertyParams(200),
     );
   });
 
@@ -260,7 +261,7 @@ describe("Hand 進行: Property", () => {
           button = next.value.buttonPlayerId;
         }
       }),
-      { numRuns: 100 },
+      propertyParams(100),
     );
   });
 
@@ -276,7 +277,7 @@ describe("Hand 進行: Property", () => {
         expect(second.events).toEqual(first.events);
         expect(second.state).toEqual(first.state);
       }),
-      { numRuns: 50 },
+      propertyParams(50),
     );
   });
 });
