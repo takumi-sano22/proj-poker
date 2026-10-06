@@ -402,3 +402,7 @@
   choice: "Hand ごとの Best-effort Metadata を Event に残してから #2 をクローズする（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "親#2のDoD「Best-effort Model / Config / Debug Metadata」を満たすため、HandごとのApp Version・Rule Profile Version・席ごとのCPUのprovider / Model Role / Concrete Model・Persona Profile VersionをHAND_METADATA_RECORDED（Visibilityはsystem）としてEvent Logに残し、Eventのschema_versionを7に上げる。版1〜6と既存のテーブル・列は変えない（D76）。AIのRequest / Responseの生データは容量と機密の観点から保存しない。親#2は#97のマージ後にクローズする。"
+- id: D101
+  choice: "Review の文の内部識別子は、Retry せず保存前の後処理で置換する（AskUserQuestion）"
+  status: "採用済み"
+  decision: "Review AI（Pass A・Pass B・Follow-up）の出力にplayerIdやEvidenceの項目名などの内部識別子が残ったとき、Retryはせず（追加の呼び出しを増やさない）、検証を通った出力を保存前に既知の対応表で機械的に置換する（playerId→Heroの画面に出ている表示名、項目名→自然な言葉）。未知の識別子は推測で置換しない。あわせてPromptで識別子を書かないよう指示し、Evidenceに表示名と項目の説明を添える。情報境界は変えない（Persona・Hidden Cardsは渡さない）。Review Evalに識別子の残存率を指標として足す（#96）。"

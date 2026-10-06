@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D100の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D101の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -27,6 +27,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D94〜D98 | Phase 5 の分解（#77〜#85・Web FallbackはMVPに入れない。D94）、Sessionの開始・終了・Handの打ち切り・Emergency Botへの切り替えのEvent（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED / EMERGENCY_BOT_ENGAGED・schema_version 6）とSession Projection・reviewsのテーブル（D95。D88のEvent化）、Primary Solverはamaster97/poker_solverのHU River / Turn（OI-002の選定。D96）、Reviewのモデルの暫定値（review_standard / review_deep。OI-001の暫定値。D97）、Curated KBとPlaywrightのE2E（D98） |
 | D99 | Reveal Review（Pass B）とFollow-upの履歴は、マイグレーションv4で足す追記だけのreveal_reviews（Assessmentを持たない）とreview_followupsに保存し、Pass Aのreviewsは変えない（#83の途中の人間判断） |
 | D100 | HandごとのBest-effort Metadata（App Version・CPUのprovider / Model・Persona Profile Version）をHAND_METADATA_RECORDED（system）としてEventに残しschema_versionを7に上げる。AIの生データは保存しない（#97） |
+| D101 | Review の文の内部識別子（playerId・Evidence の項目名）は Retry せず、保存前に既知の対応表で表示名・自然な言葉へ置換する。Prompt でも禁止し、Eval に残存率を足す（#96） |
 
 ## 特に重要なClosed Decision
 
