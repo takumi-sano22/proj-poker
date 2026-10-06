@@ -73,6 +73,14 @@ export function equityVsRanges(
   if (new Set(known).size !== known.length) {
     throw new RangeError("Hero の札と Board に同じ Card がある");
   }
+  // 同じ Card を 2 枚使う Combo は存在しない手なので、不正な入力として拒否する（黙って評価しない）。
+  for (const range of ranges) {
+    for (const [a, b] of range) {
+      if (cardCode(a) === cardCode(b)) {
+        throw new RangeError("Range に同じ Card を 2 枚使う Combo がある");
+      }
+    }
+  }
   const dead = new Set(known);
   const live = ranges.map((range) =>
     range

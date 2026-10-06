@@ -164,6 +164,10 @@ describe("equityVsRanges: 決定論", () => {
       equityVsRanges(cards("Ah Kd"), cards("2c 3c"), [parseRange("KK")]),
     ).toThrow(RangeError);
     expect(() => equityVsRanges(cards("Ah Kd"), [], [])).toThrow(RangeError);
+    // 同じ Card を 2 枚使う Combo（外で組んだ不正な Range）は評価しない。
+    expect(() =>
+      equityVsRanges(cards("Ah Kd"), [], [[combo("Qs Qs")]]),
+    ).toThrow(RangeError);
     expect(() =>
       equityVsRanges(cards("Ah Kd"), cards("Ah 3c 4d"), [parseRange("QQ")]),
     ).toThrow(RangeError);
