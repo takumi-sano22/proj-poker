@@ -1,6 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { splitPot } from "./pot-split.js";
+import { propertyParams } from "./testing/property.js";
 
 describe("splitPot: Property", () => {
   it("Σ 配分 = Pot（端数込みで Chip が保存される。INV-TEST-005）", () => {
@@ -18,6 +19,7 @@ describe("splitPot: Property", () => {
           );
         },
       ),
+      propertyParams(),
     );
   });
 
@@ -38,6 +40,7 @@ describe("splitPot: Property", () => {
           );
         },
       ),
+      propertyParams(),
     );
   });
 });

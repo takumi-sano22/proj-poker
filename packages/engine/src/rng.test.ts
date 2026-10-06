@@ -8,6 +8,7 @@ import {
   shuffle,
   shuffleDeck,
 } from "./rng.js";
+import { propertyParams } from "./testing/property.js";
 
 const deckKey = (seed: number): string =>
   createShuffledDeck(seed).map(cardToString).join(" ");
@@ -109,6 +110,7 @@ describe("Deck のシャッフル", () => {
         expect(a).toEqual(b);
         expect(new Set(a).size).toBe(52);
       }),
+      propertyParams(),
     );
   });
 });

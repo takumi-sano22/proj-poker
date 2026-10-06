@@ -1,5 +1,5 @@
 // Position Engine の Property テスト（docs/09 §9・poker-engine-testing §5）。
-// fast-check の seed は実行ごとに変わる。失敗時は fast-check が seed と縮小済みの反例を出すので、position.test.ts の
+// fast-check の seed は実行ごとに変わる（POKER_PROPERTY_SEED で固定。testing/property.ts）。失敗時は fast-check が seed と縮小済みの反例を出すので、position.test.ts の
 // Scenario へ昇格させる。
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,7 @@ import {
   MIN_PLAYERS,
   PHASE1_CASH_PRESET,
 } from "./table-config.js";
+import { propertyParams } from "./testing/property.js";
 
 const config = PHASE1_CASH_PRESET;
 
@@ -61,6 +62,7 @@ describe("Property: nextHandSeating", () => {
         expect([...buttons].sort()).toEqual([...prev.seatOrder].sort());
         expect(buttons.at(-1)).toBe(`p${button}`);
       }),
+      propertyParams(),
     );
   });
 
@@ -114,6 +116,7 @@ describe("Property: nextHandSeating", () => {
           expectedSb,
         );
       }),
+      propertyParams(),
     );
   });
 });

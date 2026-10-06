@@ -1,11 +1,12 @@
 // 速い役の強さ（handScore）が、読みやすさ優先の Hand Evaluator（evaluateHand）と同じ値を返すことの Property Test。
 // Equity の全列挙は handScore だけで勝敗を決めるので、ここが一致していれば Equity の勝敗判定は Hand Evaluator と同じになる。
-// fast-check の seed は実行ごとに変わる。失敗時は fast-check が seed と縮小済みの反例を出すので、hand-strength.test.ts に固定で足す。
+// fast-check の seed は実行ごとに変わる（POKER_PROPERTY_SEED で固定。testing/property.ts）。失敗時は fast-check が seed と縮小済みの反例を出すので、hand-strength.test.ts に固定で足す。
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createDeck, type Card } from "./card.js";
 import { evaluateHand } from "./hand-evaluator.js";
 import { cardCode, cardFromCode, handScore } from "./hand-strength.js";
+import { propertyParams } from "./testing/property.js";
 
 const deck = createDeck();
 const cardsOf = (min: number, max: number): fc.Arbitrary<Card[]> =>
@@ -17,7 +18,7 @@ describe("handScore: Property", () => {
       fc.property(cardsOf(5, 7), (cards) => {
         expect(handScore(cards.map(cardCode))).toBe(evaluateHand(cards).score);
       }),
-      { numRuns: 3000 },
+      propertyParams(3000),
     );
   });
 
@@ -36,7 +37,7 @@ describe("handScore: Property", () => {
           );
         },
       ),
-      { numRuns: 2000 },
+      propertyParams(2000),
     );
   });
 

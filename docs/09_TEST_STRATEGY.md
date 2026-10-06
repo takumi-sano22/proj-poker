@@ -230,3 +230,5 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - Deck Uniqueness
 
 Fuzz Testだけで明示的Rule Scenarioを置き換えないでください。
+
+再現できるようにするため、Property Test（fast-check）は共通のパラメータ（`packages/engine/src/testing/property.ts`の`propertyParams`）でseedを1つに決めて流します。失敗したときはfast-checkの出力（`{ seed: …, path: … }`と縮小済みのCounterexample）がCIのログに出るので、`POKER_PROPERTY_SEED=<seed> pnpm --filter @proj-poker/engine test`で同じ入力を再現し、縮小した反例をScenarioへ昇格させます。`POKER_PROPERTY_RUNS_FACTOR=<整数>`でケース数を倍にでき（時間切れも同じ倍率で延びます）、数万ケースの繰り返しに使います。1テストの時間切れは30秒です（既定の5秒だと、負荷の高いCIで時間切れになり、seedも反例も残らないまま落ちるため。#95）。

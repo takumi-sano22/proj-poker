@@ -6,6 +6,7 @@ import {
   evaluateHand,
   type HandValue,
 } from "./hand-evaluator.js";
+import { propertyParams } from "./testing/property.js";
 
 const deck = createDeck();
 
@@ -34,6 +35,7 @@ describe("Hand Evaluator: Property", () => {
         const b = evaluateHand(y);
         expect(compareHands(a, b)).toBe(-compareHands(b, a) || 0);
       }),
+      propertyParams(),
     );
   });
 
@@ -43,6 +45,7 @@ describe("Hand Evaluator: Property", () => {
         const a = evaluateHand(x);
         expect(compareHands(a, a)).toBe(0);
       }),
+      propertyParams(),
     );
   });
 
@@ -61,7 +64,7 @@ describe("Hand Evaluator: Property", () => {
           expect(compareHands(a, c)).toBeLessThanOrEqual(0);
         }
       }),
-      { numRuns: 500 },
+      propertyParams(500),
     );
   });
 
@@ -72,6 +75,7 @@ describe("Hand Evaluator: Property", () => {
         const b = evaluateHand(y);
         expect(compareHands(a, b)).toBe(lexicographic(a, b));
       }),
+      propertyParams(),
     );
   });
 
@@ -88,6 +92,7 @@ describe("Hand Evaluator: Property", () => {
           expect(evaluateHand(permuted).score).toBe(evaluateHand(cards).score);
         },
       ),
+      propertyParams(),
     );
   });
 
@@ -100,6 +105,7 @@ describe("Hand Evaluator: Property", () => {
         expect(six).toBeGreaterThanOrEqual(five);
         expect(seven).toBeGreaterThanOrEqual(six);
       }),
+      propertyParams(),
     );
   });
 
@@ -113,6 +119,7 @@ describe("Hand Evaluator: Property", () => {
         }
         expect(evaluateHand(value.bestFive).score).toBe(value.score);
       }),
+      propertyParams(),
     );
   });
 });

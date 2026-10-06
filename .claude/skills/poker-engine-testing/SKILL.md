@@ -86,6 +86,8 @@ Fuzz テストだけで明示的な Rule Scenario を置き換えない（`docs/
 - 各ステップで §3 の invariant を全部チェックする。
 - 失敗したら、**縮小された反例を Scenario として §4 の形式で保存する**（Fuzz の発見を回帰テストに昇格させる）。
 - 実行時間は CI で許容できる範囲に固定する（ケース数と seed を記録して再現可能にする）。
+- `fc.assert` には `propertyParams(numRuns)`（`src/testing/property.ts`）を渡す。`POKER_PROPERTY_SEED` で seed を固定して反例を再現し、`POKER_PROPERTY_RUNS_FACTOR` でケース数を倍にして多数回まわす（`docs/09` §9）。
+- 時間切れは負荷時の余裕を見て決める（vitest の時間切れには seed も反例も出ないため。#95 で既定 5 秒が原因だった）。
 
 ## 6. Engine の外のテスト
 
