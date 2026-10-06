@@ -48,8 +48,8 @@ const inner = createClaudeOpponentFactory({
   query: timedQuery,
 });
 // 本番の Factory を包み、1 回の判断の時間と検証結果だけを記録する（入力・出力は変えない）。
-const measured: OpponentFactory = (seed, playerId) => {
-  const agent = inner(seed, playerId);
+const measured: OpponentFactory = (seed, playerId, persona) => {
+  const agent = inner(seed, playerId, persona);
   return {
     async decide(input, signal) {
       const start = performance.now();

@@ -6,7 +6,13 @@ import {
   type PlayerAction,
 } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
-import { RuleBot } from "./rule-bot.js";
+import {
+  PERSONA_PRESETS,
+  PERSONA_PRESET_IDS,
+  type Persona,
+  type PersonaPresetId,
+} from "./persona.js";
+import { RuleBot, tuningFromPersona } from "./rule-bot.js";
 
 /** 6 人卓を seed で開始し、最初の Actor の入力を作る。 */
 function firstDecisionInput(seed: number) {
@@ -69,5 +75,73 @@ describe("RuleBot", () => {
           : { action: expected.type },
       );
     }
+  });
+});
+
+describe("RuleBot と Persona（#51）", () => {
+  /** 最初の Actor（Preflop・BB に直面）の判断を seed 1〜n で集める。Bot は入力ごとに作り直し、乱数の消費の差を混ぜない。 */
+  const decisions = (persona: Persona | undefined, n = 400): PlayerAction[] =>
+    Array.from({ length: n }, (_, i) =>
+      new RuleBot(1000 + i, persona).choose(firstDecisionInput(i + 1)),
+    );
+  const rate = (actions: PlayerAction[], types: PlayerAction["type"][]) =>
+    actions.filter((a) => types.includes(a.type)).length / actions.length;
+
+  it("全軸が平均（0.5）の Persona は、Persona なしと同じしきい値・同じ判断になる（既定の挙動は変えない）", () => {
+    const neutral: Persona = {
+      ...PERSONA_PRESETS.tag_regular,
+      traits: Object.fromEntries(
+        Object.keys(PERSONA_PRESETS.tag_regular.traits).map((k) => [k, 0.5]),
+      ) as unknown as Persona["traits"],
+    };
+    expect(tuningFromPersona(neutral)).toEqual({
+      strongAggression: 0.6,
+      mediumBetFrequency: 0.25,
+      mediumRaiseFrequency: 0,
+      mediumLooseCall: 0.3,
+      weakBluffFrequency: 0.1,
+      weakLimpFrequency: 0.3,
+      preflopRange: "standard",
+    });
+    expect(decisions(neutral)).toEqual(decisions(undefined));
+  });
+
+  it.each(PERSONA_PRESET_IDS)(
+    "%s でも、選ぶ Action は常に Legal Action の中（額も範囲内の整数）",
+    (id: PersonaPresetId) => {
+      for (let seed = 1; seed <= 200; seed++) {
+        const input = firstDecisionInput(seed);
+        const action = new RuleBot(seed, PERSONA_PRESETS[id]).choose(input);
+        const option = input.legal.actions.find((a) => a.type === action.type);
+        expect(option).toBeDefined();
+        if (
+          (action.type === "bet" || action.type === "raise") &&
+          (option?.type === "bet" || option?.type === "raise")
+        ) {
+          expect(Number.isSafeInteger(action.amount)).toBe(true);
+          expect(action.amount).toBeGreaterThanOrEqual(option.min);
+          expect(action.amount).toBeLessThanOrEqual(option.max);
+        }
+      }
+    },
+  );
+
+  it("Persona で参加 Range と Aggression が変わる: Maniac・Calling Station は Nit より広く参加し、Maniac は Calling Station より Raise が多い", () => {
+    const maniac = decisions(PERSONA_PRESETS.maniac);
+    const station = decisions(PERSONA_PRESETS.calling_station);
+    const nit = decisions(PERSONA_PRESETS.nit);
+    const none = decisions(undefined);
+    const vpip = (a: PlayerAction[]) => rate(a, ["call", "raise", "bet"]);
+    expect(vpip(maniac)).toBeGreaterThan(vpip(none));
+    expect(vpip(station)).toBeGreaterThan(vpip(none));
+    expect(vpip(nit)).toBeLessThan(vpip(none));
+    expect(rate(maniac, ["raise"])).toBeGreaterThan(rate(station, ["raise"]));
+    expect(rate(station, ["call"])).toBeGreaterThan(rate(nit, ["call"]));
+  });
+
+  it("同じ seed・同じ Persona なら同じ判断列を返す（再現性）", () => {
+    expect(decisions(PERSONA_PRESETS.lag, 50)).toEqual(
+      decisions(PERSONA_PRESETS.lag, 50),
+    );
   });
 });

@@ -6,6 +6,11 @@ import {
   PHASE1_CASH_PRESET,
   type TableConfig,
 } from "@proj-poker/engine";
+import {
+  PERSONA_PRESET_IDS,
+  isPersonaPresetId,
+  type PersonaPresetId,
+} from "./opponents/persona.js";
 
 /** 卓に座る Player。kind は Hero（ユーザー）か CPU か。displayName は表示用で、Engine は playerId だけを使う。 */
 export interface SeatPlayer {
@@ -20,18 +25,40 @@ export interface TableSetup {
   readonly startingStack: number;
   /** 席順（時計回り）。Hero はちょうど 1 人。 */
   readonly players: readonly SeatPlayer[];
+  /**
+   * CPU の playerId → Persona の Preset（#51）。CPU 自身の判断にだけ使うサーバー内の設定で、
+   * players（Hero への応答に載る）・Event・DB には入れない（Secret Persona。D28）。載っていない CPU は Persona なし。
+   */
+  readonly personas: Readonly<Record<string, PersonaPresetId>>;
 }
 
 /** 卓の既定の人数（6-max。Hero 1 人 + CPU 5 人）。 */
 export const DEFAULT_TABLE_SIZE = 6;
 
 /**
+ * CPU に Persona を割り当てる既定の順番（OI-005 の暫定値。D85）。席順の CPU 1 から順に当て、足りなければ先頭から繰り返す。
+ * 6-max（CPU 5 人）では Maniac が出ない並び: 大半はカジュアル経験者以上で、弱い CPU は少数（FR-CPU-003）。
+ */
+export const DEFAULT_PERSONA_ROTATION: readonly PersonaPresetId[] = [
+  "tag_regular",
+  "lag",
+  "nit",
+  "calling_station",
+  "weak_tight_recreational",
+  "maniac",
+];
+
+/**
  * Hero 1 人 + CPU（人数 - 1）人の卓を作る。人数は Engine が扱える 2〜8（MIN_PLAYERS〜MAX_PLAYERS）。
+ * Persona は席順で決定論的に割り当てる（CPU i に rotation[(i - 1) % 長さ]。同じ設定なら毎回同じ。rotation は空にしない）。
  * CPU の人数・名前は OI-005（CPU Pool）の暫定値で、永久仕様ではない。Chip Preset は OI-004 の暫定値（PHASE1_CASH_PRESET）。
  * 席順は Hero → CPU 1 → CPU 2 …（時計回り）。Session の最初の Hand は席順の先頭（Hero）が Button で、
  * 以降の席と Button は Hand Orchestrator が前 Hand の結果から Position Engine で決める（D80）。
  */
-export function buildTableSetup(tableSize: number): TableSetup {
+export function buildTableSetup(
+  tableSize: number,
+  personaRotation: readonly PersonaPresetId[] = DEFAULT_PERSONA_ROTATION,
+): TableSetup {
   if (
     !Number.isSafeInteger(tableSize) ||
     tableSize < MIN_PLAYERS ||
@@ -41,15 +68,25 @@ export function buildTableSetup(tableSize: number): TableSetup {
       `卓の人数は ${MIN_PLAYERS}〜${MAX_PLAYERS}: ${tableSize}`,
     );
   }
+  if (personaRotation.length === 0) {
+    throw new RangeError("Persona の割り当て順が空");
+  }
   const cpus: SeatPlayer[] = Array.from({ length: tableSize - 1 }, (_, i) => ({
     playerId: `cpu${i + 1}`,
     displayName: `CPU ${i + 1}`,
     kind: "cpu",
   }));
+  const personas: Record<string, PersonaPresetId> = {};
+  cpus.forEach((cpu, i) => {
+    personas[cpu.playerId] = personaRotation[
+      i % personaRotation.length
+    ] as PersonaPresetId;
+  });
   return {
     table: PHASE1_CASH_PRESET,
     startingStack: PHASE1_CASH_PRESET.startingStack,
     players: [{ playerId: "hero", displayName: "Hero", kind: "hero" }, ...cpus],
+    personas,
   };
 }
 
@@ -69,6 +106,24 @@ export function parseTableSize(raw: string | undefined): number {
     value <= MAX_PLAYERS
     ? value
     : DEFAULT_TABLE_SIZE;
+}
+
+/**
+ * 環境変数 CPU_PERSONAS の値を Persona の割り当て順として読む（カンマ区切りの Preset ID。例: "maniac,nit"）。
+ * 未設定・空なら既定の順番。知らない ID は起動時に誤りとして止める（黙って既定に戻さない。parseOpponentProvider と同じ作法）。
+ */
+export function parsePersonaRotation(
+  raw: string | undefined,
+): readonly PersonaPresetId[] {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_PERSONA_ROTATION;
+  const ids = raw.split(",").map((id) => id.trim());
+  const unknown = ids.filter((id) => !isPersonaPresetId(id));
+  if (unknown.length > 0) {
+    throw new RangeError(
+      `CPU_PERSONAS は ${PERSONA_PRESET_IDS.join(" / ")} のカンマ区切り: ${JSON.stringify(raw)}`,
+    );
+  }
+  return ids as PersonaPresetId[];
 }
 
 /**

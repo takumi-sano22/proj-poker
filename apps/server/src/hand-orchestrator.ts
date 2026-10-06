@@ -35,6 +35,7 @@ import type {
   OpponentInput,
 } from "./opponents/opponent-agent.js";
 import { checkOpponentOutput } from "./opponents/opponent-output.js";
+import { PERSONA_PRESETS } from "./opponents/persona.js";
 import { RuleBot } from "./opponents/rule-bot.js";
 
 /** Orchestrator が返す失敗。Engine の拒否理由はそのまま通す。 */
@@ -228,17 +229,22 @@ export class HandOrchestrator {
 
     // 座っている CPU にだけ Opponent（と Fallback 用の RuleBot）を割り当てる。CPU の seed は卓の設定上の席番号から導く
     // （Bust で席が詰まっても、同じ CPU には同じ導き方の seed が渡る）。
+    // Persona は playerId で引くので席が詰まっても変わらない。Opponent の中だけで使い、Event・View には入れない（#51・D28）。
+    // Fallback の RuleBot にも同じ Persona を渡す（不正な出力が続いても、その CPU の性格のまま決定論で続ける。D41）。
     const seated = new Set(plan.seats.map((s) => s.playerId));
     const opponents = new Map<string, OpponentAgent>();
     const fallbackBots = new Map<string, RuleBot>();
     setup.players.forEach((p, seatIndex) => {
       if (p.kind === "cpu" && seated.has(p.playerId)) {
         const cpuSeed = deriveSeed(seed, seatIndex);
+        const presetId = setup.personas[p.playerId];
+        const persona =
+          presetId === undefined ? undefined : PERSONA_PRESETS[presetId];
         opponents.set(
           p.playerId,
-          this.options.createOpponent(cpuSeed, p.playerId),
+          this.options.createOpponent(cpuSeed, p.playerId, persona),
         );
-        fallbackBots.set(p.playerId, new RuleBot(cpuSeed));
+        fallbackBots.set(p.playerId, new RuleBot(cpuSeed, persona));
       }
     });
     const rt: HandRuntime = {

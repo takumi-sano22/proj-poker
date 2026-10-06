@@ -14,6 +14,7 @@ import type {
   OpponentFactory,
   OpponentInput,
 } from "./opponent-agent.js";
+import { describePersona } from "./persona.js";
 
 /** SDK の query() と同じ形。テストでは Fake（録画済み応答）に差し替え、Claude を呼ばない。 */
 export type ClaudeQuery = (params: {
@@ -48,7 +49,7 @@ export interface ClaudeOpponentOptions {
   readonly model: string;
   /** 子プロセスの環境。buildClaudeEnv の結果を渡す。 */
   readonly env: Record<string, string>;
-  /** CPU の性格付け（docs/05 §2）。中身は #51 で作る。空なら Prompt に入れない。 */
+  /** CPU の性格付け（docs/05 §2）を Prompt 用の文章にしたもの（describePersona の結果）。空なら Prompt に入れない。 */
   readonly persona?: string;
   /** 省略時は SDK の query()。 */
   readonly query?: ClaudeQuery;
@@ -137,11 +138,19 @@ export class ClaudeOpponent implements OpponentAgent {
   }
 }
 
-/** Claude の CPU を作る OpponentFactory。seed は使わない（LLM の判断は seed で再現しない）。 */
+/**
+ * Claude の CPU を作る OpponentFactory。seed は使わない（LLM の判断は seed で再現しない）。
+ * 卓で割り当てた Persona（#51）はその CPU の Prompt にだけ入れる。割り当てが無ければ options.persona のまま。
+ */
 export function createClaudeOpponentFactory(
   options: ClaudeOpponentOptions,
 ): OpponentFactory {
-  return () => new ClaudeOpponent(options);
+  return (_seed, _playerId, persona) =>
+    new ClaudeOpponent(
+      persona === undefined
+        ? options
+        : { ...options, persona: describePersona(persona) },
+    );
 }
 
 /**

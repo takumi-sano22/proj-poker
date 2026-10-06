@@ -7,6 +7,7 @@ import type {
   LegalActionSet,
   PlayerAction,
 } from "@proj-poker/engine";
+import type { Persona } from "./persona.js";
 
 /** 出力の検証で不正と判定した段。AI_ACTION_INVALID の Event にも残すので、型は Engine の Event と共有する（D83）。 */
 export type { InvalidOutputStage };
@@ -48,5 +49,13 @@ export interface OpponentAgent {
   decide(input: OpponentInput, signal?: AbortSignal): Promise<unknown>;
 }
 
-/** CPU を 1 人分作る。seed は Hand の seed から席ごとに導く（同じ seed なら同じ判断を再現する）。 */
-export type OpponentFactory = (seed: number, playerId: string) => OpponentAgent;
+/**
+ * CPU を 1 人分作る。seed は Hand の seed から席ごとに導く（同じ seed なら同じ判断を再現する）。
+ * persona はその CPU 自身の Persona（卓の設定で割り当てたもの。#51）。その CPU の Agent の中だけで使い、
+ * OpponentInput（KnowledgeState）には入れない（他 CPU の Secret Persona を漏らさない。D28）。
+ */
+export type OpponentFactory = (
+  seed: number,
+  playerId: string,
+  persona?: Persona,
+) => OpponentAgent;

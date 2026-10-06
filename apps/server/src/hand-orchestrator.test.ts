@@ -17,8 +17,13 @@ import type {
   OpponentInput,
   OpponentOutput,
 } from "./opponents/opponent-agent.js";
+import {
+  createClaudeOpponentFactory,
+  type ClaudeQuery,
+} from "./opponents/claude-opponent.js";
+import { PERSONA_PRESETS } from "./opponents/persona.js";
 import { RuleBot, createRuleBot } from "./opponents/rule-bot.js";
-import { forbiddenKeys, leakedCards } from "./testing/leaks.js";
+import { forbiddenKeys, leakedCards, personaTerms } from "./testing/leaks.js";
 
 const HERO = "hero";
 const TOTAL_CHIPS =
@@ -1039,5 +1044,83 @@ describe("HandOrchestrator", () => {
         },
       }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("Persona（#51）", () => {
+  it("Claude の Prompt には自分の Persona だけが入り、CPU の入力（KnowledgeState）・Event Log・Hero の View には誰の Persona も入らない", async () => {
+    const prompts = new Map<string, string[]>();
+    // Claude を呼ばない Fake: Prompt を CPU ごとに記録し、call / check / fold の順に選べるものを返す。
+    const query: ClaudeQuery = (params) => {
+      const viewer = /あなたの ID は (\w+)/.exec(params.prompt)?.[1] ?? "?";
+      prompts.set(viewer, [...(prompts.get(viewer) ?? []), params.prompt]);
+      const schema = params.options.outputFormat as unknown as {
+        schema: { properties: { action: { enum: string[] } } };
+      };
+      const allowed = schema.schema.properties.action.enum;
+      const action =
+        ["call", "check", "fold"].find((a) => allowed.includes(a)) ?? "fold";
+      return (async function* () {
+        await Promise.resolve();
+        yield {
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "",
+          structured_output: { action },
+        } as never;
+      })();
+    };
+    const claude = createClaudeOpponentFactory({
+      model: "test-model",
+      env: {},
+      query,
+    });
+    const inputs: OpponentInput[] = [];
+    const spy: OpponentFactory = (seed, playerId, persona) => {
+      const inner = claude(seed, playerId, persona);
+      return {
+        decide(input, signal) {
+          inputs.push(input);
+          return inner.decide(input, signal);
+        },
+      };
+    };
+    const { orchestrator, events } = setup({ createOpponent: spy });
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const finalView = await playOut(
+      orchestrator,
+      started.value.handId,
+      started.value.view,
+    );
+
+    // 全員 call / check なので CPU 5 人とも判断している。
+    expect([...prompts.keys()].sort()).toEqual([
+      "cpu1",
+      "cpu2",
+      "cpu3",
+      "cpu4",
+      "cpu5",
+    ]);
+    const labels = Object.values(PERSONA_PRESETS).map((p) => p.label);
+    for (const [playerId, list] of prompts) {
+      const own =
+        PERSONA_PRESETS[
+          PHASE1_TABLE_SETUP.personas[playerId] as keyof typeof PERSONA_PRESETS
+        ].label;
+      for (const prompt of list) {
+        expect(prompt).toContain(`スタイル: ${own}`);
+        // 他の Preset の名前は出てこない（他 CPU の Secret Persona を渡していない）。
+        for (const other of labels.filter((l) => l !== own)) {
+          expect(prompt).not.toContain(other);
+        }
+      }
+    }
+    expect(inputs.length).toBeGreaterThan(0);
+    for (const input of inputs) expect(forbiddenKeys(input)).toEqual([]);
+    // Event Log（DB に保存される正本）には Deck の記録もあるので、Persona の語だけを見る。
+    expect(personaTerms(events(started.value.handId))).toEqual([]);
+    expect(forbiddenKeys(finalView)).toEqual([]);
   });
 });
