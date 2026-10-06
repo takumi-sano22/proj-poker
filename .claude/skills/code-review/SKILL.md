@@ -43,7 +43,7 @@ when_to_use: コミット/PR作成の直前や差分を書き終えて自己レ�
 | `persistence-event-log` | Event Log（正本）・Projection（Summary / Stats）・SQLite スキーマ・マイグレーション・Replay（SQLite は `apps/server/**` だけが扱う・D67。Event の型や Projection の純粋関数が `packages/engine/**` にあればそれも） |
 | `db` | スキーマ・マイグレーション・DB アクセス層・raw SQL を含む差分（`apps/server/**`。`persistence-event-log` と併せて当てる） |
 | `async` | 非同期ジョブ・Solver Subprocess・LLM 呼び出しの並行/タイムアウト/再試行を扱う処理（主に `apps/server/**`。`apps/web/**` の API 呼び出しも） |
-| `llm` | LLM 呼び出し・オーケストレーション・プロンプト定義・評価ハーネス（`apps/server/**`。LLM を呼ぶのは Runtime だけ・D67。Eval の置き場は未確定） |
+| `llm` | LLM 呼び出し・オーケストレーション・プロンプト定義・評価ハーネス（`apps/server/**`。LLM を呼ぶのは Runtime だけ・D67。AI Opponent の Eval は `apps/server/src/testing/opponent-eval/`・#53） |
 | `docs` | `docs/**`・ルートの `*.md`（下記 `harness` を除く） |
 | `harness` | `.claude/**`・`CLAUDE.md`・`AGENTS.md` |
 
