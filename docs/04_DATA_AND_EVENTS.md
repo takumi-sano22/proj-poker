@@ -64,12 +64,13 @@ Hand Summaryと、Reviewの入力の元になる判断時点のHero Information 
 - `AI_FALLBACK_USED`
 - `HINT_OPENED`
 - `USER_READ_RECORDED`
+- `HAND_METADATA_RECORDED`（Handごとの Best-effort Metadata。§9）
 
 内部実装でEventを統合しても構いませんが、必要な情報を後から復元できることが条件です。
 
 ### Engine の Event 構成（`packages/engine/src/hand-events.ts`）
 
-Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED` をPot単位にし、Short All-in の Reopen（#32・D79）で `HAND_STARTED` に `reopenRule` を足し、Phase 3 で CPU の判断の経緯（`AI_ACTION_INVALID` / `AI_FALLBACK_USED`。#48・D83）を、Phase 4 で Hero の宣言・物理的なChipの操作・Dealerの裁定（`PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING`。#64・D90）を、Phase 5 で Session の開始・終了・Handの打ち切り・Emergency Botへの切り替え（`SESSION_STARTED` / `SESSION_ENDED` / `HAND_ABORTED` / `EMERGENCY_BOT_ENGAGED`。#77・D95）を足した、1 Hand進行で発行するEventです。Sessionの開始・終了も、そのSessionの最初・最後のHandのEvent Logに置きます（`events` は Hand ごとの表のまま）。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
+Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED` をPot単位にし、Short All-in の Reopen（#32・D79）で `HAND_STARTED` に `reopenRule` を足し、Phase 3 で CPU の判断の経緯（`AI_ACTION_INVALID` / `AI_FALLBACK_USED`。#48・D83）を、Phase 4 で Hero の宣言・物理的なChipの操作・Dealerの裁定（`PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING`。#64・D90）を、Phase 5 で Session の開始・終了・Handの打ち切り・Emergency Botへの切り替え（`SESSION_STARTED` / `SESSION_ENDED` / `HAND_ABORTED` / `EMERGENCY_BOT_ENGAGED`。#77・D95）と、Handごとの Best-effort Metadata（`HAND_METADATA_RECORDED`。#97・D100）を足した、1 Hand進行で発行するEventです。Sessionの開始・終了も、そのSessionの最初・最後のHandのEvent Logに置きます（`events` は Hand ごとの表のまま）。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
 
 | Event | 主な項目 | Visibility | 統合元・備考 |
 |---|---|---|---|
@@ -92,6 +93,7 @@ Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED`
 | `SESSION_ENDED` | `sessionId`・`reason`（`hero_busted` / `hero_last_standing` / `ai_outage`） | system | Sessionの終了（D80・D86・D95）。Sessionの最後のHandの終わり（`HAND_FINISHED` か `HAND_ABORTED`）の直後に同じ追記で置く。Handの終わりより後ろに置ける唯一のEvent。卓のStateは変えない |
 | `HAND_ABORTED` | `reason`（`ai_outage`: CPUの障害のダイアログでHeroがSession終了を選んだ） | system | Handの打ち切り（D95。D88のEvent化）。`HAND_FINISHED` の代わりにHandを終える（Stateは `complete` になり、手番は無くなる）。Potは配分せずChipは動かさない（Sessionも一緒に終えるので、Stackを次のHandへ持ち越さない）。直後に `SESSION_ENDED`（`ai_outage`）を同じ追記で置く |
 | `EMERGENCY_BOT_ENGAGED` | `playerId`・`cause`（きっかけの障害の種類: `timeout` / `unauthenticated` / `usage_limit` / `error`） | system | 障害の後にHeroがEmergency Botを選んだ記録（D86・D95。D88のEvent化）。障害で止まったそのCPUの手番に置く。そのCPUはSessionの終わりまでRuleBotで動き、手番ごとの記録は `AI_FALLBACK_USED`（`emergency_bot`）。内部のエラー本文は入れない。卓のStateは変えない |
+| `HAND_METADATA_RECORDED` | `appVersion`（`apps/server` の `package.json` の `version`）・`ruleProfileVersion`（`HAND_STARTED` の `ruleProfile` と同じ値）・`cpuProfileVersion`（Personaの Preset 一式の版。Persona Profile Version）・`cpuSeats`（そのHandに座ったCPUの席順の `playerId` / `provider`〔`rule_bot` / `claude` / `emergency_bot`〕/ `modelRole`〔`claude` のとき `opponent_fast`。それ以外は null〕/ `model`〔Model Roleを role-based config で解決した具体モデル名。`claude` 以外は null〕） | system | Handごとの Best-effort な Debug / Re-analysis 用 Metadata（§9・#97・D100）。Engineの `startHand` に `metadata` を渡したときだけ、`HAND_STARTED` の直後（seq 1）に置く（Handが開始直後に終わる場合もHandの終わりより前に置けるよう、開始の Event の中に置く）。Hero は `cpuSeats` に入れない。どのCPUにどのPersonaを割り当てたかは入れない（他CPUのSecret Persona。割り当ては§10のSession Projectionに置く）。Emergency Botを選んだCPUは次のHandから `emergency_bot` になり、Handの途中の切り替えは `EMERGENCY_BOT_ENGAGED` に残る。AIのRequest / Responseの生データは入れない（D100）。Replay・Reviewの入力には使わない。卓のStateは変えない |
 
 Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの不正な出力と、RuleBotの判断で続けたFallbackの記録（`docs/03` §5）は、#47ではOrchestratorの運用Metadataでしたが、#48（D83）で `AI_ACTION_INVALID` / `AI_FALLBACK_USED` としてEvent Logに残すように置き換えました。2つのEventは、OrchestratorがEngineの `recordAiEvent`（手番のPlayerの記録だけを受け付け、seqとVisibilityを付ける）で作り、その手番のActionより前に追記します（Actionで `HAND_FINISHED` まで進むと、その後ろへは追記できないため）。
 
@@ -99,17 +101,20 @@ Heroの物理的な操作（#64・D90・D91）は、Engineの `applyPhysicalActi
 
 Sessionの開始・終了・Handの打ち切り・Emergency Botへの切り替え（#77・D95）は、OrchestratorがEngineの `recordSessionEvent`（置ける時点を検査し、seqとVisibilityを付ける。`SESSION_STARTED` / `HAND_ABORTED` はHandの途中、`EMERGENCY_BOT_ENGAGED` はそのCPUの手番、`SESSION_ENDED` はHandが終わった後）で作ります。4つともsystem Visibilityで、HeroのView・CPUの `KnowledgeState`・Replayには入りません（Heroへは `SessionStatus` をAPIが別に返す。`docs/03` §1）。`SESSION_ENDED` は、Handを終える追記（`HAND_FINISHED` を含むActionの結果、または打ち切り）の時点でSessionの終わりを判定して同じ追記に足します（`HAND_FINISHED` の `stacks` から `nextHandSeating` でHeroのBust / 残りがHeroだけを判定する）。Event Storeは、Handの終わりの後ろには同じ追記の `SESSION_ENDED` 1つだけを受け付けます。
 
+Handごとの Metadata（#97・D100）は、OrchestratorがHandの開始時に組み立ててEngineの `startHand` に渡し、`HAND_STARTED` の直後の `HAND_METADATA_RECORDED` として開始の Event と同じ追記に入ります（§9）。system Visibilityなので、HeroのView・CPUの `KnowledgeState`（Opponent の Prompt の入力）・Replayの応答には入りません。Engineの `startHand` は `metadata` を省くとこの Event を置かないので、固定Scenario・Opponent EvalのSpotのEvent列は変わりません。
+
 #### Event の形の版（schema_version）
 
 保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。方針は次のとおりです（D76）。
 
-- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `6`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
+- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `7`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
   - 版 1: Phase 1（単一Pot）。`POT_AWARDED` に `potIndex`・`eligible` が無い
   - 版 2: `POT_AWARDED` をPotごとに発行し、`potIndex`・`eligible` を持つ（D78）。版 1 の行は読み込み時に `apps/server/src/event-upcast.ts` の `upcastV1ToV2` で補います（`potIndex` は 0、`eligible` はその時点でFoldしていないPlayer。版 1 は単一Potなので、Main Potとして読めば版 2 のEngineが発行する形と一致します）
   - 版 3: `HAND_STARTED` に `reopenRule` を持つ（D79・D81）。版 1・2 の行は読み込み時に（版 1 は `upcastV1ToV2` の後で）`upcastV2ToV3` が `reopenRule: cumulative_full_raise` を補います。`reopenRule` は Event の畳み込み（State 遷移）に使わず Legal Action の計算だけに使うので、保存済み Event の再生結果は変わりません。また版 2 までの Server は全員同じ Stack で Hand を始めるため、最高額を上げる All-in は 1 Street に 1 回までで、累積と単発の Reopen 判定は一致します
   - 版 4: `AI_ACTION_INVALID` / `AI_FALLBACK_USED` を足す（D83）。既存のEventの形は変えていないので、版 3 の行は変換せずに読みます（版 1〜3 の行にこの 2 種類はありません）。版 3 の行を版 2 → 3 の変換に通すと保存した `reopenRule` を上書きするため、変換は版 3 未満の行にだけ通します
   - 版 5: `PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING` を足す（D90）。既存のEventの形は変えていないので、版 4 の行も変換せずに読みます（版 1〜4 の行にこの 3 種類はありません）。DBのテーブル・列は変えていません
   - 版 6: `SESSION_STARTED` / `SESSION_ENDED` / `HAND_ABORTED` / `EMERGENCY_BOT_ENGAGED` を足す（D95）。既存のEventの形は変えていないので、版 5 の行も変換せずに読みます（版 1〜5 の行にこの 4 種類はありません）。版 5 までに保存したSessionには `SESSION_STARTED` / `SESSION_ENDED` もSession Projectionも無く、作り直しません（再起動後のResumeの対象にならない）。DBは §10 の `session_projections` を足しただけで、既存のテーブル・列・行は変えていません
+  - 版 7: `HAND_METADATA_RECORDED` を足す（#97・D100）。既存のEventの形は変えていないので、版 6 の行も変換せずに読みます（版 1〜6 の行にこの種類は無く、Metadataを補って作り直しもしません）。DBのテーブル・列・行は変えていません
 - 読み出しは現在の版と upcast を持つ旧版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。
 - 互換の無い形の変更（必須項目の追加・意味の変更）をするときは版を上げ、旧版の行を読み込み時に新しい形へそろえる変換（upcast）を同じ PR で足します。保存済みの行は書き換えません（append-only）。任意項目の追加など、旧版の読み手が誤らない変更は版を上げません。
 
@@ -279,6 +284,18 @@ Best-effortなDebug / Re-analysis用Metadata:
 - CPU Profile Version / Snapshot
 
 これらを保存しても、完全なRe-simulationを保証するものではありません。
+
+何を記録しているか（#97・D100。Eventの項目は§3）:
+
+| 項目 | 記録先 | 備考 |
+|---|---|---|
+| RNG Seed | `DECK_SHUFFLED` の `seed`（engine Visibility） | 積んだDeckならnull。配布順の52枚（`deck`）も同じEventにあるので、Deck Order Hashは別に持たない |
+| Rule Profile Version | `HAND_STARTED` の `ruleProfile`、`HAND_METADATA_RECORDED` の `ruleProfileVersion` | 版つきID（例: `phase4_provisional_v1`） |
+| App Version | `HAND_METADATA_RECORDED` の `appVersion` | `apps/server` の `package.json` の `version`（`apps/server/src/app-version.ts`） |
+| Model Role / Version | `HAND_METADATA_RECORDED` の `cpuSeats`（席ごとの `provider`・`modelRole`・`model`） | CPUの判断に使った実装（RuleBot / Claude / Emergency Bot）と、Claudeのとき `opponent_fast` を role-based config（`apps/server/src/config.ts` の `MODEL_ROLES`）で解決したモデル名。HandのMetadataはHandの開始時点の値で、途中の切り替えは `EMERGENCY_BOT_ENGAGED`、手番ごとの代わりの判断は `AI_FALLBACK_USED` に残る。Reviewのモデルは§8のReview Recordに残す |
+| CPU Profile Version | `HAND_METADATA_RECORDED` の `cpuProfileVersion` | Personaの Preset 一式の版（`apps/server/src/opponents/persona.ts` の `PERSONA_PROFILE_VERSION`。Presetの値を変えたら上げる）。どのCPUにどのPresetを割り当てたかはEventに入れず、§10のSession Projectionに置く（Secret Persona） |
+| AI Request / Response | 保存しない | 容量と機密（Prompt・応答の本文）の観点から保存しない（D100）。CPUの不正な出力の理由とFallbackの利用だけを `AI_ACTION_INVALID` / `AI_FALLBACK_USED` に残す |
+| CPU Snapshot | 保存しない | CPU Memory はまだ無い |
 
 ## 10. Auto Save境界
 

@@ -306,6 +306,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - Reveal Review（Pass B）と Follow-up（#83・D99）: Hand 後に全員の札を学習用にだけ見せて答え合わせをし（評価は付け直さない・CPU には渡さない）、Review の Version ごとに追加質問を続けられます
   - Review の画面と Jump to Important Spot（#84）: Important Spot を先に並べた Review の一覧・Pass A / Pass B のタブ・Evidence・Version の選択・Follow-up と、Replay の Important Spot へのジャンプ
   - 6-max Session の E2E（#85・D98）: Playwright で Play → Review → Replay → 次の Hand → 再起動して Resume までを CI で通します（CPU は RuleBot、Review AI は固定応答）
+  - Hand ごとの Metadata（#97・D100）: Hand の開始時に App Version・Rule Profile・Persona の Preset 一式の版と、席ごとの CPU の実装（RuleBot / Claude とモデル / Emergency Bot）を system の Event に残します（`schema_version` 7。Hero の画面・CPU・Replay には出ません）。AI の Request / Response の本文は保存しません
 
 制約・未実装:
 
