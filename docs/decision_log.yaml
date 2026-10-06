@@ -1,4 +1,4 @@
-# D01〜D87の採用済み人間判断。
+# D01〜D88の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -350,3 +350,7 @@
   choice: "Claude は Claude Code の OAuth 認証（サブスク枠）経由で呼ぶ（ユーザー指示）"
   status: "採用済み"
   decision: "CPU等のClaude呼び出しはAPIキーを使わず、ローカルでログイン済みのClaude CodeのOAuth認証（サブスクリプション枠）をClaude Agent SDK経由で使う。呼ぶのはローカルのapps/serverだけで、資格情報をリポジトリ・ブラウザへ置かない。子プロセスの環境からANTHROPIC_API_KEYを外しAPI課金に切り替わらないようにする。CIとpnpm testはFakeと録画済み応答だけで検証する。開発中の呼び出しは制限しない。D84を変更する。"
+- id: D88
+  choice: "障害時の Session 終了と Emergency Bot の登録は Phase 5 の Resume で Event 化を設計する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "AI障害時に選んだSession終了と、Emergency Botに切り替えたCPUのSession単位の登録は、Phase 3ではOrchestratorのメモリに持つ（既存の内部エラーと同じ扱い）。Event Logへの記録（Handの打ち切り・切り替えのEvent化）はPhase 5のSession ResumeのIssueで、Handの中断・再開と合わせて設計する。それまで途中で終えたHandはHAND_FINISHEDの無いHandとして残る。Emergency Botが判断した各ActionにはAI_FALLBACK_USEDを残す（D83）。"

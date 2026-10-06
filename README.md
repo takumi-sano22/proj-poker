@@ -152,7 +152,7 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 - 資格情報は Claude Code が `~/.claude/` に持つものを使います。リポジトリ・`.env`・`apps/web`（ブラウザ）へ置かない・コピーしない・渡しません。Claude を呼ぶのはローカルの `apps/server` だけです（`claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` は使いません）。
 - 本人のログインを本人がローカルで使う前提です。第三者が自分の製品で claude.ai ログインを提供することは公式に認められていないので、配布・共有はしないでください。
 - サブスクの利用枠は、開発で使う Claude Code と**共有**です。CPU の判断を Claude にすると、そのぶん開発側の枠も減ります。
-- ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まります（卓の選択ダイアログは #52 で実装予定）。対処は、ログイン切れなら `claude` で `/login` し直す／上限なら枠が戻るまで待つ／すぐ続けたいときは Emergency Bot（RuleBot）で続行する、のいずれかです。
+- ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まり、卓の中央に続け方を選ぶダイアログが出ます（Retry / Emergency Bot で続行 / Session を終了）。対処は、ログイン切れなら `claude` で `/login` し直してから Retry／上限なら枠が戻るまで待って Retry／すぐ続けたいときは Emergency Bot（その CPU を Session の終わりまで RuleBot で動かす）、のいずれかです。
 - CI と `pnpm test` は Claude を呼びません（Fake と録画済み応答だけ）。開発中の実呼び出しは制限しません。
 
 ## 開発コマンド
@@ -197,7 +197,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D87の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D88の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -233,7 +233,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 できていること:
 
-- 設計ドキュメント（`docs/`）と人間判断（D01〜D87）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D88）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 1 は 6-max・均等Stack・単一Pot）
 - Position Engine（D80・OI-008 の暫定値）: 前 Hand の結果から次 Hand の席と Button を決めます。Bust（Stack 0）した Player を外し、Button は時計回りで次の生存席へ（Dead Button なし）。3 人→Heads-Up の移行もここで扱います
 - テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）

@@ -12,31 +12,58 @@ export interface TablePlayer {
  * Hand から見た Session の状態（D80。サーバーの SessionStatus と同じ形）。
  * - in_hand: Hand の途中
  * - ready_for_next_hand: Hand が終わり、Stack を持ち越して次 Hand を始められる
- * - ended: Session が終わった（hero_busted: Hero が Bust / hero_last_standing: CPU が全員 Bust し Hero が勝ち残った）
+ * - ended: Session が終わった（hero_busted: Hero が Bust / hero_last_standing: CPU が全員 Bust し Hero が勝ち残った /
+ *   ai_outage: CPU の障害のダイアログで Session 終了を選んだ。その Hand は途中で打ち切られている）
  */
 export type SessionStatus =
   | { readonly state: "in_hand" }
   | { readonly state: "ready_for_next_hand" }
   | {
       readonly state: "ended";
-      readonly reason: "hero_busted" | "hero_last_standing";
+      readonly reason: "hero_busted" | "hero_last_standing" | "ai_outage";
     };
+
+/**
+ * CPU が判断を返せなかった障害の種類（D86。サーバーの OutageKind と同じ）。
+ * timeout: 時間内に返らなかった / unauthenticated: 未ログイン / usage_limit: 利用枠の上限 / error: それ以外
+ */
+export type OutageKind =
+  "timeout" | "unauthenticated" | "usage_limit" | "error";
+
+/**
+ * CPU の障害の状態（サーバーの OutageStatus と同じ形）。どの CPU の手番か・種類だけで、内部のエラー本文は届かない。
+ * revision は障害が起きる・解けるたびに進む（新しい方を残す・選択で送り返す）。
+ */
+export interface OutageStatus {
+  readonly revision: number;
+  readonly current: {
+    readonly playerId: string;
+    readonly kind: OutageKind;
+  } | null;
+}
+
+/** 障害の後の続け方: Retry / Emergency Bot で続行 / Session 終了（D86）。 */
+export type OutageChoice = "retry" | "emergency_bot" | "end_session";
 
 export interface StartHandResponse {
   readonly handId: string;
   readonly players: readonly TablePlayer[];
   readonly view: HeroView;
   readonly session: SessionStatus;
+  readonly outage: OutageStatus;
 }
 
+/** Hero の Action と、障害の続け方の選択の応答。 */
 export interface HeroActionResponse {
   readonly view: HeroView;
   readonly session: SessionStatus;
+  readonly outage: OutageStatus;
 }
 
 /** サーバーが返す失敗の種類。network は応答が無かった（届かなかった）場合。 */
 export type ApiErrorKind =
   | "stale_view"
+  | "stale_outage"
   | "not_actor"
   | "hand_complete"
   | "illegal_action"
@@ -57,6 +84,7 @@ export class ApiError extends Error {
 
 const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "stale_view",
+  "stale_outage",
   "not_actor",
   "hand_complete",
   "illegal_action",
@@ -112,6 +140,18 @@ export function sendHeroAction(
   return postJson<HeroActionResponse>(
     `/api/hands/${encodeURIComponent(handId)}/actions`,
     { lastSeq, action },
+  );
+}
+
+/** CPU の障害の続け方を選ぶ。revision は表示していた障害の状態の revision（古いダイアログ・二重送信をサーバーが弾く）。 */
+export function chooseOutage(
+  handId: string,
+  revision: number,
+  choice: OutageChoice,
+): Promise<HeroActionResponse> {
+  return postJson<HeroActionResponse>(
+    `/api/hands/${encodeURIComponent(handId)}/outage`,
+    { revision, choice },
   );
 }
 

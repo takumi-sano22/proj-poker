@@ -5,12 +5,16 @@ import {
   blindsOf,
   describeEvent,
   lastSeqOf,
+  outageReasonText,
   parseHeroView,
+  parseOutageStatus,
   parseSessionStatus,
   seatDirections,
   selectLatestView,
+  selectOutageStatus,
   selectSessionStatus,
   sizingPresets,
+  waitingMessage,
 } from "./view-model.js";
 
 describe("selectLatestView（REST と SSE のどちらが先に届いても新しい View を残す）", () => {
@@ -106,6 +110,11 @@ describe("parseSessionStatus（SSE の session イベントの受け側 whitelis
         JSON.stringify({ state: "ended", reason: "hero_last_standing" }),
       ),
     ).toEqual({ state: "ended", reason: "hero_last_standing" });
+    expect(
+      parseSessionStatus(
+        JSON.stringify({ state: "ended", reason: "ai_outage" }),
+      ),
+    ).toEqual({ state: "ended", reason: "ai_outage" });
   });
 
   it("JSON でない・知らない状態・理由の無い終了は null にする", () => {
@@ -116,6 +125,93 @@ describe("parseSessionStatus（SSE の session イベントの受け側 whitelis
     expect(
       parseSessionStatus(JSON.stringify({ state: "ended", reason: "x" })),
     ).toBeNull();
+  });
+});
+
+describe("parseOutageStatus（SSE の outage イベントの受け側 whitelist。#52）", () => {
+  it("revision と、どの CPU の手番か・種類だけで組み直す（余分な項目は落とす）", () => {
+    expect(
+      parseOutageStatus(JSON.stringify({ revision: 0, current: null })),
+    ).toEqual({ revision: 0, current: null });
+    expect(
+      parseOutageStatus(
+        JSON.stringify({
+          revision: 3,
+          current: { playerId: "cpu2", kind: "usage_limit", message: "x" },
+          extra: true,
+        }),
+      ),
+    ).toEqual({
+      revision: 3,
+      current: { playerId: "cpu2", kind: "usage_limit" },
+    });
+  });
+
+  it("JSON でない・revision が無い・知らない種類は null にする", () => {
+    expect(parseOutageStatus("not json")).toBeNull();
+    expect(parseOutageStatus("null")).toBeNull();
+    expect(parseOutageStatus(JSON.stringify({ current: null }))).toBeNull();
+    expect(
+      parseOutageStatus(JSON.stringify({ revision: 1.5, current: null })),
+    ).toBeNull();
+    expect(
+      parseOutageStatus(
+        JSON.stringify({
+          revision: 1,
+          current: { playerId: "cpu1", kind: "x" },
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      parseOutageStatus(JSON.stringify({ revision: 1, current: "cpu1" })),
+    ).toBeNull();
+    expect(parseOutageStatus(JSON.stringify({ revision: 1 }))).toBeNull();
+  });
+});
+
+describe("selectOutageStatus（REST と SSE のどちらが先に届いても新しい障害の状態を残す）", () => {
+  const down = {
+    handId: "h1",
+    status: {
+      revision: 1,
+      current: { playerId: "cpu1", kind: "error" as const },
+    },
+  };
+  const cleared = { handId: "h1", status: { revision: 2, current: null } };
+
+  it("revision が進んだ状態を採り、遅れて届いた古い状態では戻さない", () => {
+    expect(selectOutageStatus(down, cleared, "h1")).toBe(cleared);
+    expect(selectOutageStatus(cleared, down, "h1")).toBe(cleared);
+  });
+
+  it("別の Hand の状態は捨て、新しい Hand に切り替わったらその Hand の状態を採る", () => {
+    const other = { handId: "h2", status: { revision: 0, current: null } };
+    expect(selectOutageStatus(down, other, "h1")).toBe(down);
+    expect(selectOutageStatus(down, other, "h2")).toBe(other);
+    expect(selectOutageStatus(null, down, "h1")).toBe(down);
+  });
+});
+
+describe("待ちの案内と障害の説明（docs/06 §11。内部実装を前面に出さない）", () => {
+  it("通常は「<CPU 名> の手番…」、長く待つときだけ遅延を補足する", () => {
+    expect(waitingMessage("CPU 1", false)).toBe("CPU 1 の手番…");
+    expect(waitingMessage("CPU 1", true)).toBe(
+      "CPU 1 の手番…（AI応答が遅延しています）",
+    );
+    expect(waitingMessage(null, false)).toBe("進行中…");
+  });
+
+  it("障害の説明に使っている API・モデルの名前を出さない", () => {
+    for (const kind of [
+      "timeout",
+      "unauthenticated",
+      "usage_limit",
+      "error",
+    ] as const) {
+      const text = outageReasonText(kind);
+      expect(text).not.toMatch(/Claude|API|SDK|haiku/i);
+      expect(text.length).toBeGreaterThan(0);
+    }
   });
 });
 

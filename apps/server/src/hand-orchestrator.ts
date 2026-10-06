@@ -7,7 +7,10 @@
 //   不正なら理由を付けて 1 回だけ再要求、再度不正なら RuleBot の判断で続行する（D41）。
 //   不正な出力と Fallback の利用は AI_ACTION_INVALID / AI_FALLBACK_USED として Event Log に残す（D83。system Visibility で、
 //   Hero の View と CPU の KnowledgeState には入らない）。
-//   例外・応答時間の超過は「障害」として Hand を止め、RuleBot へ自動で切り替えない（D86。続け方の選択は #52）。
+//   例外・応答時間の超過は「障害」として Hand を止め、RuleBot へ自動で切り替えない（D86）。
+//   続け方は Hero が選ぶ（resolveOutage。#52）: Retry（同じ手番をもう一度）/ Emergency Bot（その CPU を Session の終わりまで
+//   RuleBot にし、手番ごとに AI_FALLBACK_USED の emergency_bot を残す）/ Session 終了（その Hand を打ち切り、次は新しい Session）。
+//   選ぶまでは止めたまま（Pause）。Hero に返す障害の情報は「どの CPU の手番か・障害の種類」だけで、エラー本文は返さない。
 // - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
 import { randomUUID } from "node:crypto";
 import {
@@ -20,6 +23,7 @@ import {
   recordAiEvent,
   startHand,
   type EngineError,
+  type FallbackKind,
   type HandEvent,
   type HandProgress,
   type HandState,
@@ -29,10 +33,12 @@ import {
 } from "@proj-poker/engine";
 import type { SeatPlayer, TableSetup } from "./config.js";
 import type { EventStore } from "./event-store.js";
-import type {
-  OpponentAgent,
-  OpponentFactory,
-  OpponentInput,
+import {
+  OpponentOutageError,
+  type OpponentAgent,
+  type OpponentFactory,
+  type OpponentInput,
+  type OutageKind,
 } from "./opponents/opponent-agent.js";
 import { checkOpponentOutput } from "./opponents/opponent-output.js";
 import { PERSONA_PRESETS } from "./opponents/persona.js";
@@ -43,14 +49,18 @@ export type OrchestratorError =
   | EngineError
   | { readonly kind: "hand_not_found"; readonly message: string }
   /** Hero が見ていた卓の状態より Log が進んでいる（二重送信・古い画面からの送信）。 */
-  | { readonly kind: "stale_view"; readonly message: string };
+  | { readonly kind: "stale_view"; readonly message: string }
+  /** 選んだ障害がもう無い・別の障害に変わっている（二重送信・古いダイアログからの送信）。 */
+  | { readonly kind: "stale_outage"; readonly message: string };
 
 /**
  * Session が終わった理由（D80）。
  * - hero_busted: Hero の Stack が 0 になった
  * - hero_last_standing: CPU が全員 Bust し、Hero だけが残った
+ * - ai_outage: CPU の障害のダイアログで Hero が Session 終了を選んだ（その Hand は途中で打ち切る。D86）
  */
-export type SessionEndReason = "hero_busted" | "hero_last_standing";
+export type SessionEndReason =
+  "hero_busted" | "hero_last_standing" | "ai_outage";
 
 /**
  * ある Hand から見た Session の状態。Hero に返してよい情報（Hero 自身の結果と、次 Hand があるか）だけを持つ。
@@ -69,15 +79,33 @@ export type OrchestratorResult<T> =
 
 /**
  * CPU が判断を返せなかった「障害」（応答時間の超過・例外。API 障害を含む）。不正な出力とは区別する（D86）。
- * 障害の Hand はその手番で止まり、RuleBot へ自動では切り替えない。続け方（Retry / Emergency Bot / Session 終了）の選択は #52。
+ * 障害の Hand はその手番で止まり、RuleBot へ自動では切り替えない。続け方は Hero が選ぶ（resolveOutage）。
+ * サーバー内でだけ使う（message は内部のエラー本文で、資格情報・パスを含みうるので Hero へ返さない）。
  */
 export interface OpponentOutage {
   /** 止まった手番の Action が入るはずだった seq。 */
   readonly seq: number;
   readonly playerId: string;
-  readonly kind: "timeout" | "error";
+  readonly kind: OutageKind;
   readonly message: string;
 }
+
+/**
+ * Hero に返す障害の状態。「どの CPU の手番か・障害の種類」だけを持つ（エラー本文・Persona・CPU の出力は持たない）。
+ * revision は障害が起きる・解けるたびに進む。REST と SSE のどちらが先に届いても新しい方を選べるようにし、
+ * 続け方の選択でも送り返させて、古いダイアログからの選択（二重送信）を弾く。
+ */
+export interface OutageStatus {
+  readonly revision: number;
+  /** 止まっていなければ null。 */
+  readonly current: {
+    readonly playerId: string;
+    readonly kind: OutageKind;
+  } | null;
+}
+
+/** 障害の後の続け方（D86）。 */
+export type OutageChoice = "retry" | "emergency_bot" | "end_session";
 
 export interface OrchestratorLogger {
   warn(obj: object, msg: string): void;
@@ -104,6 +132,7 @@ export interface HandOrchestratorOptions {
 }
 
 export type HeroViewListener = (view: HeroView) => void;
+export type OutageListener = (status: OutageStatus) => void;
 
 interface HandRuntime {
   readonly handId: string;
@@ -112,14 +141,24 @@ interface HandRuntime {
   /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
   readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
+  readonly outageListeners: Set<OutageListener>;
+  /**
+   * Hero が Emergency Bot を選んだ CPU → 選んだきっかけの障害の種類。Session の終わりまで続くので、
+   * 同じ Session の Hand は同じ Map を共有する（SessionPointer.emergencyBots）。
+   */
+  readonly emergencyBots: Map<string, OutageKind>;
   /** CPU の手番を進めている最中ならその Promise（同じ Hand で 2 本同時に進めない）。 */
   running: Promise<void> | null;
   /** 今の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。待っていなければ null。 */
   cancelWait: (() => void) | null;
   /** 進行を止めた内部エラー。以降この Hand の CPU は動かさない。 */
   failure: string | null;
-  /** CPU の障害で止まった手番。以降この Hand の CPU は動かさない（続け方の選択は #52）。 */
+  /** CPU の障害で止まった手番。Hero が続け方を選ぶまで、この Hand の CPU は動かさない。 */
   outage: OpponentOutage | null;
+  /** 障害の状態が変わった回数（OutageStatus.revision）。 */
+  outageRevision: number;
+  /** 障害の後に Hero が Session 終了を選んだ。この Hand は途中で打ち切り、以降は動かさない（メモリだけに持つ。D88）。 */
+  abandoned: boolean;
 }
 
 /** CPU に 1 回判断を求めた結果。 */
@@ -127,7 +166,7 @@ type AskOutcome =
   | { readonly kind: "output"; readonly output: unknown }
   | {
       readonly kind: "outage";
-      readonly cause: OpponentOutage["kind"];
+      readonly cause: OutageKind;
       readonly message: string;
     }
   /** アプリ終了で待ちを打ち切った。 */
@@ -140,10 +179,14 @@ interface HandPlan {
   readonly buttonPlayerId: string;
 }
 
-/** 今の Session。持つのは ID の参照だけで、Stack・席・Button は lastHandId の Event Log から読む（D37）。 */
+/**
+ * 今の Session。持つのは ID の参照と Emergency Bot の選択だけで、Stack・席・Button は lastHandId の Event Log から読む（D37）。
+ * Emergency Bot の選択はメモリにだけ持つ（D88。Event Log への記録は Phase 5 の Session Resume で設計する）。
+ */
 interface SessionPointer {
   readonly sessionId: string;
   readonly lastHandId: string;
+  readonly emergencyBots: Map<string, OutageKind>;
 }
 
 const silentLogger: OrchestratorLogger = { warn: () => {}, error: () => {} };
@@ -225,7 +268,16 @@ export class HandOrchestrator {
     });
     if (!started.ok) return started;
     store.append(handId, started.value.events, { sessionId: plan.sessionId });
-    this.session = { sessionId: plan.sessionId, lastHandId: handId };
+    // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
+    const emergencyBots =
+      this.session?.sessionId === plan.sessionId
+        ? this.session.emergencyBots
+        : new Map<string, OutageKind>();
+    this.session = {
+      sessionId: plan.sessionId,
+      lastHandId: handId,
+      emergencyBots,
+    };
 
     // 座っている CPU にだけ Opponent（と Fallback 用の RuleBot）を割り当てる。CPU の seed は卓の設定上の席番号から導く
     // （Bust で席が詰まっても、同じ CPU には同じ導き方の seed が渡る）。
@@ -253,10 +305,14 @@ export class HandOrchestrator {
       opponents,
       fallbackBots,
       listeners: new Set(),
+      outageListeners: new Set(),
+      emergencyBots,
       running: null,
       cancelWait: null,
       failure: null,
       outage: null,
+      outageRevision: 0,
+      abandoned: false,
     };
     this.hands.set(handId, rt);
     await this.proceed(rt);
@@ -303,7 +359,10 @@ export class HandOrchestrator {
 
   /** その Hand から見た Session の状態。未知の Hand なら null。 */
   sessionStatus(handId: string): SessionStatus | null {
-    return this.hands.has(handId) ? this.sessionAfter(handId).status : null;
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return null;
+    if (rt.abandoned) return { state: "ended", reason: "ai_outage" };
+    return this.sessionAfter(handId).status;
   }
 
   /** Hero の View が変わるたびに呼ばれる listener を登録する。戻り値で解除する。未知の Hand なら null。 */
@@ -314,9 +373,68 @@ export class HandOrchestrator {
     return () => rt.listeners.delete(listener);
   }
 
-  /** CPU の障害で止まっていればその内容。止まっていない・未知の Hand なら null。 */
+  /** CPU の障害で止まっていればその内容（サーバー内用。Hero へは outageStatus を返す）。止まっていない・未知の Hand なら null。 */
   outageOf(handId: string): OpponentOutage | null {
     return this.hands.get(handId)?.outage ?? null;
+  }
+
+  /** Hero に返す障害の状態。未知の Hand なら null。 */
+  outageStatus(handId: string): OutageStatus | null {
+    const rt = this.hands.get(handId);
+    return rt === undefined ? null : outageStatusOf(rt);
+  }
+
+  /** 障害の状態が変わるたびに呼ばれる listener を登録する。戻り値で解除する。未知の Hand なら null。 */
+  subscribeOutage(
+    handId: string,
+    listener: OutageListener,
+  ): (() => void) | null {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return null;
+    rt.outageListeners.add(listener);
+    return () => rt.outageListeners.delete(listener);
+  }
+
+  /**
+   * 障害で止まった Hand の続け方を Hero が選ぶ（D86）。revision は Hero が見ていた OutageStatus の revision。
+   * 障害が無い・revision が違う（二重送信・古いダイアログ）なら stale_outage で拒否する。
+   * - retry: 同じ手番をもう一度 CPU に求める（また障害なら、また止まる）
+   * - emergency_bot: その CPU を Session の終わりまで RuleBot（その CPU の Persona のまま）で動かす。
+   *   手番ごとに AI_FALLBACK_USED（emergency_bot）を残す（Opponent Quality の分析で通常の判断と混同しない）
+   * - end_session: その Hand を途中で打ち切り、Session を終える。次の開始は新しい Session（均等 Stack）になる
+   * 選んだ後は、Hero の手番か Hand の終了まで CPU を進めた時点の View を返す（思考待ちがあれば後から SSE で届く）。
+   */
+  async resolveOutage(
+    handId: string,
+    revision: number,
+    choice: OutageChoice,
+  ): Promise<OrchestratorResult<HeroView>> {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return notFound(handId);
+    const outage = rt.outage;
+    if (outage === null || rt.outageRevision !== revision) {
+      return {
+        ok: false,
+        error: {
+          kind: "stale_outage",
+          message: `障害の状態が更新されている（最新の revision は ${rt.outageRevision}、送信は ${revision}）`,
+        },
+      };
+    }
+    if (choice === "emergency_bot") {
+      rt.emergencyBots.set(outage.playerId, outage.kind);
+    } else if (choice === "end_session") {
+      rt.abandoned = true;
+    }
+    this.logger.warn(
+      { handId, playerId: outage.playerId, kind: outage.kind, choice },
+      "CPU の障害の続け方が選ばれた",
+    );
+    this.setOutage(rt, null);
+    // 障害で止まった進行の後始末（running の解除）が済んでから進める（済む前だと advance が何もしない）。
+    if (rt.running !== null) await rt.running;
+    if (!rt.abandoned) await this.proceed(rt);
+    return { ok: true, value: this.heroViewOf(handId) };
   }
 
   /** CPU の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。以降は CPU を進めない。遅れて届いた判断も適用しない。 */
@@ -325,6 +443,7 @@ export class HandOrchestrator {
     for (const rt of this.hands.values()) {
       rt.cancelWait?.();
       rt.listeners.clear();
+      rt.outageListeners.clear();
     }
   }
 
@@ -339,13 +458,13 @@ export class HandOrchestrator {
   /**
    * 新しい Hand を作らずに返すべき Hand（今の Session の最後の Hand）。無ければ null。
    * 進行中なら常に、終わっていればクライアントがまだ見ていないとき（afterHandId が違う）だけ返す。
-   * 内部エラーで止まった Hand は返さない（新しい Session で始め直せるようにする）。
+   * 内部エラーで止まった Hand・障害の後に Session 終了を選んだ Hand は返さない（新しい Session で始め直せるようにする）。
    */
   private unseenLatestHand(afterHandId: string | null): string | null {
     const current = this.session;
     if (current === null) return null;
     const rt = this.hands.get(current.lastHandId);
-    if (rt === undefined || rt.failure !== null) return null;
+    if (rt === undefined || rt.failure !== null || rt.abandoned) return null;
     const finished =
       this.sessionAfter(current.lastHandId).status.state !== "in_hand";
     return finished && afterHandId === current.lastHandId
@@ -356,7 +475,7 @@ export class HandOrchestrator {
   /**
    * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
-   * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった）: 新しい Session。
+   * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
    *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）
    */
   private planNextHand(): HandPlan {
@@ -495,7 +614,26 @@ export class HandOrchestrator {
   }
 
   private canRun(rt: HandRuntime): boolean {
-    return !this.closed && rt.failure === null && rt.outage === null;
+    return (
+      !this.closed && rt.failure === null && rt.outage === null && !rt.abandoned
+    );
+  }
+
+  /** 障害の状態を変え、購読者（SSE）へ配る。 */
+  private setOutage(rt: HandRuntime, outage: OpponentOutage | null): void {
+    rt.outage = outage;
+    rt.outageRevision += 1;
+    const status = outageStatusOf(rt);
+    for (const listener of rt.outageListeners) {
+      try {
+        listener(status);
+      } catch (error) {
+        this.logger.warn(
+          { handId: rt.handId, err: error },
+          "障害の状態の配信に失敗した",
+        );
+      }
+    }
   }
 
   /** Log が expectedSeq のまま（待っている間に誰も進めていない）で、まだ CPU を動かしてよいか。 */
@@ -509,6 +647,7 @@ export class HandOrchestrator {
    * 不正なら AI_ACTION_INVALID を残して理由を付けて 1 回だけ再要求し、再度不正なら AI_FALLBACK_USED を残して
    * RuleBot の判断で続ける（D41・D83）。記録はその手番の Action より前の seq に入る。
    * 障害（応答時間の超過・例外）なら Hand をその手番で止める（D86）。
+   * Hero が Emergency Bot を選んだ CPU は、CPU に求めず RuleBot の判断で続ける（AI_FALLBACK_USED の emergency_bot を残す）。
    */
   private async cpuTurn(rt: HandRuntime, expectedSeq: number): Promise<void> {
     if (!this.isCurrent(rt, expectedSeq)) return;
@@ -529,6 +668,18 @@ export class HandOrchestrator {
       knowledge: projectKnowledgeState(events, playerId),
       legal,
     };
+    const emergency = rt.emergencyBots.get(playerId);
+    if (emergency !== undefined) {
+      this.useFallback(
+        rt,
+        state,
+        playerId,
+        fallbackBot.choose(base),
+        "emergency_bot",
+        `障害（${emergency}）の後に Hero が Emergency Bot を選んだ`,
+      );
+      return;
+    }
     let input = base;
     let lastInvalid: string | null = null;
     for (const attempt of [1, 2] as const) {
@@ -538,16 +689,17 @@ export class HandOrchestrator {
         return;
       }
       if (outcome.kind === "outage") {
-        rt.outage = {
+        const outage: OpponentOutage = {
           seq: state.nextSeq,
           playerId,
           kind: outcome.cause,
           message: outcome.message,
         };
         this.logger.error(
-          { handId: rt.handId, ...rt.outage },
+          { handId: rt.handId, ...outage },
           "CPU の障害で Hand を止めた",
         );
+        this.setOutage(rt, outage);
         return;
       }
       const checked = checkOpponentOutput(outcome.output, legal);
@@ -591,27 +743,44 @@ export class HandOrchestrator {
     }
 
     // 2 回続けて不正: RuleBot の判断（Deterministic Fallback）で続ける。RuleBot は同期で、障害を起こさない。
-    // AI_FALLBACK_USED と Fallback の Action は 1 回の追記で置く（記録の直後がその Action になる）。
-    const used = recordAiEvent(state, {
-      type: "AI_FALLBACK_USED",
-      playerId,
-      fallbackKind: "automatic",
-      reason: lastInvalid ?? "不明",
-    });
-    const fallback = applyAction(
-      used.state,
-      playerId,
-      fallbackBot.choose(base),
-    );
-    if (!fallback.ok) {
-      throw new Error(
-        `Deterministic Fallback（RuleBot）も Engine に拒否された: ${fallback.error.message}`,
-      );
-    }
     this.logger.warn(
       { handId: rt.handId, playerId, reason: lastInvalid },
       "CPU の出力を 2 回続けて使えず、RuleBot の判断で続けた",
     );
+    this.useFallback(
+      rt,
+      state,
+      playerId,
+      fallbackBot.choose(base),
+      "automatic",
+      lastInvalid ?? "不明",
+    );
+  }
+
+  /**
+   * CPU の判断の代わりに RuleBot の判断で手番を進める。
+   * AI_FALLBACK_USED と Fallback の Action は 1 回の追記で置く（記録の直後がその Action になる）。
+   */
+  private useFallback(
+    rt: HandRuntime,
+    state: HandState,
+    playerId: string,
+    action: PlayerAction,
+    fallbackKind: FallbackKind,
+    reason: string,
+  ): void {
+    const used = recordAiEvent(state, {
+      type: "AI_FALLBACK_USED",
+      playerId,
+      fallbackKind,
+      reason,
+    });
+    const fallback = applyAction(used.state, playerId, action);
+    if (!fallback.ok) {
+      throw new Error(
+        `Fallback（RuleBot）も Engine に拒否された: ${fallback.error.message}`,
+      );
+    }
     this.commit(rt, [...used.events, ...fallback.value.events]);
   }
 
@@ -653,8 +822,14 @@ export class HandOrchestrator {
         limit,
       );
       rt.cancelWait = () => finish({ kind: "cancelled" });
+      // 種類の分かる例外（未ログイン・利用枠の上限）はその種類で、それ以外は error として障害にする。
       const toError = (error: unknown) =>
-        finish({ kind: "outage", cause: "error", message: String(error) });
+        finish({
+          kind: "outage",
+          cause:
+            error instanceof OpponentOutageError ? error.outageKind : "error",
+          message: String(error),
+        });
       try {
         agent
           .decide(input, controller.signal)
@@ -686,6 +861,17 @@ export class HandOrchestrator {
       "Hand の進行を止めた（内部エラー）",
     );
   }
+}
+
+/** Hero に返す障害の状態。障害の内容のうち、どの CPU の手番か・種類だけを写す（エラー本文は写さない）。 */
+function outageStatusOf(rt: HandRuntime): OutageStatus {
+  return {
+    revision: rt.outageRevision,
+    current:
+      rt.outage === null
+        ? null
+        : { playerId: rt.outage.playerId, kind: rt.outage.kind },
+  };
 }
 
 /** Hand の seed から席ごとの CPU の seed を導く（同じ Hand seed なら同じ CPU の乱数列になる）。 */

@@ -5,7 +5,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { PHASE1_TABLE_SETUP } from "../config.js";
 import { InMemoryEventStore } from "../event-store.js";
-import { forbiddenKeys, leakedCards } from "../testing/leaks.js";
+import type { OpponentFactory } from "../opponents/opponent-agent.js";
+import { RuleBot } from "../opponents/rule-bot.js";
+import { forbiddenKeys, leakedCards, personaTerms } from "../testing/leaks.js";
 
 const HERO = "hero";
 const TOTAL_CHIPS =
@@ -311,12 +313,254 @@ describe("Hand API（SSE）", () => {
     expect(pushed).toHaveLength(1);
     expect(pushed[0]?.status).toBe("complete");
     // complete の View の直前に Session の状態を送る（6 人卓で Hero が Fold しただけなので Session は続く）。
+    // 接続時は障害の状態（無ければ current: null）を先に 1 回送る。
     expect(parseSseEvents(res.body).map((e) => e.name)).toEqual([
+      "outage",
       "session",
       "view",
     ]);
     expect(parseSseEvents(res.body)[0]?.data).toEqual({
+      revision: 0,
+      current: null,
+    });
+    expect(parseSseEvents(res.body)[1]?.data).toEqual({
       state: "ready_for_next_hand",
     });
+  });
+});
+
+describe("Hand API（CPU の障害。#52・D86）", () => {
+  /** 内部のエラー本文（資格情報やパスを含みうる）。Hero への応答・SSE に入ってはいけない。 */
+  const SECRET = "/home/u/.claude/.credentials.json sk-ant-secret";
+
+  /** 最初に判断を求められた CPU だけが、down の間は例外を投げる。ほかは RuleBot と同じ判断。 */
+  function brokenApp() {
+    const broken = { playerId: null as string | null, down: true };
+    const createOpponent: OpponentFactory = (seed, _playerId, persona) => {
+      const bot = new RuleBot(seed, persona);
+      return {
+        decide: (input) => {
+          broken.playerId ??= input.knowledge.viewerId;
+          if (broken.down && input.knowledge.viewerId === broken.playerId) {
+            return Promise.reject(new Error(SECRET));
+          }
+          const action = bot.choose(input);
+          return Promise.resolve(
+            "amount" in action
+              ? { action: action.type, amount: action.amount }
+              : { action: action.type },
+          );
+        },
+      };
+    };
+    const store = new InMemoryEventStore();
+    let handNo = 0;
+    const app = buildApp({
+      logger: false,
+      botDelayMs: 0,
+      store,
+      createOpponent,
+      nextSeed: () => 42,
+      nextHandId: () => `hand-${++handNo}`,
+    });
+    apps.push(app);
+    return { app, broken };
+  }
+
+  /** 応答・Push に、エラー本文・Persona・system の記録が入っていない。 */
+  function expectNoInternals(payload: unknown) {
+    const json = JSON.stringify(payload);
+    expect(json).not.toContain("sk-ant");
+    expect(json).not.toContain(".credentials");
+    expect(personaTerms(payload)).toEqual([]);
+    expect(forbiddenKeys(payload)).toEqual([]);
+  }
+
+  function choose(
+    app: ReturnType<typeof buildApp>,
+    handId: string,
+    revision: number,
+    choice: string,
+  ) {
+    return app.inject({
+      method: "POST",
+      url: `/api/hands/${handId}/outage`,
+      payload: { revision, choice },
+    });
+  }
+
+  it("障害の状態（どの CPU の手番か・種類）を開始の応答で返し、エラー本文・Persona は返さない", async () => {
+    const { app, broken } = brokenApp();
+    const created = await startRequest(app, null);
+    expect(created.statusCode).toBe(201);
+    const body = created.json<{
+      view: HeroView;
+      outage: unknown;
+      session: unknown;
+    }>();
+    expect(body.outage).toEqual({
+      revision: 1,
+      current: { playerId: broken.playerId, kind: "error" },
+    });
+    expect(body.session).toEqual({ state: "in_hand" });
+    expect(body.view.actorId).toBe(broken.playerId);
+    expectNoInternals(created.json());
+
+    // 開始の再送でも、止まった Hand と障害の状態をそのまま返す（Pause: 選ぶまで止めたまま）。
+    const again = await startRequest(app, null);
+    expect(again.statusCode).toBe(200);
+    expect(again.json<{ outage: unknown }>().outage).toEqual(body.outage);
+  });
+
+  it("Retry・Emergency Bot・Session 終了を受け付け、古い revision は 409 stale_outage", async () => {
+    const { app, broken } = brokenApp();
+    const created = await startRequest(app, null);
+    const { handId } = created.json<{ handId: string }>();
+
+    const stale = await choose(app, handId, 0, "retry");
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ error: { kind: "stale_outage" } });
+
+    // Retry してもまた障害なら、同じ手番でまた止まる。
+    const retried = await choose(app, handId, 1, "retry");
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json<{ outage: unknown }>().outage).toEqual({
+      revision: 3,
+      current: { playerId: broken.playerId, kind: "error" },
+    });
+    expectNoInternals(retried.json());
+
+    // Emergency Bot: その CPU は RuleBot で続け、Hero の手番まで進む。
+    const emergency = await choose(app, handId, 3, "emergency_bot");
+    expect(emergency.statusCode).toBe(200);
+    const after = emergency.json<{
+      view: HeroView;
+      outage: unknown;
+      session: unknown;
+    }>();
+    expect(after.outage).toEqual({ revision: 4, current: null });
+    expect(
+      after.view.status === "complete" || after.view.actorId === HERO,
+    ).toBe(true);
+    expectNoInternals(emergency.json());
+
+    // 二重送信は拒否する。
+    const twice = await choose(app, handId, 3, "emergency_bot");
+    expect(twice.statusCode).toBe(409);
+  });
+
+  it("Session 終了を選ぶと Session が ai_outage で終わり、次の開始は新しい Session になる", async () => {
+    const { app } = brokenApp();
+    const created = await startRequest(app, null);
+    const { handId } = created.json<{ handId: string }>();
+    const ended = await choose(app, handId, 1, "end_session");
+    expect(ended.statusCode).toBe(200);
+    expect(ended.json()).toMatchObject({
+      session: { state: "ended", reason: "ai_outage" },
+      outage: { revision: 2, current: null },
+      view: { status: "in_progress" },
+    });
+
+    const next = await startRequest(app, null);
+    expect(next.statusCode).toBe(201);
+    const nextBody = next.json<{
+      handId: string;
+      session: unknown;
+      outage: unknown;
+    }>();
+    // 新しい Hand（均等 Stack の新しい Session。Stack の確認は Orchestrator のテスト）。障害の状態も Hand ごとに初めから。
+    expect(nextBody.handId).not.toBe(handId);
+    expect(nextBody.session).toEqual({ state: "in_hand" });
+    expect(nextBody.outage).toMatchObject({ revision: 1 });
+  });
+
+  it("選択の形の不正は 400、無い Hand は 404", async () => {
+    const { app } = brokenApp();
+    const created = await startRequest(app, null);
+    const { handId } = created.json<{ handId: string }>();
+    for (const bad of [
+      { revision: 1 },
+      { choice: "retry" },
+      { revision: 1, choice: "pause" },
+      { revision: -1, choice: "retry" },
+      { revision: "1", choice: "retry" },
+      { revision: 1, choice: "retry", extra: true },
+    ]) {
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/hands/${handId}/outage`,
+        payload: bad,
+      });
+      expect(res.statusCode).toBe(400);
+    }
+    const missing = await choose(app, "unknown", 1, "retry");
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it("SSE: 接続時と障害が起きる・解けるたびに outage を送り、Session 終了では session を続けて送る", async () => {
+    const { app, broken } = brokenApp();
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const address = app.server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("listen したアドレスが取れない");
+    }
+    const base = `http://127.0.0.1:${address.port}`;
+    const created = await fetch(`${base}/api/hands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ afterHandId: null }),
+    });
+    const { handId } = (await created.json()) as { handId: string };
+
+    const controller = new AbortController();
+    const stream = await fetch(`${base}/api/hands/${handId}/stream`, {
+      signal: controller.signal,
+    });
+    const reader: ReadableStreamDefaultReader<Uint8Array> | undefined =
+      stream.body?.getReader();
+    if (reader === undefined) throw new Error("SSE の本文が無い");
+    const decoder = new TextDecoder();
+    let text = "";
+    /** 条件を満たすまで SSE を読み進める。 */
+    const readUntil = async (done: (t: string) => boolean) => {
+      while (!done(text)) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        text += decoder.decode(chunk.value, { stream: true });
+      }
+    };
+    await readUntil((t) => t.includes("event: view"));
+
+    // Retry でまた障害 → 解けた（revision 2）と、また起きた（revision 3）が届く。
+    await fetch(`${base}/api/hands/${handId}/outage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revision: 1, choice: "retry" }),
+    });
+    await readUntil((t) => t.includes('"revision":3'));
+    // Session 終了 → outage の直後に session（ai_outage）が届く。
+    await fetch(`${base}/api/hands/${handId}/outage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ revision: 3, choice: "end_session" }),
+    });
+    await readUntil((t) => t.includes("ai_outage"));
+    controller.abort();
+
+    const events = parseSseEvents(text);
+    const outages = events
+      .filter((e) => e.name === "outage")
+      .map((e) => e.data);
+    expect(outages).toEqual([
+      { revision: 1, current: { playerId: broken.playerId, kind: "error" } },
+      { revision: 2, current: null },
+      { revision: 3, current: { playerId: broken.playerId, kind: "error" } },
+      { revision: 4, current: null },
+    ]);
+    expect(events.slice(-2)).toEqual([
+      { name: "outage", data: { revision: 4, current: null } },
+      { name: "session", data: { state: "ended", reason: "ai_outage" } },
+    ]);
+    for (const e of events) expectNoInternals(e.data);
   });
 });
