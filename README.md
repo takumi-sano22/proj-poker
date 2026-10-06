@@ -142,19 +142,21 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | `CPU_PERSONAS` | `tag_regular,lag,nit,calling_station,weak_tight_recreational,maniac` | CPU の Persona を席順（CPU 1 から）に割り当てる順番。Preset ID（`tag_regular` / `lag` / `calling_station` / `nit` / `maniac` / `weak_tight_recreational`）のカンマ区切りで、CPU が多ければ先頭から繰り返す。知らない ID は起動時にエラーで止める。Persona は画面に出さない |
 | `PORT` | `3001` | `apps/server` の待ち受けポート（`127.0.0.1` 固定） |
 | `POKER_SOLVER_HOME` | 未設定 | Solver（amaster97/poker_solver）の導入先。下の「Solver の導入」で作る。未設定・未導入なら Solver を使わず、Math・Range・KB へ Fallback する |
-| `SOLVER_TIMEOUT_MS` | `20000`（暫定値） | Solver の 1 回の Solve を待つ上限。超えたら止めて Fallback する。1 以上の整数。不正値は既定に戻す |
+| `SOLVER_TIMEOUT_MS` | `60000`（暫定値） | Solver の 1 回の Solve を待つ上限。超えたら止めて Fallback する。1 以上の整数。不正値は既定に戻す |
 | `SOLVER_MAX_CONCURRENCY` | `1` | Solver を同時に動かす数。超えた分は待つ。1 以上の整数 |
 | `SOLVER_ITERATIONS` | `200`（暫定値） | Solver の Iteration 数。1 以上の整数 |
+| `REVIEW_TIMEOUT_MS` | `120000`（暫定値） | Review AI（Claude）の 1 回の呼び出しを待つ上限。超えたらその Review の生成を失敗にする（Hand は止めない）。1 以上の整数。不正値は既定に戻す |
 
 ### Claudeの認証（CPU を Claude にするとき）
 
-CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 認証（サブスクリプション枠）** を Claude Agent SDK 経由で使います（D87。D84 を変更）。既定の CPU は RuleBot なので、Claude に切り替えない限りこの手順は不要です。
+CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 認証（サブスクリプション枠）** を Claude Agent SDK 経由で使います（D87。D84 を変更）。既定の CPU は RuleBot なので、CPU を Claude に切り替えない・Hand Review を作らない限りこの手順は不要です。
 
 1. **ログイン**: ターミナルで `claude` を起動し、`/login` でサブスクリプションのアカウントにログインします。
 2. **動作確認**: `claude -p "OK とだけ返して"` が応答すれば、ログインできています。
 3. **`ANTHROPIC_API_KEY` が無いことの確認**: server を起動するシェルで `[ -z "${ANTHROPIC_API_KEY:-}" ] && echo "未設定（OK）" || echo "設定あり（unset してください）"` を実行します。環境に `ANTHROPIC_API_KEY` があると、Agent SDK はそちらを優先し、サブスク枠ではなく **API 課金** になります（server は Claude を呼ぶ子プロセスの環境から外しますが〔#50〕、シェル側にも置かないでください）。
 4. **CPU を Claude に切り替える**: server を起動するシェルで `OPPONENT_PROVIDER=claude` を設定して起動します（例: `OPPONENT_PROVIDER=claude pnpm dev`）。モデルは `opponent_fast` Role（暫定値 `claude-haiku-4-5`）です。起動ログに `"provider":"claude"` が出れば切り替わっています。CPU ごとの Persona は `CPU_PERSONAS` で選べます（例: `OPPONENT_PROVIDER=claude CPU_PERSONAS=maniac,calling_station TABLE_SIZE=3 pnpm dev`）。
-5. **Eval（任意）**: `pnpm --filter @proj-poker/server eval:opponent` で、代表 Spot（Preflop の Open・3-bet に直面・Flop の C-bet・River の大きな Bet に直面）× 6 Persona の判断を実際に集め、出力の正しさ・Retry 率・Latency・Persona の差・情報漏れを表示します（`docs/09` §5）。1 回あたり数分かかり、利用枠を使います。
+5. **Hand Review（#82。画面は #84）**: 終わった Hand の判断の Review は、`OPPONENT_PROVIDER` に関わらず Claude（`review_standard` Role。暫定値 `claude-sonnet-5-5`、「詳しく」は `review_deep`・`claude-opus-5-5`）で作ります。同じログインを使い、利用枠を使います。
+6. **Eval（任意）**: `pnpm --filter @proj-poker/server eval:opponent` で、代表 Spot（Preflop の Open・3-bet に直面・Flop の C-bet・River の大きな Bet に直面）× 6 Persona の判断を実際に集め、出力の正しさ・Retry 率・Latency・Persona の差・情報漏れを表示します（`docs/09` §5）。1 回あたり数分かかり、利用枠を使います。
 
 守ること:
 

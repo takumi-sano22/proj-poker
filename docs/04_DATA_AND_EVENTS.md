@@ -212,6 +212,29 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 
 過去Reviewを上書きしてはいけません。
 
+実装（#82・D95・D39）: マイグレーション v3 で `reviews` テーブルを足しました（既存のテーブル・行は変えない）。Pass A（Decision Review）の Review を Hero の判断ごとに Version 付きで追記し、`UPDATE` は Trigger（`reviews_append_only`）で拒否します。再生成は同じ Hand・判断・Pass の次の `version` の行で、`(hand_id, decision_index, pass, version)` は一意です（Version の採番と追記は 1 つの書き込みトランザクション）。`hand_id` は `hands` を参照するので、Review を作れるのは保存済みの Hand だけです。書き読みは `apps/server/src/review/review-store.ts`（`SqliteReviewStore`。DB は Event Store と共有）。
+
+| 列 | 上の項目 | 中身 |
+|---|---|---|
+| `review_id` | — | UUID |
+| `version` | Review Version | 同じ Hand・判断・Pass の中の版（1 から） |
+| `created_at` | Created At | ISO 8601（UTC） |
+| `hand_id`・`decision_index`・`action_seq` | Target Hand / Action | `decision_index` は Hero の判断の順番（`heroDecisions` の `index`）、`action_seq` はその `ACTION_TAKEN` の seq。Session は `hands.session_id` から引く |
+| `pass` | — | `decision`（Pass A）。Pass B は #83 |
+| `depth`・`model_role` | Model Role | `standard` → `review_standard`、`deep`（Hero が「詳しく」を選んだ Spot）→ `review_deep`（D97） |
+| `concrete_model` | Concrete Model | 呼んだ具体モデル名。Evidence Sufficiency Gate で止めた（Review AI を呼んでいない）ときは NULL |
+| `kb_version` | KB Version | Local KB 全体の Version（`apps/server/kb/manifest.json`） |
+| `solver_version` | Solver Adapter / Version | `<id>@<version>+<commit>`。Supported の Solver Evidence を使わなかったときは NULL |
+| `generated_by` | — | `review_ai`（Review AI の出力）/ `sufficiency_gate`（根拠不足で呼ばずに Insufficient Evidence）/ `invalid_output_fallback`（出力が 2 回続けて不正で Insufficient Evidence） |
+| `assessment`・`confidence` | Assessment・Confidence | 6 段階（`docs/05` §8）と `low` / `medium` / `high` |
+| `assumptions` | Assumptions | JSON の文字列の配列 |
+| `evidence_ids` | Math / Solver / User Read Evidence IDs | JSON。渡した Evidence の ID を種類ごと（`context` / `math` / `range` / `solver` / `knowledge` / `userRead`）と、Review AI が根拠に挙げた ID（`cited`） |
+| `explanation` | Explanation | JSON。`practical` → `theory`（`basis`: `solver` / `general_theory` / `none`）→ `exploit`（`basis`: `observation` / `none`）と `conclusionChangers`（何が変わると結論も変わるか） |
+| `evidence` | （構造化された根拠） | Review AI に渡した Evidence そのもの（判断時点の情報だけ。`docs/05` §6） |
+| `failure` | — | 出力の検証に失敗したときだけ。各回の段（`schema` / `grounding`）と理由 |
+
+User Read（Review Interview。`docs/05` §12）はまだ聞いていないので、`evidence_ids.userRead` は空です。Claude の呼び出しの失敗（未ログイン・利用枠・Timeout 等）では行を作りません（生成の状態はサーバーのメモリにだけ持ち、再起動で消える）。
+
 ## 9. Replay Metadata
 
 Replayそのものは保存済みEventだけで再生します。
@@ -250,6 +273,7 @@ Action単位の完全Crash RecoveryはMVPで過剰実装しません。
 - 保存先は SQLite（`node:sqlite`）で、`apps/server` だけが扱います。DB ファイルは環境変数 `POKER_DB_PATH`（`:memory:` も可）で変えられ、既定は `apps/server/data/poker.sqlite`（gitignore 済み）です。
 - テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only。削除は §11 の Reset と一緒に設計する）。
 - マイグレーションは自前の小さな仕組みで、SQL の配列（`apps/server/src/db/database.ts` の `MIGRATIONS`）を `PRAGMA user_version` より新しい分だけ 1 版ずつトランザクションで当てます。アプリより新しい版の DB は開きません。
+- Review（#82）は Hand の保存とは別に、生成が終わった時点で `reviews` テーブルへ追記します（§8。Hand の保存のトランザクションには入れない）。
 - Hand 途中の Event はメモリに持ち、Hand の終わり（`HAND_FINISHED`、または AI 障害の後の打ち切り `HAND_ABORTED`。#77・D95）を追記した時点で、その Hand の全 Event と `hands` の行（その Session の最初の Hand なら `sessions` の行も。`started_at` はその Hand の開始時刻、`finished_at` は Hand の終わりの時刻）と、その Session の Session Projection（下記）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。
 - AI 障害の後に Hero が選んだ Session 終了（Hand の打ち切り）と、Emergency Bot に切り替えた CPU の Session 単位の登録（#52）は、Phase 3 では Orchestrator のメモリに持っていました（D88）。#77（D95）で、打ち切りは `HAND_ABORTED` と `SESSION_ENDED`（`ai_outage`）、切り替えは `EMERGENCY_BOT_ENGAGED` として Event Log に残すように置き換えました（§3）。打ち切った Hand は保存され、Replay の一覧に残ります。内部エラーで止まった Hand は従来どおり Event を足さず、保存されません（次の開始は新しい Session）。
 - Session（#35・D80）は Hand Orchestrator が決め、Hand の最初の追記で Event Store へ渡した Session ID が `hands.session_id` に入ります。Session の最初の Hand は均等 Stack で始め（開始の Event に続けて `SESSION_STARTED`）、2 Hand 目以降は前 Hand の `HAND_FINISHED` の `stacks` を持ち越します（席と Button は `HAND_STARTED` に残る）。Hero の Bust か、残りが Hero だけになったら `SESSION_ENDED` を置いて Session を終え、次の Hand は新しい Session になります。Session の状態は最後の Hand の Event（`SESSION_ENDED`、無ければ `HAND_STARTED`・`HAND_FINISHED`）から作り直せます。Memory Update はまだ保存しません。
@@ -273,7 +297,7 @@ CPUのPersistent Observation / Hypothesisを削除します。
 
 ### Hand History Delete
 
-Hand / Session Historyと派生Projectionを削除します（`session_projections` も含む。#77。Reset の実装時に、Event を消したのに Projection が残る・Projection だけ残った Session を Resume する、を作らない）。
+Hand / Session Historyと派生Projectionを削除します（`session_projections`・`reviews` も含む。#77・#82。Reset の実装時に、Event を消したのに Projection が残る・Projection だけ残った Session を Resume する、を作らない）。
 
 ### Factory Reset
 

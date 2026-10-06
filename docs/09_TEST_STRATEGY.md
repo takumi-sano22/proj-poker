@@ -154,6 +154,36 @@ Local KB（#80。`apps/server/src/kb/`のテスト）:
 - **検索の決定性**: 同じ入力で同じ結果になること、項目の並び順に依らないこと、同点がidの昇順になること、Spotの特徴・Topic・全文の加点を手計算の値で確かめます。結果にKBのVersionと項目のID・Version・Evidence IDが入ることも確かめます。
 - 実物のKBで、代表的なSpot（Riverでの大きなBetへの直面・FlopのC-bet・BBのBlind Defense・Multiway）に対して、期待する項目が出ることを確かめます。
 
+Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/review/`のテスト）:
+
+- **Hindsight Leak / Hidden Information**（`evidence.test.ts`）: RuleBotの卓で進めた多数のHand（CPUの不正な出力で`system`のEventを含む）の全判断で、EvidenceとPromptに判断時点のHeroが知り得ない札（他者の札・後のBoard・Showdown）・Deck・seed・`system`の記録・CPUの出力の値・Personaが無いこと、判断より後のEventを切り落としても見えないEventの中身を差し替えてもEvidenceが変わらないことを確かめます。KBの本文は静的なCurated KBで、KBの項目そのものであることを確かめたうえで語の検査から外します。
+- **Math / Range / KB / Solver**: MathがEngineの`analyzeDecision`と同じ値であること、Important SpotだけRangeの想定の比較を持つこと、KBのEvidence IDがKBのVersionを含むこと、SolverはPreflop / Multiway / 未導入をFallbackし、HUのRootの判断だけを解き（Betへの直面・IPは解かない）、失敗の本文をEvidenceに入れないこと（`solver-evidence.test.ts`）。
+- **出力の検証と生成**（`generate.test.ts`）: Schema（形・enum・文字数）とGrounding（実在しないEvidence ID・Solverの結果が無いのに`solver`・Observationが無いのに`observation`）の不正、1回のRetry、2回続けて不正ならInsufficient Evidence（失敗の記録）、Evidence Sufficiency GateでReview AIを呼ばないこと、`depth`ごとのModel Role、Claudeの呼び出しの失敗を例外のまま伝えること。
+- **保存とAPI**（`review-store.test.ts`・`review-service.test.ts`・`routes/reviews.test.ts`）: Versionの追記と上書きの拒否（メモリ内とSQLiteの両方）、非同期の生成（202・pending）、二重の要求で1回だけ作ること、上限の超過（timeout）・アプリの終了で子プロセスを止めること、生成を1つずつ順に進めること、失敗の種類だけを返すこと、404 / 409 / 400。
+
+### Review Eval の最小形（Issue #82）
+
+- **置き場所**: `apps/server/src/testing/review-eval/`（buildの対象外。AI Opponent Evalと同じ形）。`hands.ts`（積んだDeckとActionの列で最後まで進めた固定Hand）・`harness.ts`（判断ごとにReviewを作る）・`metrics.ts`（集計・合格ライン）・`recording.ts`（録画と再生）・`run.ts`（手動実行）。
+- **代表の判断**: BTNのHeroがUTGのOpenにCall（Preflop）・同じHandのRiverの大きいBetへのCall（Important Spot）・SBのHeroがHUのTurnで最初にBet（SolverのRoot）・3人のFlopでBetにCall（Multiway）の4つ。
+- **本番と同じ経路**: Evidenceは`buildReviewEvidence`、生成は`generateReview`（`ReviewService`と同じ関数）で、差し替えるのはSDKの`query()`だけです。Solverは録画の再生で結果が揃うよう未導入に固定します（Supported のSolver Evidenceを渡したReviewは`--solver`の手動実行で確かめる。録画には使わない）。
+- **手動の Eval**: `pnpm --filter @proj-poker/server eval:review [--repeats 1] [--depth standard|deep] [--solver] [--record]`。Claude CodeのOAuth（サブスク枠。D87）で呼び、指標と合格ラインを表示し、`--record`で録画（`recordings/review-eval.json`）に書きます（障害が1件でもあれば書かない）。
+- **CI**（`harness.test.ts`）: Claudeを呼ばず、録画した出力を本番と同じ経路で再生して集計し直し、録画時の集計と一致すること・Hindsight Leakと障害が0件であることを確かめます。Evidence・Prompt・Schema・KBが変わると引数の指紋が合わず、再生が失敗します（手動のEvalで録画を取り直す）。
+
+指標の定義（`metrics.ts`）:
+
+| 指標 | 定義 | 合格ライン（暫定） |
+|---|---|---|
+| Structured Output Valid率 | 呼び出し（Retryを含む）のうち検証（Schema・Grounding）を通った割合 | 0.9以上 |
+| Retry率 / Fallback率 | 判断のうち1回目が不正だった割合 / 2回続けて不正でInsufficient Evidenceにした割合 | Fallback率 0.05以下 |
+| Insufficient Evidence率 | Gate・Fallback・Review AI自身の判断のすべて | 表示のみ |
+| Hindsight Leak | EvidenceかPromptに判断時点のHeroが知り得ない情報が入っていた判断の数 | 0件（1件でも不合格） |
+| Math Grounding率 | Review AIが書いた判断のうち、Math EvidenceのIDを根拠に挙げた割合 | 0.9以上 |
+| KB Grounding率 | Review AIが書いた判断のうち、KBの項目（実在するID）を根拠に挙げた割合 | 0.5以上 |
+| Exact GTOの言及 | 説明に「Exact GTO」「厳密なGTO」を含む判断の数（否定の文脈も数える） | 表示のみ（人が読んで確かめる） |
+| Latency | 呼び出しごとの所要時間のmin / median / p90 / max | 表示のみ（上限は`REVIEW_TIMEOUT_MS`。OI-001） |
+
+- Mathの正しさはEvidenceがEngineの値そのものであることで担保し（LLMに計算させない）、Uncertaintyの表現とAssumptionを変えたときのRecommendationの変わり方はJudge（人間かLLM）が要るため、まだ測りません。Human-reviewed HandのRegression Caseは、人がReviewを読んで固定するまで置きません。
+
 ## 7. Solver Adapter Test
 
 - Capability Detection
