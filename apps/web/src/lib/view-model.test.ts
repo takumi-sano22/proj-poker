@@ -5,13 +5,13 @@ import {
   blindsOf,
   describeEvent,
   heroRulingStatus,
+  latestHeroRulingIndex,
   lastSeqOf,
   operationKey,
   outageReasonText,
   parseHeroView,
   parseOutageStatus,
   parseSessionStatus,
-  rulingText,
   seatDirections,
   selectLatestView,
   selectOutageStatus,
@@ -261,7 +261,7 @@ describe("seatDirections", () => {
   });
 });
 
-describe("heroRulingStatus / operationKey（Hero への裁定を卓に反映する。#66 の文言の前の最低限）", () => {
+describe("heroRulingStatus / latestHeroRulingIndex / operationKey（Hero への裁定を卓に反映する）", () => {
   const pub = { type: "public" } as const;
   const base = preflopHeroToAct();
   const declared: HandEvent = {
@@ -309,11 +309,8 @@ describe("heroRulingStatus / operationKey（Hero への裁定を卓に反映す�
       actorId: "cpu1",
       legalActions: null,
     });
-    const status = heroRulingStatus(view);
-    expect(status).toEqual({ kind: "action", action: called });
-    expect(rulingText(status!)).toBe("Dealer の裁定: コール（Call） 2");
-    // 分類・理由（notes）の文言は #66 の担当なので出さない
-    expect(rulingText(status!)).not.toContain("oversized");
+    expect(heroRulingStatus(view)).toEqual({ kind: "action", action: called });
+    expect(latestHeroRulingIndex(view)).toBe(base.log.length + 1);
   });
 
   it("手番でない操作の保留は、Street が進んでも解けるまで出す", () => {
@@ -322,17 +319,45 @@ describe("heroRulingStatus / operationKey（Hero への裁定を卓に反映す�
       log: [...base.log, declared, ruled("out_of_turn")],
     });
     expect(heroRulingStatus(view)).toEqual({ kind: "pending" });
-    expect(rulingText({ kind: "pending" })).toContain("保留");
+    // 保留は Hero の手番が来ても、裁定されるまで出す
+    expect(
+      heroRulingStatus(
+        preflopHeroToAct({
+          street: "flop",
+          log: [...base.log, declared, ruled("out_of_turn")],
+        }),
+      ),
+    ).toEqual({ kind: "pending" });
   });
 
-  it("Hero の Action で Street が進んでも直近の裁定を出し、Hand の終了後は出さない", () => {
+  it("Hero の Action で Street が進んでも、次の Street で Hero の手番が来るまでは直近の裁定を出し、Hand の終了後は出さない", () => {
     const log = [...base.log, declared, ruled("action"), called];
-    expect(heroRulingStatus(preflopHeroToAct({ log, street: "flop" }))).toEqual(
-      {
-        kind: "action",
-        action: called,
-      },
-    );
+    // 次の Street で CPU の手番を待っている間は出す（Call で Street が閉じても裁定が見える）
+    expect(
+      heroRulingStatus(
+        preflopHeroToAct({
+          log,
+          street: "flop",
+          actorId: "cpu4",
+          legalActions: null,
+        }),
+      ),
+    ).toEqual({
+      kind: "action",
+      action: called,
+    });
+    // 次の Street で Hero の手番が来たら、前の Street の裁定は出さない（#65 の残課題）
+    expect(
+      heroRulingStatus(preflopHeroToAct({ log, street: "flop" })),
+    ).toBeNull();
+    expect(
+      latestHeroRulingIndex(preflopHeroToAct({ log, street: "flop" })),
+    ).toBeNull();
+    // 同じ Street のうちは、Hero の手番が戻っても直近の裁定を出す
+    expect(heroRulingStatus(preflopHeroToAct({ log }))).toEqual({
+      kind: "action",
+      action: called,
+    });
     const noAction = [...base.log, declared, ruled("no_action")];
     expect(heroRulingStatus(preflopHeroToAct({ log: noAction }))).toEqual({
       kind: "no_action",

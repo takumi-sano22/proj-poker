@@ -2,7 +2,7 @@
 // サーバーが返した HeroView だけから描く。他者の札は seats[].holeCards に入っているもの（Showdown で公開された札）だけを表に向ける。
 import type { HeroView, SeatView } from "@proj-poker/engine";
 import type { CSSProperties, ReactNode } from "react";
-import { STREET_TERMS, TERMS, formatChips, termLabel } from "../lib/format.js";
+import { TERMS, formatChips, termLabel } from "../lib/format.js";
 import {
   blindsOf,
   seatDirections,
@@ -11,6 +11,7 @@ import {
 import { Amount } from "./Amount.js";
 import { ChipStack } from "./ChipStack.js";
 import { CardSlot, PlayingCard } from "./PlayingCard.js";
+import { Term } from "./Vocabulary.js";
 
 const BOARD_SIZE = 5;
 
@@ -38,9 +39,11 @@ export function Table({ view, nameOf, center }: TableProps) {
       <div className="table__felt">
         <div className="table__center">
           <p className="table__street">
-            {view.status === "complete"
-              ? "Hand 終了"
-              : termLabel(STREET_TERMS[view.street])}
+            {view.status === "complete" ? (
+              "Hand 終了"
+            ) : (
+              <Term id={view.street} className="term--on-felt" />
+            )}
           </p>
           <div
             className="board"
@@ -59,7 +62,9 @@ export function Table({ view, nameOf, center }: TableProps) {
             className="pot"
             aria-label={`${termLabel(TERMS.pot)} ${formatChips(view.pot)}`}
           >
-            <span className="pot__label">{termLabel(TERMS.pot)}</span>
+            <span className="pot__label">
+              <Term id="pot" className="term--on-felt" />
+            </span>
             <Amount value={view.pot} bigBlind={view.bigBlind} />
           </div>
           {center}
@@ -138,23 +143,17 @@ export function Seat({
           <div className="seat__name-row">
             <span className="seat__name">{name}</span>
             {seat.isButton && (
-              <span
-                className="dealer-button"
-                title={termLabel(TERMS.button)}
-                aria-label={termLabel(TERMS.button)}
-              >
+              <Term id="button" className="term--bare dealer-button">
                 D
-              </span>
+              </Term>
             )}
             {blind !== undefined && (
-              <span
-                className="badge"
-                title={termLabel(
-                  blind === "small" ? TERMS.smallBlind : TERMS.bigBlind,
-                )}
+              <Term
+                id={blind === "small" ? "smallBlind" : "bigBlind"}
+                className="term--bare badge"
               >
                 {blind === "small" ? "SB" : "BB"}
-              </span>
+              </Term>
             )}
           </div>
           <div
@@ -209,11 +208,15 @@ function SeatStatus({
   readonly isActor: boolean;
 }) {
   if (seat.folded)
-    return <span className="seat__status">フォールド（Fold）</span>;
+    return (
+      <span className="seat__status">
+        <Term id="fold" className="term--quiet" />
+      </span>
+    );
   if (seat.allIn)
     return (
       <span className="seat__status seat__status--strong">
-        オールイン（All-in）
+        <Term id="allIn" className="term--quiet" />
       </span>
     );
   if (isActor)

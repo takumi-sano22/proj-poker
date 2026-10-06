@@ -20,6 +20,11 @@ export function formatBB(amount: number, bigBlind: number): string {
   return `${bbFormat.format(amount / bigBlind)} BB`;
 }
 
+/** 比率（0〜1）を整数の % にする（表示の目安。Chip の移動には使わない）。 */
+export function formatPercent(ratio: number): string {
+  return `${Math.round(ratio * 100)}%`;
+}
+
 /** 用語の表記。ja は日本語の説明、term は標準 Poker Term。 */
 export interface Term {
   readonly ja: string;
