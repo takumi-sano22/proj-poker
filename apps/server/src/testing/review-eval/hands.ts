@@ -1,0 +1,200 @@
+// Review Eval の固定 Hand（docs/09 §6「Human-reviewed Hand を Regression Case にする」の最小形）と、Review のテストで使う Hand。
+// 積んだ Deck と決めた Action の列で、Hand を最後（HAND_FINISHED）まで Engine で進める。Review の入力は本番と同じく
+// Event Log から heroInformationSets で作る（判断時点の Information Set を手で組み立てない）。
+import {
+  PHASE1_CASH_PRESET,
+  applyAction,
+  cardToString,
+  createDeck,
+  parseCards,
+  startHand,
+  type Card,
+  type HandEvent,
+  type PlayerAction,
+} from "@proj-poker/engine";
+import { PHASE1_TABLE_SETUP } from "../../config.js";
+
+export interface ScriptedHand {
+  /** 録画・集計のキー。変えると録画が使えなくなる。 */
+  readonly id: string;
+  readonly label: string;
+  readonly button: string;
+  readonly holes: Readonly<Record<string, string>>;
+  readonly board: string;
+  /** Hand の終わりまでの Action（席の playerId と Action）。 */
+  readonly script: readonly (readonly [string, PlayerAction])[];
+}
+
+// 本番の既定の卓（6-max・Hero 1 人 + CPU 5 人・100BB。席順は hero → cpu1 → … → cpu5）。額は PHASE1_CASH_PRESET（SB 1 / BB 2）の Chip。
+const SETUP = PHASE1_TABLE_SETUP;
+const SEATS = SETUP.players.map((p) => ({
+  playerId: p.playerId,
+  stack: SETUP.startingStack,
+}));
+
+const fold = { type: "fold" } as const;
+const check = { type: "check" } as const;
+const call = { type: "call" } as const;
+const raise = (amount: number) => ({ type: "raise", amount }) as const;
+const bet = (amount: number) => ({ type: "bet", amount }) as const;
+
+/**
+ * Hero が BTN で UTG の Open に Call し、Flop の Bet に Call、Turn は両者 Check、River の大きい Bet に Call する（Showdown で負ける）。
+ * Hero の判断: 0 = Preflop の Call・1 = Flop の Call・2 = Turn の Check・3 = River の Call（Pot 31 に 24 の Bet）。
+ */
+export const BTN_VS_UTG: ScriptedHand = {
+  id: "btn_vs_utg",
+  label:
+    "BTN の Hero が UTG の Open に Call し、River の大きい Bet に Call（AJo・J83 → K）",
+  button: "hero",
+  holes: { hero: "Ah Jd", cpu3: "Ks Qs" },
+  board: "Jc 8s 3d 2h Kc",
+  script: [
+    ["cpu3", raise(6)],
+    ["cpu4", fold],
+    ["cpu5", fold],
+    ["hero", call],
+    ["cpu1", fold],
+    ["cpu2", fold],
+    // Flop（Pot 15）: UTG が 8 を Bet、Hero が Call。
+    ["cpu3", bet(8)],
+    ["hero", call],
+    // Turn（Pot 31）: 両者 Check。
+    ["cpu3", check],
+    ["hero", check],
+    // River（Pot 31）: UTG が 24 を Bet、Hero が Call。
+    ["cpu3", bet(24)],
+    ["hero", call],
+  ],
+};
+
+/**
+ * Hero が SB で BTN の Open に Call し、Heads-Up で OOP。Flop は両者 Check、Turn で Straight になって最初に Bet（Solver の Root の判断）、
+ * River は Check して BTN の Bet に Call。Hero の判断: 0 = Preflop の Call・1 = Flop の Check・2 = Turn の Bet・3 = River の Check・
+ * 4 = River の Call。
+ */
+export const SB_VS_BTN: ScriptedHand = {
+  id: "sb_vs_btn",
+  label:
+    "SB の Hero が BTN の Open に Call し、Turn で最初に Bet（98s・T72 → 6 で Straight）",
+  button: "cpu5",
+  holes: { hero: "9h 8h", cpu5: "Ac Td" },
+  board: "Th 7c 2s 6d Kd",
+  script: [
+    ["cpu2", fold],
+    ["cpu3", fold],
+    ["cpu4", fold],
+    ["cpu5", raise(6)],
+    ["hero", call],
+    ["cpu1", fold],
+    // Flop（Pot 14）: 両者 Check。
+    ["hero", check],
+    ["cpu5", check],
+    // Turn（Pot 14）: Hero が最初に 7 を Bet、BTN が Call。
+    ["hero", bet(7)],
+    ["cpu5", call],
+    // River（Pot 28）: Hero が Check、BTN が 14 を Bet、Hero が Call。
+    ["hero", check],
+    ["cpu5", bet(14)],
+    ["hero", call],
+  ],
+};
+
+/**
+ * 3 人で Flop へ進む Multiway の Hand（Solver は Unsupported: player_count）。Hero（BTN）は CO の Open に Call し、BB も Call。
+ * Flop で CO が Bet、Hero が Call、BB が Fold。Turn・River は両者 Check。Hero の判断: 0 = Preflop の Call・1 = Flop の Call・
+ * 2 = Turn の Check・3 = River の Check。
+ */
+export const MULTIWAY_FLOP: ScriptedHand = {
+  id: "multiway_flop",
+  label: "3 人の Flop で Bet に Call（KQs・Q95）",
+  button: "hero",
+  holes: { hero: "Kh Qh", cpu5: "Ad Qc", cpu2: "9c 8c" },
+  board: "Qd 9s 5h 3c 2d",
+  script: [
+    ["cpu3", fold],
+    ["cpu4", fold],
+    ["cpu5", raise(6)],
+    ["hero", call],
+    ["cpu1", fold],
+    ["cpu2", call],
+    // Flop（Pot 19）: BB Check → CO が 10 を Bet → Hero Call → BB Fold。
+    ["cpu2", check],
+    ["cpu5", bet(10)],
+    ["hero", call],
+    ["cpu2", fold],
+    // Turn・River: 両者 Check。
+    ["cpu5", check],
+    ["hero", check],
+    ["cpu5", check],
+    ["hero", check],
+  ],
+};
+
+export const SCRIPTED_HANDS: readonly ScriptedHand[] = [
+  BTN_VS_UTG,
+  SB_VS_BTN,
+  MULTIWAY_FLOP,
+];
+
+/** Hand を最後まで Engine で進めた Event Log。途中で拒否された・終わらなかったら例外（Hand の定義の誤り）。 */
+export function playScriptedHand(hand: ScriptedHand): HandEvent[] {
+  const started = startHand({
+    handId: `review-${hand.id}`,
+    seats: SEATS,
+    buttonPlayerId: hand.button,
+    // 本番と同じ Preset（Rule Profile の ID も同じ）。ID は Prompt の引数（録画の指紋）に入るので、変えたら録画を取り直す。
+    config: PHASE1_CASH_PRESET,
+    deal: { deck: stackedDeck(hand.button, hand.holes, hand.board) },
+  });
+  if (!started.ok) throw new Error(`${hand.id}: ${started.error.kind}`);
+  let state = started.value.state;
+  const events: HandEvent[] = [...started.value.events];
+  for (const [playerId, action] of hand.script) {
+    const applied = applyAction(state, playerId, action);
+    if (!applied.ok) {
+      throw new Error(
+        `${hand.id}: ${playerId} の ${action.type} が拒否された（${applied.error.kind}）`,
+      );
+    }
+    state = applied.value.state;
+    events.push(...applied.value.events);
+  }
+  if (events.at(-1)?.type !== "HAND_FINISHED") {
+    throw new Error(`${hand.id}: Hand が終わっていない`);
+  }
+  return events;
+}
+
+/**
+ * 指定した Hole Cards と Board が配布順の位置に来るように 52 枚を並べる（Engine の testing/stacked-deck.ts と同じ配布順。
+ * Engine の package は testing を公開しないので、Runtime 側のテスト補助として持つ。opponent-eval/spots.ts と同じ）。
+ */
+function stackedDeck(
+  button: string,
+  holes: Readonly<Record<string, string>>,
+  board: string,
+): Card[] {
+  const n = SEATS.length;
+  const buttonIndex = SEATS.findIndex((s) => s.playerId === button);
+  const slots: (Card | undefined)[] = Array.from(
+    { length: 52 },
+    () => undefined,
+  );
+  for (let k = 0; k < n; k++) {
+    const seat = SEATS[(buttonIndex + 1 + k) % n];
+    const hole = seat === undefined ? undefined : holes[seat.playerId];
+    if (hole === undefined) continue;
+    const [first, second] = parseCards(hole);
+    slots[k] = first;
+    slots[n + k] = second;
+  }
+  parseCards(board).forEach((card, i) => {
+    slots[2 * n + i] = card;
+  });
+  const used = new Set(
+    slots.filter((c): c is Card => c !== undefined).map(cardToString),
+  );
+  const rest = createDeck().filter((c) => !used.has(cardToString(c)));
+  return slots.map((c) => c ?? (rest.shift() as Card));
+}

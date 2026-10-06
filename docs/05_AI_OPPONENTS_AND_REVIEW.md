@@ -134,6 +134,18 @@ Math EvidenceとRange Evidenceは、Engineの`analyzeDecision`（`packages/engin
 
 Knowledge Evidenceは、Local KB（`apps/server/kb/`。#80・D98・`docs/03` §9）の`searchKb`が、判断時点のSpotの特徴（Street・Position・Player数・Spotの種類・相手のPreflopのAction列）と全文の語から決定論で返します。各項目のID・Version・KB全体のVersionを`evidenceId`としてEvidenceに残します。KBは概念とPracticalな指針で、Math / Range Evidenceの数値を置き換えません（数値の根拠はEngine）。`label`がHEURISTIC / EXPLOITの項目は経験則として書き、断定しません。
 
+Evidenceの組み立て（#82。`apps/server/src/review/evidence.ts`）: 判断時点のHero Information Setだけを入力に、次の形でReview AIへ渡します（Event Log・`KnowledgeState`をそのまま渡さず、whitelistで写す）。各項目は`id`を持ち、Review AIは根拠に挙げた`id`を返します（実在しない`id`は不正）。
+
+- Decision Context（`ctx:`）: Street・Blind・HeroのPositionと札・判断時点のBoard・Pot・各席のPosition / Stack / Commit / Fold / All-in（他者の札は持たない）・Public Actionの履歴・裁定の履歴・Legal Action・Heroが選んだAction・Important Spotの理由。
+- Math（`math:`）: `analyzeDecision`の値（Pot・Call額・Pot Odds・有効Stack・SPR・Equity・Alternative Action・前提）。Monte Carloのseedは入れません。
+- Range（`range:`）: 相手ごとのRangeのAssumption。Important Spotだけ、Rangeの想定（標準・狭い・広い）ごとのEquityの比較（`compareRangeProfiles`）。
+- Opponent Observation: 相手の過去の傾向の記録はまだ無いので`unavailable`（Exploitは根拠なしとして書かせる）。
+- Solver（`solver:`）: Capability Gateを通って解けたときだけ`supported`（`docs/03` §7）。それ以外はUnsupported / 当てはまらないNode / 失敗の理由を前提として渡します。
+- Knowledge（`kb:<KB Version>:<id>@<version>`）: 判断時点のSpotの特徴（Street・HeroのPosition・Heads-Up / Multiway・Spotの種類・相手のPreflopのAction列）で`searchKb`した上位4項目。
+- User Read / Intent: まだ聞いていない（`not_collected`）。
+
+Evidenceに他者のHidden Cards・未来のCard・`system`のEvent・CPUのPersonaが入らないこと、判断より後のEventを切り落としても見えないEventの中身を差し替えてもEvidenceが変わらないことをテストで確かめます（`evidence.test.ts`）。
+
 ## 7. Two-pass Review
 
 ### Pass A — Decision Review
@@ -173,6 +185,8 @@ Pass Bの情報を理由にPass Aを勝手に変更しないでください。
 - Confidence
 - Assumptions
 - 何が変わると結論も変わるか
+
+実装（#82。`apps/server/src/review/review-ai.ts`・`generate.ts`）: Review AIは構造化出力で`assessment`（`strong` / `reasonable` / `mixed_marginal` / `improvement_suggested` / `major_leak` / `insufficient_evidence`）・`confidence`（`low` / `medium` / `high`）・`assumptions`・`conclusionChangers`（何が変わると結論も変わるか）・`evidenceIds`と、§9の順の説明（`practical` → `theory` → `exploit`）を返します。検証はSchema（形・enum・文字数・件数）→ Grounding（`evidenceIds`がEvidenceに実在する・Solverの結果が無いのに`theory.basis: solver`を選ばない・Observationが無いのに`exploit.basis: observation`を選ばない）の順で、不正なら理由を付けて1回だけ再要求し、2回続けて不正ならInsufficient Evidenceにします。根拠が足りない（判断時点の卓が読めない・EquityもSupportedのSolverの結果も無い・KBの項目が無い）ときは、Review AIを呼ばずにInsufficient Evidenceにします（Evidence Sufficiency Gate。§11のWebへは進まない。D94）。
 
 ## 9. Practical / GTO / Exploitの順序
 

@@ -7,6 +7,7 @@ import {
   DEFAULT_DB_PATH,
   DEFAULT_OPPONENT_TIMEOUT_MS,
   DEFAULT_PERSONA_ROTATION,
+  DEFAULT_REVIEW_TIMEOUT_MS,
   DEFAULT_SOLVER_ITERATIONS,
   DEFAULT_SOLVER_MAX_CONCURRENCY,
   DEFAULT_SOLVER_TIMEOUT_MS,
@@ -20,6 +21,7 @@ import {
   parsePersonaRotation,
   parseSolverIterations,
   parseSolverMaxConcurrency,
+  parseReviewTimeoutMs,
   parseSolverTimeoutMs,
   parseTableSize,
   resolveDbPath,
@@ -184,6 +186,21 @@ describe("parseOpponentProvider", () => {
 describe("MODEL_ROLES", () => {
   it("opponent_fast は暫定値（D85・OI-001）の claude-haiku-4-5", () => {
     expect(MODEL_ROLES.opponent_fast).toBe("claude-haiku-4-5");
+  });
+
+  it("review_standard / review_deep は暫定値（D97・OI-001）の claude-sonnet-5-5 / claude-opus-5-5", () => {
+    expect(MODEL_ROLES.review_standard).toBe("claude-sonnet-5-5");
+    expect(MODEL_ROLES.review_deep).toBe("claude-opus-5-5");
+  });
+});
+
+describe("REVIEW_TIMEOUT_MS（#82）", () => {
+  it("正の整数だけを受け付け、未設定・不正なら既定値（暫定 120000）に戻す", () => {
+    expect(DEFAULT_REVIEW_TIMEOUT_MS).toBe(120_000);
+    expect(parseReviewTimeoutMs("5000")).toBe(5000);
+    for (const raw of [undefined, "", "0", "-1", "1.5", "abc"]) {
+      expect(parseReviewTimeoutMs(raw)).toBe(DEFAULT_REVIEW_TIMEOUT_MS);
+    }
   });
 });
 

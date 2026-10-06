@@ -1,3 +1,4 @@
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { buildApp } from "./app.js";
 import {
   MODEL_ROLES,
@@ -6,14 +7,19 @@ import {
   parseOpponentProvider,
   parseOpponentTimeoutMs,
   parsePersonaRotation,
+  parseReviewTimeoutMs,
   parseTableSize,
   resolveDbPath,
 } from "./config.js";
+import { openDatabase } from "./db/database.js";
+import { loadKb } from "./kb/index.js";
 import {
   buildClaudeEnv,
   createClaudeOpponentFactory,
 } from "./opponents/claude-opponent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
+import { SqliteReviewStore } from "./review/review-store.js";
+import { createSolverAdapterFromEnv } from "./solver/index.js";
 import { SqliteEventStore } from "./sqlite-event-store.js";
 
 // ローカル専用（D61・非目標: Auth / Online Multiplayer）。外部 NIC へ公開しないため loopback に固定し、設定で変えさせない。
@@ -24,17 +30,21 @@ const PORT = Number(process.env["PORT"] ?? 3001);
 // Claude の子プロセスには API 課金に切り替わる変数（ANTHROPIC_API_KEY 等）を外した環境を渡す。
 const provider = parseOpponentProvider(process.env["OPPONENT_PROVIDER"]);
 const opponentModel = MODEL_ROLES.opponent_fast;
+const claudeEnv = buildClaudeEnv(process.env);
 const createOpponent =
   provider === "claude"
-    ? createClaudeOpponentFactory({
-        model: opponentModel,
-        env: buildClaudeEnv(process.env),
-      })
+    ? createClaudeOpponentFactory({ model: opponentModel, env: claudeEnv })
     : createRuleBot;
 
 // Event Log は SQLite に保存する（D72）。終わった Hand だけが残る（D62）。
+// Review（#82）も同じ DB の reviews テーブルに Version 付きで保存する（reviews.hand_id は hands を参照する）。
 const dbPath = resolveDbPath(process.env["POKER_DB_PATH"]);
-const store = SqliteEventStore.open(dbPath);
+const db = openDatabase(dbPath);
+const store = new SqliteEventStore(db);
+// Local KB は起動時に 1 回だけ読む（#80）。壊れていれば起動を止める。
+const kb = loadKb();
+// Solver は POKER_SOLVER_HOME で導入先を知る。未設定・未導入なら Unsupported として Fallback する（#81。起動は止めない）。
+const solver = createSolverAdapterFromEnv();
 
 const app = buildApp({
   botDelayMs: parseBotDelayMs(process.env["BOT_THINK_DELAY_MS"]),
@@ -48,6 +58,15 @@ const app = buildApp({
   ),
   store,
   createOpponent,
+  // Review AI は Claude（Agent SDK・OAuth。D87・D97）。API 課金に切り替わる変数を外した環境で呼ぶ。
+  review: {
+    store: new SqliteReviewStore(db),
+    kb,
+    solver,
+    env: claudeEnv,
+    query: sdkQuery,
+    timeoutMs: parseReviewTimeoutMs(process.env["REVIEW_TIMEOUT_MS"]),
+  },
 });
 // アプリの終了時に DB を閉じる。途中の Hand は保存されない（Completed Hand が保存境界。D62）。
 app.addHook("onClose", (_instance, done) => {
@@ -55,6 +74,16 @@ app.addHook("onClose", (_instance, done) => {
   done();
 });
 app.log.info({ dbPath }, "Event Log の保存先");
+app.log.info(
+  {
+    kbVersion: kb.version,
+    reviewModels: {
+      review_standard: MODEL_ROLES.review_standard,
+      review_deep: MODEL_ROLES.review_deep,
+    },
+  },
+  "Review の設定",
+);
 app.log.info(
   provider === "claude" ? { provider, model: opponentModel } : { provider },
   "CPU の判断に使う実装",

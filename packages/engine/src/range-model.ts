@@ -102,10 +102,39 @@ export function villainRange(
   villainId: string,
   profile: RangeProfile = STANDARD_RANGE_PROFILE,
 ): VillainRange {
-  const seatIndex = knowledge.seats.findIndex((s) => s.playerId === villainId);
-  const buttonIndex = knowledge.seats.findIndex((s) => s.isButton);
-  if (seatIndex < 0 || villainId === knowledge.viewerId) {
+  if (villainId === knowledge.viewerId) {
     throw new RangeError(`Range を仮定する相手が卓にいない: ${villainId}`);
+  }
+  // Hero に見えている札（自分の札と判断時点の Board）を含む Combo は相手が持ちえない。
+  return assumeRange(knowledge, villainId, profile, [
+    ...(knowledge.holeCards ?? []),
+    ...knowledge.board,
+  ]);
+}
+
+/**
+ * 判断時点の KnowledgeState から、Hero（viewer）自身の Range を「相手から見た形」で仮定する（#82: Solver に渡す Hero 側の Range）。
+ * 相手と同じ作り方（Position と公開された Action の列・Postflop の絞り込み）で、使う札は公開の Board だけにする。
+ * Hero の実際の札は Range から除かず、足しもしない（相手は Hero の札を知らない。実際の札が Range の外になることもある）。
+ */
+export function heroRange(
+  knowledge: KnowledgeState,
+  profile: RangeProfile = STANDARD_RANGE_PROFILE,
+): VillainRange {
+  return assumeRange(knowledge, knowledge.viewerId, profile, knowledge.board);
+}
+
+/** Player 1 人の Range を仮定する（dead の札を含む Combo は除く）。 */
+function assumeRange(
+  knowledge: KnowledgeState,
+  playerId: string,
+  profile: RangeProfile,
+  dead: readonly Card[],
+): VillainRange {
+  const seatIndex = knowledge.seats.findIndex((s) => s.playerId === playerId);
+  const buttonIndex = knowledge.seats.findIndex((s) => s.isButton);
+  if (seatIndex < 0) {
+    throw new RangeError(`Range を仮定する相手が卓にいない: ${playerId}`);
   }
   const playerCount = knowledge.seats.length;
   const position = positionName(
@@ -114,17 +143,14 @@ export function villainRange(
   );
   const preflopSpot = classifyPreflop(
     knowledge.actionHistory,
-    villainId,
+    playerId,
     knowledge.bigBlind,
   );
   const preflopNotation = notationFor(profile, preflopSpot, position);
 
-  // Hero に見えている札（自分の札と判断時点の Board）を含む Combo は相手が持ちえない。
-  const dead = new Set<CardCode>(
-    [...(knowledge.holeCards ?? []), ...knowledge.board].map(cardCode),
-  );
+  const deadCodes = new Set<CardCode>(dead.map(cardCode));
   let combos = parseRange(preflopNotation).filter(
-    ([a, b]) => !dead.has(cardCode(a)) && !dead.has(cardCode(b)),
+    ([a, b]) => !deadCodes.has(cardCode(a)) && !deadCodes.has(cardCode(b)),
   );
 
   const postflop: PostflopNarrowing[] = [];
@@ -138,7 +164,7 @@ export function villainRange(
     }
     const aggressive = isAggressive(a, currentBet);
     if (aggressive) currentBet = a.toAmount;
-    if (a.playerId !== villainId) continue;
+    if (a.playerId !== playerId) continue;
     const action = aggressive
       ? "bet_or_raise"
       : a.action === "call" || a.action === "all_in"
@@ -163,7 +189,7 @@ export function villainRange(
 
   return {
     assumption: {
-      playerId: villainId,
+      playerId,
       profileId: profile.id,
       position,
       preflopSpot,

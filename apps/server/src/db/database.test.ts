@@ -50,9 +50,79 @@ describe("openDatabase（マイグレーション）", () => {
       "events",
       "events_append_only",
       "hands",
+      "reviews",
+      "reviews_append_only",
       "session_projections",
       "sessions",
     ]);
+  });
+
+  it("版 2 の DB に版 3（reviews）を当てても、既存の行は変わらない（D95・D76）", () => {
+    const legacyPath = join(dir, "v2.sqlite");
+    const v2 = new DatabaseSync(legacyPath);
+    try {
+      v2.exec(MIGRATIONS[0] as string);
+      v2.exec(MIGRATIONS[1] as string);
+      v2.exec("PRAGMA user_version = 2");
+      v2.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO session_projections VALUES ('s1', 'h1', 'ready_for_next_hand', NULL, '[]', '{}', '[]', '2026-10-05T00:01:00.000Z');
+      `);
+    } finally {
+      v2.close();
+    }
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(
+        db
+          .prepare(
+            "SELECT session_id, last_hand_id, state FROM session_projections",
+          )
+          .all(),
+      ).toEqual([
+        { session_id: "s1", last_hand_id: "h1", state: "ready_for_next_hand" },
+      ]);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM reviews").get()).toEqual({
+        n: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("reviews は追記だけ: UPDATE を拒否し、同じ Hand・判断・Pass の同じ Version は一意制約で拒否する（D39・LC-022）", () => {
+    const db = openDatabase(":memory:");
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+      `);
+      const insert = db.prepare(
+        `INSERT INTO reviews VALUES (?, 'h1', 0, 5, 'decision', ?, '2026-10-05T00:02:00.000Z', 'standard', 'review_standard',
+          NULL, '1.0.0', NULL, 'sufficiency_gate', ?, 'low', '[]', '{}', '{}', '{}', NULL)`,
+      );
+      insert.run("r1", 1, "insufficient_evidence");
+      expect(() => insert.run("r2", 1, "insufficient_evidence")).toThrow(
+        /UNIQUE/,
+      );
+      expect(() => insert.run("r3", 2, "unknown")).toThrow(/CHECK/);
+      expect(() =>
+        db.exec(
+          "UPDATE reviews SET assessment = 'strong' WHERE review_id = 'r1'",
+        ),
+      ).toThrow(/append-only/);
+      // 存在しない Hand の Review は作れない（保存済みの Hand だけ）。
+      expect(() =>
+        db.exec(
+          `INSERT INTO reviews VALUES ('r4', 'nope', 0, 5, 'decision', 1, '2026-10-05T00:02:00.000Z', 'standard',
+            'review_standard', NULL, '1.0.0', NULL, 'sufficiency_gate', 'strong', 'low', '[]', '{}', '{}', '{}', NULL)`,
+        ),
+      ).toThrow(/FOREIGN KEY/);
+    } finally {
+      db.close();
+    }
   });
 
   it("版 1 の DB に版 2（Session Projection）を当てても、既存の行は変わらない（D76・D95）", () => {
