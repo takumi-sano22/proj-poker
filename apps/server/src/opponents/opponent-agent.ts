@@ -42,8 +42,10 @@ export interface OpponentAgent {
    * 選んだ Action を返す。形は OpponentOutput を期待するが、LLM の出力は何が来るか分からないので unknown で受け、
    * 呼び出し側（Orchestrator）が Schema → Legal Action → Amount Range の順に検証する（ここを信用しない）。
    * 例外・応答時間の超過は「障害」として扱われ、不正な出力とは区別される（D41・D86）。
+   * signal は呼び出し側が結果を待たなくなった（応答時間の超過・アプリ終了）ときに abort される。
+   * 外部の処理（LLM の子プロセス等）を持つ実装はこれで中断し、使わない実装は無視してよい。
    */
-  decide(input: OpponentInput): Promise<unknown>;
+  decide(input: OpponentInput, signal?: AbortSignal): Promise<unknown>;
 }
 
 /** CPU を 1 人分作る。seed は Hand の seed から席ごとに導く（同じ seed なら同じ判断を再現する）。 */

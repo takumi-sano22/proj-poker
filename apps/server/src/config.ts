@@ -91,8 +91,9 @@ export function parseBotDelayMs(raw: string | undefined): number {
  * 暫定値（OI-001 の Cost / Latency Policy が決まるまでの仮置き。永久仕様ではない）。
  * 超えたら「障害」として Hand を止める（RuleBot へ自動で切り替えない。D86）。
  * 環境変数 OPPONENT_TIMEOUT_MS で上書きできる。
+ * #47 で 15000ms と置き、#50 の Claude の実測（最大 約 15.5 秒）で超える回があったため、最大の約 2 倍に見直した（docs/11 OI-001）。
  */
-export const DEFAULT_OPPONENT_TIMEOUT_MS = 15_000;
+export const DEFAULT_OPPONENT_TIMEOUT_MS = 30_000;
 
 /** 環境変数の値を判断待ちの上限として読む。未設定・不正（0 以下・小数・文字列）なら既定値に戻す。 */
 export function parseOpponentTimeoutMs(raw: string | undefined): number {
@@ -115,4 +116,29 @@ export const DEFAULT_DB_PATH = fileURLToPath(
 /** 環境変数 POKER_DB_PATH の値を DB の場所として読む。未設定・空なら既定の場所。":memory:" も受け付ける。 */
 export function resolveDbPath(raw: string | undefined): string {
   return raw === undefined || raw.trim() === "" ? DEFAULT_DB_PATH : raw;
+}
+
+/**
+ * Model Role ごとの具体モデル名（role-based config。docs/03 §3・docs/05 §13）。Domain Logic にモデル名を書かず、ここで解決する。
+ * 値は暫定値（D85・OI-001。確定ではない）。Review の Role（review_standard / review_deep）は Review を作る Issue で足す。
+ */
+export const MODEL_ROLES = {
+  opponent_fast: "claude-haiku-4-5",
+} as const;
+
+export type ModelRole = keyof typeof MODEL_ROLES;
+
+/** CPU の判断に使う実装。既定は RuleBot（D71）。"claude" のときだけ Claude（Agent SDK・OAuth。D87）を使う。 */
+export type OpponentProvider = "rulebot" | "claude";
+
+/** 環境変数 OPPONENT_PROVIDER の値を読む。未設定・空なら RuleBot。知らない値は起動時に誤りとして止める（黙って RuleBot にしない）。 */
+export function parseOpponentProvider(
+  raw: string | undefined,
+): OpponentProvider {
+  if (raw === undefined || raw.trim() === "") return "rulebot";
+  const value = raw.trim();
+  if (value === "rulebot" || value === "claude") return value;
+  throw new RangeError(
+    `OPPONENT_PROVIDER は rulebot か claude: ${JSON.stringify(raw)}`,
+  );
 }
