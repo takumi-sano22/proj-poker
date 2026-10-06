@@ -166,6 +166,8 @@ Local KB（#80。`apps/server/src/kb/`のテスト）:
 - Version Metadata
 - Range Assumption保持
 
+実装（#81）: `apps/server/src/solver/amaster97-adapter.test.ts`が上の各項目を、実Solverを呼ばずに確かめます。Solverの代わりに、テスト中に書き出すNodeのスクリプト（偽のSolver。録画の出力・終わらない・壊れたJSON・exit 1等を返す）と、実Solver（amaster97）の#76のRiverの固定Spotの出力の録画を使います。Timeout / CancellationはSIGKILLの後にプロセスが残っていないことを、Invalid InputはSolverが一度も起動しないことを確かめます。実Solverでの確認（RiverとTurnを各1 Spot・Timeout / Cancel後のプロセスの残り）は手動の`pnpm --filter @proj-poker/server smoke:solver`です。
+
 ## 8. Critical E2E
 
 1. 6-max Cash開始
