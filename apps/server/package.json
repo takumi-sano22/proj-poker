@@ -10,7 +10,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "smoke:claude": "tsx --conditions=@proj-poker/source src/testing/claude-smoke.ts"
+    "smoke:claude": "tsx --conditions=@proj-poker/source src/testing/claude-smoke.ts",
+    "eval:opponent": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.289",
