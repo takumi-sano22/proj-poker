@@ -38,6 +38,7 @@ export type {
   ButtonRule,
   OddChipRule,
   ReopenRule,
+  RulingRules,
   TableConfig,
 } from "./table-config.js";
 
@@ -66,6 +67,7 @@ export type { HandState, PlayerState } from "./hand-state.js";
 export { getLegalActions } from "./legal-actions.js";
 export type {
   ActionRejection,
+  CanonicalAction,
   LegalAction,
   LegalActionSet,
   PlayerAction,
@@ -79,6 +81,15 @@ export type {
   HandProgress,
   StartHandInput,
 } from "./hand-engine.js";
+
+export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
+export type {
+  Declaration,
+  PendingOutOfTurn,
+  PhysicalAction,
+  RulingCode,
+  RulingResult,
+} from "./ruling.js";
 
 export { nextHandSeating } from "./position.js";
 export type { NextHandSeating, PreviousHandResult } from "./position.js";

@@ -30,6 +30,12 @@ export type PlayerAction =
   | { readonly type: "raise"; readonly amount: number }
   | { readonly type: "all_in" };
 
+/**
+ * docs/02 §4 の名前での別名。Hero の物理的な操作（PhysicalAction。ruling.ts）と区別するときに使う。
+ * CPU は Canonical Action を直接出し、Hero の操作は Ruling Engine が Canonical Action に裁定する。
+ */
+export type CanonicalAction = PlayerAction;
+
 /** 検証済みの Action（ACTION_TAKEN の中身になる）。 */
 export interface ResolvedAction {
   readonly playerId: string;

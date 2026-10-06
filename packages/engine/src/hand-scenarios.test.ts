@@ -9,6 +9,15 @@ import {
   type LegalAction,
   type PlayerAction,
 } from "./legal-actions.js";
+import {
+  resolveOutOfTurn,
+  rulePhysicalActions,
+  type Declaration,
+  type PendingOutOfTurn,
+  type PhysicalAction,
+  type RulingCode,
+  type RulingResult,
+} from "./ruling.js";
 import { PHASE1_CASH_PRESET, type TableConfig } from "./table-config.js";
 import {
   checkHandFinished,
@@ -18,7 +27,8 @@ import {
 } from "./testing/invariants.js";
 import { stackedDeck } from "./testing/stacked-deck.js";
 
-interface ScenarioStep {
+/** Canonical Action の入力（CPU の Action・Hero が選び直した Action）。 */
+interface CanonicalStep {
   readonly player: string;
   readonly action: PlayerAction;
   /** 行動前の Legal Action（完全一致）。 */
@@ -26,6 +36,38 @@ interface ScenarioStep {
   /** 拒否されるべき入力。拒否後の State は変わらない。 */
   readonly reject?: { readonly kind: EngineError["kind"] };
 }
+
+/**
+ * Hero の物理的な操作（Ruling。docs/02 §4・D91）。Ruling Engine の裁定が ruling と一致することを確かめ、
+ * Canonical Action に決まったらそれを Engine に適用する。Out-of-Turn なら保留し（State は変えない）、
+ * 同じ Player の resolveOutOfTurn の Step で裁定する。
+ */
+interface PhysicalStep {
+  readonly player: string;
+  readonly physical: readonly PhysicalAction[];
+  readonly ruling: ExpectedRuling;
+}
+
+/** 保留した Out-of-Turn の操作を、その Player の手番で裁定する。 */
+interface ResolveOutOfTurnStep {
+  readonly player: string;
+  readonly resolveOutOfTurn: true;
+  readonly ruling: ExpectedRuling;
+}
+
+type ScenarioStep = CanonicalStep | PhysicalStep | ResolveOutOfTurnStep;
+
+/** 裁定の期待値（out_of_turn の保留の中身は比べない）。 */
+type ExpectedRuling =
+  | {
+      readonly kind: "action";
+      readonly action: PlayerAction;
+      readonly notes: readonly RulingCode[];
+    }
+  | {
+      readonly kind: "out_of_turn" | "no_action";
+      readonly notes: readonly RulingCode[];
+    };
 
 interface HandScenario {
   readonly id: string;
@@ -73,6 +115,32 @@ const call = { type: "call" } as const;
 const allIn = { type: "all_in" } as const;
 const bet = (amount: number) => ({ type: "bet", amount }) as const;
 const raise = (amount: number) => ({ type: "raise", amount }) as const;
+
+const push = (...chips: number[]): PhysicalAction => ({
+  type: "chip_push",
+  chips,
+});
+const add = (...chips: number[]): PhysicalAction => ({
+  type: "chip_add",
+  chips,
+});
+const declare = (declaration: Declaration): PhysicalAction => ({
+  type: "declare",
+  declaration,
+});
+
+/** Ruling の Scenario 用の Heads-Up（Stack 1000。500 の Chip を出せる）。cpu が Button（SB）、hero が BB。 */
+const headsUpForRuling = (): SeatInit[] => [
+  { playerId: "cpu", stack: 1000 },
+  { playerId: "hero", stack: 1000 },
+];
+
+/** Ruling の Out-of-Turn 用の 3 人（Stack 1000）。btn が Button、sb、hero が BB。Flop 以降は sb → hero → btn。 */
+const threeForRuling = (): SeatInit[] => [
+  { playerId: "btn", stack: 1000 },
+  { playerId: "sb", stack: 1000 },
+  { playerId: "hero", stack: 1000 },
+];
 
 const checkDown = (first: string, second: string): ScenarioStep[] =>
   [1, 2, 3].flatMap(() => [
@@ -1228,6 +1296,264 @@ const SCENARIOS: readonly HandScenario[] = [
       awards: { a: 600, b: 150 },
     },
   },
+  // ---- Ruling（Hero の物理的な操作。docs/02 §4・§5、docs/09 §4、D91・OI-008 の暫定値。Rule Profile phase4_provisional_v1）----
+  {
+    id: "SCN-ruling-oversized-001",
+    title:
+      "Oversized Chip: 相手の Bet 100 に、宣言なしで 500 を 1 枚 → Call 100",
+    source:
+      "docs/02 §4・§5 Oversized Chip / docs/09 §4 / D91（call_unless_raise_declared）",
+    seats: headsUpForRuling(),
+    button: "cpu",
+    holes: { hero: "As Ad", cpu: "Kh Kd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "cpu", action: call },
+      { player: "hero", action: check },
+      // Pot 4。Flop は hero（BB）から。
+      { player: "hero", action: check },
+      { player: "cpu", action: bet(100) },
+      {
+        player: "hero",
+        physical: [push(500)],
+        ruling: {
+          kind: "action",
+          action: call,
+          notes: ["oversized_chip"],
+        },
+      },
+      // Pot 4 + 100 + 100 = 204。
+      ...checkDown("hero", "cpu").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // hero が AA で 204 を取る: hero 1000 − 2 − 100 + 204 = 1102 / cpu 1000 − 2 − 100 = 898
+      stacks: { hero: 1102, cpu: 898 },
+      pot: 0,
+      awards: { hero: 204 },
+      tailEvents: [
+        "CARDS_TABLED",
+        "CARDS_TABLED",
+        "POT_AWARDED",
+        "HAND_FINISHED",
+      ],
+    },
+  },
+  {
+    id: "SCN-ruling-oversized-002",
+    title:
+      "Oversized Chip: Raise を先に宣言して 500 を 1 枚 → Raise to 500（同じ Chip でも宣言で裁定が変わる）",
+    source:
+      "docs/02 §4 Oversized Chip / D91（call_unless_raise_declared）・宣言（declaration_first_nearest_legal）",
+    seats: headsUpForRuling(),
+    button: "cpu",
+    holes: { hero: "As Ad", cpu: "Kh Kd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "cpu", action: call },
+      { player: "hero", action: check },
+      { player: "hero", action: check },
+      { player: "cpu", action: bet(100) },
+      {
+        player: "hero",
+        physical: [declare({ kind: "raise" }), push(500)],
+        ruling: { kind: "action", action: raise(500), notes: [] },
+      },
+      { player: "cpu", action: fold },
+    ],
+    expect: {
+      status: "complete",
+      // Uncalled 500 − 100 = 400 を hero へ返し、Pot 4 + 100 + 100 = 204 を hero へ。
+      // hero 1000 − 2 − 500 + 400 + 204 = 1102 / cpu 898
+      stacks: { hero: 1102, cpu: 898 },
+      pot: 0,
+      awards: { hero: 204 },
+      tailEvents: ["UNCALLED_BET_RETURNED", "POT_AWARDED", "HAND_FINISHED"],
+      absentEvents: ["CARDS_TABLED"],
+    },
+  },
+  {
+    id: "SCN-ruling-oversized-003",
+    title: "Oversized Chip: 相手の Bet が無いときに 100 を 1 枚 → Bet 100",
+    source:
+      "docs/02 §4 Oversized Chip / D91（相手の Bet が無ければその額の Bet）",
+    seats: headsUpForRuling(),
+    button: "cpu",
+    holes: { hero: "As Ad", cpu: "Kh Kd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "cpu", action: call },
+      { player: "hero", action: check },
+      {
+        player: "hero",
+        physical: [push(100)],
+        ruling: { kind: "action", action: bet(100), notes: [] },
+      },
+      { player: "cpu", action: call },
+      ...checkDown("hero", "cpu").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // Pot 4 + 100 + 100 = 204 → hero。hero 1102 / cpu 898
+      stacks: { hero: 1102, cpu: 898 },
+      pot: 0,
+      awards: { hero: 204 },
+    },
+  },
+  {
+    id: "SCN-ruling-string-001",
+    title:
+      "String Raise: 相手の Bet 100 に、宣言なしで 100 を出してから 300 を足す → 最初の 100 で Call",
+    source:
+      "docs/02 §5 String Bet / Raise / docs/09 §4 String Raise / D91（first_motion_only）",
+    seats: headsUpForRuling(),
+    button: "cpu",
+    holes: { hero: "As Ad", cpu: "Kh Kd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "cpu", action: call },
+      { player: "hero", action: check },
+      { player: "hero", action: check },
+      { player: "cpu", action: bet(100) },
+      {
+        player: "hero",
+        physical: [push(100), add(100, 100, 100)],
+        ruling: { kind: "action", action: call, notes: ["string_bet"] },
+      },
+      ...checkDown("hero", "cpu").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // 足した 300 は返す。Pot 4 + 100 + 100 = 204 → hero。hero 1102 / cpu 898
+      stacks: { hero: 1102, cpu: 898 },
+      pot: 0,
+      awards: { hero: 204 },
+    },
+  },
+  {
+    id: "SCN-ruling-string-002",
+    title:
+      "String Raise の対照: Raise を先に宣言して Call 額 100 → 続けて 100 → Raise to 200",
+    source:
+      "docs/02 §5 String Bet / Raise / TDA の Raise の方法（宣言してから Call 額 + 1 回）",
+    seats: headsUpForRuling(),
+    button: "cpu",
+    holes: { hero: "As Ad", cpu: "Kh Kd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "cpu", action: call },
+      { player: "hero", action: check },
+      { player: "hero", action: check },
+      { player: "cpu", action: bet(100) },
+      {
+        player: "hero",
+        physical: [declare({ kind: "raise" }), push(100), add(100)],
+        ruling: { kind: "action", action: raise(200), notes: [] },
+      },
+      { player: "cpu", action: call },
+      ...checkDown("hero", "cpu").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // Pot 4 + 200 + 200 = 404 → hero。hero 1000 − 2 − 200 + 404 = 1202 / cpu 1000 − 2 − 200 = 798
+      stacks: { hero: 1202, cpu: 798 },
+      pot: 0,
+      awards: { hero: 404 },
+    },
+  },
+  {
+    id: "SCN-ruling-oot-001",
+    title:
+      "Representative Out-of-Turn: 手番の前に Bet 100 → 手番を戻し、間が Check なので Bet 100 を拘束",
+    source:
+      "docs/02 §5 Representative Out-of-Turn / docs/09 §4 / D91（bind_unless_action_changes）",
+    seats: threeForRuling(),
+    button: "btn",
+    holes: { hero: "As Ad", sb: "Kh Kd", btn: "Qh Qd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "btn", action: call },
+      { player: "sb", action: call },
+      { player: "hero", action: check },
+      // Pot 6。Flop は sb から。Canonical Action の手番違いは拒否される（INV-TEST-006）。
+      { player: "hero", action: bet(100), reject: { kind: "not_actor" } },
+      // 物理的な操作は裁定される: 手番を sb へ戻して警告し、保留する（State は変えない）。
+      {
+        player: "hero",
+        physical: [push(100)],
+        ruling: { kind: "out_of_turn", notes: ["out_of_turn"] },
+      },
+      // Check は状況を変えない。
+      { player: "sb", action: check },
+      {
+        player: "hero",
+        resolveOutOfTurn: true,
+        ruling: {
+          kind: "action",
+          action: bet(100),
+          notes: ["out_of_turn_binding"],
+        },
+      },
+      { player: "btn", action: fold },
+      { player: "sb", action: call },
+      // Pot 6 + 100 + 100 = 206。Turn・River は sb → hero。
+      ...checkDown("sb", "hero").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // hero が AA で 206: hero 1000 − 2 − 100 + 206 = 1104 / sb 1000 − 2 − 100 = 898 / btn 998
+      stacks: { btn: 998, sb: 898, hero: 1104 },
+      pot: 0,
+      awards: { hero: 206 },
+    },
+  },
+  {
+    id: "SCN-ruling-oot-002",
+    title:
+      "Representative Out-of-Turn: 手番の前に Bet 100 → 間の Player が Bet したので撤回し、Hero が選び直す",
+    source: "docs/02 §5 Representative Out-of-Turn / D91（変われば撤回できる）",
+    seats: threeForRuling(),
+    button: "btn",
+    holes: { hero: "As Ad", sb: "Kh Kd", btn: "Qh Qd" },
+    board: "2c 7d 9s Jh 3c",
+    steps: [
+      { player: "btn", action: call },
+      { player: "sb", action: call },
+      { player: "hero", action: check },
+      {
+        player: "hero",
+        physical: [push(100)],
+        ruling: { kind: "out_of_turn", notes: ["out_of_turn"] },
+      },
+      // Bet は状況を変える（最高額 0 → 50）。
+      { player: "sb", action: bet(50) },
+      {
+        player: "hero",
+        resolveOutOfTurn: true,
+        ruling: { kind: "no_action", notes: ["out_of_turn_released"] },
+      },
+      // 撤回したので、Hero は全部の選択肢から選び直す。
+      {
+        player: "hero",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 50 },
+          { type: "raise", min: 100, max: 998 },
+          { type: "all_in", amount: 998 },
+        ],
+      },
+      { player: "btn", action: fold },
+      ...checkDown("sb", "hero").slice(0, 4),
+    ],
+    expect: {
+      status: "complete",
+      // Pot 6 + 50 + 50 = 106 → hero。hero 1000 − 2 − 50 + 106 = 1054 / sb 948 / btn 998
+      stacks: { btn: 998, sb: 948, hero: 1054 },
+      pot: 0,
+      awards: { hero: 106 },
+    },
+  },
 ];
 
 describe("Scenario Regression", () => {
@@ -1255,13 +1581,38 @@ function runScenario(s: HandScenario): void {
   let tailFrom = events.length;
   expect(checkInvariants(state, total)).toEqual([]);
 
+  // Out-of-Turn で保留した操作（Player ごと）。
+  const pending = new Map<string, PendingOutOfTurn>();
+
   for (const [i, step] of s.steps.entries()) {
-    const where = `${s.id} step ${i}（${step.player} ${step.action.type}）`;
-    if (step.legal !== undefined) {
-      expect(getLegalActions(state)?.actions, where).toEqual(step.legal);
+    const where = `${s.id} step ${i}（${step.player} ${describeStep(step)}）`;
+    let action: PlayerAction;
+    if ("action" in step) {
+      if (step.legal !== undefined) {
+        expect(getLegalActions(state)?.actions, where).toEqual(step.legal);
+      }
+      action = step.action;
+    } else {
+      // Ruling: 裁定を確かめ、Canonical Action に決まったときだけ Engine に適用する。
+      const held = pending.get(step.player);
+      if ("resolveOutOfTurn" in step && held === undefined) {
+        throw new Error(`${where}: 保留した Out-of-Turn が無い`);
+      }
+      const ruled =
+        "physical" in step
+          ? rulePhysicalActions(state, step.player, step.physical, config)
+          : resolveOutOfTurn(state, held as PendingOutOfTurn, config);
+      if (!ruled.ok) throw new Error(`${where}: ${ruled.error.message}`);
+      expect(summarizeRuling(ruled.value), where).toEqual(step.ruling);
+      if ("resolveOutOfTurn" in step) pending.delete(step.player);
+      if (ruled.value.kind === "out_of_turn") {
+        pending.set(step.player, ruled.value.pending);
+      }
+      if (ruled.value.kind !== "action") continue;
+      action = ruled.value.action;
     }
-    const result = applyAction(state, step.player, step.action);
-    if (step.reject !== undefined) {
+    const result = applyAction(state, step.player, action);
+    if ("reject" in step && step.reject !== undefined) {
       expect(result.ok, where).toBe(false);
       if (!result.ok) {
         expect(result.error.kind, where).toBe(step.reject.kind);
@@ -1313,4 +1664,19 @@ function runScenario(s: HandScenario): void {
   for (const absent of s.expect.absentEvents ?? []) {
     expect(events.some((e) => e.type === absent)).toBe(false);
   }
+}
+
+function describeStep(step: ScenarioStep): string {
+  if ("action" in step) return step.action.type;
+  if ("physical" in step) {
+    return step.physical.map((a) => a.type).join("+");
+  }
+  return "resolve_out_of_turn";
+}
+
+/** 比べる形にそろえる（out_of_turn の保留の中身は Unit Test で見るので、ここでは種類と理由だけ）。 */
+function summarizeRuling(r: RulingResult): ExpectedRuling {
+  return r.kind === "action"
+    ? { kind: r.kind, action: r.action, notes: r.notes }
+    : { kind: r.kind, notes: r.notes };
 }

@@ -122,13 +122,24 @@ export const OPPONENT_EVAL_SPOTS: readonly EvalSpot[] = [
   },
 ];
 
+/**
+ * 録画（recordings/opponent-eval.json）を取ったときの Rule Profile の ID で Spot を始める。
+ * ruleProfile は KnowledgeState に入って Prompt の引数（録画の指紋）を変えるので、#63 で Preset の ID を
+ * phase4_provisional_v1 に上げた後も、録画を取り直すまではこの ID に固定する。版の差は Hero の物理的な操作の裁定
+ * （Ruling）だけで、CPU の局面・Legal Action は変わらない。手動の Eval で録画を取り直すときは PHASE1_CASH_PRESET に戻す。
+ */
+const RECORDED_TABLE_CONFIG = {
+  ...PHASE1_CASH_PRESET,
+  ruleProfile: "phase1_provisional_v0",
+};
+
 /** Spot を Engine で判断の直前まで進める。手番が想定と違えば例外（Spot の定義の誤り）。 */
 export function buildSpot(spot: EvalSpot): SpotFixture {
   const started = startHand({
     handId: `eval-${spot.id}`,
     seats: SEATS,
     buttonPlayerId: BUTTON,
-    config: PHASE1_CASH_PRESET,
+    config: RECORDED_TABLE_CONFIG,
     deal: { deck: stackedDeck(spot.holes, spot.board) },
   });
   if (!started.ok) throw new Error(`${spot.id}: ${started.error.kind}`);

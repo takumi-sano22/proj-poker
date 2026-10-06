@@ -82,6 +82,27 @@ Profile対象:
 
 一つのProfileを「世界共通の唯一のルール」として扱わないでください。
 
+### 現在のPreset: `phase4_provisional_v1`（OI-008の暫定値。永久仕様ではない）
+
+`packages/engine/src/table-config.ts` の `PHASE1_CASH_PRESET`。#63でRulingの規則（`TableConfig.ruling`）を足したので、IDを `phase1_provisional_v0` から上げました（IDは `HAND_STARTED` の `ruleProfile` に残ります。Eventの項目は増やしていません）。Rulingの規則はすべてTDA（`docs/research/01` §4〜§9）に沿った暫定値です。
+
+| 項目 | 設定値 | 規則 |
+|---|---|---|
+| Odd Chip | `oddChipRule: first_left_of_button` | Buttonの左から時計回りで最初の勝者へ1 Chipずつ（D75） |
+| Short All-in / Reopen | `reopenRule: cumulative_full_raise` | 行動済みのPlayerには、最後に行動した時点からの上乗せの合計が直近のFull Raise幅以上で再開（D79） |
+| Button Movement | `buttonRule: simple_moving` | Bustした席を飛ばし、Dead Buttonは使わない（D80） |
+| Oversized Chip | `ruling.oversizedChip: call_unless_raise_declared` | 相手のBetに対し、宣言なしでCall額を超えるChipを1枚出したらCall。相手のBetが無ければそのChipの額のBet（最小Bet未満なら最小Bet）（D91） |
+| String Bet / Raise | `ruling.stringBet: first_motion_only` | 宣言なしで複数回に分けて出したら、最初の1回の量で裁定し、2回目以降はHeroへ返す（D91） |
+| Multiple Chip | `ruling.multipleChip: tda_every_chip_and_half_raise` | 宣言なしの複数枚（1回）。相手のBetがあり全部のChipがCallに要る（どの1枚を除いてもCall額に足りない）ならCall。そうでなければ上乗せ（出した後の額−最高額）が直近のFull Raise幅以上で出した額のRaise、50%以上で最小Raiseまで足させる、50%未満でCall（BBのOptionではCheck）。誰もBetしていなければ出した額のBet（最小Bet未満なら最小Bet）。Call額に満たないChipはCall（足させる） |
+| 宣言（Declare） | `ruling.declaration: declaration_first_nearest_legal` | 宣言とChipは先にした方がActionを決める（Chipの後の宣言は採らない）。宣言が2つ以上なら最初の宣言が拘束する。額は合法な最も近いActionに寄せる: 最小額未満→最小Bet / 最小Raise、Stack以上→All-in、Raiseできない局面（再開していない・相手が全員All-in）のRaise / All-in→Call、BetとRaiseの言い違いは同じ意図、Call額0のCall→Check。相手のBetがあるときのCheckは採らず、Actionを決めないでHeroに選び直させる。額なしのBet / Raiseは最初の1回のChip（最初の1回がちょうどCall額なら続く1回まで）の額で決め、最小額に満たなければ最小額まで足させる。出したChipは、このStreetですでにHeroの前にある額（Blind・前のBet）に足す |
+| Out of Turn | `ruling.outOfTurn: bind_unless_action_changes` | 手番を正しいPlayerへ戻して警告し、OOTの操作を保留する。Heroの手番が来た時点で、同じStreetの最高額がOOTの時点から変わっていなければ（間のPlayerがCheck・Call・Foldだけ）保留した操作を拘束として裁定し、変わっていれば（Bet・Raise・最高額を上げるAll-in、またはStreetが進んだ）撤回してHeroに選び直させる（D91） |
+
+TDAとの差（暫定値として扱う。確定はOI-008の人間判断で行う）:
+
+- TDAは「OOTのFoldは状況が変わっても拘束」とするが、D91は「変われば撤回できる」なので、この版ではFoldも撤回できる。
+- TDAのUndercall（Call額に満たないChip）は、Heads-Upと最初のBetへのCallでは全額のCall、それ以外のMultiwayはFloorの判断。この版は一律に全額のCallとする。
+- TDAの「前のBetのChipが卓に残っているときのOversized Chip」の細則は持たず、出したChipは前のBetに足す一律の扱いにする。
+
 ## 4. Physical Action と Canonical Action
 
 UI操作とゲーム上の正式Actionを分離します。
@@ -103,6 +124,12 @@ type CanonicalAction =
   | Raise
   | AllIn;
 ```
+
+実装（#63。`packages/engine/src/ruling.ts`）: Ruling Engineは純粋関数で、`rulePhysicalActions(state, playerId, actions, config)` がHeroの1回の手番の操作（した順の `PhysicalAction` の列）を、Rule Profileの規則（§3の表）で裁定します。結果は `action`（Canonical Action。必ずLegal Actionのどれかで、そのまま `applyAction` に渡せる。D40）・`out_of_turn`（手番でない操作を保留した）・`no_action`（相手のBetがあるときのCheckの宣言・撤回したOOT。Heroが選び直す）のどれかと、裁定の理由（`RulingCode`。Dealer FeedbackのRULINGの材料。§8）です。保留したOOTは、Heroの手番で `resolveOutOfTurn(state, pending, config)` が拘束か撤回かを決めます。物理的な誤操作をするのはHeroだけで、CPUはCanonical Actionを直接出します（D91）。
+
+- 実装した `PhysicalAction` は `chip_push`（Chipの最初の動作）・`chip_add`（2回目以降の動作）・`declare`（宣言。bet / raiseの額はこのStreetの累計〔to額〕で、省略可）の3種です。Chipは額面（Table Configの `chipDenominations`。D92）の列で持ち、Oversized Chip・Multiple Chipの判定に使います。
+- `OutOfTurnAttempt` は操作の種類として持たず、手番でないときの操作をRuling Engineが判定します。`CardMuckAttempt` / `ShowCards` はPhase 4のRuling（D91の3種）の範囲外で、まだ持ちません。
+- 裁定はStateもEventも作りません。宣言・物理的な操作・裁定をEvent Logに残すのは#64です（D90）。
 
 例:
 
