@@ -18,6 +18,17 @@ export interface AppendContext {
   readonly sessionId?: string;
 }
 
+/** Hand の一覧の 1 行（Replay の Hand 一覧。#68）。Event の中身は持たない（中身は read で読む）。 */
+export interface StoredHandSummary {
+  readonly handId: string;
+  /** ISO 8601（UTC）。Hand の最初の Event を記録した時刻。 */
+  readonly startedAt: string;
+  /**
+   * HAND_FINISHED を記録した時刻。HAND_FINISHED がまだ無い Hand（進行中・AI 障害の後の Session 終了で打ち切った Hand。D88）は null。
+   */
+  readonly finishedAt: string | null;
+}
+
 export interface EventStore {
   /**
    * Hand の Event Log の末尾へ追記する。更新・削除の API は持たない（append-only）。
@@ -32,6 +43,8 @@ export interface EventStore {
   ): readonly StoredHandEvent[];
   /** Hand の Event を seq 順で返す。未知の Hand なら空配列。 */
   read(handId: string): readonly StoredHandEvent[];
+  /** Event のある Hand を、開始の新しい順に最大 limit 件返す（HAND_FINISHED の無い Hand も含む）。 */
+  listHands(limit: number): readonly StoredHandSummary[];
 }
 
 export class EventSeqConflictError extends Error {
@@ -75,6 +88,27 @@ export class InMemoryEventStore implements EventStore {
     // 呼び出し側が配列を書き換えても Log が変わらないよう、写しを返す。
     return [...(this.logs.get(handId) ?? [])];
   }
+
+  listHands(limit: number): readonly StoredHandSummary[] {
+    // Map は追記した順（Hand を始めた順）を保つので、逆順が開始の新しい順。
+    return [...this.logs.entries()]
+      .reverse()
+      .slice(0, limit)
+      .map(([handId, log]) => summarizeLog(handId, log));
+  }
+}
+
+/** メモリにある Log（1 件以上）から一覧の 1 行を作る。 */
+export function summarizeLog(
+  handId: string,
+  log: readonly StoredHandEvent[],
+): StoredHandSummary {
+  const last = log.at(-1);
+  return {
+    handId,
+    startedAt: log[0]?.recordedAt ?? "",
+    finishedAt: last?.event.type === "HAND_FINISHED" ? last.recordedAt : null,
+  };
 }
 
 /**

@@ -13,3 +13,8 @@ export const CHIP_DENOMINATIONS = PHASE1_CASH_PRESET.chipDenominations;
  * 普段の待ちでは出ず、p90 を超えて待つときに出る値にした。障害として止める上限（サーバーの OPPONENT_TIMEOUT_MS。30 秒）より短い。
  */
 export const AI_DELAY_NOTICE_MS = 10_000;
+
+/**
+ * Replay の Play で次の step へ進む間隔（ミリ秒。#68）。暫定値: 1 手ずつ目で追え、1 Hand（30〜60 step）が 1 分弱で終わる値。
+ */
+export const REPLAY_STEP_MS = 900;

@@ -2,12 +2,16 @@
 // （同じ Warning として混ぜない）。色だけに頼らず、分類の名前を必ず添える。
 // Hero 欄は卓の下側の席を覆わないよう低く保つ必要があるので、Game State に影響する RULING だけを常に出し、
 // ETIQUETTE と COACHING は分類の名前の button で開く（進行ログには 3 分類とも全文を残す）。
+import type { HeroView } from "@proj-poker/engine";
 import { useId, useState, type ReactNode } from "react";
 import {
   FEEDBACK_CATEGORY_LABELS,
+  dealerFeedbackAt,
   type DealerFeedbackItem,
   type FeedbackCategory,
 } from "../lib/dealer-feedback.js";
+import { STREET_TERMS, termLabel } from "../lib/format.js";
+import { latestHeroRulingIndex } from "../lib/view-model.js";
 import { Term } from "./Vocabulary.js";
 
 interface DealerFeedbackProps {
@@ -107,5 +111,28 @@ export function FeedbackTag({
     <span className={`feedback-tag feedback-tag--${category}`}>
       {FEEDBACK_CATEGORY_LABELS[category]}
     </span>
+  );
+}
+
+/**
+ * 直近の Hero への裁定の Dealer Feedback（RULING / ETIQUETTE / COACHING。docs/06 §6）。卓の Hero 欄と Replay で使う。
+ * 前の Street の裁定（Hero の Call で Street が閉じた直後など）には、どの Street の裁定かを添える。
+ */
+export function HeroFeedback({ view }: { readonly view: HeroView }) {
+  const index = latestHeroRulingIndex(view);
+  if (index === null) return null;
+  const ruling = view.log[index];
+  if (ruling?.type !== "DEALER_RULING") return null;
+  const heading =
+    ruling.street === view.street
+      ? undefined
+      : `${termLabel(STREET_TERMS[ruling.street])}の裁定`;
+  return (
+    <DealerFeedback
+      // 裁定が変わったら、開いていた補足（作法・学習）を閉じる
+      key={ruling.seq}
+      items={dealerFeedbackAt(view.log, index, view.viewerId)}
+      heading={heading}
+    />
   );
 }

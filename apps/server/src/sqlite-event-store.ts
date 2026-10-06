@@ -16,10 +16,12 @@ import {
   assertAppendable,
   deepFreeze,
   EventSeqConflictError,
+  summarizeLog,
   toStoredEvents,
   type AppendContext,
   type EventStore,
   type StoredHandEvent,
+  type StoredHandSummary,
 } from "./event-store.js";
 
 /**
@@ -47,6 +49,12 @@ export interface SqliteEventStoreOptions {
   readonly sessionId?: string;
 }
 
+interface HandRow {
+  hand_id: string;
+  started_at: string;
+  finished_at: string;
+}
+
 interface EventRow {
   event_id: string;
   hand_id: string;
@@ -71,6 +79,7 @@ export class SqliteEventStore implements EventStore {
   private readonly insertEvent: StatementSync;
   private readonly selectEvents: StatementSync;
   private readonly selectHand: StatementSync;
+  private readonly selectRecentHands: StatementSync;
 
   /** DB ファイル（":memory:" も可）を開いてマイグレーションを当て、Store を作る。close で DB も閉じる。 */
   static open(
@@ -102,6 +111,10 @@ export class SqliteEventStore implements EventStore {
       "SELECT event_id, hand_id, schema_version, recorded_at, payload FROM events WHERE hand_id = ? ORDER BY seq",
     );
     this.selectHand = db.prepare("SELECT 1 FROM hands WHERE hand_id = ?");
+    // 同じ時刻に始まった Hand は、保存した順（rowid）の新しい方を先にする。
+    this.selectRecentHands = db.prepare(
+      "SELECT hand_id, started_at, finished_at FROM hands ORDER BY started_at DESC, rowid DESC LIMIT ?",
+    );
   }
 
   append(
@@ -143,6 +156,27 @@ export class SqliteEventStore implements EventStore {
     // 呼び出し側が配列を書き換えても Log が変わらないよう、写しを返す。
     if (pending !== undefined) return [...pending.log];
     return this.readPersisted(handId);
+  }
+
+  /**
+   * 保存済みの Hand（HAND_FINISHED まで済んだ Hand）と、メモリにだけある Hand（進行中・AI 障害の後に打ち切った Hand。D62・D88）を
+   * 合わせて、開始の新しい順に最大 limit 件返す。メモリの Hand は再起動で消えるので、一覧からも消える。
+   */
+  listHands(limit: number): readonly StoredHandSummary[] {
+    const persisted = (
+      this.selectRecentHands.all(limit) as unknown as HandRow[]
+    ).map((row): StoredHandSummary => ({
+      handId: row.hand_id,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+    }));
+    // メモリの Hand は追記した順なので、逆順が開始の新しい順。sort は安定なので同じ時刻ならこの順を保つ。
+    const pending = [...this.pending.entries()]
+      .reverse()
+      .map(([handId, p]) => summarizeLog(handId, p.log));
+    return [...pending, ...persisted]
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+      .slice(0, limit);
   }
 
   /** DB を閉じる。以降は使えない。途中の Hand（メモリ側）は保存されずに消える（D62）。 */

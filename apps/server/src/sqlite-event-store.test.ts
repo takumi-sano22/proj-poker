@@ -229,6 +229,42 @@ describe("SqliteEventStore（保存の経路）", () => {
     expect(reopen().read("h1")).toEqual([]);
   });
 
+  it("listHands は保存済みの Hand とメモリの途中の Hand を開始の新しい順に返し、開き直すと途中の Hand は一覧から消える", () => {
+    let minute = 0;
+    const store = open({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    const h1 = finishedHandEvents("h1");
+    store.append("h1", h1.started);
+    store.append("h1", h1.rest);
+    const h2 = finishedHandEvents("h2");
+    store.append("h2", h2.started);
+    const h3 = finishedHandEvents("h3");
+    store.append("h3", h3.started);
+    store.append("h3", h3.rest);
+
+    // h2 は途中（メモリだけ）で、保存済みの h1 と h3 の間に始まった。
+    expect(store.listHands(10)).toEqual([
+      {
+        handId: "h3",
+        startedAt: "2026-10-05T00:03:00.000Z",
+        finishedAt: "2026-10-05T00:04:00.000Z",
+      },
+      { handId: "h2", startedAt: "2026-10-05T00:02:00.000Z", finishedAt: null },
+      {
+        handId: "h1",
+        startedAt: "2026-10-05T00:00:00.000Z",
+        finishedAt: "2026-10-05T00:01:00.000Z",
+      },
+    ]);
+    expect(store.listHands(2).map((h) => h.handId)).toEqual(["h3", "h2"]);
+    expect(
+      reopen()
+        .listHands(10)
+        .map((h) => h.handId),
+    ).toEqual(["h3", "h1"]);
+  });
+
   it("開き直した後も、保存済み（終了済み）の Hand へは追記できない", () => {
     const { started, rest } = finishedHandEvents("h1");
     open().append("h1", [...started, ...rest]);
