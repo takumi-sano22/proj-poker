@@ -202,6 +202,8 @@ Replay:
 
 実装（#68・D93）: 見出しの「Replay を見る」で Hand の一覧（開始の新しい順。開始時刻・Hero の札・Hero の収支〔実額 + BB 補助〕、途中で止まった Hand は「未完了」、AI の障害で Session を終えて打ち切った Hand は「打ち切り」〔#77〕）を開き、選んだ Hand を Hero の視点で一手ずつ再生します（`components/ReplayScreen.tsx`）。操作は「前へ（Previous）」「再生（Play）」「一時停止（Pause）」「次へ（Next）」で、再生は最後の step で止まり、最後の step で「再生」を押すと最初から再生し直します。卓・進行ログ・Chip の構成・Dealer Feedback・用語の詳細は卓の画面と同じ部品で出し、他者の札は Showdown で公開された step から表に向きます。Hero の宣言・Chip の操作・裁定もそれぞれ 1 step です（Action に決まった裁定はその Action と同じ step）。狭い画面でも 3 つの操作 Button が 1 行に並ぶよう、ラベルは日本語と英語の 2 段にしています。Jump to Important Spot と Learning-only Full Reveal は Phase 5 の Review で扱います（D93）。
 
+実装（#84・D04・D05・D93）: Hand が終わったら、卓の中央の結果と Replay の「この Hand の Review」で Hand Review（`components/ReviewScreen.tsx`）を開けます。初期表示は Hero の札と、Important Spot（判断時点の情報だけで選んだ判断。理由は「大きい Pot」「All-in」「River の大きい Bet」「Dealer の裁定」）を先に、ほかの判断を後に並べた一覧で、行ごとに段階評価（または「作成中」「Review 未作成」）を出します（要点先行）。一覧にも Pass A の画面にも Hand の結果・相手の実際の札は出しません。判断を選ぶと「判断時点の Review」と「Hand 後の答え合わせ」をタブで切り替え、答え合わせは別の色の面（`--color-reveal`）で出し、段階評価を付けません（Full Hand Reveal Entry）。判断時点の Review は段階評価（6 段階）・確度・要点・結論が変わる条件・理論・Exploit・前提を先に出し、Spot Detail の根拠（判断時点の卓・Action の流れ・Math・選択肢の比較・Range・Solver・知識〔KB〕）は畳んで後ろに置きます。Solver は Supported のときだけ結果（Heads-Up の解で、前提つき・唯一の正解ではない）を出し、Multiway・Flop・未導入等では使わなかった理由と代わりの根拠（Math・Range・KB）を出します。Review は「作る」「作り直す」「詳しく作る」（時間がかかる）で新しい Version として残り、Version を選んで見られます（D39）。Follow-up は Pass と Version ごとの入力欄です。当時の User Read（Review Interview・docs/05 §12）と Good Decisions / Improvement Opportunities のまとめはまだありません。Replay には Jump to Important Spot（Important Spot の判断の直前の step へ移るボタン）を足し、判断の直前の step では「この判断の Review を見る」でその Review を開けます。Review の生成の待ちは「Review を作っています…」とだけ出し、長く待つときだけ「時間がかかっています」を補足します（§11。モデル名・API は出さない）。
+
 ## 11. CPU待ち時間
 
 通常:
