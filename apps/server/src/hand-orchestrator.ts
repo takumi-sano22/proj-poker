@@ -612,6 +612,7 @@ export class HandOrchestrator {
   /**
    * CPU に 1 回判断を求める。応答時間の上限を超えた・例外を投げたら「障害」として返す（不正な出力とは区別する）。
    * 上限を超えた後に届いた判断は捨てる（ここで決まった結果だけが使われる）。
+   * 判断を待たなくなったら（上限の超過・アプリ終了）signal を abort し、CPU 側の処理（Claude の子プロセス等）を止めさせる。
    */
   private ask(
     rt: HandRuntime,
@@ -619,6 +620,7 @@ export class HandOrchestrator {
     input: OpponentInput,
   ): Promise<AskOutcome> {
     const limit = this.options.opponentTimeoutMs;
+    const controller = new AbortController();
     return new Promise((resolve) => {
       let settled = false;
       const finish = (outcome: AskOutcome) => {
@@ -626,6 +628,13 @@ export class HandOrchestrator {
         settled = true;
         clearTimeout(timer);
         rt.cancelWait = null;
+        // 判断が返る前に打ち切った（timeout・cancelled）ときだけ中断を伝える。返った後・例外の後は何もしない。
+        if (
+          outcome.kind === "cancelled" ||
+          (outcome.kind === "outage" && outcome.cause === "timeout")
+        ) {
+          controller.abort();
+        }
         resolve(outcome);
       };
       const timer = setTimeout(
@@ -642,7 +651,7 @@ export class HandOrchestrator {
         finish({ kind: "outage", cause: "error", message: String(error) });
       try {
         agent
-          .decide(input)
+          .decide(input, controller.signal)
           .then((output) => finish({ kind: "output", output }), toError);
       } catch (error) {
         // Promise を返す前に投げた場合も、Promise の reject と同じ障害として扱う。

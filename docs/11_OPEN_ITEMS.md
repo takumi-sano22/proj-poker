@@ -19,7 +19,7 @@ Role-based Configで実装します。
 
 暫定値は D85（確定ではない）: `opponent_fast` は `claude-haiku-4-5`。
 
-Latency Policy の暫定値（#47。確定ではない）: CPU の 1 回の判断を待つ上限は 15000ms（`apps/server` の Config `OPPONENT_TIMEOUT_MS`）。
+Latency Policy の暫定値（#47 で 15000ms、#50 で見直し。確定ではない）: CPU の 1 回の判断を待つ上限は 30000ms（`apps/server` の Config `OPPONENT_TIMEOUT_MS`）。#50 の実測（Agent SDK・OAuth・`claude-haiku-4-5`・3 人卓・2026-10-06）は 63 回で中央値 約 7.2 秒・p90 約 8.6 秒・最大 15.5 秒（子プロセスの起動〜初期化は約 0.7 秒で、残りは API の応答）。15000ms では 63 回中 1 回が超え、障害で Hand が止まるため、最大の約 2 倍に上げた。詳細は `docs/taskLog/issue-50-agent-sdk-adapter.md`。
 
 ## OI-002 — Primary Solver
 

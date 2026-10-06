@@ -544,16 +544,18 @@ describe("HandOrchestrator", () => {
     const valid = (input: OpponentInput): Promise<unknown> =>
       Promise.resolve(toOutput(new RuleBot(1).choose(input)));
 
-    /** Fake Model: 呼ばれるたびに respond の結果を返し、受け取った入力を記録する。 */
+    /** Fake Model: 呼ばれるたびに respond の結果を返し、受け取った入力と signal を記録する。 */
     function fakeModel(respond: (input: OpponentInput) => Promise<unknown>) {
       const inputs: OpponentInput[] = [];
+      const signals: (AbortSignal | undefined)[] = [];
       const factory: OpponentFactory = () => ({
-        decide: (input) => {
+        decide: (input, signal) => {
           inputs.push(input);
+          signals.push(signal);
           return respond(input);
         },
       });
-      return { factory, inputs };
+      return { factory, inputs, signals };
     }
 
     it("不正 → 正常: Correction（理由）付きで 1 回だけ再要求し、正常な出力を使う（Fallback しない）", async () => {
@@ -858,6 +860,50 @@ describe("HandOrchestrator", () => {
       expect(fallbacksIn(events(handId))).toEqual([]);
     });
 
+    it("遅延: 上限を超えたら decide に渡した signal を abort する（Claude の子プロセス等を止めさせる）", async () => {
+      vi.useFakeTimers();
+      const signals: AbortSignal[] = [];
+      const factory: OpponentFactory = () => ({
+        decide: (input, signal) => {
+          if (signal !== undefined) signals.push(signal);
+          return new Promise((resolve) => {
+            setTimeout(() => resolve(valid(input)), 5000);
+          });
+        },
+      });
+      const { orchestrator } = setup({
+        createOpponent: factory,
+        opponentTimeoutMs: 1000,
+      });
+      const pending = orchestrator.startHand(null);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(signals).toHaveLength(1);
+      expect(signals[0]?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await pending;
+      expect(signals[0]?.aborted).toBe(true);
+    });
+
+    it("判断が返った・例外で止まった後は signal を abort しない", async () => {
+      const signals: AbortSignal[] = [];
+      const factory: OpponentFactory = () => ({
+        decide: (input, signal) => {
+          if (signal !== undefined) signals.push(signal);
+          return signals.length === 1
+            ? valid(input)
+            : Promise.reject(new Error("障害"));
+        },
+      });
+      const { orchestrator } = setup({ createOpponent: factory });
+      const started = await orchestrator.startHand(null);
+      if (!started.ok) throw new Error(started.error.message);
+      expect(signals).toHaveLength(2);
+      expect(signals.map((s) => s.aborted)).toEqual([false, false]);
+      expect(orchestrator.outageOf(started.value.handId)).toMatchObject({
+        kind: "error",
+      });
+    });
+
     it("遅延: 上限以内に届いた判断はそのまま使う", async () => {
       vi.useFakeTimers();
       const { factory } = fakeModel(
@@ -883,7 +929,7 @@ describe("HandOrchestrator", () => {
 
     it("判断を待っている間に close したら、後から届いた判断を適用しない", async () => {
       vi.useFakeTimers();
-      const { factory } = fakeModel(
+      const { factory, signals } = fakeModel(
         (input) =>
           new Promise((resolve) => {
             setTimeout(() => resolve(valid(input)), 500);
@@ -896,9 +942,12 @@ describe("HandOrchestrator", () => {
       const pending = orchestrator.startHand(null);
       await vi.advanceTimersByTimeAsync(100);
       const before = events("hand-1").length;
+      expect(signals[0]?.aborted).toBe(false);
       orchestrator.close();
       const started = await pending;
       expect(started.ok).toBe(true);
+      // 待ちを打ち切ったので、CPU 側の処理にも中断を伝える。
+      expect(signals[0]?.aborted).toBe(true);
       await vi.advanceTimersByTimeAsync(10_000);
       expect(events("hand-1")).toHaveLength(before);
       expect(orchestrator.outageOf("hand-1")).toBeNull();

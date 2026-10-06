@@ -7,9 +7,11 @@ import {
   DEFAULT_DB_PATH,
   DEFAULT_OPPONENT_TIMEOUT_MS,
   DEFAULT_TABLE_SIZE,
+  MODEL_ROLES,
   PHASE1_TABLE_SETUP,
   buildTableSetup,
   parseBotDelayMs,
+  parseOpponentProvider,
   parseOpponentTimeoutMs,
   parseTableSize,
   resolveDbPath,
@@ -96,5 +98,25 @@ describe("resolveDbPath", () => {
       encoding: "utf8",
     });
     expect(out.trim()).toBe(DEFAULT_DB_PATH);
+  });
+});
+
+describe("parseOpponentProvider", () => {
+  it("未設定・空なら RuleBot、rulebot / claude はそのまま、知らない値は起動時の誤りにする", () => {
+    for (const raw of [undefined, "", " "]) {
+      expect(parseOpponentProvider(raw)).toBe("rulebot");
+    }
+    expect(parseOpponentProvider("rulebot")).toBe("rulebot");
+    expect(parseOpponentProvider("claude")).toBe("claude");
+    expect(parseOpponentProvider(" claude ")).toBe("claude");
+    for (const raw of ["Claude", "anthropic", "true"]) {
+      expect(() => parseOpponentProvider(raw)).toThrow(RangeError);
+    }
+  });
+});
+
+describe("MODEL_ROLES", () => {
+  it("opponent_fast は暫定値（D85・OI-001）の claude-haiku-4-5", () => {
+    expect(MODEL_ROLES.opponent_fast).toBe("claude-haiku-4-5");
   });
 });
