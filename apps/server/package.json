@@ -12,7 +12,8 @@
     "test": "vitest run",
     "smoke:claude": "tsx --conditions=@proj-poker/source src/testing/claude-smoke.ts",
     "smoke:solver": "tsx --conditions=@proj-poker/source src/testing/solver-smoke.ts",
-    "eval:opponent": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/run.ts"
+    "eval:opponent": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/run.ts",
+    "eval:review": "tsx --conditions=@proj-poker/source src/testing/review-eval/run.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.289",

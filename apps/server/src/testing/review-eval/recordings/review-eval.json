@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-06T12:58:00.025Z",
+  "model": "claude-sonnet-5-5",
+  "sdkVersion": "0.3.289",
+  "kbVersion": "1.0.0",
+  "cases": [
+    "btn_vs_utg/d0",
+    "btn_vs_utg/d3",
+    "sb_vs_btn/d2",
+    "multiway_flop/d1"
+  ],
+  "repeats": 1,
+  "records": [
+    {
+      "caseId": "btn_vs_utg/d0",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "5538a7b887d81323",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "BTN で AJo、UTG の 6（3BB）Open に Call する場面。Pot 9、Call 6 で Pot Odds は 0.4 とされているが、これは SB・BB の Blind が未 Action のまま残る Pot をそのまま使った数字。Equity は 0.270（win 0.248、tie 0.047、Monte Carlo 20000 回）。この Equity は SB・BB を random（各 1225 combo）、UTG を 55+, A9s+, A5s-A4s, KTs+, QTs+, JTs, T9s, 98s, AJo+, KQo（140 combo）と仮定した 4 人の Pot での値。簡易 EV では Call が -1.945 で、Fold の 0 を下回る。一方で簡易 EV は Showdown まで進む前提で、Position の利点や Implied Odds、Equity Realization を含まない。AJo は UTG の Range に支配されやすく（AJo+、KQo、A9s+ など）、Call だと SB・BB の Squeeze を受ける可能性もある。AJo は UTG に対する Cold Call としては境界線上の Hand で、Fold でも許容できる。Call は BTN の Position を活かせる反面、Rake を考えるとさらに厳しい方向に傾く。Call が明確な誤りとまでは言えず、僅差からやや Fold 寄りの判断と見る。",
+            "theoryBasis": "general_theory",
+            "theory": "Preflop は Solver の対象外で、Solver の結論は示せない。一般論として、UTG の Open に対する BTN の AJo は支配される Hand が多く、Call の Range に入れるか Fold にするかは境界線上になりやすい。3-bet する場合は、Fold してほしい相手が UTG だけでなく後ろの SB・BB にも及ぶ Multiway で、Bluff が成功しにくくなる（HEURISTIC）。簡易 EV の Raise の数字は、全員が Call する前提で Fold Equity を含まないため、そのまま 3-bet の有利さの根拠にはできない。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "SB・BB は未 Action のため random Range と仮定しており、実際には Fold や強い Hand の 3-bet でこの Equity は変わる。",
+              "UTG の Open Range は Standard Profile の推定で、実際の札ではない。",
+              "簡易 EV は Showdown まで進む前提で、Implied Odds・Rake・Equity Realization を含まない。",
+              "相手の Observation も Solver の結果も無い。",
+              "Multiway の Range は相手ごとに独立と仮定している。"
+            ],
+            "conclusionChangers": [
+              "UTG の Open Range が想定より広ければ、Call の価値は上がる。",
+              "UTG の Range が狭ければ、AJo の支配される度合いが増し、Fold が有力になる。",
+              "SB・BB が Tight で Squeeze もしないなら、Call の実現 Equity は上がる。",
+              "Rake が高ければ、Fold 寄りになる。",
+              "UTG が Open に対して 3-bet に Fold しすぎる Observation があれば、3-bet が有力になる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-btn_vs_utg/d0",
+              "math:review-btn_vs_utg/d0",
+              "range:review-btn_vs_utg/d0",
+              "kb:1.0.0:preflop_three_bet_four_bet@1",
+              "kb:1.0.0:multiway_adjustment@1",
+              "kb:1.0.0:rake_effect@1",
+              "kb:1.0.0:equity_types_and_plausible_range@1"
+            ]
+          },
+          "ms": 14525
+        }
+      ]
+    },
+    {
+      "caseId": "btn_vs_utg/d3",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "627b5c5589407df7",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "River で Pot 55 に対し UTG が 24 を Bet。Hero の Call 額は 24 で、Pot Odds と必要 Equity は約 30.4% です。Hero は Ah Jd でトップペア（J）にキッカー A。Board は Jc 8s 3d 2h Kc で、River の K が UTG の Range に有利に働きました。標準想定（34 Combo）の Equity は 38.2%（勝ち 29.4%、引き分け 17.6%、exact、trials 34）で、必要 Equity を上回ります。簡易 EV は Call が +6.2 Chip（Fold は 0）です。ただし結果は Range の仮定に強く依存します。Tight 想定では Equity 0、Loose 想定では 54.0% です。UTG の Open Range には K を含む Combo が多く、Flop の Bet と River の Bet を通した Range では、Hero が勝つのは Bluff や弱い Made Hand が中心です。標準想定なら Call は妥当ですが、僅差でモデル依存の判断です。Raise は簡易 EV が低く、Fold Equity の根拠も無いため、Call は無難な選択と言えます。",
+            "theoryBasis": "general_theory",
+            "theory": "Solver の結果は無く、一般論のみです。Pot の約 0.44 倍の River Bet に対し、Hero は約 30% の Equity があれば Call できます。UTG が Flop で Bet、Turn で Check、River で Bet という流れなら、Value に加えて一部 Bluff（A-high や外れた Draw など）も含むはずです。Hero は Turn で Check して Pot を抑えており、トップペア A キッカーは Bluff Catch として中間的な強さです。一方、K が River に落ちた分、UTG 側の Nut Advantage が増えた面があります。簡易モデルは Draw を数えず Made Hand の上位だけを残すため、Bluff を過小評価している可能性があります。これは HEURISTIC として扱ってください。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "UTG の Range は標準プロファイル（Preflop 55+, A9s+ など）に、Flop と River の Bet で上位 50% を残す簡易モデルを適用したもの。",
+              "標準想定の Equity 38.2% は 34 Combo の全列挙（exact）で、Draw は Range に数えていない。",
+              "簡易 EV は Rake・Implied Odds・Equity Realization を含まず、GTO / Solver の値ではない。",
+              "相手の Observation は無く、Solver も未導入。"
+            ],
+            "conclusionChangers": [
+              "UTG の Range が Tight 想定のように K を持つ Hand、Set、AK などに絞られるなら、Equity は必要 Equity を下回り、Fold が優勢になる。",
+              "Loose 想定のように Bluff や弱い Hand が多いなら、Call の価値は上がる。",
+              "相手の River Bluff 頻度を示す Observation（Showdown の履歴）が得られれば、評価を調整できる。",
+              "Bet Size がより大きければ必要 Equity が上がり、結論が変わりうる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-btn_vs_utg/d3",
+              "math:review-btn_vs_utg/d3",
+              "range:review-btn_vs_utg/d3",
+              "range:review-btn_vs_utg/d3/standard",
+              "range:review-btn_vs_utg/d3/tight",
+              "range:review-btn_vs_utg/d3/loose",
+              "kb:1.0.0:river_decision@1",
+              "kb:1.0.0:range_nut_positional_advantage@1"
+            ]
+          },
+          "ms": 22598
+        }
+      ]
+    },
+    {
+      "caseId": "sb_vs_btn/d2",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "f75921dae7a90229",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "Turn は Th 7c 2s 6d で、Hero は 9h8h です。8 を使ったストレート（ミドル）が完成していて、強いハンドです。Pot は 14、SPR は約 13.9 と深く、相手は BTN のオープン Range（449 コンボ）です。BTN は Flop でチェックバックしているので、極端に強いハンドは少なめと考えられます。ただ、Evidence の Equity（97.4%）は Draw を数えない簡易 Range に対する値で、過大に出ている可能性があります。Bet 7（Pot の半分）は、相手の弱い Pair や Draw からも Call を取りやすい小さめのサイズで、バリューとして成立します。一方、Pot が 14 に対して 7 は小さく、SPR が深いので、もう少し大きいサイズ（14 など）のほうが取れる額は増えやすいです。簡易 EV でも 14 のほうが高く出ていますが、これは全員が Call する前提の目安です。実際には大きいサイズほど Fold も増えます。BTN が Draw を多く持つ Board なので、Check して Draw に無料のカードを与えるより、Bet のほうが自然です。小さい Bet は妥当ですが、取り逃しの可能性もあり、僅差と見ます。",
+            "theoryBasis": "general_theory",
+            "theory": "Solver の結果はないので、一般論だけを書きます。BTN は Flop でチェックバックしたため、強いハンドが Range から少し減っています。Hero は SB でコールしており、ストレートを持てる 9x・86・65・54 などの組み合わせがあります。この Board では、Hero のストレートは Range の中でも強い部分です。強いハンドを小さいサイズで Bet すると、広い Range から Call を取れます。一方、大きいサイズは強い Call の幅を狭めますが、1 回あたりの額は増えます。SPR が深いので、Turn の Bet を小さくして River でさらに取る、という作戦もあります。どちらが良いかは相手の Call の幅で変わり、1 つのサイズを正解とは言えません。ただし Hero は OOP なので、Check しても BTN に Check で返され、Draw に無料でカードを見せるリスクがあります。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "相手の Range は BTN のオープン Range（449 コンボ、standard プロファイル）で、Flop のチェックバックによる絞り込みはされていない。",
+              "Equity 97.4% は Draw を数えない簡易モデルによる全列挙で、実際はやや低い可能性がある。",
+              "簡易 EV は、Bet に全員が Call する前提で、Fold Equity・Implied Odds・Rake を含まない。",
+              "相手の傾向（Observation）は無く、Solver の結果も無い。"
+            ],
+            "conclusionChangers": [
+              "相手が弱いハンドでも大きい Bet に Call する傾向なら、14 などの大きいサイズのほうが良くなる。",
+              "相手が Flop でチェックバックしたとき、実際にはほぼ強いハンドを持たない Range なら、小さい Bet でも十分で、Check して River に回す選択も出てくる。",
+              "相手の Range が強い（セットやストレートのコンボが多い）なら、Equity は下がり、サイズや頻度を見直す必要がある。",
+              "Board の Draw（Flush Draw など）に対する相手の Call 頻度が高いほど、大きいサイズでの Protection の価値が上がる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-sb_vs_btn/d2",
+              "math:review-sb_vs_btn/d2",
+              "range:review-sb_vs_btn/d2",
+              "kb:1.0.0:bet_sizing_purpose@1",
+              "kb:1.0.0:spr_and_effective_stack@1"
+            ]
+          },
+          "ms": 15423
+        }
+      ]
+    },
+    {
+      "caseId": "multiway_flop/d1",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "838e251821a11504",
+          "output": {
+            "assessment": "reasonable",
+            "confidence": "medium",
+            "practical": "BTN で Qd9s5h に KhQh（トップペア・キッカー K、ハートのバックドアあり）。Pot 29 に対し CO の Bet 10 を Call する価格で、Pot Odds は 0.256（必要 Equity 約 25.6%）。仮定 Range に対する Equity は 0.575（Win 0.546、Tie 0.058）で、必要 Equity を大きく上回る。簡易 EV は Call が 12.44 で、Fold の 0 を上回る。Call は明確に妥当。Hero は BTN で最後に動けるため、Equity も実現しやすい。Raise（20 まで）の簡易 EV は 25.46 と高いが、これは全員が Call する前提で Fold Equity を含まない。Raise がさらに良いかは相手の反応次第で、バリューとして成立しうる。そのため Call が最善とまでは言い切れないが、Call は安全寄りで妥当な選択。SPR は 6.69 で、後続のストリートで Stack が動く余地もある。",
+            "theoryBasis": "general_theory",
+            "theory": "3 人の Pot なので Solver の結果は無い（Solver は HU のみ）。Multiway は HEURISTIC として、Bluff が通りにくく Raise が Value 寄りになりやすい。BB は Check、CO は小さめの Bet で、KQ はトップペアとして Range の上位に入る。Raise でバリューを取り Draw に価格を払わせる選択肢もあるが、Call で Range を広く保ちつつ次のストリートを見る選択も理論的に自然。Range Advantage は仮定 Range 次第（CO は Preflop Aggressor だが、Q ハイの Board は BB の Call Range にも当たる）。これは一般論で、Exact GTO とは言えない。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "CO は標準プロファイルの Open Range から、フロップの Bet で上位 50%（139 コンボ）に絞られる仮定。",
+              "BB は Call Open の Range（199 コンボ）で、フロップは Check のみ（絞り込みなし）の仮定。",
+              "Postflop の絞り込みは Made Hand の強さ上位を残す簡易モデルで、Draw は数えない。",
+              "Equity は Monte Carlo（20000 試行）で Showdown まで進む前提。",
+              "簡易 EV は Implied Odds・Rake・Equity Realization を含まず、GTO / Solver の値ではない。",
+              "相手同士の Range の相関は見ていない。相手の過去の傾向（Observation）と Hero 自身の読みは無い。"
+            ],
+            "conclusionChangers": [
+              "CO の Bet Range が実際にはもっと強く絞られている（Set・Qx の上位キッカー中心）なら、Equity は下がり Call の余裕は縮まる。",
+              "BB が Check-Raise を含む強い Range を持つ場合、Reverse Implied Odds が増える。",
+              "CO が Draw や弱い Hand も多く Bet するなら、Raise でのバリュー取りの価値が上がる。",
+              "ターン以降の大きな Bet に直面すると、トップペア・キッカー K の Reverse Implied Odds が問題になる。",
+              "相手の傾向（Observation）が得られれば調整できる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-multiway_flop/d1",
+              "math:review-multiway_flop/d1",
+              "range:review-multiway_flop/d1",
+              "kb:1.0.0:multiway_adjustment@1",
+              "kb:1.0.0:implied_odds_basics@1",
+              "kb:1.0.0:range_nut_positional_advantage@1"
+            ]
+          },
+          "ms": 24339
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "reviews": 4,
+    "calls": 4,
+    "structuredOutputValidRate": 1,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "insufficientRate": 0,
+    "outages": 0,
+    "hindsightLeaks": 0,
+    "mathGroundingRate": 1,
+    "kbGroundingRate": 1,
+    "exactGtoMentions": 1,
+    "latencyMs": {
+      "min": 14525,
+      "median": 15423,
+      "p90": 24339,
+      "max": 24339
+    },
+    "assessmentCounts": {
+      "btn_vs_utg/d0": {
+        "mixed_marginal": 1
+      },
+      "btn_vs_utg/d3": {
+        "mixed_marginal": 1
+      },
+      "sb_vs_btn/d2": {
+        "mixed_marginal": 1
+      },
+      "multiway_flop/d1": {
+        "reasonable": 1
+      }
+    },
+    "solverStatus": {
+      "btn_vs_utg/d0": "not_applicable",
+      "btn_vs_utg/d3": "unsupported",
+      "sb_vs_btn/d2": "unsupported",
+      "multiway_flop/d1": "unsupported"
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  }
+}
