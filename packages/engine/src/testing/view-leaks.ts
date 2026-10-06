@@ -42,7 +42,10 @@ export function leakedCards(
     .filter((c) => !allowed.has(c));
 }
 
-/** Deck・seed・engine / system Visibility の Event（CPU の判断の経緯を含む）を指す語が JSON に含まれていないか（Card 以外の経路の漏れ）。 */
+/**
+ * Deck・seed・engine / system Visibility の Event（CPU の判断の経緯・Session の運用の記録を含む）・Learning-only Reveal を
+ * 指す語が JSON に含まれていないか（Card 以外の経路の漏れ）。
+ */
 export function hiddenMarkers(view: unknown): string[] {
   const json = JSON.stringify(view);
   return [
@@ -52,12 +55,18 @@ export function hiddenMarkers(view: unknown): string[] {
     '"engine"',
     "AI_ACTION_INVALID",
     "AI_FALLBACK_USED",
+    "SESSION_STARTED",
+    "SESSION_ENDED",
+    "HAND_ABORTED",
+    "EMERGENCY_BOT_ENGAGED",
     '"system"',
+    "learning_only",
   ].filter((k) => json.includes(k));
 }
 
 /**
- * viewer に見えない Event（engine の Deck・他者宛ての Hole Cards・system の CPU の判断の経緯）の中身だけを別の値に差し替える。
+ * viewer に見えない Event（engine の Deck・他者宛ての Hole Cards・system の CPU の判断の経緯と Session の運用の記録）の中身だけを
+ * 別の値に差し替える。
  * 見えない Event の中身が出力に届く経路が無ければ、差し替える前と同じ結果になる。
  */
 export function tamperHiddenEvents(
@@ -74,6 +83,11 @@ export function tamperHiddenEvents(
       case "AI_ACTION_INVALID":
       case "AI_FALLBACK_USED":
         return { ...e, reason: `${e.reason}（差し替え）` };
+      case "SESSION_STARTED":
+      case "SESSION_ENDED":
+        return { ...e, sessionId: `${e.sessionId}-tampered` };
+      case "EMERGENCY_BOT_ENGAGED":
+        return { ...e, cause: e.cause === "timeout" ? "error" : "timeout" };
       default:
         return e;
     }

@@ -2,6 +2,7 @@
 // 一覧と再生のどの応答にも Hero に見えない情報（Showdown で公開されていない他者の札・Deck・seed・system の記録・
 // CPU の Persona）が入らないこと、HAND_FINISHED の無い Hand（未完了・打ち切り。D95）でも壊れないことを確かめる。
 import {
+  heroDecisions,
   projectHeroView,
   visibleEvents,
   type HandEvent,
@@ -180,6 +181,27 @@ function expectStepsArePrefixes(hand: ReplayHand, log: readonly HandEvent[]) {
     ...projectHeroView(log, HERO),
     legalActions: null,
   });
+  expectSpotsAtDecisionPoints(hand, log);
+}
+
+/**
+ * Jump to Important Spot の飛び先（#84・#78）: 各 Important Spot の step は、その判断の直前（Hero に手番が来た時点）の卓で、
+ * 判断した Action はまだ入っていない。
+ */
+function expectSpotsAtDecisionPoints(
+  hand: ReplayHand,
+  log: readonly HandEvent[],
+) {
+  const decisions = heroDecisions(log, HERO);
+  for (const spot of hand.importantSpots) {
+    const decision = decisions[spot.decisionIndex];
+    const step = hand.steps[spot.stepIndex];
+    expect(spot.reasons.length).toBeGreaterThan(0);
+    expect(step?.actorId).toBe(HERO);
+    expect(lastSeq(step as HeroView)).toBe(decision?.decisionPointSeq);
+    expect(step?.log.some((e) => e.seq === decision?.actionSeq)).toBe(false);
+    expect(spot.street).toBe(decision?.street);
+  }
 }
 
 describe("Replay API（完了した Hand）", () => {
@@ -271,6 +293,10 @@ describe("Replay API（完了した Hand）", () => {
     const log = events(started.handId);
     const hand = await getHand(app, started.handId);
     expectStepsArePrefixes(hand, log);
+    // Bet に直面した Check の宣言（裁定 no_action）を含む判断は、裁定の入った Important Spot として飛べる。
+    expect(hand.importantSpots.some((s) => s.reasons.includes("ruling"))).toBe(
+      true,
+    );
     const lastTypes = hand.steps.map((s) => s.log.at(-1)?.type);
     expect(lastTypes).toContain("PLAYER_DECLARED");
     expect(lastTypes).toContain("PHYSICAL_CHIP_ACTION");

@@ -123,3 +123,25 @@ export type {
   SeatView,
   TableView,
 } from "./projection.js";
+
+export {
+  DEFAULT_IMPORTANT_SPOT_RULES,
+  extractImportantSpots,
+  heroDecisions,
+  heroInformationSets,
+  projectHandSummary,
+} from "./hand-summary.js";
+export type {
+  HandOutcome,
+  HandSummary,
+  HeroDecision,
+  HeroInformationSet,
+  ImportantSpot,
+  ImportantSpotReason,
+  ImportantSpotRules,
+  PotResult,
+  ShowdownRecord,
+} from "./hand-summary.js";
+
+export { projectLearningReveal } from "./learning-reveal.js";
+export type { LearningReveal, RevealedHoleCards } from "./learning-reveal.js";
