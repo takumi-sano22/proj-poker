@@ -18,7 +18,7 @@ Phase 5 の子 Issue。#82（Pass A）・#83（Pass B・Follow-up）の API を 
   - `replay.ts`: `decisions`（`heroDecisions` のすべての判断を、Important Spot と同じ写し方で判断時点の step へ写したもの。Hero 自身の Action だけ）を足した。写し方は `decisionStepIndex` に共通化した。
   - `review-service.ts`・`routes/reviews.ts`: `GET .../versions/:version`（Pass A）と `GET .../reveal/versions/:version`（Pass B）。無い Version は 404 `review_not_found`。
 - **web**
-  - 画面の状態（`App.tsx`）は `table` / `replay`（開く Hand と step）/ `review`（Hand と最初に開く判断）。卓の中央の結果と Replay から Review、Review から Replay の判断時点の step へ移れる。
+  - 画面の状態（`App.tsx`）は `table` / `replay`（開く Hand と step）/ `review`（Hand と最初に開く判断）。Hand の終了後の Hero の欄と Replay から Review、Review から Replay の判断時点の step へ移れる。
   - `hooks/usePolled.ts`: GET の URL ごとに状態を読み、生成の待ちの間だけ読み直す。要求ごとに番号を振り最後の要求の応答だけを採る（LC-041）。URL が変わったら前の値は見せない。POST の応答も同じ状態に入れ、POST が失敗したら読み直して今の状態へ戻す。
   - `hooks/usePassReview.ts`: Pass ごとの状態・選んだ Version・生成の要求。最新以外の Version を選んだときだけその Version を読む。
   - Pass A の画面に Hand 後の情報を出さない: Pass A のパネルは Pass A の Record（判断時点の Evidence）だけを描き、Pass B はタブを開いたときだけ読む。一覧にも Hand の結果を出さない。
@@ -57,7 +57,7 @@ Phase 5 の子 Issue。#82（Pass A）・#83（Pass B・Follow-up）の API を 
   - 「Replay でこの場面を見る」→ 22 / 42（Jump のボタンが押された状態）。
   - Solver が Supported の表示は、応答を差し替えて確認した（「Heads-Up（2 人）の場面を Solver で解いた結果です。…唯一の正解ではありません。」と頻度のバー・Hero の札の頻度）。
   - 生成の失敗（応答を差し替えて `usage_limit`）は「AI の利用枠の上限に達したため、Review を作れませんでした。枠が戻ってから、もう一度作ってください。」と「Review を作る」「詳しく作る」。
-  - 卓で Hand を終えると、卓の中央の結果に「この Hand の Review」が出て、押すと Hand Review が開いた。
+  - 卓で Hand を終えると「この Hand の Review」が出て、押すと Hand Review が開いた。最初の版は卓の中央の結果の欄に置いたが、375px では結果の欄が Hero の席と重なってボタンを押せなかった（Playwright のクリックが席の要素に遮られた）。→ 画面下に固定した Hero の欄（「Hand が終了しました。」の横）へ移し、1280px と 375px で押せることを確かめた。なお、375px で結果の欄（獲得額の一覧と「次の Hand へ」）が席と重なるのは、この変更の前からある見た目で、ここでは直していない。
   - 各画面で横スクロール 0（`scrollWidth − innerWidth = 0`）。ページのエラー・コンソールのエラーは無し。
   - 375px の最初の版では、Jump のボタンと Review のボタンが折り返して Hero 欄（画面下に固定）が高くなり、卓をほぼ隠した。→ 狭い画面では 1 行に並べ、溢れた分はその行の中だけで横に送るようにして直した。
   - dev サーバーは確認後に停止した（3001 / 5173 の LISTEN が無いことを `ss -ltnp` で確認）。
@@ -67,3 +67,4 @@ Phase 5 の子 Issue。#82（Pass A）・#83（Pass B・Follow-up）の API を 
 - 当時の User Read（Review Interview・docs/05 §12）と、Good Decisions / Improvement Opportunities のまとめ（docs/06 §10 の初期表示）はまだ無い。
 - 実際の Claude（review_standard / review_deep）での画面の通しはしていない（Fake で確認）。review_deep の Latency は未測定（#82 の残課題のまま）。
 - `REVIEW_POLL_MS`（1500ms）・`REVIEW_DELAY_NOTICE_MS`（40 秒）は暫定値。
+- 375px で卓の中央の結果の欄が席と重なる（この変更の前から）。卓 UI の体系（#5）で扱う。

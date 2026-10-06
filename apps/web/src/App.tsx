@@ -3,7 +3,7 @@
 // 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
 // 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
-// Hand が終わったら、卓の中央と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
+// Hand が終わったら、Hero の欄と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback, useState } from "react";
 import { Amount } from "./components/Amount.js";
@@ -143,7 +143,6 @@ export function App() {
                       view={view}
                       nameOf={nameOf}
                       session={session}
-                      onOpenReview={openReview}
                     />
                   }
                 />
@@ -152,7 +151,12 @@ export function App() {
                 <HandLog view={view} nameOf={nameOf} />
               </aside>
             </main>
-            <HeroDock view={view} nameOf={nameOf} session={session} />
+            <HeroDock
+              view={view}
+              nameOf={nameOf}
+              session={session}
+              onOpenReview={openReview}
+            />
           </VocabularyProvider>
         )}
       </div>
@@ -169,23 +173,9 @@ interface ViewProps {
 /**
  * 卓の中央の欄: Hand の結果、CPU の障害のダイアログ、障害で Session を終えた後の案内のどれか（無ければ何も出さない）。
  */
-function TableCenter({
-  view,
-  nameOf,
-  session,
-  onOpenReview,
-}: ViewProps & {
-  readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
-}) {
+function TableCenter({ view, nameOf, session }: ViewProps) {
   if (view.status === "complete") {
-    return (
-      <HandResult
-        view={view}
-        nameOf={nameOf}
-        session={session}
-        onOpenReview={onOpenReview}
-      />
-    );
+    return <HandResult view={view} nameOf={nameOf} session={session} />;
   }
   const status = session.sessionStatus;
   if (status?.state === "ended") {
@@ -218,7 +208,15 @@ function TableCenter({
 }
 
 /** 画面下に固定する Hero の欄: Hole Cards と Chip・宣言の操作、裁定と待ち・観戦の案内。 */
-function HeroDock({ view, nameOf, session }: ViewProps) {
+/** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
+type OpenReview = (handId: string, decisionIndex: number | null) => void;
+
+function HeroDock({
+  view,
+  nameOf,
+  session,
+  onOpenReview,
+}: ViewProps & { readonly onOpenReview: OpenReview }) {
   const hero = heroSeatOf(view);
   const cards = hero?.holeCards ?? [];
   const folded = hero?.folded ?? false;
@@ -242,13 +240,23 @@ function HeroDock({ view, nameOf, session }: ViewProps) {
       </div>
       <div className="dock__controls">
         <Notice session={session} />
-        <DockBody view={view} nameOf={nameOf} session={session} />
+        <DockBody
+          view={view}
+          nameOf={nameOf}
+          session={session}
+          onOpenReview={onOpenReview}
+        />
       </div>
     </section>
   );
 }
 
-function DockBody({ view, nameOf, session }: ViewProps) {
+function DockBody({
+  view,
+  nameOf,
+  session,
+  onOpenReview,
+}: ViewProps & { readonly onOpenReview: OpenReview }) {
   const outage = session.outage;
   // CPU の手番を待っている間だけ数える（手番・障害の状態が変われば数え直す）。障害で止まっている間・Session 終了後は数えない。
   const cpuWaiting =
@@ -264,12 +272,23 @@ function DockBody({ view, nameOf, session }: ViewProps) {
     AI_DELAY_NOTICE_MS,
   );
   if (view.status === "complete") {
+    // 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く）。
+    // 卓の中央の結果の欄は狭い画面で席と重なるので、常に見える Hero の欄に置く。
     return (
-      <p className="dock__message">
-        {session.sessionStatus?.state === "ended"
-          ? "Session が終了しました。"
-          : "Hand が終了しました。"}
-      </p>
+      <div className="dock__done">
+        <p className="dock__message">
+          {session.sessionStatus?.state === "ended"
+            ? "Session が終了しました。"
+            : "Hand が終了しました。"}
+        </p>
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          onClick={() => onOpenReview(view.handId, null)}
+        >
+          この Hand の Review
+        </button>
+      </div>
     );
   }
   if (session.sessionStatus?.state === "ended") {
@@ -362,14 +381,7 @@ function sessionEndMessage(
  * 次 Hand のボタンは Session が続くときだけ出し、Session が終わったら理由と、新しい Session を始めるボタンを出す。
  * Session の状態がまだ届いていなければ、どちらのボタンも出さない（終わった Session で次 Hand を押させない）。
  */
-function HandResult({
-  view,
-  nameOf,
-  session,
-  onOpenReview,
-}: ViewProps & {
-  readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
-}) {
+function HandResult({ view, nameOf, session }: ViewProps) {
   const status = session.sessionStatus;
   return (
     <div className="result" role="status">
@@ -404,14 +416,6 @@ function HandResult({
           新しい Session を始める
         </button>
       )}
-      {/* 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く） */}
-      <button
-        type="button"
-        className="btn btn--ghost btn--sm"
-        onClick={() => onOpenReview(view.handId, null)}
-      >
-        この Hand の Review
-      </button>
     </div>
   );
 }

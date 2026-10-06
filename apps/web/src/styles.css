@@ -968,6 +968,14 @@ input {
   color: var(--color-on-surface-muted);
 }
 
+/* Hand の終了後の案内と Review への入口（#84） */
+.dock__done {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
 /* ───────── Dealer Feedback（docs/06 §6） ───────── */
 
 .feedback {
