@@ -181,7 +181,30 @@ describe("Current Hand Example（Hero に見える情報だけ）", () => {
       "この Hand の直近の Raise: CPU1 の レイズ（Raise） 6 まで。",
     );
     expect(ex["check"]).toBe("この Hand ではまだ Check はありません。");
+    expect(ex["allIn"]).toBe("この Hand ではまだ All-in はありません。");
     const ids: VocabId[] = ["fold", "call", "bet", "allIn", "showdown"];
     for (const id of ids) expect(ex[id]).not.toBe("");
+  });
+
+  it("All-in の例は、Stack が足りない Call・Bet・Raise（allIn: true）も含める", () => {
+    const view = preflopHeroToAct({
+      log: [
+        ...preflopHeroToAct().log,
+        {
+          seq: 5,
+          visibility: pub,
+          type: "ACTION_TAKEN",
+          playerId: "cpu1",
+          street: "preflop",
+          action: "call",
+          amount: 2,
+          toAmount: 2,
+          allIn: true,
+        },
+      ],
+    });
+    expect(VOCABULARY.allIn.example({ view, nameOf })).toBe(
+      "この Hand の直近の All-in: CPU1 の コール（Call） 2（All-in）。",
+    );
   });
 });

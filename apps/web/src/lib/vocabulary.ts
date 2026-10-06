@@ -346,7 +346,16 @@ const ENTRIES: readonly VocabularyEntry[] = [
     related: ["stack", "effectiveStack", "uncalledBet"],
     advanced:
       "All-in の額が最小 Raise に届かないとき（Short All-in）、すでに行動した Player に Raise の権利が戻らないことがあります。",
-    example: actionExample("all_in"),
+    example: ({ view, nameOf }) => {
+      // All-in は action: all_in だけでなく、Stack が足りない Call・Bet・Raise（allIn: true）でも起きる。
+      const e = publicEvents(view).findLast(
+        (x): x is Extract<HandEvent, { type: "ACTION_TAKEN" }> =>
+          x.type === "ACTION_TAKEN" && x.allIn,
+      );
+      return e === undefined
+        ? "この Hand ではまだ All-in はありません。"
+        : `この Hand の直近の All-in: ${nameOf(e.playerId)} の ${describeAction(e)}。`;
+    },
   },
   {
     id: "minRaise",

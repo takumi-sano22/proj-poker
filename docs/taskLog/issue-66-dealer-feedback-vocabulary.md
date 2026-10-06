@@ -27,7 +27,7 @@ Hero の操作への Dealer の裁定（#64 の公開 Event `DEALER_RULING`）�
 - `apps/web/src/components/Table.tsx`: Street・Pot の見出し、Dealer Button（D）・SB / BB の札、席の Fold / All-in を用語（`Term`）にした。
 - `apps/web/src/lib/format.ts`: `formatPercent`。
 - `apps/web/src/styles.css`: 分類の色のトークン（`--color-feedback-ruling` 金 / `-etiquette` 薄紫 / `-coaching` 薄緑）、Dealer Feedback の項目・札・補足の button、用語（`:where(.term)` で詳細度 0 にして Dealer Button や SB / BB の見た目を上書きしない。点線の下線）、詳細の面（`position: fixed`・幅 min(340px, 100vw − 32px)・高さ上限 min(70vh, 480px)）。狭い画面では札を文の先頭に流し込む。使わなくなった `.dock__ruling` を削除。
-- テスト: `dealer-feedback.test.ts`（新規 11 件）・`vocabulary.test.ts`（新規 6 件）・`view-model.test.ts`（P3 の振る舞い）・`components.test.tsx`（用語の button と 4 項目・卓の用語・Dealer Feedback の分類・進行ログの分類ごとの行）。
+- テスト: `dealer-feedback.test.ts`（新規 11 件）・`vocabulary.test.ts`（新規 7 件）・`view-model.test.ts`（P3 の振る舞い）・`components.test.tsx`（用語の button と 4 項目・卓の用語・Dealer Feedback の分類・進行ログの分類ごとの行）。
 - docs: docs/06 §5（裁定の表示は §6 へ）・§6（Dealer Feedback の実装）・§7（Vocabulary の実装）、docs/03（web の構成）。docs/04 は Event を変えていないので変更なし。
 
 ## 判断理由
@@ -42,7 +42,7 @@ Hero の操作への Dealer の裁定（#64 の公開 Event `DEALER_RULING`）�
 
 ## 実行した確認
 
-- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 232・server 162・web 84 件すべて成功）/ `pnpm format:check`（ルート）。`pnpm --filter @proj-poker/web build` が通る。
+- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 232・server 162・web 85 件すべて成功）/ `pnpm format:check`（ルート）。`pnpm --filter @proj-poker/web build` が通る。
 - dev サーバー（worktree・`POKER_DB_PATH=:memory:`・`BOT_THINK_DELAY_MS=1500`・RuleBot）と Playwright（headless Chromium。リポジトリ外のスクリプト）で実測。dev サーバーは確認後に停止した（3001 / 5173 の LISTEN が無いことを確認）。
   - **1280×800（マウス）**:
     - Oversized Chip（相手の Bet 2 に宣言なしで 100 を 1 枚 → 確定）: Hero 欄に「裁定（Ruling） 相手の Bet に対し、宣言なしで Call 額を超える Chip（100）を 1 枚出しました。この Rule Profile では コール（Call） 2 として扱います。」＋用語「オーバーサイズチップ（Oversized Chip）」＋「作法（Etiquette）」「学習（Coaching）」の button。学習を開くと「このときの Pot は 15、Call 額は 2 でした。… ≒ 12% です。…」（`aria-expanded="true"`）、作法に切り替えると「大きい Chip 1 枚で Raise するときは、先に「Raise」と宣言しましょう。」。進行ログには 3 分類が札付きの別の行で残る。
@@ -52,6 +52,10 @@ Hero の操作への Dealer の裁定（#64 の公開 Event `DEALER_RULING`）�
     - Out-of-Turn（CPU の手番に 5 を出す）: 「手番ではない操作です。操作を保留し、Hero の手番が来たら裁定します。」＋作法の button。
   - **375×760（タッチ。`hasTouch` / `isMobile`）**: 同じ Oversized Chip で Hero 欄 477px（補足を閉じた状態。裁定なしは 371px）、学習を開いて 596px、保留中 433px。横スクロールなし（`scrollWidth` = 375）。P3: Preflop の裁定が Flop の CPU の手番の間は見出し付きで出て、Flop の Hero の手番で 0 件。D をタップで開いた詳細は x = 19・幅 340 で画面内、関連の切り替え・外のタップで閉じる・Enter / Escape の focus も 1280px と同じ。
 - 自己レビュー前の不変条件の確認（ai-boundary.md の確認動作）: COACHING と Current Hand Example の入力に、他者の Hole Cards・Deck・system Event・裁定より後の Event が混ざっても出力が変わらないことをテストで確認した（`dealer-feedback.test.ts` / `vocabulary.test.ts`）。
+
+## レビュー対応
+
+- Codex（round 1・STATUS=clean）の [P2]「All-in の Current Hand Example が Call・Bet・Raise に伴う All-in を見落とす」: CONFIRMED。`action: all_in` だけでなく `allIn: true` の `ACTION_TAKEN` を直近の All-in として探すように直し、テストを足した（同じ根の sweep: 他の Action の例は Action の種類で探すのが正しく、席の All-in 表示は `seats[].allIn` を読むので該当なし）。
 
 ## 残課題
 
