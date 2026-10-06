@@ -140,6 +140,13 @@ Poker Engine Correctnessとは別に評価します。
 
 Human-reviewed HandをRegression Caseにします。
 
+Math / Equity / Range（#79。Engineの決定論のテスト）:
+
+- Equityは手計算できる既知の値と照合します（River・Turn・FlopのHand vs Handは全列挙の分数、PreflopのAA vs KK ≈ 82%などはseed固定のMonte Carloで許容幅つき）。全列挙のHand vs HandはEquityの和が1になることをProperty Testで確かめます。
+- 速い役の強さ（`handScore`）は、Hand Evaluator（`evaluateHand`）の`score`と一致することをProperty Testで確かめます。
+- 性能の上限: Flopの手札 vs Range（全1326 Comboの全列挙を含む）・PreflopとMultiwayのMonte Carloを、それぞれ500ms以内で終えることをテストで守ります。
+- Decision Analysisは判断時点のInformation Setだけを入力にし、相手の実際の札・判断より後のBoardとActionを変えても結果が変わらないことを確かめます（Pass AにHindsight Leakがない）。
+
 ## 7. Solver Adapter Test
 
 - Capability Detection

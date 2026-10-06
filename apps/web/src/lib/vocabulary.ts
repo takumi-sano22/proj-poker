@@ -3,8 +3,13 @@
 // Current Hand Example は Hero に見える情報（HeroView の公開された値と、log の公開 Event）だけで作る。
 // 他者の Hidden Cards（seats[].holeCards の他者の値も含めて読まない）・system / engine Event・未来の Card は使わない。
 // 手番中の判断の計算（Pot Odds など）は Hint（docs/06 §9。標準では非表示）の役割なので、例は済んだ判断から作る。
-import type { HandEvent, HeroView, Street } from "@proj-poker/engine";
-import { potBefore, potOdds } from "./dealer-feedback.js";
+import {
+  potOdds,
+  type HandEvent,
+  type HeroView,
+  type Street,
+} from "@proj-poker/engine";
+import { potBefore } from "./dealer-feedback.js";
 import {
   ACTION_TERMS,
   STREET_TERMS,
