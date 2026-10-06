@@ -21,7 +21,7 @@ Role-based Configで実装します。
 
 Review の暫定値は D97（確定ではない）: `review_standard` は `claude-sonnet-5-5`、`review_deep`（Hero が「詳しく」を選んだ Spot だけ）は `claude-opus-5-5`。実装は #82。
 
-Review の Latency Policy の暫定値（#82。確定ではない）: Review AI の 1 回の呼び出しを待つ上限は 120000ms（`apps/server` の Config `REVIEW_TIMEOUT_MS`）。#82 の実測（Agent SDK・OAuth・`claude-sonnet-5-5`・2026-10-06）は Review Eval の 4 判断 × 3 回と API の通し 3 Hand で 1 回あたり 12.5〜24.3 秒（Evidence の組み立てを含む API の通しは最大 27.6 秒）。構造化出力の JSON の直しで 2 ターンになる回と `review_deep` の遅さを見込んで最大の約 5 倍に置いた。Review は Hand の進行と切り離して裏で作る。Solver の Solve の上限（`SOLVER_TIMEOUT_MS`）は #82 で 20000ms から 60000ms に見直した（Range Model の Range の HU Turn が約 33 秒。`docs/03` §8）。詳細は `docs/taskLog/issue-82-review-ai-pass-a.md`。
+Review の Latency Policy の暫定値（#82。確定ではない）: Review AI の 1 回の呼び出しを待つ上限は 120000ms（`apps/server` の Config `REVIEW_TIMEOUT_MS`）。#82 の実測（Agent SDK・OAuth・`claude-sonnet-5-5`・2026-10-06）は Review Eval の 4 判断 × 4 回と API の通し 3 Hand で 1 回あたり 12.5〜24.3 秒（Evidence の組み立てを含む API の通しは最大 27.6 秒）。構造化出力の JSON の直しで 2 ターンになる回と `review_deep` の遅さを見込んで最大の約 5 倍に置いた。Review は Hand の進行と切り離して裏で作る。Solver の Solve の上限（`SOLVER_TIMEOUT_MS`）は #82 で 20000ms から 60000ms に見直した（Range Model の Range の HU Turn が約 33 秒。`docs/03` §8）。詳細は `docs/taskLog/issue-82-review-ai-pass-a.md`。
 
 Latency Policy の暫定値（#47 で 15000ms、#50 で見直し。確定ではない）: CPU の 1 回の判断を待つ上限は 30000ms（`apps/server` の Config `OPPONENT_TIMEOUT_MS`）。#50 の実測（Agent SDK・OAuth・`claude-haiku-4-5`・3 人卓・2026-10-06）は 63 回で中央値 約 7.2 秒・p90 約 8.6 秒・最大 15.5 秒（子プロセスの起動〜初期化は約 0.7 秒で、残りは API の応答）。15000ms では 63 回中 1 回が超え、障害で Hand が止まるため、最大の約 2 倍に上げた。詳細は `docs/taskLog/issue-50-agent-sdk-adapter.md`。
 

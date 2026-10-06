@@ -36,17 +36,17 @@ Phase 5 の子 Issue。保存済みの Hand の Hero の判断ごとに、判断
 
 - **Solver を Root の判断だけに当てる**: Solver の結果は Street の最初の判断（OOP）の戦略だけなので、Bet への直面・IP の判断に当てると別の Node の戦略を Hero の判断の根拠にしてしまう（不変条件 5 の誠実さ）。`not_applicable` として理由を前提に渡す。
 - **Hero 側の Range を Engine に足した**: Solver は両者の Range が要る。相手から見た Hero の Range は相手と同じ公開情報の作り方で作れ、Server で Engine の処理を複製しない方が一貫する。Hero の実際の札を Range から除いたり足したりしない（相手は知らない）。
-- **Schema を平らにし、`maxTurns: 2`**: 実測（下記）で、入れ子の `theory: { basis, text }` を Sonnet 5.5 が JSON として壊し（`"theory": Solver の結果は…` と引用符なし）、`maxTurns: 1` では SDK の直しのターンが使えず全件 `error_max_turns` になった。平らにして直しの 1 ターンを許したら 12 回中 12 回が 1 回目で検証を通った。
+- **Schema を平らにし、`maxTurns: 2`**: 実測（下記）で、入れ子の `theory: { basis, text }` を Sonnet 5.5 が JSON として壊し（`"theory": Solver の結果は…` と引用符なし）、`maxTurns: 1` では SDK の直しのターンが使えず全件 `error_max_turns` になった。平らにして直しの 1 ターンを許したら 16 回中 16 回が 1 回目で検証を通った。
 - **SOLVER_TIMEOUT_MS を 60 秒に**: #81 の 20 秒は #76 の狭い固定 Range の実測からで、Range Model の広い Range（SB の Call 221 Combo 対 BTN の Open 449 Combo・SPR 約 14）の Turn は約 33 秒で 20 秒では Timeout した。Review は非同期なので待てる。暫定値（OI-001 / OI-002 の範囲。永久仕様にしない）。
 - **失敗した生成は行を作らない**: Claude の障害で Insufficient Evidence を保存すると「根拠不足」と「呼べなかった」が混ざる。障害は状態だけを返して再要求を待ち、不正な出力（モデルの問題）だけを Insufficient Evidence として保存して失敗を残す（LC-001）。
 
 ## 実行した確認
 
-- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 328・web 109・server 361）/ `pnpm format:check`: 通過。
+- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 328・web 109・server 363）/ `pnpm format:check`: 通過。
 - Opponent の既存テストと Opponent Eval の録画の再生: 共通化の後も通過（引数の指紋が一致）。
 - **Review Eval（手動・実際の Claude）**: 2026-10-06、`claude-sonnet-5-5`、SDK 0.3.289、Claude Code 2.1.291 のログイン（`ANTHROPIC_API_KEY` 未設定）。4 判断（BTN の Preflop の Call / River の大きい Bet への Call / SB の HU Turn の最初の Bet / 3 人の Flop の Call）。
   - 1 回目（入れ子の Schema・`maxTurns: 1`）: 8 回の呼び出しすべてが構造化出力を返せず（JSON の崩れ → `error_max_turns`）、4 件とも Insufficient Evidence（Fallback）。Latency 12.9〜22.4 秒。→ Schema を平らにし `maxTurns: 2` に変更。
-  - 2 回目・3 回目（`--record`）・Solver あり（`--solver`）: 12 回すべて 1 回目で検証を通過（Retry 0・Fallback 0・Hindsight Leak 0・障害 0・Math / KB Grounding 1.0）。1 回あたり 12.5〜24.3 秒（2 回目 12.5〜16.6・3 回目 14.5〜24.3・Solver あり 14.0〜20.7）。段階評価は mixed_marginal / improvement_suggested / reasonable に分かれた。
+  - 2 回目・3 回目（`--record`）・Solver あり（`--solver`）・4 回目（自己レビューで Schema に文字数・件数の上限を足して録画を取り直し）: 16 回すべて 1 回目で検証を通過（Retry 0・Fallback 0・Hindsight Leak 0・障害 0・Math / KB Grounding 1.0）。1 回あたり 12.5〜24.3 秒（2 回目 12.5〜16.6・3 回目 14.5〜24.3・Solver あり 14.0〜20.7・4 回目 13.7〜15.7）。段階評価は mixed_marginal / improvement_suggested / reasonable に分かれた。
   - Solver あり（`POKER_SOLVER_HOME` に #81 のビルド）: SB の HU Turn の Bet が `supported`（Range 全体 Check 約 71%・Bet 50% 約 29%、98s は Bet 約 55%）。説明は「Hand Class の頻度で 9h8h 単体ではない」「Bet Tree に 50% Pot しかない」「Exact GTO ではなく近似」と前提を添えた。River の Bet への Call は `not_applicable`（Root の後）、3 人の Flop は `unsupported: player_count`。Turn の Solve は Evidence の組み立て全体で約 33 秒（1 回の実測）。
   - 気になった出力: SB の Turn の Review で、Board のハートが 1 枚なのに「Hero 自身がハートのドローを持つ」と書いた回があった（Judge が無いので数値化していない。Uncertainty・誤読は Judge の設計で扱う）。BTN の Preflop は、まだ動いていない Blind の Range を `random` とする #79 の Range Model の前提を、Review AI 自身が「Equity を過小評価している可能性」と指摘した。
 - **API の通し（手動）**: 一時 DB（`POKER_DB_PATH`）・Solver あり・RuleBot の卓で server を起動し、HTTP で Hand を進めて Important Spot の判断 3 つ（3 Hand）に POST → GET。3 件とも 202（pending）→ `review_ai` で保存（Version 1・`claude-sonnet-5-5`・KB 1.0.0）。POST から保存まで 13.6 / 14.5 / 27.6 秒。段階評価は strong / improvement_suggested / mixed_marginal。DB の `user_version` は 3、server のログに error / warn なし。

@@ -101,8 +101,14 @@ export function buildReviewPrompt(
 export function reviewOutputSchema(
   evidence: ReviewEvidence,
 ): Record<string, unknown> {
-  const text = { type: "string" };
-  const list = { type: "array", items: { type: "string" } };
+  // 文字数・件数の上限も Schema に書いてモデルへ伝える（検証の checkReviewOutput と同じ値）。
+  const text = { type: "string", maxLength: REVIEW_TEXT_MAX };
+  const list = (maxItems: number) => ({
+    type: "array",
+    minItems: 1,
+    maxItems,
+    items: { type: "string", minLength: 1, maxLength: ITEM_TEXT_MAX },
+  });
   return {
     type: "object",
     additionalProperties: false,
@@ -116,10 +122,12 @@ export function reviewOutputSchema(
       theory: text,
       exploitBasis: { type: "string", enum: exploitBases(evidence) },
       exploit: text,
-      assumptions: list,
-      conclusionChangers: list,
+      assumptions: list(ASSUMPTIONS_MAX),
+      conclusionChangers: list(CHANGERS_MAX),
       evidenceIds: {
         type: "array",
+        minItems: 1,
+        maxItems: EVIDENCE_IDS_MAX,
         items: { type: "string", enum: [...allEvidenceIds(evidence)] },
       },
     },

@@ -243,7 +243,7 @@ export function parseSolverIterations(raw: string | undefined): number {
 /**
  * Review AI の 1 回の呼び出し（Claude の 1 問い合わせ。構造化出力の直しの 1 ターンを含む）を待つ上限（ミリ秒）。
  * 暫定値（OI-001 の Latency Policy。永久仕様ではない）。超えたら呼び出しを止め、その Review の生成は失敗（timeout）として
- * 再要求を待つ（Hand の進行は止めない）。#82 の手動の実測（claude-sonnet-5-5・Review Eval の 4 判断 × 3 回）は 12.5〜24.3 秒で、
+ * 再要求を待つ（Hand の進行は止めない）。#82 の手動の実測（claude-sonnet-5-5・Review Eval の 4 判断 × 4 回）は 12.5〜24.3 秒で、
  * JSON の直しで 2 ターンになる回・review_deep（Opus）の遅さを見込んで最大の約 5 倍に置いた。環境変数 REVIEW_TIMEOUT_MS で上書きできる。
  */
 export const DEFAULT_REVIEW_TIMEOUT_MS = 120_000;
