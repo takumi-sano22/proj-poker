@@ -130,6 +130,8 @@ AI文章はこの後に生成します。
 
 判断時点で利用可能だった情報だけを使います。
 
+入力の元は、Engineの`heroInformationSets`（#78）が作る判断時点のHero Information Setです（判断時点までにHeroに見えたEventとHeroのKnowledgeState。作り方は`docs/04` §1）。Reviewの対象にするImportant Spotも、判断時点の情報だけから決定論で選びます（`extractImportantSpots`）。
+
 ### Pass B — Reveal Review
 
 Hand終了後にActual Hole Cardsを見せます。
@@ -140,6 +142,8 @@ Hand終了後にActual Hole Cardsを見せます。
 - Bluff / Valueの答え合わせ
 
 Pass Bの情報を理由にPass Aを勝手に変更しないでください。
+
+全員の札は、Pass Aの入力とは別のProjection `projectLearningReveal`（#78。`docs/04` §4）から取ります。
 
 ## 8. Assessment Style
 
