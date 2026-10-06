@@ -202,6 +202,26 @@ function expectSpotsAtDecisionPoints(
     expect(step?.log.some((e) => e.seq === decision?.actionSeq)).toBe(false);
     expect(spot.street).toBe(decision?.street);
   }
+  // Hero の判断のすべて（#84）も同じ写し方で、判断の順に並ぶ。Important Spot は判断の一部で、同じ step を指す。
+  expect(hand.decisions.map((d) => d.decisionIndex)).toEqual(
+    decisions.map((d) => d.index),
+  );
+  for (const d of hand.decisions) {
+    const decision = decisions[d.decisionIndex];
+    const step = hand.steps[d.stepIndex];
+    expect(step?.actorId).toBe(HERO);
+    expect(lastSeq(step as HeroView)).toBe(decision?.decisionPointSeq);
+    expect(d).toMatchObject({
+      street: decision?.street,
+      action: decision?.action,
+      amount: decision?.amount,
+      toAmount: decision?.toAmount,
+      allIn: decision?.allIn,
+    });
+  }
+  for (const spot of hand.importantSpots) {
+    expect(hand.decisions[spot.decisionIndex]?.stepIndex).toBe(spot.stepIndex);
+  }
 }
 
 describe("Replay API（完了した Hand）", () => {

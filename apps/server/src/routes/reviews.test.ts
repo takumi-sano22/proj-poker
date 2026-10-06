@@ -246,6 +246,35 @@ describe("Review の API", () => {
       concreteModel: "claude-opus-5-5",
     });
 
+    // 過去の Version を指定して読める（#84。画面で Version を選ぶ）。無い Version は 404、不正な指定は 400。
+    const v1 = await app.inject({
+      method: "GET",
+      url: `${url(handId, 0)}/versions/1`,
+    });
+    expect(v1.statusCode).toBe(200);
+    expect(v1.json()).toMatchObject({ version: 1, depth: "standard" });
+    expect(v1.json<{ reviewId: string }>().reviewId).not.toBe(
+      after.latest?.reviewId,
+    );
+    const v3 = await app.inject({
+      method: "GET",
+      url: `${url(handId, 0)}/versions/3`,
+    });
+    expect(v3.statusCode).toBe(404);
+    expect(v3.json<{ error: { kind: string } }>().error.kind).toBe(
+      "review_not_found",
+    );
+    for (const version of ["0", "abc", "01"]) {
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: `${url(handId, 0)}/versions/${version}`,
+          })
+        ).statusCode,
+      ).toBe(400);
+    }
+
     // 応答の Evidence に、判断時点の Hero が知り得ない札・Deck・seed・system の記録・Persona が無い。
     const decision = heroInformationSets(log, HERO)[0]?.decision;
     const evidence = after.latest?.evidence as ReviewEvidence;
@@ -471,6 +500,25 @@ describe("Reveal Review（Pass B）と Follow-up の API（#83）", () => {
       modelRole: "review_deep",
     });
     expect(await getStatus(app, handId, 0)).toEqual(decision);
+    // Pass B も Version を指定して読める（#84）。Pass B の Version の番号は Pass A と別に数える。
+    const revealV1 = await app.inject({
+      method: "GET",
+      url: `${revealUrl(handId, 0)}/versions/1`,
+    });
+    expect(revealV1.statusCode).toBe(200);
+    expect(revealV1.json()).toMatchObject({
+      pass: "reveal",
+      version: 1,
+      modelRole: "review_standard",
+    });
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `${revealUrl(handId, 0)}/versions/3`,
+        })
+      ).statusCode,
+    ).toBe(404);
 
     // Pass B の Prompt には Hand 後に見せた札が入るが、Pass A の Prompt・応答には入らない。
     const upto =
