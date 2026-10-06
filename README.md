@@ -133,7 +133,8 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | `POKER_DB_PATH` | `apps/server/data/poker.sqlite`（gitignore 済み） | Event Log を保存する SQLite ファイル。`:memory:` なら保存しない |
 | `TABLE_SIZE` | `6` | 卓の人数（Hero + CPU）。2〜8 の整数。範囲外・不正値は 6 に戻す |
 | `BOT_THINK_DELAY_MS` | `600` | CPU の思考に見せる待ち時間（演出のみ） |
-| `OPPONENT_TIMEOUT_MS` | `15000`（暫定値） | CPU の 1 回の判断を待つ上限。超えたら障害として Hand を止める。1 以上の整数。不正値は既定に戻す |
+| `OPPONENT_TIMEOUT_MS` | `30000`（暫定値） | CPU の 1 回の判断を待つ上限。超えたら障害として Hand を止める。1 以上の整数。不正値は既定に戻す |
+| `OPPONENT_PROVIDER` | `rulebot` | CPU の判断に使う実装。`claude` で Claude（下の「Claudeの認証」が前提）。それ以外の値は起動時にエラーで止める |
 | `PORT` | `3001` | `apps/server` の待ち受けポート（`127.0.0.1` 固定） |
 
 ### Claudeの認証（CPU を Claude にするとき）
@@ -143,7 +144,7 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 1. **ログイン**: ターミナルで `claude` を起動し、`/login` でサブスクリプションのアカウントにログインします。
 2. **動作確認**: `claude -p "OK とだけ返して"` が応答すれば、ログインできています。
 3. **`ANTHROPIC_API_KEY` が無いことの確認**: server を起動するシェルで `[ -z "${ANTHROPIC_API_KEY:-}" ] && echo "未設定（OK）" || echo "設定あり（unset してください）"` を実行します。環境に `ANTHROPIC_API_KEY` があると、Agent SDK はそちらを優先し、サブスク枠ではなく **API 課金** になります（server は Claude を呼ぶ子プロセスの環境から外しますが〔#50〕、シェル側にも置かないでください）。
-4. **CPU を Claude に切り替える設定**: 設定名は #50（Model Adapter）で確定し、そこで追記します。
+4. **CPU を Claude に切り替える**: server を起動するシェルで `OPPONENT_PROVIDER=claude` を設定して起動します（例: `OPPONENT_PROVIDER=claude pnpm dev`）。モデルは `opponent_fast` Role（暫定値 `claude-haiku-4-5`）です。起動ログに `"provider":"claude"` が出れば切り替わっています。
 
 守ること:
 
