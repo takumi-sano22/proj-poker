@@ -1,0 +1,1628 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-06T03:33:23.740Z",
+  "model": "claude-haiku-4-5",
+  "sdkVersion": "0.3.289",
+  "spots": [
+    "preflop_open",
+    "preflop_facing_3bet",
+    "flop_cbet",
+    "river_facing_big_bet"
+  ],
+  "personas": [
+    "tag_regular",
+    "lag",
+    "calling_station",
+    "nit",
+    "maniac",
+    "weak_tight_recreational"
+  ],
+  "repeats": 4,
+  "concurrency": 4,
+  "cases": [
+    {
+      "spotId": "preflop_open",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "705dd6bcd81fbff9",
+          "output": {
+            "action": "fold",
+            "rationale": "Early positionにおけるK-Tオフスーツは、後ろの複数プレイヤーからの再レイズリスクが高く、規律の高いプレイヤーとして後ろポジションでのより良い機会を待つべき。"
+          },
+          "ms": 8217
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "705dd6bcd81fbff9",
+          "output": {
+            "action": "call",
+            "rationale": "King-Tenオフスーツはアーリーポジションからのマージナルハンドであり、高い規律を保ちながらポットオッズに見合ったコールが最適。"
+          },
+          "ms": 7646
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "705dd6bcd81fbff9",
+          "output": {
+            "action": "fold",
+            "rationale": "UTG からのマージナルハンド（K-T オフスーツ）は、高い Discipline（0.80）と絞られた Preflop Looseness（0.40）のスタイルに基づき、後ろのプレイヤーの圧力に対して期待値が低いためフォールド。"
+          },
+          "ms": 7884
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "tag_regular",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "705dd6bcd81fbff9",
+          "output": {
+            "action": "fold",
+            "rationale": "UTG最初の位置での Kh Ts は規律の高さと平均的なプリフロップルースネスを考えると、より強力な手を待つべき状況です。"
+          },
+          "ms": 7210
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "a150d92f06cc32af",
+          "output": {
+            "action": "raise",
+            "amount": 6,
+            "rationale": "高い攻撃性と参加幅でKToは raise 対象であり、早いポジションで主導権を取る。"
+          },
+          "ms": 7270
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "a150d92f06cc32af",
+          "output": {
+            "action": "fold",
+            "rationale": "アーリーポジションで後ろに2人がいるためK-Toはフォールドし、より有利なポジション・ハンドを待つ。"
+          },
+          "ms": 7801
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "a150d92f06cc32af",
+          "output": {
+            "action": "raise",
+            "amount": 6,
+            "rationale": "UTGのKsToは自分のLAGスタイルの範囲内であり、高い攻撃性を活かして早期段階でイニシアティブを取るべき。"
+          },
+          "ms": 6941
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "lag",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "a150d92f06cc32af",
+          "output": {
+            "action": "raise",
+            "amount": 6,
+            "rationale": "LAG スタイルの高い攻撃性と Preflop Looseness により、K-T オフスーツからアーリーポジションで標準的な 3BB レイズを行い、ポット コントロールと相手へのプレッシャーを両立させる。"
+          },
+          "ms": 8988
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "195be5535a25b2dc",
+          "output": {
+            "action": "call",
+            "rationale": "Preflop Looseness 0.80 と Call Range の広さから、アーリーポジションの K-T でも Call する Calling Station のスタイルに合致している。"
+          },
+          "ms": 6379
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "195be5535a25b2dc",
+          "output": {
+            "action": "call",
+            "rationale": "Preflop Looseness が高く Call Range が広い Calling Station として、Kh Ts で小さなコストの call に応じる。"
+          },
+          "ms": 6431
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "195be5535a25b2dc",
+          "output": {
+            "action": "call",
+            "rationale": "Preflop Looseness が高く Call Range が広すぎるクセにより、K♥T♠で軽率にコール。"
+          },
+          "ms": 6015
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "calling_station",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "195be5535a25b2dc",
+          "output": {
+            "action": "call",
+            "rationale": "Preflop Loosnessが高く、Call Range が広いCalling Stationプレイヤーのため、弱いK-Tでも安価なコールでフロップを見たい。"
+          },
+          "ms": 6699
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "3d521556a29a2780",
+          "output": {
+            "action": "fold",
+            "rationale": "Nit スタイルで Discipline 0.80 の私は UTG からの弱いオフスーツハンド(Kh Ts) は参加基準に満たないため、タイトに fold する。"
+          },
+          "ms": 7783
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "3d521556a29a2780",
+          "output": {
+            "action": "fold",
+            "rationale": "King-Ten offsuit は低 Looseness と高 Discipline の Nit プレイヤーの opening range に入らない弱いハンドため、UTG+1 からフォールドする。"
+          },
+          "ms": 6053
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "3d521556a29a2780",
+          "output": {
+            "action": "fold",
+            "rationale": "Nit スタイルで Early Position からの参加基準が厳しく、King Ten suited はこのポジションでは参加価値が低いため。"
+          },
+          "ms": 6135
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "nit",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "3d521556a29a2780",
+          "output": {
+            "action": "fold",
+            "rationale": "アーリーポジションで K-To は弱い手であり、高い規律と低い Preflop Looseness に基づいてフォールドする。"
+          },
+          "ms": 6417
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "01da22e838ac384c",
+          "output": {
+            "action": "raise",
+            "amount": 8,
+            "rationale": "Maniakは極めて攻撃的で規律がなく、Looseness が高いため Kh Ts でも Preflop レイズして主導権を握る。"
+          },
+          "ms": 7154
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "01da22e838ac384c",
+          "output": {
+            "action": "raise",
+            "amount": 8,
+            "rationale": "Maniacの極度の攻撃性と規律の欠如により、弱いハンドでも躊躇なくレイズし、相手を圧倒しようとする。"
+          },
+          "ms": 7116
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "01da22e838ac384c",
+          "output": {
+            "action": "raise",
+            "amount": 8,
+            "rationale": "Maniac スタイルは規律が低く攻撃性が極めて高いため、弱い手でもレイズで主導権を握るプレイを一貫してする"
+          },
+          "ms": 6230
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "maniac",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "01da22e838ac384c",
+          "output": {
+            "action": "raise",
+            "amount": 8,
+            "rationale": "Maniacスタイルの極めて高い攻撃性（0.95）とブラフ傾向（0.90）により、序盤ポジションからKTsで即座にレイズしてテーブルに圧力をかける。"
+          },
+          "ms": 7336
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "270fcd9d15b20dbd",
+          "output": {
+            "action": "fold",
+            "rationale": "UTG での KhTs は weak-tight recreational のレンジに入らず、後ろにまだ多くのプレイヤーが残っているため、リスク許容度の低いキャラとして folding が適切。"
+          },
+          "ms": 7095
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "270fcd9d15b20dbd",
+          "output": {
+            "action": "fold",
+            "rationale": "アーリーポジションでの weak-tight なプレイスタイルに従い、オフスーツの弱いキング・テンは folding する。"
+          },
+          "ms": 6572
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "270fcd9d15b20dbd",
+          "output": {
+            "action": "call",
+            "rationale": "Weak-tight スタイルで KT オフスーツはコール範囲内であり、Cold Call しすぎるクセと低攻撃性から単純にコールします。"
+          },
+          "ms": 6860
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_open",
+      "personaId": "weak_tight_recreational",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "270fcd9d15b20dbd",
+          "output": {
+            "action": "fold",
+            "rationale": "アーリーポジションの弱いオフスーツハンド（K-To）のため、Weak-tight の規律に従いフォールドすべき。"
+          },
+          "ms": 7052
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "a09b1c58641230bf",
+          "output": {
+            "action": "call",
+            "rationale": "AQoは3ベットに対する十分なハンド強度があり、ポット・オッズとハンド勝率が見合う価値のあるコール；SPRが7倍弱でコンパクトなため、フロップ以降の読みスキルを活かして判断する方が理に適っている。"
+          },
+          "ms": 9889
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "a09b1c58641230bf",
+          "output": {
+            "action": "call",
+            "rationale": "AQd は 3bet に対する call に十分な価値があり、ポットオッズ（30.77%）とハンドの潜在性から、相手の手強さが不確実な中での disciplined call が最適。"
+          },
+          "ms": 9244
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "a09b1c58641230bf",
+          "output": {
+            "action": "call",
+            "rationale": "AQd はプリフロップ上位の強い手で、ポッドオッズとスタック深度が利のあるコール。フロップで相手を読んで戦える状況。"
+          },
+          "ms": 10578
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "tag_regular",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "a09b1c58641230bf",
+          "output": {
+            "action": "raise",
+            "amount": 50,
+            "rationale": "高い攻撃性と規律で、ボタンの3ベットに対してAQの強さを示す4ベットでプリフロップの主導権を握る。"
+          },
+          "ms": 9813
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "2bdac6ec308f3bf6",
+          "output": {
+            "action": "raise",
+            "amount": 30,
+            "rationale": "攻撃性の高いLAGプレイヤーとして、AQは4ベットで相手にプレッシャーをかけ、ハンドの価値を最大化する。"
+          },
+          "ms": 8646
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "2bdac6ec308f3bf6",
+          "output": {
+            "action": "raise",
+            "amount": 60,
+            "rationale": "AQは3ベットに対して十分な強さであり、高い攻撃性と相手の読み能力を活かして再レイズで圧力をかけ、相手のweaker range や bluffを折らせる判断。"
+          },
+          "ms": 9761
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "2bdac6ec308f3bf6",
+          "output": {
+            "action": "raise",
+            "amount": 56,
+            "rationale": "AQは強いハンドで、攻撃的スタイルに基づいて4ベットでプレッシャーをかけ、相手レンジをナローにさせる。"
+          },
+          "ms": 9444
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "lag",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "2bdac6ec308f3bf6",
+          "output": {
+            "action": "raise",
+            "amount": 45,
+            "rationale": "AQは強い手であり、高攻撃性スタイルに一貫した4betで相手にプレッシャーをかけるべき局面"
+          },
+          "ms": 7556
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "b96dbfd4527ae30a",
+          "output": {
+            "action": "call",
+            "rationale": "AQdは強いハンドでありcall rangeに十分含まれるため、heroの3betにはcallで対応する。"
+          },
+          "ms": 6078
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "b96dbfd4527ae30a",
+          "output": {
+            "action": "call",
+            "rationale": "AQはまあまあの手であり、pot odds も悪くないため、低攻撃性の Calling Station スタイルに従い Call する。"
+          },
+          "ms": 6331
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "b96dbfd4527ae30a",
+          "output": {
+            "action": "call",
+            "rationale": "AQoはプレミアムハンドであり、コーリングステーションとしてのキャラクター特性と広すぎるコール範囲に沿い、BTNからの3betに対してコールする。"
+          },
+          "ms": 7750
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "calling_station",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "b96dbfd4527ae30a",
+          "output": {
+            "action": "call",
+            "rationale": "AQは強いハンドであり、ポットオッズも十分なため、広いCall Rangeを持つCallling Station として自然なコール判断。"
+          },
+          "ms": 6082
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "546c89c649fa38d1",
+          "output": {
+            "action": "call",
+            "rationale": "AQはプレミアムハンドで、ポットオッズも良好であり、慎重なNitプレイヤーでもコール判断が規律的に正当化される。"
+          },
+          "ms": 7436
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "546c89c649fa38d1",
+          "output": {
+            "action": "call",
+            "rationale": "AQdは十分な強さで、ボタンからのre-raiseに対してcallでフロップを見るのが低リスク・低攻撃性のNitプレイスタイルに合致している。"
+          },
+          "ms": 7484
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "546c89c649fa38d1",
+          "output": {
+            "action": "raise",
+            "amount": 30,
+            "rationale": "AQは強いハンドで規律の高いNitプレイヤーとして3betに対して4betして主導権を握る。"
+          },
+          "ms": 7825
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "nit",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "546c89c649fa38d1",
+          "output": {
+            "action": "call",
+            "rationale": "AQ offsuitはコール可能なハンドで、タイトで規律高いNitプレイヤーとして3ベットに対してはコールが妥当。"
+          },
+          "ms": 8942
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "3fba51b7e24a9109",
+          "output": {
+            "action": "raise",
+            "amount": 60,
+            "rationale": "Maniac らしく超高い攻撃性と低い規律で、Ah Qd の手でこの 3bet に積極的に 4bet で対抗する。"
+          },
+          "ms": 7031
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "3fba51b7e24a9109",
+          "output": {
+            "action": "raise",
+            "amount": 50,
+            "rationale": "高い攻撃性とBluff傾向を持つMania スタイルのあなたは、弱いハンドでも積極的にプレッシャーをかけるため、Ah-Qdでレイズして相手を圧倒するのが一貫性がある。"
+          },
+          "ms": 7765
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "3fba51b7e24a9109",
+          "output": {
+            "action": "all_in",
+            "rationale": "超攻撃的なマニアックプレイヤーとして、AQは十分な強さがあり、hero の3betに対して all-in で強気に対抗するのが一貫性がある。"
+          },
+          "ms": 7497
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "maniac",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "3fba51b7e24a9109",
+          "output": {
+            "action": "raise",
+            "amount": 50,
+            "rationale": "Maniacスタイルの高い攻撃性とOverbluff傾向により、3betに対して4betで圧力をかけ、規律の低さから積極的に対抗する。"
+          },
+          "ms": 7233
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "a5965c12c2fc4e0b",
+          "output": {
+            "action": "fold",
+            "rationale": "AQ offsuit で 3-bet に直面し、実力が低く攻撃性も低いため、OOP での複雑な post-flop を避けて折る。"
+          },
+          "ms": 9692
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "a5965c12c2fc4e0b",
+          "output": {
+            "action": "call",
+            "rationale": "AQはそこそこの手だが、3-bet返しは弱気なプレイヤーらしくなく、coldcallで様子を見る傾向に合致する。"
+          },
+          "ms": 7578
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "a5965c12c2fc4e0b",
+          "output": {
+            "action": "fold",
+            "rationale": "Early Position からの open raise に対する 3-bet で、AQ は適応性が低く リスク許容度の低い Weak-tight プレイヤーとして fold することが一貫した判断。"
+          },
+          "ms": 8447
+        }
+      ]
+    },
+    {
+      "spotId": "preflop_facing_3bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "a5965c12c2fc4e0b",
+          "output": {
+            "action": "fold",
+            "rationale": "実力が低く攻撃性・リスク許容が低いプレイヤーらしく、3ベットに対して勝率不利なAQをフォールドする"
+          },
+          "ms": 7854
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "fecd38b8956d6c9d",
+          "output": {
+            "action": "bet",
+            "amount": 8,
+            "rationale": "チェック後の弱い相手に対してc-betで価値を取り、高い攻撃性とスキルを発揮する。"
+          },
+          "ms": 7161
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "fecd38b8956d6c9d",
+          "output": {
+            "action": "bet",
+            "amount": 8,
+            "rationale": "preflop raise の continuation bet として、チェック相手に対し攻撃的に出て、フラッシュドロー付きのエースハイで pot を取るか相手のハンドを読むための標準的な C-bet。"
+          },
+          "ms": 8391
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "fecd38b8956d6c9d",
+          "output": {
+            "action": "bet",
+            "amount": 8,
+            "rationale": "相手の check の弱さに対して、高スキル・高攻撃性で cbet を打ち、ポット支配権を握りながら、フラッシュドローの価値も保有します。"
+          },
+          "ms": 9532
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "tag_regular",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "fecd38b8956d6c9d",
+          "output": {
+            "action": "bet",
+            "amount": 8,
+            "rationale": "相手の Flop check は弱さを示唆しており、AJ ハイで C-bet によるプレッシャーが有効だと判断します。"
+          },
+          "ms": 8144
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "38e3cc44ed61858c",
+          "output": {
+            "action": "bet",
+            "amount": 28,
+            "rationale": "相手のチェックに対してフラッシュドロー付きのオーバーカードでセミブラフベット、LAGスタイルに一貫性がある。"
+          },
+          "ms": 8504
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "38e3cc44ed61858c",
+          "output": {
+            "action": "bet",
+            "amount": 6,
+            "rationale": "フラッシュドロー＋Kハイでハンド価値があり、高い攻撃性スタイルに基づいてチェックした対戦相手に対し、ポット構成とドローバリューを活かしたベットで主導権を維持する。"
+          },
+          "ms": 8501
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "38e3cc44ed61858c",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "スペードドロー＋ハイカードのセミブラフでポット価値を取りながら、相手のウィークチェックに対して積極的に圧力をかける攻撃的なベット。"
+          },
+          "ms": 9804
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "lag",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "38e3cc44ed61858c",
+          "output": {
+            "action": "bet",
+            "amount": 7,
+            "rationale": "高い攻撃性で弱い check に対して Ace-high を価値化するため、Pot の 50% 程度をベットしてハンドバリューを獲得する。"
+          },
+          "ms": 8438
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "873b1e66757d2780",
+          "output": {
+            "action": "check",
+            "rationale": "攻撃性が低く、相手がCheckしている状況で、エースハイのドローを持つため、無料カードを見て追加情報を得るほうが私のスタイルに適っている。"
+          },
+          "ms": 7693
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "873b1e66757d2780",
+          "output": {
+            "action": "check",
+            "rationale": "弱いハイカードだがスペードドロー（アウト多数）を持っており、相手がチェックした状況で安く次の街を見たいと判断した。"
+          },
+          "ms": 8035
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "873b1e66757d2780",
+          "output": {
+            "action": "check",
+            "rationale": "相手がチェックしており攻撃性の低いプレイスタイルに合致し、無料カードを見るために check します。"
+          },
+          "ms": 6552
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "calling_station",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "873b1e66757d2780",
+          "output": {
+            "action": "check",
+            "rationale": "攻撃性が低く相手のチェック後なので、As-Jh のエースハイでチェックバックして相手の反応を見る。"
+          },
+          "ms": 7846
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "119d66a25067aa50",
+          "output": {
+            "action": "check",
+            "rationale": "AsJhは非常に弱い手であり、低い攻撃性と低いブラフ傾向を持つ私のプロフィールに合わせて、相手のチェックに対して保守的にチェックして pot control を重視する。"
+          },
+          "ms": 8465
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "119d66a25067aa50",
+          "output": {
+            "action": "check",
+            "rationale": "Nit として規律重視で、弱いハイカード（AJ）を Flop で無理に bet する必要はなく、相手の check に対して慎重に check して river を見るべき。"
+          },
+          "ms": 8954
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "119d66a25067aa50",
+          "output": {
+            "action": "check",
+            "rationale": "Nit らしく規律を優先し、エースハイ程度の手では攻撃を避けてターンの情報を見る。"
+          },
+          "ms": 7101
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "nit",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "119d66a25067aa50",
+          "output": {
+            "action": "check",
+            "rationale": "低い攻撃性と高い規律を持つプレイヤーとして、エースハイでスペードドローの弱い手は相手のチェックに対して慎重にチェックして、無料でターンを見るべき。"
+          },
+          "ms": 7094
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "479fee322619e283",
+          "output": {
+            "action": "bet",
+            "amount": 14,
+            "rationale": "相手のチェックに対して高い攻撃性でbluffを仕掛け、ポットを支配する性格に一貫している。"
+          },
+          "ms": 7119
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "479fee322619e283",
+          "output": {
+            "action": "bet",
+            "amount": 13,
+            "rationale": "相手の弱いcheckに対してManiacスタイルの高い攻撃性とbluff傾向で強気にbluffベットを打つ。"
+          },
+          "ms": 6820
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "479fee322619e283",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "相手がチェックした弱みを見て、強気に Bluff でベット；Maniac スタイルとして躊躇なくフロップで攻撃することが一貫した行動。"
+          },
+          "ms": 7554
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "maniac",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "479fee322619e283",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "相手のチェックに対して、Maniacスタイルの高い攻撃性とOverbluff傾向に従い、ポット13に対して積極的にCベットを打つ。"
+          },
+          "ms": 7603
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "32ec5770a002605f",
+          "output": {
+            "action": "check",
+            "rationale": "As Jh は弱く、Opponent がチェックしているため、無理なベットを避け保守的にチェックで状況を探ります。"
+          },
+          "ms": 7335
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "32ec5770a002605f",
+          "output": {
+            "action": "bet",
+            "amount": 5,
+            "rationale": "相手がチェックした弱みに付け込む小さなCbetで、Ace High の価値を活かしながらポットを取りに行く。"
+          },
+          "ms": 7810
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "32ec5770a002605f",
+          "output": {
+            "action": "check",
+            "rationale": "ドロー手でリスクを避け、相手のチェックに応じてターンの展開を見る判断が、低実力でブラフ傾向の低いキャラクターに一貫しています。"
+          },
+          "ms": 7501
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "32ec5770a002605f",
+          "output": {
+            "action": "check",
+            "rationale": "Weak-tight スタイルでリスク許容が低いため、フロップでAcesハイにC-betするよりもCheckして安全に様子を見ることを選ぶ。"
+          },
+          "ms": 7387
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "d9acab9399a59d43",
+          "output": {
+            "action": "call",
+            "rationale": "ペアのクイーンは十分な強さがあり、ポットオッズも34.67%で良好なため、相手の弱いリバーベットにコールが最適です。"
+          },
+          "ms": 8308
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "d9acab9399a59d43",
+          "output": {
+            "action": "fold",
+            "rationale": "River でペア以上がない弱いハンドで、相手の Bet パターンから上位ハンドの可能性が高く、高い規律で無駄な投資を避けるべき。"
+          },
+          "ms": 8555
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "d9acab9399a59d43",
+          "output": {
+            "action": "call",
+            "rationale": "リバーでQペアは相応の強さで、ポットオッズ（約3.9:1）も良好なため、相手のベットに対してcallして価値を回収する。"
+          },
+          "ms": 8420
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "tag_regular",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "d9acab9399a59d43",
+          "output": {
+            "action": "call",
+            "rationale": "ペアの手札でポットオッズが利益的であり、相手の河ベットに対して価値的にコールして勝負するのが規律ある判断である。"
+          },
+          "ms": 8179
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "254ba86192d26c71",
+          "output": {
+            "action": "call",
+            "rationale": "相手の turn check-river bet パターンは中程度の強さを示唆し、Queen high は十分な showdown value を持ち、pot odds（33%）も good であるため、call が最適。"
+          },
+          "ms": 8633
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "254ba86192d26c71",
+          "output": {
+            "action": "call",
+            "rationale": "トップペアのQJは十分な強さがあり、相手のRiverベットはブラフまたは弱い価値ベットの可能性が高いため、ポットオッズ3.88:1でコールして相手の手を見る判断。"
+          },
+          "ms": 9961
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "254ba86192d26c71",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "ターンまでのチェック-チェックからのリバーベットは相手のウィークレンジを示唆しており、高い攻撃性でプレッシャーをかけて相手を折らせることを狙う。"
+          },
+          "ms": 9386
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "lag",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "254ba86192d26c71",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "Queen high のペアはこの状況で十分な強さで、cpu2 の遅延ベットは弱いハンド or Bluff の可能性が高いため、aggressive な raise で価値を最大化すべき。"
+          },
+          "ms": 10297
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "7f5684ae99df9500",
+          "output": {
+            "action": "call",
+            "rationale": "Queen High で River のベットに対し勝率は低いが、Calling Station のクセで River Overcall の傾向を持つため、弱い手でもコールしてしまう。"
+          },
+          "ms": 6630
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "7f5684ae99df9500",
+          "output": {
+            "action": "call",
+            "rationale": "ペアを持っており、リバー Overcall 傾向と広いコールレンジから、相手の強さを過度に警戒せずコールする。"
+          },
+          "ms": 7642
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "7f5684ae99df9500",
+          "output": {
+            "action": "call",
+            "rationale": "Calling Stationの性格として、River でのOvercall傾向とCall Range の広さから、Queen high でPot Odds に見合ったコールをする。"
+          },
+          "ms": 7649
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "calling_station",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "7f5684ae99df9500",
+          "output": {
+            "action": "call",
+            "rationale": "River のワンペアは call する価値があり、相手のレンジに負けているかもしれないが、低スキルの Calling Station として Overcall クセを出す。"
+          },
+          "ms": 8297
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "ffd46e9b848a90f2",
+          "output": {
+            "action": "fold",
+            "rationale": "River での相手の bet に対し Queen high の勝率が pot odds を下回ると判断し、Overfold の傾向に従い fold する。"
+          },
+          "ms": 7725
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "ffd46e9b848a90f2",
+          "output": {
+            "action": "fold",
+            "rationale": "River でのタイトなプレイスタイルと River Overfold傾向に基づき、確信のないQueen highはcpu2のベットに対して折るのが適切。"
+          },
+          "ms": 8743
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "ffd46e9b848a90f2",
+          "output": {
+            "action": "fold",
+            "rationale": "River での強いベットに対し、ポットオッズはわずかに合致するが、自分のオーバーフォールド傾向と低いリスク許容により、不確実なペアでの call は避ける。"
+          },
+          "ms": 7668
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "nit",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "ffd46e9b848a90f2",
+          "output": {
+            "action": "fold",
+            "rationale": "Nit性格で規律が高く、River Overfold の傾向があるため、Queen high では相手の強気なリバーベットに対して Hero fold で降りるのが一貫している。"
+          },
+          "ms": 9741
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "a0dbfd22aa784a1f",
+          "output": {
+            "action": "raise",
+            "amount": 80,
+            "rationale": "ペアとスペードフラッシュの強い手を持っており、Maniacスタイルの過度な攻撃性に従い、相手のベットに対して強力なレイズで主導権を握る。"
+          },
+          "ms": 7310
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "a0dbfd22aa784a1f",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "Maniac スタイルの高い Aggression と Overbluff 傾向に従い、相手の河のベットに対して攻撃的にレイズして圧力をかける。"
+          },
+          "ms": 9231
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "a0dbfd22aa784a1f",
+          "output": {
+            "action": "raise",
+            "amount": 78,
+            "rationale": "Maniac スタイルの極度の攻撃性と高い bluff 傾向に従い、ペアを持つこのリバーで相手のベットに対して積極的にレイズして勝負を仕掛ける。"
+          },
+          "ms": 7367
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "maniac",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "a0dbfd22aa784a1f",
+          "output": {
+            "action": "raise",
+            "amount": 78,
+            "rationale": "Maniac プレイヤーとして Aggression と Bluff Tendency が非常に高く、River の弱いハンドでもブラフレイズしてポットを奪いに行く。"
+          },
+          "ms": 7399
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "4f63232f72effe7f",
+          "output": {
+            "action": "fold",
+            "rationale": "Top Pair だがスキル低く River でのオーバーフォールド傾向があり、不確実な状況でのリスク回避を優先する。"
+          },
+          "ms": 6160
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "4f63232f72effe7f",
+          "output": {
+            "action": "fold",
+            "rationale": "Weak-tight で River での Overfold クセがあり、相手の強いベットに対して QJ1ペアでは勝率が低いと判断して降ります。"
+          },
+          "ms": 7855
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "4f63232f72effe7f",
+          "output": {
+            "action": "fold",
+            "rationale": "Riverで相手の強いbetに対し、Weak-tightなプレイヤーとしてリスク許容度が低く、Overfoldの傾向があるため。"
+          },
+          "ms": 8372
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet",
+      "personaId": "weak_tight_recreational",
+      "repeat": 4,
+      "attempts": [
+        {
+          "paramsHash": "4f63232f72effe7f",
+          "output": {
+            "action": "fold",
+            "rationale": "Queen high で相手のリバーベットに対して勝つ可能性が低く、Weak-tight で River Overfold のクセがあるため、ここは守りに徹する。"
+          },
+          "ms": 7310
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "decisions": 96,
+    "calls": 96,
+    "structuredOutputValidRate": 1,
+    "illegalActionRate": 0,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "outages": 0,
+    "hiddenInformationLeakage": 0,
+    "latencyMs": {
+      "min": 6015,
+      "median": 7668,
+      "p90": 9532,
+      "max": 10578
+    },
+    "personaDifferentiation": 0.675,
+    "personaDifferentiationBySpot": {
+      "preflop_open": 0.7,
+      "preflop_facing_3bet": 0.667,
+      "flop_cbet": 0.583,
+      "river_facing_big_bet": 0.75
+    },
+    "actionDiversity": {
+      "tag_regular": 1.772,
+      "lag": 1.592,
+      "calling_station": 0.811,
+      "nit": 1.703,
+      "maniac": 1.122,
+      "weak_tight_recreational": 1.502
+    },
+    "actionCounts": {
+      "tag_regular": {
+        "preflop_open": {
+          "fold": 3,
+          "call": 1
+        },
+        "preflop_facing_3bet": {
+          "call": 3,
+          "raise": 1
+        },
+        "flop_cbet": {
+          "bet": 4
+        },
+        "river_facing_big_bet": {
+          "call": 3,
+          "fold": 1
+        }
+      },
+      "lag": {
+        "preflop_open": {
+          "raise": 3,
+          "fold": 1
+        },
+        "preflop_facing_3bet": {
+          "raise": 4
+        },
+        "flop_cbet": {
+          "bet": 4
+        },
+        "river_facing_big_bet": {
+          "call": 2,
+          "raise": 2
+        }
+      },
+      "calling_station": {
+        "preflop_open": {
+          "call": 4
+        },
+        "preflop_facing_3bet": {
+          "call": 4
+        },
+        "flop_cbet": {
+          "check": 4
+        },
+        "river_facing_big_bet": {
+          "call": 4
+        }
+      },
+      "nit": {
+        "preflop_open": {
+          "fold": 4
+        },
+        "preflop_facing_3bet": {
+          "call": 3,
+          "raise": 1
+        },
+        "flop_cbet": {
+          "check": 4
+        },
+        "river_facing_big_bet": {
+          "fold": 4
+        }
+      },
+      "maniac": {
+        "preflop_open": {
+          "raise": 4
+        },
+        "preflop_facing_3bet": {
+          "raise": 3,
+          "all_in": 1
+        },
+        "flop_cbet": {
+          "bet": 4
+        },
+        "river_facing_big_bet": {
+          "raise": 4
+        }
+      },
+      "weak_tight_recreational": {
+        "preflop_open": {
+          "fold": 3,
+          "call": 1
+        },
+        "preflop_facing_3bet": {
+          "fold": 3,
+          "call": 1
+        },
+        "flop_cbet": {
+          "check": 3,
+          "bet": 1
+        },
+        "river_facing_big_bet": {
+          "fold": 4
+        }
+      }
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  }
+}

@@ -347,6 +347,12 @@ describe("buildOpponentPrompt", () => {
       if (action.type === "raise" || action.type === "bet") {
         expect(prompt).toContain(`${action.min}〜${action.max}`);
       }
+      // 額が決まっている call / all_in の行には「amount は付けない」を書く（#53。call に amount を付けて Retry になる回があった）。
+      if (action.type === "call" || action.type === "all_in") {
+        expect(prompt).toMatch(
+          new RegExp(`- ${action.type}（[^\\n]*amount は付けない）`),
+        );
+      }
     }
     // Preflop なので Prompt の札は自分の 2 枚だけ（holeCards と自分の席の両方に出る）。
     const own = (input.knowledge.holeCards ?? []).map(cardToString);
