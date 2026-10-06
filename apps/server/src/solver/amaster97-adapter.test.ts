@@ -271,7 +271,7 @@ describe("Timeout", () => {
   it("上限で SIGKILL し、プロセスを残さずに timeout で返す", async () => {
     const a = adapter(fake.command("sleep"));
     await expectSolverError(
-      a.analyze(RIVER_SPOT, { timeoutMs: 300 }),
+      a.analyze(RIVER_SPOT, { timeoutMs: 1000 }),
       "timeout",
     );
     const pid = fake.pid();

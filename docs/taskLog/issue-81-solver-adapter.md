@@ -25,7 +25,7 @@ Phase 5 の子 Issue。Primary Solver（amaster97/poker_solver。D96）を包む
 - **Range**: Solver には具体的な Combo の文字列（`AsKd`）で渡し、Hand Class に丸めない。#79 の Range Model の結果は `rangeFromModel`、表記からは `rangeFromNotation`（Board と衝突する Combo を除く）で作り、どちらも Assumption を持つ。Evidence の `rangeAssumptions` にそのまま残す。
 - **出力の検証**: JSON として読めても、protocol・root_actor・行動のラベル（Root にあり得る `check` / Bet Tree にある `bet_N` / `all_in` だけ）・頻度（0〜1・合計 1 ± 1e-3）・Hand Class ごとの行動が想定と違えば `parse_failure`（「読めた = 正しい」にしない）。
 - **Evidence**: Root（Street の最初の判断・OOP）の Range 全体と Hand Class ごとの行動頻度、Version Metadata（runner が返す版・`install.json` の commit・固定 commit との一致。違えば warnings）、Bet Tree、Iteration、Range Assumption、前提（HU の結果で Multiway の Exact GTO ではない・Bet Tree の抽象化・Rake なし・Root だけ・Range は推定・呼び出し側の前提）。Action EV は `ev: { available: false, reason }`、exploitability は `null`（計算しない）。
-- **Config**（`config.ts`）: `POKER_SOLVER_HOME`（`resolveSolverHome`）、`SOLVER_TIMEOUT_MS`（既定 20000。暫定値）、`SOLVER_MAX_CONCURRENCY`（既定 1）、`SOLVER_ITERATIONS`（既定 200。暫定値）。Timeout は #76 の Turn（5.7〜8.0 s）と今回の実測（8.5 s）の最大の約 2.5 倍。
+- **Config**（`config.ts`）: `POKER_SOLVER_HOME`（`resolveSolverHome`）、`SOLVER_TIMEOUT_MS`（既定 20000。暫定値）、`SOLVER_MAX_CONCURRENCY`（既定 1）、`SOLVER_ITERATIONS`（既定 200。暫定値）。Timeout は #76 の Turn（5.7〜8.0 s）の最大の約 2.5 倍（今回の実測 8.5 s に対しても約 2.3 倍）。
 - Server の起動・Route には繋いでいない（使うのは #82 の Review）。入口は `createSolverAdapterFromEnv`。
 
 ## 変更内容
