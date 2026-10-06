@@ -4,9 +4,9 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { preflopHeroToAct, seat } from "../testing/fixtures.js";
-import { ActionBar } from "./ActionBar.js";
 import { Amount } from "./Amount.js";
-import { ChipStack } from "./ChipStack.js";
+import { ChipControls } from "./ChipControls.js";
+import { ChipPile, ChipStack } from "./ChipStack.js";
 import { OutageDialog } from "./OutageDialog.js";
 import { Table } from "./Table.js";
 
@@ -15,8 +15,8 @@ const nameOf = (id: string) => id.toUpperCase();
 
 /** 描画した宣言ボタンのラベル（declaration__label）を順に取り出す。 */
 function declarationLabels(html: string): string[] {
-  return [...html.matchAll(/declaration__label">([^<]+)</g)].map(
-    (m) => m[1] ?? "",
+  return [...html.matchAll(/declaration__label">(.*?)<\/span><\/span>/g)].map(
+    (m) => (m[1] ?? "").replace(/<[^>]+>/g, ""),
   );
 }
 
@@ -93,71 +93,104 @@ describe("ChipStack（額から組んだ Chip の構成を色付きの積みで�
   });
 });
 
-describe("ActionBar（Declaration Button は Legal Action だけを出す）", () => {
-  it("Call と Raise の局面: Fold / Call / All-in と Raise の額指定を出し、Check・Bet は出さない", () => {
+describe("ChipPile（出した Chip を枚数のまま描く）", () => {
+  it("額から組み直さず、額面ごとの枚数で描く（500 の 1 枚は 100 ×5 にしない）", () => {
+    const html = renderToStaticMarkup(<ChipPile chips={[500, 5, 5, 1]} />);
+    expect(html).toContain('data-denomination="500" data-count="1"');
+    expect(html).toContain('data-denomination="5" data-count="2"');
+    expect(html).toContain('data-denomination="1" data-count="1"');
+    expect(renderToStaticMarkup(<ChipPile chips={[]} />)).toBe("");
+  });
+});
+
+describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・§5）", () => {
+  const hero = (view: ReturnType<typeof preflopHeroToAct>) => view.seats[0]!;
+
+  it("宣言 Button は局面によらず Fold / Check / Call / Bet / Raise / All-in を全部出す（合法性は裁定が決める）", () => {
     const view = preflopHeroToAct();
     const html = renderToStaticMarkup(
-      <ActionBar
+      <ChipControls
         view={view}
-        legal={view.legalActions!}
+        hero={hero(view)}
         disabled={false}
-        onAction={noop}
+        onSubmit={noop}
       />,
     );
     expect(declarationLabels(html)).toEqual([
-      "レイズ（Raise）",
-      "フォールド（Fold）",
-      "コール（Call）",
-      "オールイン（All-in）",
-    ]);
-    // Slider の範囲はサーバーの min / max のまま。数値の入力欄は作らない
-    expect(html).toContain('type="range"');
-    expect(html).toContain('min="4"');
-    expect(html).toContain('max="200"');
-    expect(html).not.toContain('type="number"');
-    expect(html).not.toContain('type="text"');
-  });
-
-  it("Check できる局面: Check と Bet を出し、Call・Raise は出さない", () => {
-    const view = preflopHeroToAct({
-      street: "flop",
-      currentBet: 0,
-      legalActions: {
-        playerId: "hero",
-        toCall: 0,
-        actions: [
-          { type: "fold" },
-          { type: "check" },
-          { type: "bet", min: 2, max: 198 },
-          { type: "all_in", amount: 198 },
-        ],
-      },
-    });
-    const html = renderToStaticMarkup(
-      <ActionBar
-        view={view}
-        legal={view.legalActions!}
-        disabled={false}
-        onAction={noop}
-      />,
-    );
-    expect(declarationLabels(html)).toEqual([
-      "ベット（Bet）",
       "フォールド（Fold）",
       "チェック（Check）",
+      "コール（Call）",
+      "ベット（Bet）",
+      "レイズ（Raise）",
       "オールイン（All-in）",
+    ]);
+    // Call / All-in の額は、手番にサーバーが返した Legal Action の額を補助で出す
+    expect(html).toContain('declaration__amount">2<');
+    expect(html).toContain('declaration__amount">200 まで<');
+  });
+
+  it("数値の Bet Box（Slider・Preset・数値の入力欄）を作らない", () => {
+    const view = preflopHeroToAct();
+    const html = renderToStaticMarkup(
+      <ChipControls
+        view={view}
+        hero={hero(view)}
+        disabled={false}
+        onSubmit={noop}
+      />,
+    );
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain("Pot</");
+    expect(html).not.toContain("最小（Min）");
+  });
+
+  it("Config の額面ごとに Chip を出し、持っている額を超える Chip だけ押せない", () => {
+    const view = preflopHeroToAct();
+    const html = renderToStaticMarkup(
+      <ChipControls
+        view={view}
+        hero={seat("hero", { stack: 30 })}
+        disabled={false}
+        onSubmit={noop}
+      />,
+    );
+    const chips = [
+      ...html.matchAll(
+        /<button type="button" class="chip-button" data-denomination="(\d+)"( disabled="")?/g,
+      ),
+    ].map((m) => [Number(m[1]), m[2] !== undefined]);
+    expect(chips).toEqual([
+      [1, false],
+      [5, false],
+      [25, false],
+      [100, true],
+      [500, true],
     ]);
   });
 
-  it("送信中はボタンを押せない", () => {
+  it("手番でなくても操作できる（Out-of-Turn も裁定の対象）。まだ何も出していなければ確定は押せない", () => {
+    const view = preflopHeroToAct({ actorId: "cpu1", legalActions: null });
+    const html = renderToStaticMarkup(
+      <ChipControls
+        view={view}
+        hero={hero(view)}
+        disabled={false}
+        onSubmit={noop}
+      />,
+    );
+    // 手番でなければ Legal Action の額は無いので、額を出さない
+    expect(html).not.toContain("declaration__amount");
+    const declarations =
+      html.match(/<button[^>]*class="btn [^"]*declaration"[^>]*>/g) ?? [];
+    expect(declarations).toHaveLength(6);
+    expect(declarations.some((b) => b.includes("disabled"))).toBe(false);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>確定して Dealer に渡す/);
+  });
+
+  it("送信中・保留中はどのボタンも押せない", () => {
     const view = preflopHeroToAct();
     const html = renderToStaticMarkup(
-      <ActionBar
-        view={view}
-        legal={view.legalActions!}
-        disabled
-        onAction={noop}
-      />,
+      <ChipControls view={view} hero={hero(view)} disabled onSubmit={noop} />,
     );
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     expect(buttons.length).toBeGreaterThan(0);

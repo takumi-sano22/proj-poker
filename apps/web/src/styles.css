@@ -896,23 +896,313 @@ input {
   color: var(--color-on-surface-muted);
 }
 
-.action-bar {
+.dock__ruling {
+  margin: 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--color-brand-400);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  font-size: 14px;
+}
+
+/* ───────── Chip と宣言の操作（docs/06 §4・§5） ───────── */
+
+/* Stack の Chip・手元・Betting Area・確定・宣言を 1 つの grid に置く。広い画面では卓の側の操作を 1 行に並べ、Hero 欄を低く保つ */
+.chip-controls {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "tray tray hand"
+    "area area submit"
+    "decl decl decl";
+  align-items: center;
   gap: 8px;
 }
 
-.action-bar__buttons {
+@media (min-width: 720px) {
+  .chip-controls {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "tray hand area submit"
+      "decl decl decl decl";
+    gap: 8px 12px;
+  }
+}
+
+.chip-controls__submit {
+  grid-area: submit;
+  align-self: stretch;
+}
+
+/* 5 枚の Chip と手元が 1 行に収まらない幅（320px など）では、手元を次の行に回す（重ねない） */
+@media (max-width: 359px) {
+  .chip-controls {
+    grid-template-areas:
+      "tray tray tray"
+      "hand hand hand"
+      "area area submit"
+      "decl decl decl";
+  }
+}
+
+@media (max-width: 719px) {
+  .chip-controls__submit {
+    max-width: 112px;
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+}
+
+.chip-tray {
+  grid-area: tray;
+  display: flex;
+  gap: 4px;
+}
+
+/* Stack の Chip。押下（Click）で手に取り、そのまま動かすと Drag になる。タッチでもスクロールにしない */
+.chip-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chip-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.chip-token {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 3px dashed var(--chip-edge);
+  border-radius: 50%;
+  background: var(--chip-face);
+  color: var(--chip-edge);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow:
+    0 0 0 1px rgba(var(--ink), 0.55),
+    0 2px 0 1px rgba(var(--ink), 0.55);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+/* 白い Chip は縁の色だと文字が薄いので、文字だけ暗くする */
+.chip-token.chip--white {
+  color: var(--color-suit-black);
+}
+
+@media (hover: hover) {
+  .chip-button:hover:not(:disabled) .chip-token {
+    transform: translateY(-2px);
+  }
+}
+
+.chip-button:active:not(:disabled) .chip-token {
+  transform: translateY(1px);
+}
+
+.chip-hand {
+  grid-area: hand;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chip-hand__pile {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 72px;
+  min-height: 44px;
+  padding: 4px 10px;
+  border: 1px dashed var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  color: var(--color-on-surface);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chip-hand__pile:disabled {
+  cursor: default;
+  color: var(--color-on-surface-muted);
+}
+
+.chip-hand__label {
+  align-self: center;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.chip-hand__amount {
+  align-self: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-hand__return {
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+/* Betting Area（卓に Chip を出す場所）。フェルトの色で、Drag 中に上へ来たら金の縁で示す */
+.betting-area {
+  grid-area: area;
+  min-width: 0;
+}
+
+.betting-area__target {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 4px 12px;
+  border: 2px dashed rgba(243, 248, 244, 0.35);
+  border-radius: var(--radius-aside);
+  background: radial-gradient(
+    ellipse at center,
+    var(--color-felt-center),
+    var(--color-felt-edge)
+  );
+  color: var(--color-on-felt);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+/* 手が空のとき押しても何も起きないが、出した Chip は読めるよう薄くしない */
+.betting-area__target:disabled {
+  cursor: default;
+}
+
+.betting-area--over .betting-area__target {
+  border-color: var(--color-brand-400);
+  box-shadow: var(--shadow-turn);
+}
+
+.betting-area__label {
+  display: grid;
+  color: var(--color-on-felt-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.betting-area__hint {
+  color: var(--color-on-felt-muted);
+  font-size: 13px;
+}
+
+.betting-area__motions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.betting-area__motion {
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.betting-area__amount {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.betting-area__declared {
+  color: var(--color-on-felt);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.declarations {
+  grid-area: decl;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+@media (min-width: 720px) {
+  .declarations {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 .declaration {
-  flex: 1 1 120px;
+  min-width: 0;
+}
+
+@media (max-width: 719px) {
+  .declaration {
+    min-height: 44px;
+    padding: 4px 6px;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  /* 狭い画面では Chip を少し小さくし、5 枚と手元を 1 行に収める */
+  .chip-button {
+    width: 40px;
+    height: 44px;
+  }
+
+  .chip-token {
+    width: 36px;
+    height: 36px;
+    font-size: 11px;
+  }
+
+  .dock__cards .card--lg {
+    width: var(--card-md-w);
+  }
+
+  /* 実額は常に出し、BB 換算（補助。D49）は狭い画面の宣言 Button では省く（額を 1 行に収める） */
+  .declaration__bb {
+    display: none;
+  }
+
+  .chip-hand__label {
+    display: none;
+  }
+
+  .chip-hand__pile {
+    min-width: 60px;
+    padding: 4px 8px;
+  }
+
+  .chip-hand__return {
+    padding: 4px 8px;
+  }
+}
+
+.declaration__term {
+  white-space: nowrap;
 }
 
 .declaration__amount {
   display: inline-flex;
+  white-space: nowrap;
   align-items: baseline;
   gap: 6px;
   font-variant-numeric: tabular-nums;
@@ -924,23 +1214,15 @@ input {
   opacity: 0.85;
 }
 
-.sizing {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 12px;
-}
-
-.sizing__presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  grid-column: 1 / -1;
-}
-
-.sizing__slider {
-  width: 100%;
-  accent-color: var(--color-brand-500);
+/* Drag 中に指・カーソルへ付いてくる Chip（押した位置の少し上に出し、指で隠さない） */
+.chip-drag-ghost {
+  position: fixed;
+  z-index: 50;
+  left: var(--x);
+  top: var(--y);
+  pointer-events: none;
+  transform: translate(-50%, -120%) scale(1.6);
+  filter: drop-shadow(0 4px 6px rgba(var(--ink), 0.5));
 }
 
 .notice {

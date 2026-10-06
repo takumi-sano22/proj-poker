@@ -70,9 +70,11 @@ Card / Chipは構造描画します。
 
 Chip操作は `PhysicalAction` を生成します。
 
-Stack Composition表示（#62）: 席のStackとBetを、額から自動で組んだChipの構成（額面ごとの色付きの積み。額面は1白・5赤・25緑・100黒・500紫の暫定値。D92・OI-004）で描きます。実額が正本で、積みは補助です（D49）。多い枚数は重ねる数に上限を置き、枚数（×N）で示します。Click・Drag・Betting Areaへの投入は#65で扱います。
+Stack Composition表示（#62）: 席のStackとBetを、額から自動で組んだChipの構成（額面ごとの色付きの積み。額面は1白・5赤・25緑・100黒・500紫の暫定値。D92・OI-004）で描きます。実額が正本で、積みは補助です（D49）。多い枚数は重ねる数に上限を置き、枚数（×N）で示します。
 
-Primary Numeric Bet Boxは作りません。
+Chip操作（#65）: 画面下のHero欄に、Config の額面ごとのChip（Stack の Chip）・手元（手に取ったChip）・Betting Area を置きます。Chipを Click すると1枚手に取り（Click の回数が枚数）、手元の山か Betting Area を Click すると、手に取ったChipを1回の動作で出します。Stack の Chip を直接、または手元の山を Betting Area へ Drag しても出せます（Pointer Events で書き、マウスとタッチで同じ操作。Click だけでも完結する。D44）。手元のChipは出す前なら戻せますが、Betting Area に出したChipは取り消せません（実卓と同じ）。この手番の最初のChipの動作は `chip_push`、2回目以降は `chip_add` になり、「確定して Dealer に渡す」で `PhysicalAction` の列を送ります。持っている額を超えるChipは物理的に出せないので手に取れませんが、額面は Stack の構成に関係なく選べます（両替は Dealer の補助。D14）。Out-of-Turn・Oversized Chip・2回に分けた投入になる操作も、事前の警告なしにそのまま送ります（裁定はRuling Engine。D47・D91）。
+
+Primary Numeric Bet Boxは作りません（#65 で Slider・Preset による額の指定を Hero の操作から外しました。Canonical Action の入口 `/actions` はサーバーに互換のために残っています）。
 
 ## 5. Declaration UI
 
@@ -81,6 +83,8 @@ Buttonによって口頭宣言の代替を行います。
 ただし、毎回Declarationを強制しません。
 
 目的は「宣言しなかったため裁定が変わる」という実卓操作も練習することです。
+
+宣言 Button（#65）は Fold / Check / Call / Bet / Raise / All-in を局面によらず全部出し、手番でなくても押せます（合法でない宣言・手番でない宣言の扱いは裁定が決める）。Fold / Check / Call / All-in は宣言だけで Action が決まるので、押した時点でそれまでの操作と一緒に Dealer に渡します。Bet / Raise は続けて Chip を出してから確定します。手に Chip を持っていればその額を「この Street の累計（to 額）」として額も宣言し、持っていなければ額なしで宣言します（額は続けて出した Chip で決まる）。裁定の結果は Hero 欄に「Dealer の裁定: <決まった Action と実額>」「保留しました」「Action は決まりませんでした」の最低限を出し、保留中は Hero の手番で裁定されるまで次の操作を送れません。裁定の理由の分類と文言（Dealer Feedback）は #66 で作ります。
 
 Voice RecognitionはScope外です。
 

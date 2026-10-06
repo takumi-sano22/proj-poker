@@ -1,12 +1,7 @@
 // HeroView（サーバーが Hero に見える Event だけから作った Projection）を画面の部品へ写す純粋関数。
 // ここでは合法性を判定しない（D40）。Legal Action と額の範囲はサーバーが返した legalActions をそのまま使い、
 // 他者の札はサーバーが公開したもの（seats[].holeCards）以外を推測・保持しない（D28）。
-import type {
-  HandEvent,
-  HeroView,
-  LegalAction,
-  SeatView,
-} from "@proj-poker/engine";
+import type { HandEvent, HeroView, SeatView } from "@proj-poker/engine";
 import type { OutageKind, OutageStatus, SessionStatus } from "./api.js";
 import {
   ACTION_TERMS,
@@ -230,32 +225,64 @@ function round3(n: number): number {
   return Math.round(n * 1000) / 1000 + 0;
 }
 
-/** Bet / Raise の額の候補（Preset）。amount はこの Street の合計額（to 額）。 */
-export interface SizingPreset {
-  readonly key: string;
-  readonly label: string;
-  readonly amount: number;
+/**
+ * Hero の操作への Dealer の裁定のうち、卓に反映して見せるもの（docs/06 §6 の RULING の最低限。分類・文言は #66）。
+ * - pending: 手番でない操作として保留中（Hero の手番が来たら拘束か撤回かを裁定する。保留中は次の操作を送れない）
+ * - action: Canonical Action に決まった。action はその結果の ACTION_TAKEN（額を含む）
+ * - no_action: Action は決まらなかった（相手の Bet があるときの Check の宣言・撤回した Out-of-Turn）。Hero が選び直す
+ */
+export type HeroRulingStatus =
+  | { readonly kind: "pending" }
+  | {
+      readonly kind: "action";
+      readonly action: Extract<HandEvent, { type: "ACTION_TAKEN" }>;
+    }
+  | { readonly kind: "no_action" };
+
+/**
+ * 直近の Hero への裁定（公開 Event の DEALER_RULING から読む。裁定をクライアントで判定しない）。Hand の終了後は出さない。
+ * Hero の Action で Street が進んでも、次の Hero の操作が裁定されるまで直近の裁定を出し続ける
+ * （Call で Street が閉じると、裁定が見える前に消えてしまうため）。決まらなかった裁定（no_action）は Hero の手番で起き、
+ * Hero が選び直すまで Street は進まないので、古い Street の「もう一度操作してください」が残ることはない。
+ */
+export function heroRulingStatus(view: HeroView): HeroRulingStatus | null {
+  if (view.status !== "in_progress") return null;
+  const index = view.log.findLastIndex(
+    (e) => e.type === "DEALER_RULING" && e.playerId === view.viewerId,
+  );
+  const ruling = view.log[index];
+  if (ruling?.type !== "DEALER_RULING") return null;
+  // 保留が解けるのは同じ Player の次の DEALER_RULING（basis: pending_out_of_turn）だけなので、最後の裁定で分かる。
+  if (ruling.outcome === "out_of_turn") return { kind: "pending" };
+  if (ruling.outcome === "no_action") return { kind: "no_action" };
+  // outcome が action なら、同じ追記の直後の Event がその ACTION_TAKEN。
+  const next = view.log[index + 1];
+  return next?.type === "ACTION_TAKEN" && next.playerId === ruling.playerId
+    ? { kind: "action", action: next }
+    : null;
 }
 
 /**
- * Preset の額を出す。Pot 比は「Call した後の Pot」に対する Raise 幅で、to 額 = currentBet + 比率 × (pot + toCall)。
- * サーバーが返した min / max に丸めるだけで、範囲そのものはクライアントで決めない。
+ * Hero の操作の下書きを作り直す単位。Hand・Street が変わるか、Hero への裁定が 1 つ増える（送った操作が裁定された）たびに変わる。
+ * CPU の行動だけでは変わらないので、手番を待つ間に組んだ操作は CPU が動いても消えない。
  */
-export function sizingPresets(
-  view: HeroView,
-  toCall: number,
-  range: Extract<LegalAction, { type: "bet" | "raise" }>,
-): SizingPreset[] {
-  const potAfterCall = view.pot + toCall;
-  const clamp = (n: number) => Math.min(range.max, Math.max(range.min, n));
-  const byPot = (ratio: number) =>
-    clamp(view.currentBet + Math.round(potAfterCall * ratio));
-  return [
-    { key: "min", label: "最小（Min）", amount: range.min },
-    { key: "half", label: "½ Pot", amount: byPot(0.5) },
-    { key: "three-quarters", label: "¾ Pot", amount: byPot(0.75) },
-    { key: "pot", label: "Pot", amount: byPot(1) },
-  ];
+export function operationKey(view: HeroView): string {
+  const rulings = view.log.filter(
+    (e) => e.type === "DEALER_RULING" && e.playerId === view.viewerId,
+  ).length;
+  return `${view.handId}:${view.street}:${rulings}`;
+}
+
+/** 裁定を卓に出す 1 行（分類・理由の文言〔Dealer Feedback〕は #66 で作る）。 */
+export function rulingText(status: HeroRulingStatus): string {
+  switch (status.kind) {
+    case "pending":
+      return "Dealer: 手番ではない操作として保留しました。Hero の手番で裁定します。";
+    case "action":
+      return `Dealer の裁定: ${describeAction(status.action)}`;
+    case "no_action":
+      return "Dealer の裁定: Action は決まりませんでした。もう一度操作してください。";
+  }
 }
 
 /** Hand のログ 1 行。読めない Event（Hero に届かない種別）は null。 */

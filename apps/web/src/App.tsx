@@ -4,8 +4,8 @@
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback } from "react";
-import { ActionBar } from "./components/ActionBar.js";
 import { Amount } from "./components/Amount.js";
+import { ChipControls } from "./components/ChipControls.js";
 import { HandLog } from "./components/HandLog.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
@@ -15,7 +15,14 @@ import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import type { SessionStatus } from "./lib/api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
-import { heroSeatOf, lastSeqOf, waitingMessage } from "./lib/view-model.js";
+import {
+  heroRulingStatus,
+  heroSeatOf,
+  lastSeqOf,
+  operationKey,
+  rulingText,
+  waitingMessage,
+} from "./lib/view-model.js";
 
 export function App() {
   const session = useHandSession();
@@ -117,7 +124,7 @@ function TableCenter({ view, nameOf, session }: ViewProps) {
   return null;
 }
 
-/** 画面下に固定する Hero の欄: Hole Cards と Declaration Button、待ち・観戦の案内。 */
+/** 画面下に固定する Hero の欄: Hole Cards と Chip・宣言の操作、裁定と待ち・観戦の案内。 */
 function HeroDock({ view, nameOf, session }: ViewProps) {
   const hero = heroSeatOf(view);
   const cards = hero?.holeCards ?? [];
@@ -170,18 +177,6 @@ function DockBody({ view, nameOf, session }: ViewProps) {
       </p>
     );
   }
-  if (view.legalActions !== null) {
-    return (
-      // 新しい判断のたびに額の選択を初期化する（前の判断の Slider 位置を持ち越さない）。
-      <ActionBar
-        key={lastSeqOf(view)}
-        view={view}
-        legal={view.legalActions}
-        disabled={session.pending}
-        onAction={session.act}
-      />
-    );
-  }
   if (session.sessionStatus?.state === "ended") {
     return <p className="dock__message">Session が終了しました。</p>;
   }
@@ -198,7 +193,8 @@ function DockBody({ view, nameOf, session }: ViewProps) {
     view.actorId === null ? null : nameOf(view.actorId),
     delayed,
   );
-  if (hero?.folded) {
+  if (hero === undefined) return <p className="dock__message">{waiting}</p>;
+  if (hero.folded) {
     // Fold 後も観戦を続ける（docs/06 §8）。他者の札は Showdown で公開されたものだけが表に向く。
     return (
       <p className="dock__message">
@@ -206,7 +202,35 @@ function DockBody({ view, nameOf, session }: ViewProps) {
       </p>
     );
   }
-  return <p className="dock__message">{waiting}</p>;
+  if (hero.allIn) {
+    return (
+      <p className="dock__message">
+        オールイン（All-in）しました。Hand の終了まで進行を待ちます。{waiting}
+      </p>
+    );
+  }
+  const ruling = heroRulingStatus(view);
+  return (
+    <>
+      {ruling !== null && (
+        <p className="dock__ruling" role="status">
+          {rulingText(ruling)}
+        </p>
+      )}
+      <p className="dock__message">
+        {view.legalActions !== null ? "Hero の手番です。" : waiting}
+      </p>
+      {/* 手番でなくても操作できる（Out-of-Turn も裁定の対象。D91）。保留中は Hero の手番で裁定されるまで次の操作を送れない。
+          操作の下書きは、裁定が 1 つ進む・Street が進むたびに捨てる（送った操作を持ち越さない）。 */}
+      <ChipControls
+        key={operationKey(view)}
+        view={view}
+        hero={hero}
+        disabled={session.pending || ruling?.kind === "pending"}
+        onSubmit={session.operate}
+      />
+    </>
+  );
 }
 
 /** Session が終わった理由の案内（D80）。 */
