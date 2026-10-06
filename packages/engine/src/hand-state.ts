@@ -48,6 +48,7 @@ export interface HandState {
   readonly lastRaiseSize: number;
   /** 次に行動する Player の添字。誰も行動できない（Street 終了・Hand 終了）なら null。 */
   readonly actorIndex: number | null;
+  /** complete は Hand が終わった（HAND_FINISHED、または HAND_ABORTED で打ち切った）。 */
   readonly status: "in_progress" | "complete";
   /** この Hand で配分した額の Player ごとの合計（Main / Side Pot を合算。最初に受け取った順）。 */
   readonly awards: readonly PlayerChips[];
@@ -227,9 +228,16 @@ function applyBody(state: HandState, event: HandEvent): HandState {
     case "HAND_FINISHED":
       return { ...state, status: "complete", actorIndex: null };
 
+    // 打ち切り（D95）。Hand を終えるだけで、Pot・Stack は打ち切った時点のまま（配分しない）。
+    case "HAND_ABORTED":
+      return { ...state, status: "complete", actorIndex: null };
+
     case "AI_ACTION_INVALID":
     case "AI_FALLBACK_USED":
-      // 判断の経緯の記録で、卓の State（Chip・手番）は変えない（seq だけが進む）。
+    case "SESSION_STARTED":
+    case "SESSION_ENDED":
+    case "EMERGENCY_BOT_ENGAGED":
+      // 判断の経緯・Session の運用の記録で、卓の State（Chip・手番）は変えない（seq だけが進む）。
       return state;
 
     // Hero の操作と Dealer の裁定（D90）。Chip・手番は変えず、裁定を待つ操作と保留中の Out-of-Turn だけを持つ。

@@ -1,7 +1,8 @@
 // Hand の Event 型と Visibility。Event Log が唯一の正本で、State は Event の畳み込みで作る（D37・docs/04 §1）。
 // Event 種別は docs/04 §3 のうち Phase 1 で必要なものと、CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED。D83）と、
-// Hero の宣言・物理的な Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING。D90）を持つ
-// （統合した種別は docs/04 §3 の構成表を参照）。
+// Hero の宣言・物理的な Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING。D90）と、
+// Session の開始・終了、Hand の打ち切り、Emergency Bot への切り替え（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED /
+// EMERGENCY_BOT_ENGAGED。D95）を持つ（統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
 import type { CanonicalAction } from "./legal-actions.js";
 import type { Declaration, RulingCode } from "./ruling.js";
@@ -12,8 +13,9 @@ import type { OddChipRule, ReopenRule } from "./table-config.js";
  * - public: 卓の全員
  * - private: 指定 Player だけ（自分の Hole Cards）
  * - engine: Engine 内部専用。どの Player の Projection にも入れない（Deck の順序＝未来の Card）
- * - system: 卓の外の運用記録（CPU の不正な出力・Fallback の利用。D83）。CPU の出力の値を含みうるので、
- *   Hero・CPU（本人を含む）のどの Projection にも入れない。読むのは Server（Debug・Review の集計）だけ
+ * - system: 卓の外の運用記録（CPU の不正な出力・Fallback の利用。D83。Session の開始・終了・Hand の打ち切り・
+ *   Emergency Bot への切り替え。D95）。CPU の出力の値を含みうるので、Hero・CPU（本人を含む）のどの Projection にも入れない。
+ *   読むのは Server（Session の Resume・Debug・Review の集計）だけ
  * learning_only（Review 用の開示）はまだ発行しない。
  */
 export type Visibility =
@@ -51,6 +53,25 @@ export type RulingBasis = "operations" | "pending_out_of_turn";
  * - no_action: Action を決めない（相手の Bet があるときの Check の宣言・撤回した Out-of-Turn）。その Player が選び直す
  */
 export type RulingOutcome = "action" | "out_of_turn" | "no_action";
+
+/**
+ * CPU が判断を返せなかった障害の種類（D86）。Emergency Bot への切り替えのきっかけとして Event に残す。
+ * - timeout: 応答時間の超過 / unauthenticated: 未ログイン / usage_limit: 利用枠の上限 / error: それ以外の例外
+ */
+export type OutageKind =
+  "timeout" | "unauthenticated" | "usage_limit" | "error";
+
+/**
+ * Session が終わった理由（D80・D86）。
+ * - hero_busted: Hero の Stack が 0 になった
+ * - hero_last_standing: CPU が全員 Bust し、Hero だけが残った
+ * - ai_outage: CPU の障害のダイアログで Hero が Session 終了を選んだ（その Hand は HAND_ABORTED で打ち切る）
+ */
+export type SessionEndReason =
+  "hero_busted" | "hero_last_standing" | "ai_outage";
+
+/** Hand を途中で打ち切った理由（D95）。ai_outage: CPU の障害のダイアログで Hero が Session 終了を選んだ。 */
+export type HandAbortReason = "ai_outage";
 
 export interface SeatInit {
   readonly playerId: string;
@@ -190,6 +211,33 @@ export type HandEventBody =
       readonly fallbackKind: FallbackKind;
       /** Fallback した理由（automatic は最後に不正と判定した段と理由）。CPU の出力の値を含みうる。 */
       readonly reason: string;
+    }
+  | {
+      // Session の開始（D95）。Session の最初の Hand の、開始の Event（startHand の結果）に続けて同じ追記で置く。
+      // 卓の State は変えない。席・Stack・Button は HAND_STARTED に残る。
+      readonly type: "SESSION_STARTED";
+      readonly sessionId: string;
+    }
+  | {
+      // Session の終了（D80・D86・D95）。Session の最後の Hand の終わり（HAND_FINISHED か HAND_ABORTED）の直後に、同じ追記で置く。
+      // Hand の終わりより後ろに置ける唯一の Event。卓の State は変えない。
+      readonly type: "SESSION_ENDED";
+      readonly sessionId: string;
+      readonly reason: SessionEndReason;
+    }
+  | {
+      // Hand を途中で打ち切った（D95。D88 の Event 化）。HAND_FINISHED の代わりに Hand を終える。Pot は配分せず、
+      // Chip は動かさない（Session も一緒に終えるので、Stack を次の Hand へ持ち越さない）。
+      readonly type: "HAND_ABORTED";
+      readonly reason: HandAbortReason;
+    }
+  | {
+      // 障害の後に Hero が Emergency Bot を選んだ（D86・D95。D88 の Event 化）。その CPU は Session の終わりまで RuleBot で動く。
+      // 障害で止まったその CPU の手番に置く。卓の State は変えない。以降の手番ごとの記録は AI_FALLBACK_USED（emergency_bot）。
+      readonly type: "EMERGENCY_BOT_ENGAGED";
+      readonly playerId: string;
+      /** 切り替えのきっかけの障害の種類（内部のエラー本文は入れない）。 */
+      readonly cause: OutageKind;
     };
 
 export type HandEventType = HandEventBody["type"];
@@ -210,8 +258,14 @@ export function visibilityOf(body: HandEventBody): Visibility {
       return { type: "private", playerId: body.playerId };
     case "DECK_SHUFFLED":
       return { type: "engine" };
+    // CPU の判断の経緯（D83）と、Session・Hand の運用の記録（D95）。Hero の View・CPU の KnowledgeState・Replay には入れない
+    // （Hero へは Session の状態を API が別に返す）。
     case "AI_ACTION_INVALID":
     case "AI_FALLBACK_USED":
+    case "SESSION_STARTED":
+    case "SESSION_ENDED":
+    case "HAND_ABORTED":
+    case "EMERGENCY_BOT_ENGAGED":
       return { type: "system" };
     // Hero の宣言・Chip の操作・Dealer の裁定は、卓の全員が見聞きする事実（D90）。
     case "PLAYER_DECLARED":
