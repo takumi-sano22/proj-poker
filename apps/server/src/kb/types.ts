@@ -72,23 +72,9 @@ export const KB_SPOT_KINDS = [
 ] as const;
 export type KbSpotKind = (typeof KB_SPOT_KINDS)[number];
 
-export const KB_STREETS: readonly Street[] = [
-  "preflop",
-  "flop",
-  "turn",
-  "river",
-];
-/** engine の PositionName（range-config.ts）と同じ並び。型の食い違いは typecheck で捕まえる。 */
-export const KB_POSITIONS: readonly PositionName[] = [
-  "UTG",
-  "HJ",
-  "CO",
-  "BTN",
-  "SB",
-  "BB",
-];
-/** engine の PreflopSpot（range-config.ts）と同じ並び。 */
-export const KB_PREFLOP_ACTIONS: readonly PreflopSpot[] = [
+export const KB_STREETS = ["preflop", "flop", "turn", "river"] as const;
+export const KB_POSITIONS = ["UTG", "HJ", "CO", "BTN", "SB", "BB"] as const;
+export const KB_PREFLOP_ACTIONS = [
   "open",
   "limp",
   "call_open",
@@ -97,6 +83,21 @@ export const KB_PREFLOP_ACTIONS: readonly PreflopSpot[] = [
   "four_bet_plus",
   "check_option",
   "not_acted",
+] as const;
+
+// 上の 3 つは engine の Street / PositionName / PreflopSpot と同じ値を過不足なく並べる。
+// 余分な値・足りない値のどちらがあっても、下の型が false になって typecheck で落ちる（Engine に値が増えたときの取りこぼし防止）。
+type SameValues<A extends string, B extends string> = [
+  Exclude<A, B>,
+  Exclude<B, A>,
+] extends [never, never]
+  ? true
+  : false;
+type AssertTrue<T extends true> = T;
+export type KbVocabularyMatchesEngine = [
+  AssertTrue<SameValues<Street, (typeof KB_STREETS)[number]>>,
+  AssertTrue<SameValues<PositionName, (typeof KB_POSITIONS)[number]>>,
+  AssertTrue<SameValues<PreflopSpot, (typeof KB_PREFLOP_ACTIONS)[number]>>,
 ];
 
 /** KB の項目 1 つの Metadata（Markdown の先頭の front matter）。空の配列は「条件なし（どれにも当てはまる）」。 */
@@ -135,7 +136,10 @@ export interface KbRef {
   readonly version: number;
 }
 
-/** Spot の特徴。渡した特徴だけで絞り込み・加点する（渡さなかった特徴は見ない）。 */
+/**
+ * Spot の特徴。渡した特徴だけで絞り込み・加点する（渡さなかった特徴は見ない）。
+ * 呼ぶ側（Review）は、判断時点の Hero Information Set だけから作る（判断より後の Board・Action・相手の実際の札を入れない。不変条件 3）。
+ */
 export interface KbSpot {
   readonly street?: Street;
   readonly position?: PositionName;
