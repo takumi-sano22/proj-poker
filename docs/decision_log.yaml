@@ -1,4 +1,4 @@
-# D01〜D93の採用済み人間判断。
+# D01〜D98の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -374,3 +374,23 @@
   choice: "Replay は Hero 視点の一手ずつ・Fast Forward は待ちの短縮（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "ReplayはHand一覧から選び、保存済みEventをHeroの視点でPrevious / Next / Play / Pauseで再生する（Showdownで公開された札は公開時点から見える）。Learning-only Full RevealとJump to Important SpotはPhase 5のReviewで扱う。Fast ForwardはHero Fold後に演出とCPUの待ちを縮め、Claudeの応答時間そのものは縮めない。実装は#67・#68。"
+- id: D94
+  choice: "Phase 5 を 9 つの子 Issue に分解（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 5（MVP Review）を#77〜#85の9つの子Issueに分解する（1 Sessionの永続化とResume / 2 Hand Summary Projectionと判断時点のHero Information Set・Important Spot / 3 Equity・RangeとAlternative Action / 4 Local KB / 5 Solver Adapter / 6 Review AI（Pass A）・Evidence Sufficiency Gate・Versioned Review / 7 Reveal Review（Pass B）とFollow-up / 8 ReviewのUI / 9 6-maxのE2EとREADME）。Solver選定のPoCは#76で行った。Web Fallback（OI-010）はMVPに入れず、根拠が足りないときはInsufficient Evidenceと表示する。"
+- id: D95
+  choice: "Event を版 6 に上げ、Session Projection と reviews のテーブルを足す（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "SESSION_STARTED / SESSION_ENDED / Handの打ち切り / Emergency Botへの切り替えをEventとして追加し、Eventのschema_versionを6に上げる（D88のEvent化）。DBにSession Projectionと、Version付きで上書きしないreviews（D39）のテーブルを自前のマイグレーションで足す。版1〜5と既存の行は書き換えない（D76）。実装は#77・#82。"
+- id: D96
+  choice: "Primary Solver は amaster97/poker_solver の HU River / Turn（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "#76のPoCに基づき、Primary Solverをamaster97/poker_solver（MIT）とし、CapabilityはHUのRiverとTurnだけを宣言する。FlopとMultiwayはUnsupportedとして正常にFallbackし前提を表示する（OI-009）。noambrown/poker_solverはテストでの照合にだけ使い、TexasSolverは採用しない。OI-002をこの判断で選定とする。実装は#81。"
+- id: D97
+  choice: "Review は Sonnet 5.5、重要 Spot だけ Opus 5.5（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "review_standardの暫定値をclaude-sonnet-5-5、review_deepをclaude-opus-5-5とし、role-based configに置く（OI-001の暫定値。永久仕様にしない）。review_deepはHeroが「詳しく」を選んだSpotだけに使う。呼び出しはD87どおりClaude CodeのOAuth（サブスク枠）を使う。実装は#82。"
+- id: D98
+  choice: "KB は apps/server/kb/ の Curated KB、E2E は Playwright と Fake（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Local KBはdocs/researchから要点を抜き出したCurated KB（MetadataつきMarkdown・Version付き）としてapps/server/kb/に置き、Metadataと全文で検索する（Vector DBは使わない）。6-max SessionのE2EはPlaywrightで通し、CPUはRuleBot、Review AIは録画済みの応答を使ってCIで回す。実際のClaudeでの通しは手動で1回行う。実装は#80・#85。"

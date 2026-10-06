@@ -2,9 +2,27 @@
 // 保存済みの行は書き換えない（events は append-only。D37）。読むたびに同じ変換をする。
 import type { HandEvent } from "@proj-poker/engine";
 
+/** 版 1〜5 に無い Event（Session の開始・終了・Hand の打ち切り・Emergency Bot への切り替え。版 6 で足した。D95）。 */
+type SessionEventV6 = Extract<
+  HandEvent,
+  {
+    type:
+      | "SESSION_STARTED"
+      | "SESSION_ENDED"
+      | "HAND_ABORTED"
+      | "EMERGENCY_BOT_ENGAGED";
+  }
+>;
+
+/**
+ * 版 5 の Event。版 6 は Event の種類（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED / EMERGENCY_BOT_ENGAGED）を足しただけで、
+ * 版 5 にあった Event の形は変えていないので、版 5 の Event はそのまま版 6 の Event として読める（変換は要らない）。
+ */
+export type HandEventV5 = Exclude<HandEvent, SessionEventV6>;
+
 /** 版 1〜4 に無い Event（Hero の宣言・Chip の操作・Dealer の裁定。版 5 で足した。D90）。 */
 type LiveEventV5 = Extract<
-  HandEvent,
+  HandEventV5,
   { type: "PLAYER_DECLARED" | "PHYSICAL_CHIP_ACTION" | "DEALER_RULING" }
 >;
 
@@ -12,7 +30,7 @@ type LiveEventV5 = Extract<
  * 版 4 の Event。版 5 は Event の種類（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING）を足しただけで、
  * 版 4 にあった Event の形は変えていないので、版 4 の Event はそのまま版 5 の Event として読める（変換は要らない）。
  */
-export type HandEventV4 = Exclude<HandEvent, LiveEventV5>;
+export type HandEventV4 = Exclude<HandEventV5, LiveEventV5>;
 
 /** 版 1〜3 に無い Event（CPU の判断の経緯。版 4 で足した。D83）。 */
 type AiEventV4 = Extract<

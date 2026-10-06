@@ -2,6 +2,8 @@
 // 保存の境界は Completed Hand（D62・docs/04 §10）: Hand 途中の Event はメモリに持ち、
 // HAND_FINISHED を追記した時点でその Hand の全 Event を 1 トランザクションで SQLite へ書く。
 // 再起動すると途中の Hand は消え、終わった Hand だけが残る（Hand 途中の完全復帰は要求しない）。
+// Hand の終わりは HAND_FINISHED か、AI 障害の後の打ち切り HAND_ABORTED（D95）。同じトランザクションで、その Session の
+// Session Projection（session-projection.ts）も書き替える（docs/04 §10。再起動後の Resume に使う）。
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { HandEvent } from "@proj-poker/engine";
@@ -15,7 +17,9 @@ import {
 import {
   assertAppendable,
   deepFreeze,
+  endedSessionGuard,
   EventSeqConflictError,
+  isHandEnd,
   summarizeLog,
   toStoredEvents,
   type AppendContext,
@@ -23,6 +27,10 @@ import {
   type StoredHandEvent,
   type StoredHandSummary,
 } from "./event-store.js";
+import {
+  nextSessionProjection,
+  type SessionProjection,
+} from "./session-projection.js";
 
 /**
  * 保存する Event（payload）の形の版。Engine の HandEvent の形を互換の無い形で変えたら上げる。
@@ -34,8 +42,10 @@ import {
  *   版 3 の行は変換せずに読む（版 1〜3 の行にこの 2 種類は無い）
  * - 5: Hero の宣言・Chip の操作・Dealer の裁定 PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING を足す（D90）。
  *   既存の Event の形は変えていないので、版 4 の行も変換せずに読む（版 1〜4 の行にこの 3 種類は無い）
+ * - 6: Session の開始・終了・Hand の打ち切り・Emergency Bot への切り替え SESSION_STARTED / SESSION_ENDED / HAND_ABORTED /
+ *   EMERGENCY_BOT_ENGAGED を足す（D95）。既存の Event の形は変えていないので、版 5 の行も変換せずに読む（版 1〜5 の行にこの 4 種類は無い）
  */
-export const EVENT_SCHEMA_VERSION = 5;
+export const EVENT_SCHEMA_VERSION = 6;
 
 /** 保存済みの Event の schema_version を、このアプリが読めない。 */
 export class UnsupportedEventSchemaError extends Error {
@@ -53,6 +63,19 @@ interface HandRow {
   hand_id: string;
   started_at: string;
   finished_at: string;
+  /** HAND_ABORTED で終えた Hand なら 1。 */
+  aborted: number;
+}
+
+interface SessionProjectionRow {
+  session_id: string;
+  last_hand_id: string;
+  state: SessionProjection["state"];
+  end_reason: SessionProjection["endReason"];
+  stacks: string;
+  personas: string;
+  emergency_bots: string;
+  updated_at: string;
 }
 
 interface EventRow {
@@ -63,9 +86,10 @@ interface EventRow {
   payload: string;
 }
 
-/** まだ HAND_FINISHED に達していない Hand（メモリだけ）。Session は Hand の最初の追記で決まる。 */
+/** まだ終わっていない Hand（メモリだけ）。Session と Persona の割り当ては Hand の最初の追記で決まる。 */
 interface PendingHand {
   readonly sessionId: string;
+  readonly personas: Readonly<Record<string, string>>;
   readonly log: StoredHandEvent[];
 }
 
@@ -80,6 +104,9 @@ export class SqliteEventStore implements EventStore {
   private readonly selectEvents: StatementSync;
   private readonly selectHand: StatementSync;
   private readonly selectRecentHands: StatementSync;
+  private readonly selectProjection: StatementSync;
+  private readonly selectLatestProjection: StatementSync;
+  private readonly upsertProjection: StatementSync;
 
   /** DB ファイル（":memory:" も可）を開いてマイグレーションを当て、Store を作る。close で DB も閉じる。 */
   static open(
@@ -112,8 +139,32 @@ export class SqliteEventStore implements EventStore {
     );
     this.selectHand = db.prepare("SELECT 1 FROM hands WHERE hand_id = ?");
     // 同じ時刻に始まった Hand は、保存した順（rowid）の新しい方を先にする。
+    // 打ち切った Hand（HAND_ABORTED を持つ）は Event の type で見分ける（hands の列は変えない。D95）。
     this.selectRecentHands = db.prepare(
-      "SELECT hand_id, started_at, finished_at FROM hands ORDER BY started_at DESC, rowid DESC LIMIT ?",
+      `SELECT h.hand_id, h.started_at, h.finished_at,
+         EXISTS (SELECT 1 FROM events e WHERE e.hand_id = h.hand_id AND e.type = 'HAND_ABORTED') AS aborted
+       FROM hands h ORDER BY h.started_at DESC, h.rowid DESC LIMIT ?`,
+    );
+    const projectionColumns =
+      "session_id, last_hand_id, state, end_reason, stacks, personas, emergency_bots, updated_at";
+    this.selectProjection = db.prepare(
+      `SELECT ${projectionColumns} FROM session_projections WHERE session_id = ?`,
+    );
+    // 最後に Hand が終わった Session。同じ時刻なら、先に作った行（rowid）より後の Session を選ぶ。
+    this.selectLatestProjection = db.prepare(
+      `SELECT ${projectionColumns} FROM session_projections ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+    );
+    // Session Projection は Session ごとに 1 行で、Hand が終わるたびに書き替える（派生データ。正本は Event Log）。
+    this.upsertProjection = db.prepare(
+      `INSERT INTO session_projections (${projectionColumns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (session_id) DO UPDATE SET
+         last_hand_id = excluded.last_hand_id,
+         state = excluded.state,
+         end_reason = excluded.end_reason,
+         stacks = excluded.stacks,
+         personas = excluded.personas,
+         emergency_bots = excluded.emergency_bots,
+         updated_at = excluded.updated_at`,
     );
   }
 
@@ -132,6 +183,7 @@ export class SqliteEventStore implements EventStore {
     const log = pending?.log ?? [];
     const sessionId =
       pending?.sessionId ?? context.sessionId ?? this.defaultSessionId;
+    const personas = pending?.personas ?? context.personas ?? {};
     assertAppendable(handId, log, events);
 
     const stored = toStoredEvents(
@@ -141,11 +193,11 @@ export class SqliteEventStore implements EventStore {
       this.newEventId,
     );
     const next = [...log, ...stored];
-    if (events.at(-1)?.type !== "HAND_FINISHED") {
-      this.pending.set(handId, { sessionId, log: next });
+    if (!events.some(isHandEnd)) {
+      this.pending.set(handId, { sessionId, personas, log: next });
     } else {
       // 書き込みに失敗したら例外のまま返し、メモリ側も変えない（Hand は未完了のまま残る）。
-      this.persist(handId, sessionId, next);
+      this.persist(handId, sessionId, personas, next);
       this.pending.delete(handId);
     }
     return stored;
@@ -159,17 +211,22 @@ export class SqliteEventStore implements EventStore {
   }
 
   /**
-   * 保存済みの Hand（HAND_FINISHED まで済んだ Hand）と、メモリにだけある Hand（進行中・AI 障害の後に打ち切った Hand。D62・D88）を
-   * 合わせて、開始の新しい順に最大 limit 件返す。メモリの Hand は再起動で消えるので、一覧からも消える。
+   * 保存済みの Hand（HAND_FINISHED か打ち切りの HAND_ABORTED まで済んだ Hand）と、メモリにだけある Hand（進行中・内部エラーで
+   * 止まった Hand。D62）を合わせて、開始の新しい順に最大 limit 件返す。メモリの Hand は再起動で消えるので、一覧からも消える。
    */
   listHands(limit: number): readonly StoredHandSummary[] {
     const persisted = (
       this.selectRecentHands.all(limit) as unknown as HandRow[]
-    ).map((row): StoredHandSummary => ({
-      handId: row.hand_id,
-      startedAt: row.started_at,
-      finishedAt: row.finished_at,
-    }));
+    ).map((row): StoredHandSummary => {
+      const aborted = row.aborted === 1;
+      return {
+        handId: row.hand_id,
+        startedAt: row.started_at,
+        // hands.finished_at は Hand の終わりの時刻。打ち切った Hand は HAND_FINISHED を持たないので null にする。
+        finishedAt: aborted ? null : row.finished_at,
+        aborted,
+      };
+    });
     // メモリの Hand は追記した順なので、逆順が開始の新しい順。sort は安定なので同じ時刻ならこの順を保つ。
     const pending = [...this.pending.entries()]
       .reverse()
@@ -179,22 +236,44 @@ export class SqliteEventStore implements EventStore {
       .slice(0, limit);
   }
 
+  latestSessionProjection(): SessionProjection | null {
+    const row = this.selectLatestProjection.get() as unknown as
+      SessionProjectionRow | undefined;
+    return row === undefined ? null : toProjection(row);
+  }
+
   /** DB を閉じる。以降は使えない。途中の Hand（メモリ側）は保存されずに消える（D62）。 */
   close(): void {
     this.pending.clear();
     if (this.db.isOpen) this.db.close();
   }
 
-  /** 終わった Hand の全 Event を 1 トランザクションで書く。 */
+  /** 終わった Hand の全 Event と、その Session の Session Projection を 1 トランザクションで書く。 */
   private persist(
     handId: string,
     sessionId: string,
+    personas: Readonly<Record<string, string>>,
     log: readonly StoredHandEvent[],
   ): void {
     const first = log[0];
     const last = log.at(-1);
     if (first === undefined || last === undefined) return;
     inTransaction(this.db, () => {
+      // 前の Projection は同じトランザクション（BEGIN IMMEDIATE で書き込みを排他）の中で読む。
+      const previous = this.selectProjection.get(sessionId) as unknown as
+        SessionProjectionRow | undefined;
+      const projection = nextSessionProjection(
+        endedSessionGuard(
+          previous === undefined ? null : toProjection(previous),
+        ),
+        {
+          sessionId,
+          handId,
+          events: log.map((s) => s.event),
+          personas,
+          recordedAt: last.recordedAt,
+        },
+      );
       this.insertSession.run(sessionId, first.recordedAt);
       this.insertHand.run(handId, sessionId, first.recordedAt, last.recordedAt);
       for (const s of log) {
@@ -208,6 +287,16 @@ export class SqliteEventStore implements EventStore {
           JSON.stringify(s.event),
         );
       }
+      this.upsertProjection.run(
+        projection.sessionId,
+        projection.lastHandId,
+        projection.state,
+        projection.endReason,
+        JSON.stringify(projection.stacks),
+        JSON.stringify(projection.personas),
+        JSON.stringify(projection.emergencyBots),
+        projection.updatedAt,
+      );
     });
   }
 
@@ -227,7 +316,7 @@ export class SqliteEventStore implements EventStore {
     }
     // 版 1 の行は Hand の前の Event（Fold の有無）を見て upcast するので、Hand 単位でまとめて変換し、
     // 版 1 の行にだけ変換結果を使う（1 Hand は 1 トランザクションで同じ版で書くが、混在しても新しい版の行を変えない）。
-    // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。版 3 → 4・4 → 5 は変換が要らない（Event の種類を足しただけ）。
+    // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。版 3 → 4・4 → 5・5 → 6 は変換が要らない（Event の種類を足しただけ）。
     const parsed = rows.map((row) => JSON.parse(row.payload) as HandEventV1);
     const asV2 = rows.some((row) => row.schema_version === 1)
       ? upcastV1ToV2(parsed)
@@ -252,4 +341,20 @@ export class SqliteEventStore implements EventStore {
       }),
     );
   }
+}
+
+/** Session Projection の行を読む（JSON の列を戻す）。 */
+function toProjection(row: SessionProjectionRow): SessionProjection {
+  return {
+    sessionId: row.session_id,
+    lastHandId: row.last_hand_id,
+    state: row.state,
+    endReason: row.end_reason,
+    stacks: JSON.parse(row.stacks) as SessionProjection["stacks"],
+    personas: JSON.parse(row.personas) as SessionProjection["personas"],
+    emergencyBots: JSON.parse(
+      row.emergency_bots,
+    ) as SessionProjection["emergencyBots"],
+    updatedAt: row.updated_at,
+  };
 }

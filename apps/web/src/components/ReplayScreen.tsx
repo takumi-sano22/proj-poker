@@ -12,6 +12,7 @@ import {
   formatStartedAt,
   heroCardsLabel,
   stepCaption,
+  unfinishedLabel,
 } from "../lib/replay.js";
 import { heroSeatOf } from "../lib/view-model.js";
 import { Amount } from "./Amount.js";
@@ -48,7 +49,8 @@ function ReplayList({ replay }: { readonly replay: ReplayState }) {
         </button>
       </div>
       <p className="replay-list__note">
-        保存した Hand を Hero の視点で一手ずつ再生します。途中で終わった Hand
+        保存した Hand を Hero の視点で一手ずつ再生します。AI の障害で Session
+        を終えた Hand は「打ち切り」と表示します。途中で止まった Hand
         は「未完了」と表示し、サーバーを再起動すると一覧から消えます。
       </p>
       {listLoad === "failed" && (
@@ -88,7 +90,9 @@ function ReplayList({ replay }: { readonly replay: ReplayState }) {
                     {heroCardsLabel(h)}
                   </span>
                   {net === null ? (
-                    <span className="badge replay-item__badge">未完了</span>
+                    <span className="badge replay-item__badge">
+                      {unfinishedLabel(h)}
+                    </span>
                   ) : (
                     <span className="replay-item__net">{net}</span>
                   )}
@@ -124,7 +128,9 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
       <div className="replay__head">
         <p className="replay__title">
           Replay（Hero の視点）
-          {!hand.complete && <span className="badge">未完了</span>}
+          {!hand.complete && (
+            <span className="badge">{unfinishedLabel(hand)}</span>
+          )}
         </p>
         <button
           type="button"
@@ -145,6 +151,7 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
                 nameOf={nameOf}
                 atEnd={replay.step >= last}
                 complete={hand.complete}
+                aborted={hand.aborted}
               />
             }
           />
@@ -236,10 +243,11 @@ interface CenterProps {
   readonly nameOf: (playerId: string) => string;
   readonly atEnd: boolean;
   readonly complete: boolean;
+  readonly aborted: boolean;
 }
 
 /** 卓の中央: Hand の結果（獲得額は実額）か、未完了の Hand の最後の step の案内。 */
-function ReplayCenter({ view, nameOf, atEnd, complete }: CenterProps) {
+function ReplayCenter({ view, nameOf, atEnd, complete, aborted }: CenterProps) {
   if (view.status === "complete") {
     return (
       <div className="result" role="status">
@@ -258,7 +266,9 @@ function ReplayCenter({ view, nameOf, atEnd, complete }: CenterProps) {
     return (
       <div className="result" role="status">
         <p className="result__session">
-          この Hand はここで止まっています（未完了）。
+          {aborted
+            ? "この Hand は AI の障害で Session を終えたため、ここで打ち切りました。"
+            : "この Hand はここで止まっています（未完了）。"}
         </p>
       </div>
     );

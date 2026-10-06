@@ -2,6 +2,7 @@
 // Re-simulation ではない: Engine・CPU・AI を動かし直さず、Event Log の先頭からの prefix を projectHeroView に渡すだけ（D38）。
 // 応答に入るのは Hero に見える Event（public と Hero 宛ての private）から作った値だけで、他者の Hole Cards（Showdown で
 // 公開されたもの以外）・Deck・engine / system Visibility の Event・CPU の Persona は入らない（D28・INV-INFO-001）。
+// 例外として、AI 障害の後に Hero が選んだ打ち切り（HAND_ABORTED は system Visibility）だけは、Hero 自身の選択なので aborted として返す（D95）。
 // Learning-only Full Reveal と Jump to Important Spot は Phase 5 の Review で扱う（D93）。
 import {
   projectHeroView,
@@ -16,13 +17,15 @@ import type { EventStore, StoredHandSummary } from "./event-store.js";
 /** Hand 一覧に出す件数の上限（新しい順）。ローカル単一ユーザーで、画面で選ぶのに足りる数の暫定値。 */
 export const REPLAY_LIST_LIMIT = 100;
 
-/** Hand 一覧の 1 行。値はすべて Hero に見える Event から作る。 */
+/** Hand 一覧の 1 行。値は Hero に見える Event と、打ち切ったかどうか（aborted）から作る。 */
 export interface ReplayHandSummary {
   readonly handId: string;
   readonly startedAt: string;
-  /** HAND_FINISHED の無い Hand（進行中・AI 障害の後に打ち切った Hand。D88）は null。 */
+  /** HAND_FINISHED の無い Hand（進行中・内部エラーで止まった・打ち切った Hand）は null。 */
   readonly finishedAt: string | null;
   readonly complete: boolean;
+  /** AI 障害の後に Hero が Session 終了を選んで打ち切った Hand（D95。再起動後も残る）。 */
+  readonly aborted: boolean;
   readonly bigBlind: number;
   /** Hero の札（配られる前に打ち切った Hand は null）。 */
   readonly heroHoleCards: readonly Card[] | null;
@@ -34,6 +37,8 @@ export interface ReplayHandSummary {
 export interface ReplayHand {
   readonly handId: string;
   readonly complete: boolean;
+  /** AI 障害の後に Hero が Session 終了を選んで打ち切った Hand（D95）。 */
+  readonly aborted: boolean;
   /** この Hand に座った Player の表示情報（席順）。今の卓の設定に無い Player は playerId を名前にする。 */
   readonly players: readonly SeatPlayer[];
   readonly steps: readonly HeroView[];
@@ -91,6 +96,7 @@ export function summarizeReplayHand(
     startedAt: summary.startedAt,
     finishedAt: summary.finishedAt,
     complete: view.status === "complete",
+    aborted: summary.aborted,
     bigBlind: view.bigBlind,
     heroHoleCards:
       view.seats.find((s) => s.playerId === heroId)?.holeCards ?? null,
@@ -124,6 +130,7 @@ export class ReplayService {
     return {
       handId,
       complete: steps.at(-1)?.status === "complete",
+      aborted: events.some((e) => e.type === "HAND_ABORTED"),
       players: started.seats.map(
         (seat): SeatPlayer =>
           this.players.find((p) => p.playerId === seat.playerId) ?? {

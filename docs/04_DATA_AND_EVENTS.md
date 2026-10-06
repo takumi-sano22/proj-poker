@@ -63,7 +63,7 @@ Hand Event Logを、実際に何が起きたかを表す**唯一の正本**と�
 
 ### Engine の Event 構成（`packages/engine/src/hand-events.ts`）
 
-Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED` をPot単位にし、Short All-in の Reopen（#32・D79）で `HAND_STARTED` に `reopenRule` を足し、Phase 3 で CPU の判断の経緯（`AI_ACTION_INVALID` / `AI_FALLBACK_USED`。#48・D83）を、Phase 4 で Hero の宣言・物理的なChipの操作・Dealerの裁定（`PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING`。#64・D90）を足した、1 Hand進行で発行するEventです。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
+Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED` をPot単位にし、Short All-in の Reopen（#32・D79）で `HAND_STARTED` に `reopenRule` を足し、Phase 3 で CPU の判断の経緯（`AI_ACTION_INVALID` / `AI_FALLBACK_USED`。#48・D83）を、Phase 4 で Hero の宣言・物理的なChipの操作・Dealerの裁定（`PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING`。#64・D90）を、Phase 5 で Session の開始・終了・Handの打ち切り・Emergency Botへの切り替え（`SESSION_STARTED` / `SESSION_ENDED` / `HAND_ABORTED` / `EMERGENCY_BOT_ENGAGED`。#77・D95）を足した、1 Hand進行で発行するEventです。Sessionの開始・終了も、そのSessionの最初・最後のHandのEvent Logに置きます（`events` は Hand ごとの表のまま）。上の一覧のうち、統合したものは「統合元」に書きます。Eventは `seq`（Hand内の通し番号・0始まり）と `visibility` を持ち、Stateは `foldHandEvents`（Eventの畳み込み）だけで作ります（D37）。`event_id`・時刻・`session_id` は永続化する側（`apps/server`）が付けます（EngineはI/Oと時刻を持たない）。
 
 | Event | 主な項目 | Visibility | 統合元・備考 |
 |---|---|---|---|
@@ -82,21 +82,28 @@ Phase 1（D70）で作り、Phase 2 の Side Pot（#31・D78）で `POT_AWARDED`
 | `DEALER_RULING` | `playerId`・`street`・`basis`（`operations`: 直前に同じ追記で置いた操作のEvent / `pending_out_of_turn`: 保留していたOOTの操作）・`outcome`（`action` / `out_of_turn` / `no_action`）・`action`（`outcome` が `action` のときのCanonical Action。それ以外は `null`）・`notes`（裁定の理由 `RulingCode`。`docs/02` §4） | public | Dealerの正式裁定（`docs/02` §8のRULING）。`action` なら直後のEventが同じPlayerのその `ACTION_TAKEN`（同じ追記）。`out_of_turn` は手番を正しいPlayerへ戻して警告し、操作を保留する（Engineの手番は変えない）。保留はそのPlayerの手番が来た時点の `pending_out_of_turn` の裁定で消え、拘束なら `action`、撤回なら `no_action`（`out_of_turn_released`）。卓のState（Chip・手番）は変えない |
 | `AI_ACTION_INVALID` | `playerId`・`attempt`（何回目の要求の出力か。1始まり、2はCorrection付きの再要求）・`stage`（schema / legal_action / amount_range）・`reason`（不正と判定した理由） | system | CPUの出力を検証で不正と判定した記録（D41・D83。Retryで正常に戻った不正も残す）。その手番の `ACTION_TAKEN` より前に置く。`reason` はCPUの出力の値を含みうる。卓のState（Chip・手番）は変えない |
 | `AI_FALLBACK_USED` | `playerId`・`fallbackKind`（`automatic`: Retryの後も不正だったときの自動Fallback〔D41〕/ `emergency_bot`: 障害の後にユーザーが選んだEmergency Bot〔D86・#52。そのCPUの手番ごとに置き、`reason`はきっかけの障害の種類〕）・`reason` | system | CPUの判断の代わりにBotの判断を使った記録（`docs/03` §6のFlag）。直後のEventが、同じPlayerのFallbackで決めた `ACTION_TAKEN`（同じ追記で置く）。卓のStateは変えない |
+| `SESSION_STARTED` | `sessionId` | system | Sessionの開始（D95）。Sessionの最初のHandの、開始のEvent（`startHand` の結果）に続けて同じ追記で置く（Sessionの最初のHandは全員が均等Stackで始まるので、開始の時点では終わっていない）。席・Stack・Buttonは `HAND_STARTED` に残る。CPUのPersonaは入れない（他CPUのSecret Persona。§10のSession Projectionに置く）。卓のStateは変えない |
+| `SESSION_ENDED` | `sessionId`・`reason`（`hero_busted` / `hero_last_standing` / `ai_outage`） | system | Sessionの終了（D80・D86・D95）。Sessionの最後のHandの終わり（`HAND_FINISHED` か `HAND_ABORTED`）の直後に同じ追記で置く。Handの終わりより後ろに置ける唯一のEvent。卓のStateは変えない |
+| `HAND_ABORTED` | `reason`（`ai_outage`: CPUの障害のダイアログでHeroがSession終了を選んだ） | system | Handの打ち切り（D95。D88のEvent化）。`HAND_FINISHED` の代わりにHandを終える（Stateは `complete` になり、手番は無くなる）。Potは配分せずChipは動かさない（Sessionも一緒に終えるので、Stackを次のHandへ持ち越さない）。直後に `SESSION_ENDED`（`ai_outage`）を同じ追記で置く |
+| `EMERGENCY_BOT_ENGAGED` | `playerId`・`cause`（きっかけの障害の種類: `timeout` / `unauthenticated` / `usage_limit` / `error`） | system | 障害の後にHeroがEmergency Botを選んだ記録（D86・D95。D88のEvent化）。障害で止まったそのCPUの手番に置く。そのCPUはSessionの終わりまでRuleBotで動き、手番ごとの記録は `AI_FALLBACK_USED`（`emergency_bot`）。内部のエラー本文は入れない。卓のStateは変えない |
 
 Phase 1の`apps/server`（Issue #18）は、Engineが返したEventをEvent Store（`apps/server/src/event-store.ts`）へそのまま追記し、保存時に`eventId`（UUID）と`recordedAt`（ISO 8601・UTC）を付けます。Event Storeはappend-onlyで、先頭のseqがそのHandの保存済み件数と一致し連番である追記だけを受け付けます（`HAND_FINISHED`の後ろへの追記も拒否します）。起動時はSQLiteの実装（Issue #20。§10の「Phase 1 の保存」）を使い、メモリ内の実装はテスト用です。CPUの不正な出力と、RuleBotの判断で続けたFallbackの記録（`docs/03` §5）は、#47ではOrchestratorの運用Metadataでしたが、#48（D83）で `AI_ACTION_INVALID` / `AI_FALLBACK_USED` としてEvent Logに残すように置き換えました。2つのEventは、OrchestratorがEngineの `recordAiEvent`（手番のPlayerの記録だけを受け付け、seqとVisibilityを付ける）で作り、その手番のActionより前に追記します（Actionで `HAND_FINISHED` まで進むと、その後ろへは追記できないため）。
 
 Heroの物理的な操作（#64・D90・D91）は、Engineの `applyPhysicalActions`（Ruling Engineで裁定し、操作ごとの `PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION`、`DEALER_RULING`、決まった `ACTION_TAKEN` とそこから自動で進むEventまでを1つの結果で返す）で作り、Orchestratorが1回で追記します。手番でない操作（Out-of-Turn）は `DEALER_RULING`（`out_of_turn`）で保留し、Heroの手番が来た時点でOrchestratorがEngineの `resolvePendingOutOfTurn` で拘束か撤回かを裁定します。保留中かどうかはEventの畳み込み（Stateの `pendingOutOfTurn`）だけで分かるので、「警告 → 間のAction → 拘束 / 撤回」はEventの並びから復元できます（Replay #68の前提）。
 
+Sessionの開始・終了・Handの打ち切り・Emergency Botへの切り替え（#77・D95）は、OrchestratorがEngineの `recordSessionEvent`（置ける時点を検査し、seqとVisibilityを付ける。`SESSION_STARTED` / `HAND_ABORTED` はHandの途中、`EMERGENCY_BOT_ENGAGED` はそのCPUの手番、`SESSION_ENDED` はHandが終わった後）で作ります。4つともsystem Visibilityで、HeroのView・CPUの `KnowledgeState`・Replayには入りません（Heroへは `SessionStatus` をAPIが別に返す。`docs/03` §1）。`SESSION_ENDED` は、Handを終える追記（`HAND_FINISHED` を含むActionの結果、または打ち切り）の時点でSessionの終わりを判定して同じ追記に足します（`HAND_FINISHED` の `stacks` から `nextHandSeating` でHeroのBust / 残りがHeroだけを判定する）。Event Storeは、Handの終わりの後ろには同じ追記の `SESSION_ENDED` 1つだけを受け付けます。
+
 #### Event の形の版（schema_version）
 
 保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。方針は次のとおりです（D76）。
 
-- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `5`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
+- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `6`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
   - 版 1: Phase 1（単一Pot）。`POT_AWARDED` に `potIndex`・`eligible` が無い
   - 版 2: `POT_AWARDED` をPotごとに発行し、`potIndex`・`eligible` を持つ（D78）。版 1 の行は読み込み時に `apps/server/src/event-upcast.ts` の `upcastV1ToV2` で補います（`potIndex` は 0、`eligible` はその時点でFoldしていないPlayer。版 1 は単一Potなので、Main Potとして読めば版 2 のEngineが発行する形と一致します）
   - 版 3: `HAND_STARTED` に `reopenRule` を持つ（D79・D81）。版 1・2 の行は読み込み時に（版 1 は `upcastV1ToV2` の後で）`upcastV2ToV3` が `reopenRule: cumulative_full_raise` を補います。`reopenRule` は Event の畳み込み（State 遷移）に使わず Legal Action の計算だけに使うので、保存済み Event の再生結果は変わりません。また版 2 までの Server は全員同じ Stack で Hand を始めるため、最高額を上げる All-in は 1 Street に 1 回までで、累積と単発の Reopen 判定は一致します
   - 版 4: `AI_ACTION_INVALID` / `AI_FALLBACK_USED` を足す（D83）。既存のEventの形は変えていないので、版 3 の行は変換せずに読みます（版 1〜3 の行にこの 2 種類はありません）。版 3 の行を版 2 → 3 の変換に通すと保存した `reopenRule` を上書きするため、変換は版 3 未満の行にだけ通します
   - 版 5: `PLAYER_DECLARED` / `PHYSICAL_CHIP_ACTION` / `DEALER_RULING` を足す（D90）。既存のEventの形は変えていないので、版 4 の行も変換せずに読みます（版 1〜4 の行にこの 3 種類はありません）。DBのテーブル・列は変えていません
+  - 版 6: `SESSION_STARTED` / `SESSION_ENDED` / `HAND_ABORTED` / `EMERGENCY_BOT_ENGAGED` を足す（D95）。既存のEventの形は変えていないので、版 5 の行も変換せずに読みます（版 1〜5 の行にこの 4 種類はありません）。版 5 までに保存したSessionには `SESSION_STARTED` / `SESSION_ENDED` もSession Projectionも無く、作り直しません（再起動後のResumeの対象にならない）。DBは §10 の `session_projections` を足しただけで、既存のテーブル・列・行は変えていません
 - 読み出しは現在の版と upcast を持つ旧版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。
 - 互換の無い形の変更（必須項目の追加・意味の変更）をするときは版を上げ、旧版の行を読み込み時に新しい形へそろえる変換（upcast）を同じ PR で足します。保存済みの行は書き換えません（append-only）。任意項目の追加など、旧版の読み手が誤らない変更は版を上げません。
 
@@ -203,7 +210,7 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 
 Replayそのものは保存済みEventだけで再生します。
 
-実装（#68・D38・D93）: Replay Service（`apps/server/src/replay.ts`）は、Event Store の `read` で読んだEventの、Heroに見える分（public と Hero 宛ての private）の先頭からのprefixを `projectHeroView` に渡して、一手ずつのHeroの視点を作ります。Engine・CPU・AIは動かしません。stepはHeroに見えるEvent 1件ごとで、Actionに決まった `DEALER_RULING` だけは直後の `ACTION_TAKEN` と1 stepにまとめます。Hand の一覧は Event Store の `listHands`（`hands` テーブルの行と、メモリにある `HAND_FINISHED` の無い Hand）から作ります。テーブル・列・Event の形・`schema_version` は変えていません。`HAND_FINISHED` の無い Hand（§10・D88）は「未完了」として同じ形で返し、再起動すると消えます。下のMetadataはReplayには使いません。
+実装（#68・D38・D93）: Replay Service（`apps/server/src/replay.ts`）は、Event Store の `read` で読んだEventの、Heroに見える分（public と Hero 宛ての private）の先頭からのprefixを `projectHeroView` に渡して、一手ずつのHeroの視点を作ります。Engine・CPU・AIは動かしません。stepはHeroに見えるEvent 1件ごとで、Actionに決まった `DEALER_RULING` だけは直後の `ACTION_TAKEN` と1 stepにまとめます。Hand の一覧は Event Store の `listHands`（`hands` テーブルの行と、メモリにある終わっていない Hand）から作ります（#68 ではテーブル・列・Event の形・`schema_version` は変えていません）。終わっていない Hand（進行中・内部エラーで止まった Hand。§10）は「未完了」として同じ形で返し、再起動すると消えます。AI 障害の後に打ち切った Hand（`HAND_ABORTED`。#77・D95）は保存され、一覧・再生の応答で `aborted: true`（`finishedAt` は null。打ち切りの Event は system Visibility なので step には入らない）として返し、再起動後も残ります。下のMetadataはReplayには使いません。
 
 Best-effortなDebug / Re-analysis用Metadata:
 
@@ -237,9 +244,11 @@ Action単位の完全Crash RecoveryはMVPで過剰実装しません。
 - 保存先は SQLite（`node:sqlite`）で、`apps/server` だけが扱います。DB ファイルは環境変数 `POKER_DB_PATH`（`:memory:` も可）で変えられ、既定は `apps/server/data/poker.sqlite`（gitignore 済み）です。
 - テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only。削除は §11 の Reset と一緒に設計する）。
 - マイグレーションは自前の小さな仕組みで、SQL の配列（`apps/server/src/db/database.ts` の `MIGRATIONS`）を `PRAGMA user_version` より新しい分だけ 1 版ずつトランザクションで当てます。アプリより新しい版の DB は開きません。
-- Hand 途中の Event はメモリに持ち、`HAND_FINISHED` を追記した時点で、その Hand の全 Event と `hands` の行（その Session の最初の Hand なら `sessions` の行も。`started_at` はその Hand の開始時刻）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。
-- AI 障害の後に Hero が選んだ Session 終了（Hand の打ち切り）と、Emergency Bot に切り替えた CPU の Session 単位の登録（#52）は、Phase 3 では Orchestrator のメモリに持ち、Event にしていません（内部エラーで止まった Hand と同じ扱い。D88）。打ち切った Hand は `HAND_FINISHED` の無い Hand として残り（上のとおり保存はされません）、Emergency Bot が判断した各 Action には `AI_FALLBACK_USED`（`emergency_bot`。D83）が残ります。打ち切り・切り替えの Event 化は、Phase 5 の Session Resume の Issue で Hand の中断・再開と合わせて設計します。
-- Session（#35・D80）は Hand Orchestrator が決め、Hand の最初の追記で Event Store へ渡した Session ID が `hands.session_id` に入ります（テーブル・列・Event の形は変えていない）。Session の最初の Hand は均等 Stack で始め、2 Hand 目以降は前 Hand の `HAND_FINISHED` の `stacks` を持ち越します（席と Button は `HAND_STARTED` に残る）。Hero の Bust か、残りが Hero だけになったら Session を終え、次の Hand は新しい Session になります。Session の終了を表す Event（`SESSION_ENDED` 等）・Session Projection・Memory Update はまだ保存しません。Session の状態は最後の Hand の `HAND_STARTED`・`HAND_FINISHED` から作り直せます。再起動後の Session の再開（Resume）は Phase 5 の範囲で、再起動すると新しい Session から始まります。
+- Hand 途中の Event はメモリに持ち、Hand の終わり（`HAND_FINISHED`、または AI 障害の後の打ち切り `HAND_ABORTED`。#77・D95）を追記した時点で、その Hand の全 Event と `hands` の行（その Session の最初の Hand なら `sessions` の行も。`started_at` はその Hand の開始時刻、`finished_at` は Hand の終わりの時刻）と、その Session の Session Projection（下記）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。
+- AI 障害の後に Hero が選んだ Session 終了（Hand の打ち切り）と、Emergency Bot に切り替えた CPU の Session 単位の登録（#52）は、Phase 3 では Orchestrator のメモリに持っていました（D88）。#77（D95）で、打ち切りは `HAND_ABORTED` と `SESSION_ENDED`（`ai_outage`）、切り替えは `EMERGENCY_BOT_ENGAGED` として Event Log に残すように置き換えました（§3）。打ち切った Hand は保存され、Replay の一覧に残ります。内部エラーで止まった Hand は従来どおり Event を足さず、保存されません（次の開始は新しい Session）。
+- Session（#35・D80）は Hand Orchestrator が決め、Hand の最初の追記で Event Store へ渡した Session ID が `hands.session_id` に入ります。Session の最初の Hand は均等 Stack で始め（開始の Event に続けて `SESSION_STARTED`）、2 Hand 目以降は前 Hand の `HAND_FINISHED` の `stacks` を持ち越します（席と Button は `HAND_STARTED` に残る）。Hero の Bust か、残りが Hero だけになったら `SESSION_ENDED` を置いて Session を終え、次の Hand は新しい Session になります。Session の状態は最後の Hand の Event（`SESSION_ENDED`、無ければ `HAND_STARTED`・`HAND_FINISHED`）から作り直せます。Memory Update はまだ保存しません。
+- **Session Projection（#77・D95）**: マイグレーション v2 で `session_projections`（`session_id`〔PK〕・`last_hand_id`・`state`〔`ready_for_next_hand` / `ended`〕・`end_reason`〔`ended` のときだけ。CHECK で組を守る〕・`stacks`〔最後に確定した席順の Stack。打ち切った Hand は開始時の Stack〕・`personas`〔CPU → Persona の Preset ID〕・`emergency_bots`〔切り替えた CPU ときっかけの障害の種類〕・`updated_at`）を足しました。Session ごとに 1 行で、Hand が終わるたびに書き替える派生データです（作り方は `apps/server/src/session-projection.ts` の `nextSessionProjection`。前の Projection に終わった Hand の Event を畳み込む）。Persona の割り当てだけは Event に入れない（他 CPU の Secret Persona）ので、Session の開始時の設定を Event Store への最初の追記で渡して引き継ぎます。それ以外は Session の Hand の Event を順に畳み込めば作り直せます。終わった Session（`ended`）に Hand を足す書き込みは拒否します（Projection を `ended` から戻さない）。
+- **Resume（#77・D62・D95）**: Hand Orchestrator は起動時に、最後に Hand が終わった Session の Projection（`latestSessionProjection`）が `ready_for_next_hand` で、その最後の Hand の席の Player が今の卓の設定にそろっていれば、その Session を戻します（Emergency Bot の CPU と Persona の割り当ては Projection から）。次の開始は、最後の Hand の `HAND_STARTED`・`HAND_FINISHED` から `nextHandSeating` で席・Button・Stack を決めて同じ Session で続けます（`SESSION_STARTED` は置かない）。Hand 途中で止まった Hand は保存されていないので戻さず、最後に終わった Hand から続けます（Hand 途中の完全復帰は求めない）。Session が終わっていた・卓の設定（人数・Player）を変えて起動した場合は、新しい Session で始めます（後者は warn を残す）。
 
 ## 11. Reset Semantics
 
@@ -258,7 +267,7 @@ CPUのPersistent Observation / Hypothesisを削除します。
 
 ### Hand History Delete
 
-Hand / Session Historyと派生Projectionを削除します。
+Hand / Session Historyと派生Projectionを削除します（`session_projections` も含む。#77。Reset の実装時に、Event を消したのに Projection が残る・Projection だけ残った Session を Resume する、を作らない）。
 
 ### Factory Reset
 

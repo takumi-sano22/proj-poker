@@ -4,6 +4,7 @@
 import type {
   InvalidOutputStage,
   KnowledgeState,
+  OutageKind,
   LegalActionSet,
   PlayerAction,
 } from "@proj-poker/engine";
@@ -44,9 +45,9 @@ export interface OpponentOutput {
  * - unauthenticated: 未ログイン・認証切れ
  * - usage_limit: 利用枠の上限
  * - error: それ以外の呼び出しの失敗
+ * Emergency Bot への切り替えのきっかけとして EMERGENCY_BOT_ENGAGED の Event にも残すので、型は Engine の Event と共有する（D95）。
  */
-export type OutageKind =
-  "timeout" | "unauthenticated" | "usage_limit" | "error";
+export type { OutageKind };
 
 /**
  * 障害の種類が分かっている例外。Agent がこれを投げると Orchestrator はその種類で障害を記録する。

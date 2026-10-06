@@ -51,14 +51,17 @@ export { isVisibleTo, visibilityOf } from "./hand-events.js";
 export type {
   ActionType,
   FallbackKind,
+  HandAbortReason,
   HandEvent,
   HandEventBody,
   HandEventType,
   InvalidOutputStage,
+  OutageKind,
   PlayerChips,
   RulingBasis,
   RulingOutcome,
   SeatInit,
+  SessionEndReason,
   Street,
   Visibility,
 } from "./hand-events.js";
@@ -79,6 +82,7 @@ export {
   applyAction,
   applyPhysicalActions,
   recordAiEvent,
+  recordSessionEvent,
   resolvePendingOutOfTurn,
   startHand,
 } from "./hand-engine.js";
@@ -88,6 +92,7 @@ export type {
   EngineResult,
   HandProgress,
   PhysicalProgress,
+  SessionEventBody,
   StartHandInput,
 } from "./hand-engine.js";
 

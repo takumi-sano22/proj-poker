@@ -203,7 +203,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D93の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D98の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -239,7 +239,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 できていること:
 
-- 設計ドキュメント（`docs/`）と人間判断（D01〜D93）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D98）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
 - Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
 - テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）。Ruling も固定 Scenario と Property Test で確かめます
@@ -259,12 +259,11 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 制約・未実装:
 
 - Ruling の規則（Oversized Chip・String Bet・Multiple Chip・宣言・Out of Turn）は OI-008 の暫定値、Chip の額面は OI-004 の暫定値です（永久仕様ではありません）。物理的な誤操作をするのは Hero だけで、CPU は Canonical Action で行動します（D91）
-- Replay の Hand 一覧に出る「未完了」の Hand（進行中・AI 障害の後に Session 終了で打ち切った Hand）はサーバーのメモリにだけあり、サーバーを再起動すると消えます。Learning-only Full Reveal（全員の札の学習用の公開）と Jump to Important Spot は Phase 5 の Review で扱います（D93）
+- Replay の Hand 一覧に出る「未完了」の Hand（進行中・内部エラーで止まった Hand）はサーバーのメモリにだけあり、サーバーを再起動すると消えます。AI 障害の後に Session 終了で打ち切った Hand は「打ち切り」として保存され、再起動後も残ります（#77）。Learning-only Full Reveal（全員の札の学習用の公開）と Jump to Important Spot は Phase 5 の Review で扱います（D93）
 - Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
-- 障害時に選んだ Session 終了と Emergency Bot への切り替えは、まだ Event Log に残りません（サーバーのメモリだけ。Phase 5 の Session Resume で Event 化を設計。D88）
 - Persona の数値（OI-005）・モデル名 `claude-haiku-4-5` と判断待ちの上限（OI-001）・Eval の合格ライン（`docs/09` §5）は暫定値です。Tilt（一時的な状態）・CPU の観察記憶は Phase 7 です
-- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）・Session 終了の Event はまだありません。Ante・Blind Level は Phase 8（Tournament）です
-- サーバーを再起動すると新しい Session から始まります（再起動後の Session Resume は Phase 5）
+- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）はまだありません。Ante・Blind Level は Phase 8（Tournament）です
+- サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます（Stack・Button・Emergency Bot を持ち越す。#77）。Hand の途中で止めた場合は、その Hand は消え、最後に終わった Hand から続きます
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
 - Hand Review（判断時点の情報だけの Decision Review・Reveal Review・解析・追加質問）は未実装です。MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
 

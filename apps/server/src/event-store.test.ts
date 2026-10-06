@@ -3,8 +3,10 @@ import {
   foldHandEvents,
   getLegalActions,
   PHASE1_CASH_PRESET,
+  recordSessionEvent,
   startHand,
   type HandEvent,
+  type SessionEventBody,
 } from "@proj-poker/engine";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -38,6 +40,30 @@ function finishingEvents(started: readonly HandEvent[]): readonly HandEvent[] {
   const result = applyAction(state, actor, { type: "fold" });
   if (!result.ok) throw new Error(result.error.message);
   return result.value.events;
+}
+
+/** Event の後ろに Session・Hand の運用の Event を続ける（seq は Engine が付ける）。 */
+function withSessionEvents(
+  events: readonly HandEvent[],
+  ...bodies: SessionEventBody[]
+): HandEvent[] {
+  const out = [...events];
+  let state = foldHandEvents(events);
+  for (const body of bodies) {
+    const recorded = recordSessionEvent(state, body);
+    out.push(...recorded.events);
+    state = recorded.state;
+  }
+  return out;
+}
+
+/** sampleEvents の続き: 手番の Player の障害で Hand を打ち切り、Session を終えた Event（D95）。 */
+function abortingEvents(started: readonly HandEvent[]): HandEvent[] {
+  return withSessionEvents(
+    started,
+    { type: "HAND_ABORTED", reason: "ai_outage" },
+    { type: "SESSION_ENDED", sessionId: "s1", reason: "ai_outage" },
+  ).slice(started.length);
 }
 
 // 開いた SQLite の Store はテストごとに閉じる。
@@ -173,13 +199,161 @@ describe.each(implementations)("%s", (_name, createStore) => {
     store.append("h2", started);
 
     expect(store.listHands(10)).toEqual([
-      { handId: "h2", startedAt: "2026-10-05T00:02:00.000Z", finishedAt: null },
+      {
+        handId: "h2",
+        startedAt: "2026-10-05T00:02:00.000Z",
+        finishedAt: null,
+        aborted: false,
+      },
       {
         handId: "h1",
         startedAt: "2026-10-05T00:00:00.000Z",
         finishedAt: "2026-10-05T00:01:00.000Z",
+        aborted: false,
       },
     ]);
     expect(store.listHands(1).map((h) => h.handId)).toEqual(["h2"]);
+  });
+
+  it("Hand の終わりの後ろには、同じ追記の SESSION_ENDED 1 つだけを置ける（D95）", () => {
+    const started = sampleEvents();
+    const rest = finishingEvents(started);
+    const all = withSessionEvents([...started, ...rest], {
+      type: "SESSION_ENDED",
+      sessionId: "s1",
+      reason: "hero_busted",
+    });
+    const ended = all.at(-1) as HandEvent;
+    const store = createStore();
+    store.append("h1", started);
+    // SESSION_ENDED が 2 つ続く・SESSION_ENDED 以外が続く追記は、何も書かずに拒否する。
+    expect(() =>
+      store.append("h1", [...rest, ended, { ...ended, seq: ended.seq + 1 }]),
+    ).toThrow(EventSeqConflictError);
+    expect(() =>
+      store.append("h1", [
+        ...rest,
+        { ...(rest.at(-1) as HandEvent), seq: ended.seq },
+      ]),
+    ).toThrow(EventSeqConflictError);
+    expect(store.read("h1").length).toBe(started.length);
+
+    store.append("h1", [...rest, ended]);
+    expect(store.read("h1").map((s) => s.event)).toEqual(all);
+    // 終わった Hand へは、SESSION_ENDED の後ろにも足せない。
+    expect(() =>
+      store.append("h1", [{ ...ended, seq: ended.seq + 1 }]),
+    ).toThrow(EventSeqConflictError);
+  });
+
+  it("HAND_ABORTED で Hand が終わる。一覧では aborted で finishedAt は null、後ろへは追記できない（D95）", () => {
+    let minute = 0;
+    const store = createStore({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    const started = sampleEvents();
+    const aborted = abortingEvents(started);
+    store.append("h1", started);
+    store.append("h1", aborted, { sessionId: "s1" });
+    expect(store.read("h1").map((s) => s.event)).toEqual([
+      ...started,
+      ...aborted,
+    ]);
+    expect(store.listHands(10)).toEqual([
+      {
+        handId: "h1",
+        startedAt: "2026-10-05T00:00:00.000Z",
+        finishedAt: null,
+        aborted: true,
+      },
+    ]);
+    expect(() =>
+      store.append("h1", [
+        { ...(aborted.at(-1) as HandEvent), seq: started.length + 2 },
+      ]),
+    ).toThrow(EventSeqConflictError);
+  });
+
+  it("Session Projection: Hand が終わるたびに Session ごとに作り替え、latestSessionProjection は最後に Hand が終わった Session（D95）", () => {
+    let minute = 0;
+    const store = createStore({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    expect(store.latestSessionProjection()).toBeNull();
+    const started = sampleEvents();
+    const actor = getLegalActions(foldHandEvents(started))?.playerId ?? "";
+    // s1 の最初の Hand: SESSION_STARTED と Emergency Bot への切り替えを持ち、Fold で終わる。
+    const opening = withSessionEvents(
+      started,
+      { type: "SESSION_STARTED", sessionId: "s1" },
+      { type: "EMERGENCY_BOT_ENGAGED", playerId: actor, cause: "timeout" },
+    );
+    store.append("h1", opening, { sessionId: "s1", personas: { b: "lag" } });
+    // Persona は Hand の最初の追記の値を使い、以降の追記では見ない。
+    const finishing = finishingEvents(opening);
+    store.append("h1", finishing, {
+      sessionId: "s1",
+      personas: { b: "nit" },
+    });
+    const finished = finishing.at(-1);
+    if (finished?.type !== "HAND_FINISHED") throw new Error("終わっていない");
+    expect(store.latestSessionProjection()).toEqual({
+      sessionId: "s1",
+      lastHandId: "h1",
+      state: "ready_for_next_hand",
+      endReason: null,
+      stacks: finished.stacks,
+      personas: { b: "lag" },
+      emergencyBots: [{ playerId: actor, cause: "timeout" }],
+      updatedAt: "2026-10-05T00:01:00.000Z",
+    });
+
+    // s1 の 2 Hand 目: 打ち切りで Session が終わる。Persona・Emergency Bot は前の Projection から引き継ぐ。
+    store.append("h2", started, { sessionId: "s1", personas: {} });
+    store.append("h2", abortingEvents(started));
+    expect(store.latestSessionProjection()).toEqual({
+      sessionId: "s1",
+      lastHandId: "h2",
+      state: "ended",
+      endReason: "ai_outage",
+      stacks: [
+        { playerId: "a", amount: 200 },
+        { playerId: "b", amount: 200 },
+      ],
+      personas: { b: "lag" },
+      emergencyBots: [{ playerId: actor, cause: "timeout" }],
+      updatedAt: "2026-10-05T00:03:00.000Z",
+    });
+
+    // 終わった Session には Hand を足せない（Hand の終わりの追記を、何も書かずに拒否する）。
+    store.append("h3", started, { sessionId: "s1" });
+    expect(() => store.append("h3", finishingEvents(started))).toThrow(
+      EventSeqConflictError,
+    );
+    expect(store.read("h3").length).toBe(started.length);
+    expect(store.latestSessionProjection()?.lastHandId).toBe("h2");
+
+    // 別の Session の Hand が終われば、そちらが最後の Session になる。
+    store.append(
+      "h4",
+      withSessionEvents(started, { type: "SESSION_STARTED", sessionId: "s2" }),
+      { sessionId: "s2" },
+    );
+    store.append(
+      "h4",
+      finishingEvents(
+        withSessionEvents(started, {
+          type: "SESSION_STARTED",
+          sessionId: "s2",
+        }),
+      ),
+    );
+    expect(store.latestSessionProjection()).toMatchObject({
+      sessionId: "s2",
+      lastHandId: "h4",
+      state: "ready_for_next_hand",
+      personas: {},
+      emergencyBots: [],
+    });
   });
 });

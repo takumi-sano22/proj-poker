@@ -76,6 +76,11 @@ export function formatHeroNet(
   return `${sign}${formatChipsWithBB(Math.abs(net), summary.bigBlind, showBB)}`;
 }
 
+/** 結果の無い Hand の印。AI の障害で Session を終えて打ち切った Hand は「打ち切り」、それ以外は「未完了」（D95）。 */
+export function unfinishedLabel(hand: { readonly aborted: boolean }): string {
+  return hand.aborted ? "打ち切り" : "未完了";
+}
+
 /** 一覧の Hero の札の表記（配られる前に打ち切った Hand は「札なし」）。 */
 export function heroCardsLabel(summary: ReplayHandSummary): string {
   return summary.heroHoleCards === null

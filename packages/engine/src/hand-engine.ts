@@ -282,6 +282,44 @@ export function recordAiEvent(
   return emit({ state, events: [] }, body);
 }
 
+/** Session・Hand の運用の記録として Orchestrator が残す Event の中身（D95）。 */
+export type SessionEventBody = Extract<
+  HandEventBody,
+  {
+    type:
+      | "SESSION_STARTED"
+      | "SESSION_ENDED"
+      | "HAND_ABORTED"
+      | "EMERGENCY_BOT_ENGAGED";
+  }
+>;
+
+/**
+ * Session の開始・終了、Hand の打ち切り、Emergency Bot への切り替えを、Log の次の seq の Event にする（D95）。
+ * 置ける時点が決まっていて、外れていれば呼び出し側の誤りなので投げる。
+ * - SESSION_STARTED / HAND_ABORTED: Hand の途中（HAND_ABORTED で Hand は終わる）
+ * - EMERGENCY_BOT_ENGAGED: Hand の途中で、その CPU の手番（障害で止まった手番）
+ * - SESSION_ENDED: Hand が終わった後（HAND_FINISHED か HAND_ABORTED の直後）
+ */
+export function recordSessionEvent(
+  state: HandState,
+  body: SessionEventBody,
+): HandProgress {
+  const inProgress = state.status === "in_progress";
+  const actor =
+    state.actorIndex === null ? null : playerAt(state, state.actorIndex);
+  const allowed =
+    body.type === "SESSION_ENDED"
+      ? !inProgress
+      : body.type === "EMERGENCY_BOT_ENGAGED"
+        ? inProgress && actor?.playerId === body.playerId
+        : inProgress;
+  if (!allowed) {
+    throw new RangeError(`${body.type} はこの時点では置けない`);
+  }
+  return emit({ state, events: [] }, body);
+}
+
 /** Event を 1 つ発行し、State に畳み込む。seq と Visibility はここでだけ付ける。 */
 function emit(acc: HandProgress, body: HandEventBody): HandProgress {
   const event: HandEvent = {

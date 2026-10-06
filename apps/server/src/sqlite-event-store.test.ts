@@ -18,7 +18,12 @@ import { PHASE1_TABLE_SETUP } from "./config.js";
 import { EventSeqConflictError } from "./event-store.js";
 import type { HandEventV2 } from "./event-upcast.js";
 import { HandOrchestrator } from "./hand-orchestrator.js";
+import type { OpponentFactory } from "./opponents/opponent-agent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
+import {
+  nextSessionProjection,
+  type SessionProjection,
+} from "./session-projection.js";
 import {
   EVENT_SCHEMA_VERSION,
   SqliteEventStore,
@@ -249,12 +254,19 @@ describe("SqliteEventStore（保存の経路）", () => {
         handId: "h3",
         startedAt: "2026-10-05T00:03:00.000Z",
         finishedAt: "2026-10-05T00:04:00.000Z",
+        aborted: false,
       },
-      { handId: "h2", startedAt: "2026-10-05T00:02:00.000Z", finishedAt: null },
+      {
+        handId: "h2",
+        startedAt: "2026-10-05T00:02:00.000Z",
+        finishedAt: null,
+        aborted: false,
+      },
       {
         handId: "h1",
         startedAt: "2026-10-05T00:00:00.000Z",
         finishedAt: "2026-10-05T00:01:00.000Z",
+        aborted: false,
       },
     ]);
     expect(store.listHands(2).map((h) => h.handId)).toEqual(["h3", "h2"]);
@@ -440,7 +452,7 @@ describe("SqliteEventStore（保存の経路）", () => {
     try {
       expect(
         db.prepare("SELECT DISTINCT schema_version FROM events").all(),
-      ).toEqual([{ schema_version: 5 }]);
+      ).toEqual([{ schema_version: EVENT_SCHEMA_VERSION }]);
     } finally {
       db.close();
     }
@@ -481,7 +493,7 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
-  it("Hero の宣言・Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING）を版 5 で保存し、再起動後に同じ Event Log を読み出せる（D90）", async () => {
+  it("Hero の宣言・Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING）も現在の版で保存し、再起動後に同じ Event Log を読み出せる（D90）", async () => {
     const store = open();
     const orchestrator = new HandOrchestrator({
       store,
@@ -525,7 +537,7 @@ describe("SqliteEventStore（保存の経路）", () => {
     try {
       expect(
         db.prepare("SELECT DISTINCT schema_version FROM events").all(),
-      ).toEqual([{ schema_version: 5 }]);
+      ).toEqual([{ schema_version: EVENT_SCHEMA_VERSION }]);
     } finally {
       db.close();
     }
@@ -567,7 +579,228 @@ describe("SqliteEventStore（保存の経路）", () => {
   });
 });
 
-/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4・5 で足した種類は版 2 に無いので渡さない。 */
+describe("SqliteEventStore（Session の永続化と Resume。#77・D95）", () => {
+  /** 6 人卓・RuleBot・待ちなしの Orchestrator（store を共有して作り直すと再起動の代わりになる）。 */
+  function orchestratorOn(
+    store: SqliteEventStore,
+    prefix: string,
+    createOpponent: OpponentFactory = createRuleBot,
+  ) {
+    let handNo = 0;
+    let sessionNo = 0;
+    return new HandOrchestrator({
+      store,
+      setup: PHASE1_TABLE_SETUP,
+      createOpponent,
+      botDelayMs: 0,
+      opponentTimeoutMs: 1000,
+      nextSeed: () => 42 + handNo,
+      nextHandId: () => `${prefix}-hand-${++handNo}`,
+      nextSessionId: () => `${prefix}-session-${++sessionNo}`,
+    });
+  }
+
+  async function playHand(
+    orchestrator: HandOrchestrator,
+    afterHandId: string | null,
+  ): Promise<string> {
+    const started = await orchestrator.startHand(afterHandId);
+    if (!started.ok) throw new Error(started.error.message);
+    let view: HeroView = started.value.view;
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      const result = await orchestrator.heroAction(
+        started.value.handId,
+        view.log.at(-1)?.seq ?? -1,
+        passive(view),
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      view = result.value;
+    }
+    return started.value.handId;
+  }
+
+  function sessionOfHand(handId: string): string | undefined {
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const row = db
+        .prepare("SELECT session_id FROM hands WHERE hand_id = ?")
+        .get(handId) as { session_id: string } | undefined;
+      return row?.session_id;
+    } finally {
+      db.close();
+    }
+  }
+
+  it("版 5 の行は変換せずに読む。行は書き換えない（D76・D95）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const v5 = [...started, ...rest];
+    insertRows("h1", 5, v5);
+    expect(
+      open()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(v5);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 5 }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("Session Projection を Hand の保存と一緒に書き、開き直しても読める。Event Log から作り直した値と一致する（D37）", async () => {
+    const store = open();
+    const orchestrator = orchestratorOn(store, "a");
+    const first = await playHand(orchestrator, null);
+    const second = await playHand(orchestrator, first);
+    orchestrator.close();
+
+    const saved = reopen().latestSessionProjection();
+    expect(saved).toMatchObject({
+      sessionId: "a-session-1",
+      lastHandId: second,
+      state: "ready_for_next_hand",
+      endReason: null,
+      personas: PHASE1_TABLE_SETUP.personas,
+      emergencyBots: [],
+    });
+    // Session の Hand を順に畳み込み直すと、保存した Projection と同じになる。
+    const reread = reopen();
+    const rebuilt = [first, second].reduce<SessionProjection | null>(
+      (previous, handId) => {
+        const log = reread.read(handId);
+        return nextSessionProjection(previous, {
+          sessionId: "a-session-1",
+          handId,
+          events: log.map((s) => s.event),
+          personas: PHASE1_TABLE_SETUP.personas,
+          recordedAt: log.at(-1)?.recordedAt ?? "",
+        });
+      },
+      null,
+    );
+    expect(rebuilt).toEqual(saved);
+    expect(saved?.stacks).toEqual(
+      reread
+        .read(second)
+        .map((s) => s.event)
+        .find((e) => e.type === "HAND_FINISHED")?.stacks,
+    );
+  });
+
+  it("Session Projection を書けなければ Hand も保存しない（同じトランザクション）", () => {
+    open().close();
+    const db = new DatabaseSync(dbPath);
+    try {
+      db.exec(`
+        CREATE TRIGGER projections_fail BEFORE INSERT ON session_projections
+        BEGIN SELECT RAISE(ABORT, 'projection failed'); END;
+      `);
+    } finally {
+      db.close();
+    }
+    const store = open();
+    const { started, rest } = finishedHandEvents("h1");
+    store.append("h1", started);
+    expect(() => store.append("h1", rest)).toThrow(/projection failed/);
+    // Hand は途中のまま（メモリ側）で、DB には何も残らない。
+    expect(store.read("h1").length).toBe(started.length);
+    expect(reopen().read("h1")).toEqual([]);
+    expect(reopen().listHands(10)).toEqual([]);
+  });
+
+  it("再起動後は Hand の合間の Session を Resume し、途中だった Hand は捨てて最後に終わった Hand から続ける（D62）", async () => {
+    const store = open();
+    const before = orchestratorOn(store, "a");
+    const first = await playHand(before, null);
+    // 2 Hand 目は途中（Hero の手番）のまま再起動する。
+    const unfinished = await before.startHand(first);
+    if (!unfinished.ok) throw new Error(unfinished.error.message);
+    expect(unfinished.value.view.status).toBe("in_progress");
+    before.close();
+
+    const restarted = reopen();
+    expect(restarted.read(unfinished.value.handId)).toEqual([]);
+    const after = orchestratorOn(restarted, "b");
+    const resumedHand = await playHand(after, unfinished.value.handId);
+    after.close();
+
+    expect(sessionOfHand(resumedHand)).toBe("a-session-1");
+    const events = restarted.read(resumedHand).map((s) => s.event);
+    const opening = events[0];
+    const firstFinished = restarted
+      .read(first)
+      .map((s) => s.event)
+      .find((e) => e.type === "HAND_FINISHED");
+    if (
+      opening?.type !== "HAND_STARTED" ||
+      firstFinished?.type !== "HAND_FINISHED"
+    ) {
+      throw new Error("Hand の開始・終了が無い");
+    }
+    expect(opening.seats).toEqual(
+      firstFinished.stacks.map((s) => ({
+        playerId: s.playerId,
+        stack: s.amount,
+      })),
+    );
+    expect(events.some((e) => e.type === "SESSION_STARTED")).toBe(false);
+    expect(reopen().latestSessionProjection()).toMatchObject({
+      sessionId: "a-session-1",
+      lastHandId: resumedHand,
+    });
+  });
+
+  it("AI 障害で打ち切った Hand は保存され、再起動後も一覧に aborted で残り、Session は続けない", async () => {
+    let down = true;
+    const brokenOnce: OpponentFactory = (seed, playerId, persona) => {
+      const bot = createRuleBot(seed, playerId, persona);
+      return {
+        decide: (input, signal) => {
+          if (down) {
+            down = false;
+            return Promise.reject(new Error("down"));
+          }
+          return bot.decide(input, signal);
+        },
+      };
+    };
+    const store = open();
+    const before = orchestratorOn(store, "a", brokenOnce);
+    const started = await before.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const handId = started.value.handId;
+    expect((await before.resolveOutage(handId, 1, "end_session")).ok).toBe(
+      true,
+    );
+    before.close();
+
+    const restarted = reopen();
+    expect(restarted.listHands(10)).toMatchObject([
+      { handId, finishedAt: null, aborted: true },
+    ]);
+    expect(
+      restarted
+        .read(handId)
+        .slice(-2)
+        .map((s) => s.event.type),
+    ).toEqual(["HAND_ABORTED", "SESSION_ENDED"]);
+    expect(restarted.latestSessionProjection()).toMatchObject({
+      sessionId: "a-session-1",
+      state: "ended",
+      endReason: "ai_outage",
+    });
+    const after = orchestratorOn(restarted, "b");
+    const next = await playHand(after, null);
+    after.close();
+    expect(sessionOfHand(next)).toBe("b-session-1");
+  });
+});
+
+/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4〜6 で足した種類は版 2 に無いので渡さない。 */
 function toV2(events: readonly HandEvent[]): HandEventV2[] {
   return events.map((e): HandEventV2 => {
     if (
@@ -575,7 +808,11 @@ function toV2(events: readonly HandEvent[]): HandEventV2[] {
       e.type === "AI_FALLBACK_USED" ||
       e.type === "PLAYER_DECLARED" ||
       e.type === "PHYSICAL_CHIP_ACTION" ||
-      e.type === "DEALER_RULING"
+      e.type === "DEALER_RULING" ||
+      e.type === "SESSION_STARTED" ||
+      e.type === "SESSION_ENDED" ||
+      e.type === "HAND_ABORTED" ||
+      e.type === "EMERGENCY_BOT_ENGAGED"
     ) {
       throw new Error(`版 2 に無い Event: ${e.type}`);
     }

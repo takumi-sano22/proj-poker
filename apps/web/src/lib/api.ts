@@ -198,9 +198,11 @@ export function handStreamUrl(handId: string): string {
 export interface ReplayHandSummary {
   readonly handId: string;
   readonly startedAt: string;
-  /** HAND_FINISHED の無い Hand（進行中・AI 障害の後に打ち切った Hand）は null。 */
+  /** HAND_FINISHED の無い Hand（進行中・内部エラーで止まった・打ち切った Hand）は null。 */
   readonly finishedAt: string | null;
   readonly complete: boolean;
+  /** AI 障害の後に Session 終了を選んで打ち切った Hand（再起動後も残る）。 */
+  readonly aborted: boolean;
   readonly bigBlind: number;
   readonly heroHoleCards: readonly Card[] | null;
   /** Hero の収支（実額）。未完了の Hand は null。 */
@@ -211,6 +213,8 @@ export interface ReplayHandSummary {
 export interface ReplayHand {
   readonly handId: string;
   readonly complete: boolean;
+  /** AI 障害の後に Session 終了を選んで打ち切った Hand。 */
+  readonly aborted: boolean;
   readonly players: readonly TablePlayer[];
   readonly steps: readonly HeroView[];
 }

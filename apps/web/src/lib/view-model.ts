@@ -343,6 +343,10 @@ export function describeEvent(
     case "DECK_SHUFFLED":
     case "AI_ACTION_INVALID":
     case "AI_FALLBACK_USED":
+    case "SESSION_STARTED":
+    case "SESSION_ENDED":
+    case "HAND_ABORTED":
+    case "EMERGENCY_BOT_ENGAGED":
       // engine / system Visibility の Event。Hero の View には入らない（届いても表示しない）。
       return null;
     case "PLAYER_DECLARED":

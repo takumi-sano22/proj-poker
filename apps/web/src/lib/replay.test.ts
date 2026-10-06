@@ -10,6 +10,7 @@ import {
   playStartIndex,
   previousStepIndex,
   stepCaption,
+  unfinishedLabel,
 } from "./replay.js";
 
 const nameOf = (id: string) => (id === "hero" ? "Hero" : id.toUpperCase());
@@ -90,6 +91,7 @@ describe("一覧の 1 行", () => {
     startedAt: "2026-10-06T08:25:00.000Z",
     finishedAt: "2026-10-06T08:26:00.000Z",
     complete: true,
+    aborted: false,
     bigBlind: 2,
     heroHoleCards: [
       { rank: 14, suit: "s" },
@@ -115,5 +117,12 @@ describe("一覧の 1 行", () => {
       /^\d{2}\/\d{2} \d{2}:\d{2}$/,
     );
     expect(formatStartedAt("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("結果の無い Hand の印（D95）", () => {
+  it("打ち切った Hand は「打ち切り」、それ以外は「未完了」", () => {
+    expect(unfinishedLabel({ aborted: true })).toBe("打ち切り");
+    expect(unfinishedLabel({ aborted: false })).toBe("未完了");
   });
 });
