@@ -307,6 +307,13 @@ MVPではVector DBを必須にしません。
 
 Metadata + Topic / Full-text Retrievalから開始可能です。
 
+実装（#80・D98）: Local KBは`apps/server/kb/`の**Curated KB**です。docs/researchから、Reviewで使う粒度の要点を1項目1ファイルのMarkdownに書き起こしたもので（研究資料の丸写しではない。数値の根拠はEngineのMath Evidenceが持ち、KBは概念・Practicalな指針だけ）、server（`apps/server/src/kb/`）が起動時に1回だけ読み込み、検索はメモリ上の関数です（Vector DBは使わない）。
+
+- **項目の形**: 先頭のMetadata（front matter）に`id`（ファイル名と同じ。Evidence IDに使う）・`title`・`topic`・`label`（Knowledge Label。`docs/research/README.md` §2の7種）・`formats`・`streets`・`positions`・`players`（`heads_up` / `multiway`）・`spots`（Spotの種類。`preflop_open` / `preflop_facing_raise` / `postflop_aggressor` / `postflop_checked_to` / `postflop_facing_bet`）・`actions`（相手のPreflopのAction列の分類。EngineのPreflopSpot）・`keywords`・`source`（`docs/research/<file>.md §<節> | <元の出典>`）・`date`・`version`（項目のVersion）を持ち、その後ろが本文です。絞り込みの項目は空なら「条件なし」です。Topicは閉じた語彙（`types.ts`の`KB_TOPICS`）で、未知のTopic・未知の項目名・必須項目の欠け・実在しないdateなどは読み込みで弾きます（`parseKbEntry`）。
+- **KB全体のVersion**: `apps/server/kb/manifest.json`の`version`（x.y.z）です。項目を足す・変える・消すたびに上げ、`contentHash`（全項目の内容のsha256）を更新します。内容を変えて`contentHash`の更新を忘れるとテストが落ちます。
+- **検索**（`searchKb(kb, { spot, topics, text, limit })`）: ①Spotの特徴（Street・Position・Player数・Spotの種類・Action列）のうち渡したものについて、項目の条件に当たらないものを除き ②Spotの種類・Action列・Street等で加点（条件が1つの値だけの項目は少し上）③Topicを渡したらそのTopicだけに絞って加点 ④全文の語（title・keywordsに当たれば3点、本文だけなら1点）で加点し、点の高い順・同点はidの昇順に返します。1点も取らない項目・何も渡さない検索は空です。同じKB・同じ入力なら必ず同じ結果です。加点は暫定値です（`KB_SCORE`）。
+- **Evidenceに残す形**: 結果の各hitは`kbVersion`・`id`・`version`・`evidenceId`（`kb:<kbVersion>:<id>@<version>`）・`topic`・`label`・`source`・`matched`（当たった特徴・語）・本文を持ちます。Review Evidence（`docs/05` §6のKnowledge Evidence。#82）はこの`evidenceId`と`kbVersion`を残し、Review Version（`docs/04`のKB Version）に使います。
+
 ## 10. Web Fallback
 
 Local Evidenceが不足するときだけ使います。
