@@ -289,6 +289,14 @@ MVP要件:
 
 HU SolverをMultiwayのExact GTOとして表示してはいけません。
 
+実装（#81・D96）: Primary Solverはamaster97/poker_solver（MIT）で、Adapterは`apps/server/src/solver/`にあります（型は`types.ts`、実装は`amaster97-adapter.ts`）。
+
+- **導入**: Solverのソースと成果物はリポジトリに入れません。`apps/server/solver/setup-amaster97.sh`が固定したcommitをリポジトリの外へcloneしてvenvにビルドし、`install.json`（commit・版）を書きます。serverは環境変数`POKER_SOLVER_HOME`でその場所を知ります。未設定・未導入なら、どのSpotも`solver_not_installed`のUnsupportedです（起動は止めません）。
+- **Capability**: #76のPoCで動いたHU・Turn / River・Cashだけを宣言します（Rake・ICM・Side Potなし）。`supports(spot)`はPlayer数（All-in済みのPlayerも数える）・Street・Mode・Rake・Side Pot（Spotの`sidePot`）・Bet Tree（Bet Size 5種・Raise倍率 5種・攻撃 4回まで）・導入の有無の順に照らし、Unsupportedは理由（`player_count` / `street` / `mode` / `rake` / `side_pot` / `bet_tree` / `solver_not_installed`）とFallback先（Math・Range Analysis・KB・Review AI）を返す正常系です。
+- **呼び出し**: `analyze(spot, options)`はまず入力を検証し（不正なカード・Boardの重複と枚数・正でないPot / Stack・空のRange・Boardと衝突するCombo・未知のStreet / Mode等は`invalid_input`。Capabilityの判定より先に弾き、壊れたSpotをUnsupportedのFallbackに紛れさせない。Solverへ渡さない）、`supports`を通らないSpotは解かず、`apps/server/solver/amaster97_runner.py`を導入先のPythonで子プロセスとして動かし、stdin / stdoutのJSONでやり取りします。Rangeは具体的なCombo（#79のRange Modelの結果を`rangeFromModel`で渡せる）で渡し、Hand Classに丸めません。Timeout（`SOLVER_TIMEOUT_MS`、暫定 20秒）とCancel（AbortSignal）はSIGKILLで止め、プロセスの終了を待ってから返します（孤児を残さない）。同時に動かす数は`SOLVER_MAX_CONCURRENCY`（既定 1）で、超えた分は待ちます。失敗は`SolverError`の`timeout` / `cancelled` / `process_failed` / `parse_failure`で、呼び出し側はUnsupportedと同じくFallbackします。
+- **Evidence**: `SolverEvidence`はRoot（Streetの最初の判断・OOP）のRange全体とHand Classごとの行動頻度、Version Metadata（Solverの版・`install.json`のcommit・固定commitとの一致）、Bet Tree、Iteration数、両者のRange Assumption（Range Modelの`RangeAssumption`か、表記と理由）、前提（HUの結果でMultiwayのExact GTOではない・Bet Treeの抽象化・呼び出し側の前提）を持ちます。Action EVは今の呼び出し経路では取れないので`ev.available: false`と理由を返し、推測で埋めません。exploitabilityはTurnで数分かかるため計算しません。
+- **テスト**: CIは実Solverを呼ばず、偽のSolver（Nodeのスクリプト）と実Solverの録画で`docs/09` §7の項目を確かめます。実Solverでの確認は`pnpm --filter @proj-poker/server smoke:solver`です。
+
 ## 9. Knowledge Base
 
 Research Packをそのまま毎回LLMへ入れません。

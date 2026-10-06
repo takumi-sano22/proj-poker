@@ -7,6 +7,9 @@ import {
   DEFAULT_DB_PATH,
   DEFAULT_OPPONENT_TIMEOUT_MS,
   DEFAULT_PERSONA_ROTATION,
+  DEFAULT_SOLVER_ITERATIONS,
+  DEFAULT_SOLVER_MAX_CONCURRENCY,
+  DEFAULT_SOLVER_TIMEOUT_MS,
   DEFAULT_TABLE_SIZE,
   MODEL_ROLES,
   PHASE1_TABLE_SETUP,
@@ -15,8 +18,12 @@ import {
   parseOpponentProvider,
   parseOpponentTimeoutMs,
   parsePersonaRotation,
+  parseSolverIterations,
+  parseSolverMaxConcurrency,
+  parseSolverTimeoutMs,
   parseTableSize,
   resolveDbPath,
+  resolveSolverHome,
 } from "./config.js";
 
 describe("parseBotDelayMs", () => {
@@ -177,5 +184,29 @@ describe("parseOpponentProvider", () => {
 describe("MODEL_ROLES", () => {
   it("opponent_fast は暫定値（D85・OI-001）の claude-haiku-4-5", () => {
     expect(MODEL_ROLES.opponent_fast).toBe("claude-haiku-4-5");
+  });
+});
+
+describe("Solver の設定（#81）", () => {
+  it("POKER_SOLVER_HOME は未設定・空なら null（Solver 未導入として扱う）", () => {
+    expect(resolveSolverHome(undefined)).toBeNull();
+    expect(resolveSolverHome(" ")).toBeNull();
+    expect(resolveSolverHome("/opt/solver")).toBe("/opt/solver");
+  });
+
+  it("Timeout・同時実行数・Iteration は正の整数だけを受け付け、未設定・不正なら既定値に戻す", () => {
+    const cases = [
+      [parseSolverTimeoutMs, DEFAULT_SOLVER_TIMEOUT_MS],
+      [parseSolverMaxConcurrency, DEFAULT_SOLVER_MAX_CONCURRENCY],
+      [parseSolverIterations, DEFAULT_SOLVER_ITERATIONS],
+    ] as const;
+    for (const [parse, fallback] of cases) {
+      expect(parse("3")).toBe(3);
+      for (const raw of [undefined, "", "0", "-1", "1.5", "abc"]) {
+        expect(parse(raw)).toBe(fallback);
+      }
+    }
+    // 既定の同時実行数は 1（Solver は CPU・メモリを使う）。
+    expect(DEFAULT_SOLVER_MAX_CONCURRENCY).toBe(1);
   });
 });

@@ -4,5 +4,5 @@
   "compilerOptions": {
     "customConditions": []
   },
-  "exclude": ["src/**/*.test.ts", "src/testing/**"]
+  "exclude": ["src/**/*.test.ts", "src/testing/**", "src/**/testing/**"]
 }

@@ -141,6 +141,10 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | `OPPONENT_PROVIDER` | `rulebot` | CPU の判断に使う実装。`claude` で Claude（下の「Claudeの認証」が前提）。それ以外の値は起動時にエラーで止める |
 | `CPU_PERSONAS` | `tag_regular,lag,nit,calling_station,weak_tight_recreational,maniac` | CPU の Persona を席順（CPU 1 から）に割り当てる順番。Preset ID（`tag_regular` / `lag` / `calling_station` / `nit` / `maniac` / `weak_tight_recreational`）のカンマ区切りで、CPU が多ければ先頭から繰り返す。知らない ID は起動時にエラーで止める。Persona は画面に出さない |
 | `PORT` | `3001` | `apps/server` の待ち受けポート（`127.0.0.1` 固定） |
+| `POKER_SOLVER_HOME` | 未設定 | Solver（amaster97/poker_solver）の導入先。下の「Solver の導入」で作る。未設定・未導入なら Solver を使わず、Math・Range・KB へ Fallback する |
+| `SOLVER_TIMEOUT_MS` | `20000`（暫定値） | Solver の 1 回の Solve を待つ上限。超えたら止めて Fallback する。1 以上の整数。不正値は既定に戻す |
+| `SOLVER_MAX_CONCURRENCY` | `1` | Solver を同時に動かす数。超えた分は待つ。1 以上の整数 |
+| `SOLVER_ITERATIONS` | `200`（暫定値） | Solver の Iteration 数。1 以上の整数 |
 
 ### Claudeの認証（CPU を Claude にするとき）
 
@@ -160,6 +164,20 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 - ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まり、卓の中央に続け方を選ぶダイアログが出ます（Retry / Emergency Bot で続行 / Session を終了）。対処は、ログイン切れなら `claude` で `/login` し直してから Retry／上限なら枠が戻るまで待って Retry／すぐ続けたいときは Emergency Bot（その CPU を Session の終わりまで RuleBot で動かす）、のいずれかです。
 - **CPU の 1 手に数秒〜十数秒かかります**（子プロセスの起動を含む。実測は [`docs/taskLog/issue-53-opponent-eval.md`](./docs/taskLog/issue-53-opponent-eval.md)）。待ちが長いと卓に「AI応答が遅延しています」が出ます。判断待ちの上限は `OPPONENT_TIMEOUT_MS` です。
 - CI と `pnpm test` は Claude を呼びません（Fake と録画済み応答だけ）。開発中の実呼び出しは制限しません。
+
+### Solver の導入（任意）
+
+Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poker_solver**（MIT）を使います（D96）。解けるのは **Heads-Up の Turn と River** だけで、Flop・Multiway（3 人以上）・Side Pot あり・Rake あり・Tournament の Spot は Solver を使わず、Math・Range・KB に切り替えます（Unsupported は正常な動きです。HU の Solver の結果を Multiway の Exact GTO として扱いません）。導入しなくてもアプリは動きます。
+
+前提: `git`・`python3`（venv が使えること）・Rust の stable（[rustup](https://rustup.rs/)）。WSL2（Ubuntu 24.04）で確認しています。Windows ネイティブは未確認です。
+
+1. **取得とビルド**: `bash apps/server/solver/setup-amaster97.sh` を実行します。固定した commit（`f78f1b2`）を clone し、venv に Rust 拡張ごとインストールして、導入先に `install.json`（commit・版）を書きます。既定の導入先はリポジトリの外の `~/.local/share/proj-poker/amaster97-poker-solver` で、`POKER_SOLVER_HOME` を付けて実行すると場所を変えられます（リポジトリの中は拒否します。Solver のソース・成果物はコミットしません）。
+2. **server に場所を渡す**: server を起動するシェルで `POKER_SOLVER_HOME=<導入先>` を設定します（例: `POKER_SOLVER_HOME=~/.local/share/proj-poker/amaster97-poker-solver pnpm dev`）。
+3. **動作確認**: `POKER_SOLVER_HOME=<導入先> pnpm --filter @proj-poker/server smoke:solver` で、固定 Spot の River と Turn を実際に解き、Root の行動頻度・所要時間・版を表示します（River 約 1 秒・Turn 約 8 秒。Flop と Multiway は Unsupported と表示されます）。最後に Timeout と Cancel で止めてプロセスが残らないことも確かめます。
+
+- Solver は CPU とメモリを使います（Turn で約 430 MiB）。同時に動かすのは既定で 1 つで、`SOLVER_TIMEOUT_MS` を超えたら止めて Fallback します。
+- Solver の結果は Root（Street の最初の判断・OOP）の行動頻度です。Action EV は今の呼び出し方では取れないので出しません（「取れない」と明示します）。
+- CI と `pnpm test` は実 Solver を呼びません（偽の Solver と録画だけ）。
 
 ## 開発コマンド
 

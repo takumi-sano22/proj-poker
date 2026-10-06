@@ -197,3 +197,47 @@ export function parseOpponentProvider(
     `OPPONENT_PROVIDER は rulebot か claude: ${JSON.stringify(raw)}`,
   );
 }
+
+/**
+ * Primary Solver（amaster97/poker_solver。D96）の導入先。環境変数 POKER_SOLVER_HOME で指す（solver/setup-amaster97.sh が作る）。
+ * 未設定・空なら null で、Solver Adapter は Unsupported（solver_not_installed）として正常に Fallback する。
+ */
+export function resolveSolverHome(raw: string | undefined): string | null {
+  return raw === undefined || raw.trim() === "" ? null : raw;
+}
+
+/**
+ * Solver の 1 回の Solve を待つ上限（ミリ秒）。暫定値（永久仕様ではない）。
+ * #76 の実測（amaster97・WSL2・200 Iteration）で Turn が 5.7〜8.0 秒（中央値 7.7 秒）、River が約 0.9 秒だったため、Turn の最大の約 2.5 倍に置く。
+ * 超えたら結果なしとして Fallback する。環境変数 SOLVER_TIMEOUT_MS で上書きできる。
+ */
+export const DEFAULT_SOLVER_TIMEOUT_MS = 20_000;
+
+/** 環境変数の値を Solve の上限として読む。未設定・不正（0 以下・小数・文字列）なら既定値に戻す。 */
+export function parseSolverTimeoutMs(raw: string | undefined): number {
+  return parsePositiveInt(raw, DEFAULT_SOLVER_TIMEOUT_MS);
+}
+
+/**
+ * Solver を同時に動かす数の上限。Solver は CPU とメモリを使う（#76: Turn で約 430 MiB）ため、既定は 1（超えた分は待ち行列で待つ）。
+ * 環境変数 SOLVER_MAX_CONCURRENCY で上書きできる。
+ */
+export const DEFAULT_SOLVER_MAX_CONCURRENCY = 1;
+
+export function parseSolverMaxConcurrency(raw: string | undefined): number {
+  return parsePositiveInt(raw, DEFAULT_SOLVER_MAX_CONCURRENCY);
+}
+
+/** Solver の Iteration 数（#76 の計測と同じ 200）。暫定値。環境変数 SOLVER_ITERATIONS で上書きできる。 */
+export const DEFAULT_SOLVER_ITERATIONS = 200;
+
+export function parseSolverIterations(raw: string | undefined): number {
+  return parsePositiveInt(raw, DEFAULT_SOLVER_ITERATIONS);
+}
+
+/** 正の整数として読む。未設定・不正なら既定値に戻す（parseOpponentTimeoutMs と同じ作法）。 */
+function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
