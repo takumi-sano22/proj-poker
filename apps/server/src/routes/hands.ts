@@ -1,12 +1,15 @@
 // Hand の API（D73: Hero の Action は REST の POST、卓の状態は SSE で Push）。
 // 入力の形は JSON Schema で検証し、合法性（手番・Action の種類・額）は Engine が判定する（D40）。
-// 返す・Push するのは projectHeroView の結果と、Session の状態（Hero 自身の結果と次 Hand の有無）だけ
-// （他者の Hole Cards・Deck・seed を含めない）。
+// 返す・Push するのは projectHeroView の結果と、Session の状態（Hero 自身の結果と次 Hand の有無）と、
+// CPU の障害の状態（どの CPU の手番か・障害の種類だけ。D86）だけ
+// （他者の Hole Cards・Deck・seed・CPU の Persona・内部のエラー本文を含めない）。
 import type { HeroView, PlayerAction } from "@proj-poker/engine";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type {
   HandOrchestrator,
   OrchestratorError,
+  OutageChoice,
+  OutageStatus,
   SessionStatus,
 } from "../hand-orchestrator.js";
 
@@ -23,6 +26,12 @@ interface HeroActionBody {
   /** クライアントが見ていた HeroView の log の最後の seq（古い画面・二重送信の検出に使う）。 */
   lastSeq: number;
   action: PlayerAction;
+}
+
+interface OutageChoiceBody {
+  /** クライアントが見ていた障害の状態の revision（古いダイアログ・二重送信の検出に使う）。 */
+  revision: number;
+  choice: OutageChoice;
 }
 
 const handParamsSchema = {
@@ -76,10 +85,21 @@ const heroActionBodySchema = {
   },
 } as const;
 
+const outageChoiceBodySchema = {
+  type: "object",
+  required: ["revision", "choice"],
+  additionalProperties: false,
+  properties: {
+    revision: { type: "integer", minimum: 0 },
+    choice: { enum: ["retry", "emergency_bot", "end_session"] },
+  },
+} as const;
+
 /** 失敗の種類を HTTP Status へ写す。 */
 const STATUS_BY_ERROR: Record<OrchestratorError["kind"], number> = {
   hand_not_found: 404,
   stale_view: 409,
+  stale_outage: 409,
   not_actor: 409,
   hand_complete: 409,
   illegal_action: 422,
@@ -94,8 +114,8 @@ function sendError(reply: FastifyReply, error: OrchestratorError) {
 
 /** SSE の 1 メッセージ。data は JSON（改行を含まない）。 */
 function formatSseEvent(
-  name: "view" | "session",
-  data: HeroView | SessionStatus,
+  name: "view" | "session" | "outage",
+  data: HeroView | SessionStatus | OutageStatus,
 ): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 }
@@ -128,6 +148,7 @@ export function registerHandRoutes(
         players: orchestrator.players,
         view,
         session: orchestrator.sessionStatus(handId),
+        outage: orchestrator.outageStatus(handId),
       });
     },
   );
@@ -145,13 +166,34 @@ export function registerHandRoutes(
       return reply.send({
         view: result.value,
         session: orchestrator.sessionStatus(handId),
+        outage: orchestrator.outageStatus(handId),
       });
     },
   );
 
-  // 卓の状態の SSE。接続時に現在の View を 1 回送り、以後は Log が進むたびに送る。
+  // CPU の障害で止まった Hand の続け方（Retry / Emergency Bot / Session 終了。D86）。
+  // 選んだ後、次の Hero の手番か Hand の終了まで CPU を進めた時点の View を返す（思考待ちがある設定では、CPU の行動は SSE で後から届く）。
+  app.post<{ Params: HandParams; Body: OutageChoiceBody }>(
+    "/api/hands/:handId/outage",
+    { schema: { params: handParamsSchema, body: outageChoiceBodySchema } },
+    async (request, reply) => {
+      const { handId } = request.params;
+      const { revision, choice } = request.body;
+      const result = await orchestrator.resolveOutage(handId, revision, choice);
+      if (!result.ok) return sendError(reply, result.error);
+      return reply.send({
+        view: result.value,
+        session: orchestrator.sessionStatus(handId),
+        outage: orchestrator.outageStatus(handId),
+      });
+    },
+  );
+
+  // 卓の状態の SSE。接続時に現在の障害の状態（outage イベント）と View を 1 回ずつ送り、以後は Log が進むたびに View を、
+  // 障害が起きる・解けるたびに障害の状態を送る。
   // Hand が終わった View の直前に Session の状態（session イベント）を送り、View を送ったらサーバー側から閉じる
   // （クライアントは status が complete の View を受けたら閉じて再接続しないので、Session の状態を先に届ける）。
+  // 障害の後に Session 終了が選ばれたら、障害の状態の直後に Session の状態を送る（Hand は途中なので閉じない）。
   app.get<{ Params: HandParams }>(
     "/api/hands/:handId/stream",
     { schema: { params: handParamsSchema } },
@@ -174,11 +216,23 @@ export function registerHandRoutes(
       });
 
       let unsubscribe: (() => void) | null = null;
+      let unsubscribeOutage: (() => void) | null = null;
       const end = () => {
         unsubscribe?.();
         unsubscribe = null;
+        unsubscribeOutage?.();
+        unsubscribeOutage = null;
         openStreams.delete(end);
         if (!res.writableEnded) res.end();
+      };
+      const sendOutage = (status: OutageStatus) => {
+        if (res.writableEnded || res.destroyed) return;
+        res.write(formatSseEvent("outage", status));
+        // Hand の途中で Session が終わるのは、障害の後に Session 終了が選ばれたときだけ（Hand の終了時は send が送る）。
+        const session = orchestrator.sessionStatus(handId);
+        if (session?.state === "ended" && session.reason === "ai_outage") {
+          res.write(formatSseEvent("session", session));
+        }
       };
       const send = (view: HeroView) => {
         // 切断済みの接続へは書かない（close の通知より先に配信が来ることがある）。
@@ -194,9 +248,12 @@ export function registerHandRoutes(
       // req の close は本文を読み終えた時点でも発火するため、接続の終了は res の close で見る。
       res.on("close", end);
       openStreams.add(end);
+      const initialOutage = orchestrator.outageStatus(handId);
+      if (initialOutage !== null) sendOutage(initialOutage);
       send(initial);
       if (!res.writableEnded) {
         unsubscribe = orchestrator.subscribe(handId, send);
+        unsubscribeOutage = orchestrator.subscribeOutage(handId, sendOutage);
       }
     },
   );

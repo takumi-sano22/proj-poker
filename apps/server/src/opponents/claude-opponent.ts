@@ -9,10 +9,11 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { cardToString, type Card } from "@proj-poker/engine";
-import type {
-  OpponentAgent,
-  OpponentFactory,
-  OpponentInput,
+import {
+  OpponentOutageError,
+  type OpponentAgent,
+  type OpponentFactory,
+  type OpponentInput,
 } from "./opponent-agent.js";
 import { describePersona } from "./persona.js";
 
@@ -56,8 +57,28 @@ export interface ClaudeOpponentOptions {
 }
 
 /** Claude の呼び出しが判断を返せなかった（障害）。Orchestrator は例外を障害として Hand を止める（D86）。 */
-export class ClaudeOpponentError extends Error {
+export class ClaudeOpponentError extends OpponentOutageError {
   override readonly name = "ClaudeOpponentError";
+}
+
+/**
+ * assistant message の error（SDK の SDKAssistantMessageError）を障害の種類に分ける。
+ * ダイアログで「ログインし直す」「枠が戻るまで待つ」を案内できるよう、未ログインと利用枠の上限だけを分け、残りは error にする。
+ */
+export function outageKindOf(
+  apiError: string | null,
+): ClaudeOpponentError["outageKind"] {
+  switch (apiError) {
+    case "authentication_failed":
+    case "oauth_org_not_allowed":
+    case "verification_required":
+      return "unauthenticated";
+    case "billing_error":
+    case "rate_limit":
+      return "usage_limit";
+    default:
+      return "error";
+  }
 }
 
 const SYSTEM_PROMPT = [
@@ -115,6 +136,7 @@ export class ClaudeOpponent implements OpponentAgent {
           if (message.is_error) {
             throw new ClaudeOpponentError(
               `Claude の呼び出しが失敗した（${apiError ?? "unknown"}）: ${message.result}`,
+              outageKindOf(apiError),
             );
           }
           // structured_output が無い・形が違う場合も、そのまま返して Orchestrator の検証（Schema）で不正にする。

@@ -22,9 +22,10 @@ import {
   buildClaudeEnv,
   buildOpponentPrompt,
   createClaudeOpponentFactory,
+  outageKindOf,
   type ClaudeQuery,
 } from "./claude-opponent.js";
-import type { OpponentInput } from "./opponent-agent.js";
+import { OpponentOutageError, type OpponentInput } from "./opponent-agent.js";
 import { checkOpponentOutput } from "./opponent-output.js";
 
 // 録画済み応答: 2026-10-06 に SDK 0.3.289・claude-haiku-4-5 で実際に返った message から、使う項目だけを残したもの。
@@ -246,6 +247,26 @@ describe("ClaudeOpponent", () => {
       await expect(agent.decide(input)).rejects.toThrow(ClaudeOpponentError);
       await expect(agent.decide(input)).rejects.toThrow(pattern);
     }
+  });
+
+  it("障害の種類を分ける: 未ログイン → unauthenticated・利用枠の上限 → usage_limit・それ以外 → error（#52）", async () => {
+    const { input } = firstDecisionInput();
+    const cases: [readonly unknown[], string][] = [
+      [RECORDED.notLoggedIn, "unauthenticated"],
+      [CONSTRUCTED.rateLimit, "usage_limit"],
+      [CONSTRUCTED.duringExecution, "error"],
+      [[], "error"],
+    ];
+    for (const [messages, kind] of cases) {
+      const agent = agentWith(fakeQuery(() => messages));
+      const error: unknown = await agent.decide(input).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(OpponentOutageError);
+      expect((error as OpponentOutageError).outageKind).toBe(kind);
+    }
+    expect(outageKindOf("billing_error")).toBe("usage_limit");
+    expect(outageKindOf("oauth_org_not_allowed")).toBe("unauthenticated");
+    expect(outageKindOf("server_error")).toBe("error");
+    expect(outageKindOf(null)).toBe("error");
   });
 
   it("子プロセスの起動・SDK の失敗（例外）はそのまま障害として伝わる", async () => {

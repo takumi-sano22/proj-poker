@@ -38,6 +38,29 @@ export interface OpponentOutput {
   readonly rationale?: string;
 }
 
+/**
+ * CPU が判断を返せなかった「障害」の種類（D86）。Hero のダイアログにも出す（内部のエラー本文は出さない）。
+ * - timeout: 判断待ちの上限を超えた（Orchestrator が決める）
+ * - unauthenticated: 未ログイン・認証切れ
+ * - usage_limit: 利用枠の上限
+ * - error: それ以外の呼び出しの失敗
+ */
+export type OutageKind =
+  "timeout" | "unauthenticated" | "usage_limit" | "error";
+
+/**
+ * 障害の種類が分かっている例外。Agent がこれを投げると Orchestrator はその種類で障害を記録する。
+ * それ以外の例外は種類の分からない障害（error）として扱う。
+ */
+export class OpponentOutageError extends Error {
+  constructor(
+    message: string,
+    readonly outageKind: Exclude<OutageKind, "timeout"> = "error",
+  ) {
+    super(message);
+  }
+}
+
 export interface OpponentAgent {
   /**
    * 選んだ Action を返す。形は OpponentOutput を期待するが、LLM の出力は何が来るか分からないので unknown で受け、

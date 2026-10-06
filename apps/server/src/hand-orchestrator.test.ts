@@ -12,10 +12,11 @@ import {
   HandOrchestrator,
   type HandOrchestratorOptions,
 } from "./hand-orchestrator.js";
-import type {
-  OpponentFactory,
-  OpponentInput,
-  OpponentOutput,
+import {
+  OpponentOutageError,
+  type OpponentFactory,
+  type OpponentInput,
+  type OpponentOutput,
 } from "./opponents/opponent-agent.js";
 import {
   createClaudeOpponentFactory,
@@ -956,6 +957,311 @@ describe("HandOrchestrator", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(events("hand-1")).toHaveLength(before);
       expect(orchestrator.outageOf("hand-1")).toBeNull();
+    });
+
+    describe("障害の続け方（Retry / Emergency Bot / Session 終了。#52・D86）", () => {
+      /** 内部のエラー本文（資格情報やパスを含みうる）。Hero に返す障害の状態に入ってはいけない。 */
+      const SECRET = "/home/u/.claude/.credentials.json sk-ant-secret";
+
+      /**
+       * 最初に判断を求められた CPU だけが障害を起こす Fake Model。broken.down が true の間は例外を投げる。
+       * その CPU が誰かは broken.playerId に入る。
+       */
+      function brokenFirstCpu(error: () => Error = () => new Error(SECRET)) {
+        const broken = { playerId: null as string | null, down: true };
+        const model = fakeModel((input) => {
+          broken.playerId ??= input.knowledge.viewerId;
+          return broken.down && input.knowledge.viewerId === broken.playerId
+            ? Promise.reject(error())
+            : valid(input);
+        });
+        return { broken, ...model };
+      }
+
+      async function startBroken(error?: () => Error) {
+        const model = brokenFirstCpu(error);
+        const ctx = setup({ createOpponent: model.factory });
+        const started = await ctx.orchestrator.startHand(null);
+        if (!started.ok) throw new Error(started.error.message);
+        const cpu = model.broken.playerId;
+        if (cpu === null) throw new Error("CPU に判断を求めていない");
+        return { ...ctx, ...model, ...started.value, cpu };
+      }
+
+      it("Hero に返す障害の状態は、どの CPU の手番か・種類と revision だけ（エラー本文・Persona を含まない）", async () => {
+        const { orchestrator, handId, view, cpu } = await startBroken();
+        const status = orchestrator.outageStatus(handId);
+        expect(status).toEqual({
+          revision: 1,
+          current: { playerId: cpu, kind: "error" },
+        });
+        expect(view.actorId).toBe(cpu);
+        expect(JSON.stringify(status)).not.toContain("sk-ant");
+        expect(JSON.stringify(status)).not.toContain(".credentials");
+        expect(personaTerms(status)).toEqual([]);
+        // サーバー内の記録（outageOf）には本文を残す（ログ・調査用）。
+        expect(orchestrator.outageOf(handId)?.message).toContain(SECRET);
+        expect(orchestrator.outageStatus("nope")).toBeNull();
+      });
+
+      it("種類の分かる例外（OpponentOutageError）はその種類で障害にする", async () => {
+        for (const kind of ["unauthenticated", "usage_limit"] as const) {
+          const { orchestrator, handId } = await startBroken(
+            () => new OpponentOutageError("枠の上限", kind),
+          );
+          expect(orchestrator.outageStatus(handId)?.current?.kind).toBe(kind);
+        }
+      });
+
+      it("Retry: 同じ手番を同じ入力でもう一度求め、通れば Hand を続ける（Fallback しない）", async () => {
+        const { orchestrator, events, handId, cpu, inputs, broken } =
+          await startBroken();
+        const before = events(handId).length;
+        broken.down = false;
+        const result = await orchestrator.resolveOutage(handId, 1, "retry");
+        if (!result.ok) throw new Error(result.error.message);
+        // 再試行の入力は、障害の前と同じ KnowledgeState と Legal Action（Correction は付かない）。
+        expect(inputs[1]?.knowledge).toEqual(inputs[0]?.knowledge);
+        expect(inputs[1]?.legal).toEqual(inputs[0]?.legal);
+        expect(inputs[1]?.correction).toBeUndefined();
+        expect(events(handId)[before]).toMatchObject({
+          type: "ACTION_TAKEN",
+          playerId: cpu,
+        });
+        expect(orchestrator.outageStatus(handId)).toEqual({
+          revision: 2,
+          current: null,
+        });
+        const view = await playOut(orchestrator, handId, result.value);
+        expect(view.status).toBe("complete");
+        expect(fallbacksIn(events(handId))).toEqual([]);
+        expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
+      });
+
+      it("Retry でまた障害なら、同じ手番でまた止まる（revision が進む）", async () => {
+        const { orchestrator, events, handId, cpu, inputs } =
+          await startBroken();
+        const before = events(handId).length;
+        const result = await orchestrator.resolveOutage(handId, 1, "retry");
+        expect(result.ok).toBe(true);
+        expect(inputs).toHaveLength(2);
+        expect(events(handId)).toHaveLength(before);
+        expect(orchestrator.outageStatus(handId)).toEqual({
+          revision: 3,
+          current: { playerId: cpu, kind: "error" },
+        });
+        expect(orchestrator.outageOf(handId)?.seq).toBe(before);
+      });
+
+      it("古い revision・障害が無いときの選択は stale_outage で拒否し、何もしない", async () => {
+        const { orchestrator, events, handId, inputs, broken } =
+          await startBroken();
+        expect(
+          await orchestrator.resolveOutage(handId, 0, "emergency_bot"),
+        ).toMatchObject({ ok: false, error: { kind: "stale_outage" } });
+        expect(inputs).toHaveLength(1);
+        broken.down = false;
+        expect((await orchestrator.resolveOutage(handId, 1, "retry")).ok).toBe(
+          true,
+        );
+        const after = events(handId).length;
+        // 二重送信（同じ revision の 2 回目）は、もう障害が無いので拒否する。
+        expect(
+          await orchestrator.resolveOutage(handId, 1, "emergency_bot"),
+        ).toMatchObject({ ok: false, error: { kind: "stale_outage" } });
+        expect(
+          await orchestrator.resolveOutage(handId, 2, "end_session"),
+        ).toMatchObject({ ok: false, error: { kind: "stale_outage" } });
+        expect(events(handId)).toHaveLength(after);
+        expect(orchestrator.sessionStatus(handId)).toEqual({
+          state: "in_hand",
+        });
+        expect(
+          await orchestrator.resolveOutage("nope", 1, "retry"),
+        ).toMatchObject({ ok: false, error: { kind: "hand_not_found" } });
+      });
+
+      it("Emergency Bot: その CPU を Session の終わりまで RuleBot で動かし、手番ごとに AI_FALLBACK_USED（emergency_bot）を残す", async () => {
+        const { orchestrator, events, handId, cpu, inputs } =
+          await startBroken();
+        const result = await orchestrator.resolveOutage(
+          handId,
+          1,
+          "emergency_bot",
+        );
+        if (!result.ok) throw new Error(result.error.message);
+        expect(orchestrator.outageStatus(handId)).toEqual({
+          revision: 2,
+          current: null,
+        });
+        const first = await playOut(orchestrator, handId, result.value);
+        expect(first.status).toBe("complete");
+
+        // 同じ Session の次の Hand でも、その CPU は RuleBot のまま（CPU に判断を求めない）。
+        const next = await orchestrator.startHand(handId);
+        if (!next.ok) throw new Error(next.error.message);
+        expect(next.value.created).toBe(true);
+        expect(
+          orchestrator.outageStatus(next.value.handId)?.current,
+        ).toBeNull();
+        await playOut(orchestrator, next.value.handId, next.value.view);
+
+        for (const id of [handId, next.value.handId]) {
+          const log = events(id);
+          const emergency = fallbacksIn(log);
+          // 障害の CPU の Action は、すべて直前に emergency_bot の記録を持つ。
+          const cpuActions = log.filter(
+            (e) => e.type === "ACTION_TAKEN" && e.playerId === cpu,
+          );
+          expect(emergency).toHaveLength(cpuActions.length);
+          for (const record of emergency) {
+            expect(record).toMatchObject({
+              playerId: cpu,
+              fallbackKind: "emergency_bot",
+              visibility: { type: "system" },
+            });
+            expect(record.reason).toContain("error");
+            expect(record.reason).not.toContain("sk-ant");
+            expect(log.find((e) => e.seq === record.seq + 1)).toMatchObject({
+              type: "ACTION_TAKEN",
+              playerId: cpu,
+            });
+          }
+          expect(finishedStacks(log)).toBe(TOTAL_CHIPS);
+        }
+        // 障害の CPU に判断を求めたのは、障害を起こした 1 回だけ。ほかの CPU には引き続き求める。
+        expect(inputs.filter((i) => i.knowledge.viewerId === cpu)).toHaveLength(
+          1,
+        );
+        expect(inputs.some((i) => i.knowledge.viewerId !== cpu)).toBe(true);
+        // Hero の View には Emergency Bot の記録が入らない。
+        expect(forbiddenKeys(orchestrator.heroView(handId))).toEqual([]);
+      });
+
+      it("Session 終了: その Hand を打ち切って Session を終え、次の開始は新しい Session（均等 Stack・Emergency Bot も解除）", async () => {
+        const { orchestrator, events, store, handId, cpu, inputs } =
+          await startBroken();
+        const before = events(handId).length;
+        const result = await orchestrator.resolveOutage(
+          handId,
+          1,
+          "end_session",
+        );
+        if (!result.ok) throw new Error(result.error.message);
+        expect(result.value.status).toBe("in_progress");
+        expect(orchestrator.sessionStatus(handId)).toEqual({
+          state: "ended",
+          reason: "ai_outage",
+        });
+        expect(orchestrator.outageStatus(handId)).toEqual({
+          revision: 2,
+          current: null,
+        });
+        // 打ち切った Hand は進めない（Log は変わらず、CPU にも求めない）。
+        expect(events(handId)).toHaveLength(before);
+        expect(inputs).toHaveLength(1);
+        expect(
+          await orchestrator.heroAction(handId, lastSeq(result.value), {
+            type: "fold",
+          }),
+        ).toMatchObject({ ok: false, error: { kind: "not_actor" } });
+
+        // 開始は（結果を見ていなくても）新しい Session として均等 Stack で始める。
+        const next = await orchestrator.startHand(null);
+        if (!next.ok) throw new Error(next.error.message);
+        expect(next.value.created).toBe(true);
+        expect(store.sessionOf.get(next.value.handId)).not.toBe(
+          store.sessionOf.get(handId),
+        );
+        expect(
+          startedOf(events(next.value.handId)).seats.every(
+            (s) => s.stack === PHASE1_TABLE_SETUP.startingStack,
+          ),
+        ).toBe(true);
+        // 障害の CPU にも、新しい Session ではまた判断を求める（Emergency Bot を選んでいないので当然 Fallback もしない）。
+        expect(
+          inputs.filter((i) => i.knowledge.viewerId === cpu).length,
+        ).toBeGreaterThanOrEqual(1);
+        expect(fallbacksIn(events(next.value.handId))).toEqual([]);
+      });
+
+      it("Emergency Bot は新しい Session に持ち越さない", async () => {
+        const { orchestrator, handId, cpu, inputs, broken } =
+          await startBroken();
+        expect(
+          (await orchestrator.resolveOutage(handId, 1, "emergency_bot")).ok,
+        ).toBe(true);
+        // 次は別の CPU を障害にし、その障害で Session 終了を選ぶ（障害が起きるまで Hand を続ける）。
+        const other = PHASE1_TABLE_SETUP.players.find(
+          (p) => p.kind === "cpu" && p.playerId !== cpu,
+        )?.playerId;
+        if (other === undefined) throw new Error("ほかの CPU がいない");
+        broken.playerId = other;
+        let current = handId;
+        for (let guard = 0; ; guard++) {
+          expect(guard).toBeLessThan(20);
+          const status = orchestrator.outageStatus(current);
+          if (status?.current != null) {
+            expect(status.current.playerId).toBe(other);
+            const ended = await orchestrator.resolveOutage(
+              current,
+              status.revision,
+              "end_session",
+            );
+            expect(ended.ok).toBe(true);
+            break;
+          }
+          const view = orchestrator.heroView(current);
+          if (view === null) throw new Error("View が無い");
+          if (view.status === "complete") {
+            const next = await orchestrator.startHand(current);
+            if (!next.ok) throw new Error(next.error.message);
+            current = next.value.handId;
+            continue;
+          }
+          const acted = await orchestrator.heroAction(
+            current,
+            lastSeq(view),
+            passiveHero(view),
+          );
+          if (!acted.ok) throw new Error(acted.error.message);
+        }
+        // 新しい Session では、Emergency Bot を選んだ CPU にもまた判断を求める。
+        broken.down = false;
+        const asked = inputs.length;
+        const fresh = await orchestrator.startHand(current);
+        if (!fresh.ok) throw new Error(fresh.error.message);
+        await playOut(orchestrator, fresh.value.handId, fresh.value.view);
+        expect(
+          inputs.slice(asked).some((i) => i.knowledge.viewerId === cpu),
+        ).toBe(true);
+      });
+
+      it("障害の状態が変わるたびに購読者へ配る（本文は含まない）", async () => {
+        const model = brokenFirstCpu();
+        const { orchestrator } = setup({
+          createOpponent: model.factory,
+          botDelayMs: 1,
+        });
+        vi.useFakeTimers();
+        const started = await orchestrator.startHand(null);
+        if (!started.ok) throw new Error(started.error.message);
+        const { handId } = started.value;
+        const pushed: unknown[] = [];
+        orchestrator.subscribeOutage(handId, (s) => pushed.push(s));
+        await vi.advanceTimersByTimeAsync(10);
+        expect(pushed).toEqual([
+          {
+            revision: 1,
+            current: { playerId: model.broken.playerId, kind: "error" },
+          },
+        ]);
+        model.broken.down = false;
+        await orchestrator.resolveOutage(handId, 1, "retry");
+        expect(pushed.at(-1)).toEqual({ revision: 2, current: null });
+        expect(JSON.stringify(pushed)).not.toContain("sk-ant");
+        expect(orchestrator.subscribeOutage("nope", () => {})).toBeNull();
+      });
     });
   });
 
