@@ -1,4 +1,4 @@
-# D01〜D98の採用済み人間判断。
+# D01〜D99の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -394,3 +394,7 @@
   choice: "KB は apps/server/kb/ の Curated KB、E2E は Playwright と Fake（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "Local KBはdocs/researchから要点を抜き出したCurated KB（MetadataつきMarkdown・Version付き）としてapps/server/kb/に置き、Metadataと全文で検索する（Vector DBは使わない）。6-max SessionのE2EはPlaywrightで通し、CPUはRuleBot、Review AIは録画済みの応答を使ってCIで回す。実際のClaudeでの通しは手動で1回行う。実装は#80・#85。"
+- id: D99
+  choice: "Pass B と Follow-up は新しい追記だけのテーブルに保存する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Reveal Review（Pass B）と Follow-up の履歴は、マイグレーションv4で足す追記だけのreveal_reviews（Version付き・Assessmentを持たない）とreview_followups（ReviewのVersionに紐づけてターンごとに追記）に保存する。Pass Aのreviewsは変えず、Pass Bに評価を付けない（結果論を混ぜない）。既存のテーブルと行は書き換えない（D76）。実装は#83。"

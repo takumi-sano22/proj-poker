@@ -99,6 +99,104 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'reviews is append-only');
   END;
   `,
+  // v4: Reveal Review（Pass B）と Follow-up の履歴（#83・docs/04 §8・D99）。どちらも追記だけで、UPDATE と DELETE は Trigger で拒否する（D39）。
+  // 既存のテーブル（reviews を含む）の列・行は変えない（D76）。追記専用を機械で守るため、既存の events（D37）・reviews（D39）にも
+  // DELETE を拒否する Trigger だけを足す（v1・v3 では UPDATE だけを拒否していた）。Reset / Hand History Delete（docs/04 §11）を設計するときは、
+  // 削除の経路と一緒にこの Trigger の扱いを決める。Pass B は判断時点の評価を付け直さないので assessment 列を持たない（結果論を混ぜない）。
+  // reveal_reviews: Hand の判断ごとの Pass B を Version 付きで追記する（(hand_id, decision_index, version) が一意）。evidence は Hand 後に見せた
+  //   全員の札（Learning-only Full Reveal）と、そこから決定論で計算した実際の Equity・Bluff / Value の答え合わせを含む。
+  // review_followups: Review の Version（pass と review_id）ごとに、Follow-up の質問と答えを 1 ターン 1 行で追記する（(review_id, turn) が一意）。
+  //   review_id は pass が decision なら reviews、reveal なら reveal_reviews の行を指す。外部キーは 1 つのテーブルしか指せないので、
+  //   挿入の Trigger で、指す行が実在し Hand・判断・Version が合うことを確かめる。answer は答え（scope・本文・根拠の id）の JSON。
+  `
+  CREATE TABLE reveal_reviews (
+    review_id      TEXT PRIMARY KEY,
+    hand_id        TEXT NOT NULL REFERENCES hands (hand_id),
+    decision_index INTEGER NOT NULL CHECK (decision_index >= 0),
+    action_seq     INTEGER NOT NULL CHECK (action_seq >= 0),
+    version        INTEGER NOT NULL CHECK (version >= 1),
+    created_at     TEXT NOT NULL,
+    depth          TEXT NOT NULL CHECK (depth IN ('standard', 'deep')),
+    model_role     TEXT NOT NULL CHECK (model_role IN ('review_standard', 'review_deep')),
+    concrete_model TEXT,
+    generated_by   TEXT NOT NULL CHECK (generated_by IN ('review_ai', 'sufficiency_gate', 'invalid_output_fallback')),
+    evidence_ids   TEXT NOT NULL CHECK (json_valid(evidence_ids)),
+    explanation    TEXT NOT NULL CHECK (json_valid(explanation)),
+    evidence       TEXT NOT NULL CHECK (json_valid(evidence)),
+    failure        TEXT CHECK (failure IS NULL OR json_valid(failure)),
+    UNIQUE (hand_id, decision_index, version)
+  ) STRICT;
+
+  CREATE TRIGGER reveal_reviews_append_only
+  BEFORE UPDATE ON reveal_reviews
+  BEGIN
+    SELECT RAISE(ABORT, 'reveal_reviews is append-only');
+  END;
+
+  CREATE TRIGGER reveal_reviews_no_delete
+  BEFORE DELETE ON reveal_reviews
+  BEGIN
+    SELECT RAISE(ABORT, 'reveal_reviews is append-only');
+  END;
+
+  CREATE TABLE review_followups (
+    followup_id    TEXT PRIMARY KEY,
+    pass           TEXT NOT NULL CHECK (pass IN ('decision', 'reveal')),
+    review_id      TEXT NOT NULL,
+    hand_id        TEXT NOT NULL REFERENCES hands (hand_id),
+    decision_index INTEGER NOT NULL CHECK (decision_index >= 0),
+    review_version INTEGER NOT NULL CHECK (review_version >= 1),
+    turn           INTEGER NOT NULL CHECK (turn >= 1),
+    created_at     TEXT NOT NULL,
+    depth          TEXT NOT NULL CHECK (depth IN ('standard', 'deep')),
+    model_role     TEXT NOT NULL CHECK (model_role IN ('review_standard', 'review_deep')),
+    concrete_model TEXT NOT NULL,
+    generated_by   TEXT NOT NULL CHECK (generated_by IN ('review_ai', 'invalid_output_fallback')),
+    question       TEXT NOT NULL,
+    answer         TEXT NOT NULL CHECK (json_valid(answer)),
+    failure        TEXT CHECK (failure IS NULL OR json_valid(failure)),
+    UNIQUE (review_id, turn)
+  ) STRICT;
+
+  CREATE TRIGGER review_followups_target
+  BEFORE INSERT ON review_followups
+  WHEN NOT EXISTS (
+    SELECT 1 FROM reviews
+    WHERE NEW.pass = 'decision' AND review_id = NEW.review_id AND hand_id = NEW.hand_id
+      AND decision_index = NEW.decision_index AND version = NEW.review_version
+  ) AND NOT EXISTS (
+    SELECT 1 FROM reveal_reviews
+    WHERE NEW.pass = 'reveal' AND review_id = NEW.review_id AND hand_id = NEW.hand_id
+      AND decision_index = NEW.decision_index AND version = NEW.review_version
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'review_followups must point to an existing review version');
+  END;
+
+  CREATE TRIGGER review_followups_append_only
+  BEFORE UPDATE ON review_followups
+  BEGIN
+    SELECT RAISE(ABORT, 'review_followups is append-only');
+  END;
+
+  CREATE TRIGGER review_followups_no_delete
+  BEFORE DELETE ON review_followups
+  BEGIN
+    SELECT RAISE(ABORT, 'review_followups is append-only');
+  END;
+
+  CREATE TRIGGER events_no_delete
+  BEFORE DELETE ON events
+  BEGIN
+    SELECT RAISE(ABORT, 'events is append-only');
+  END;
+
+  CREATE TRIGGER reviews_no_delete
+  BEFORE DELETE ON reviews
+  BEGIN
+    SELECT RAISE(ABORT, 'reviews is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

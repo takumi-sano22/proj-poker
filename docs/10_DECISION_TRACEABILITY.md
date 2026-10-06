@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D98の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D99の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -25,6 +25,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D88 | AI障害時のSession終了とEmergency BotのSession単位の登録はPhase 3ではメモリに持ち、Event Logへの記録はPhase 5のSession Resumeで設計する（Emergency Botの各ActionはAI_FALLBACK_USED） |
 | D89〜D93 | Phase 4 の分解（D89）、宣言・物理的なChip操作・裁定のEvent（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING・schema_version 5。D90）、Rulingは TDA準拠の3種（D91）、Chipの額面Preset（1/5/25/100/500。D92）、ReplayとFast Forwardの範囲（D93） |
 | D94〜D98 | Phase 5 の分解（#77〜#85・Web FallbackはMVPに入れない。D94）、Sessionの開始・終了・Handの打ち切り・Emergency Botへの切り替えのEvent（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED / EMERGENCY_BOT_ENGAGED・schema_version 6）とSession Projection・reviewsのテーブル（D95。D88のEvent化）、Primary Solverはamaster97/poker_solverのHU River / Turn（OI-002の選定。D96）、Reviewのモデルの暫定値（review_standard / review_deep。OI-001の暫定値。D97）、Curated KBとPlaywrightのE2E（D98） |
+| D99 | Reveal Review（Pass B）とFollow-upの履歴は、マイグレーションv4で足す追記だけのreveal_reviews（Assessmentを持たない）とreview_followupsに保存し、Pass Aのreviewsは変えない（#83の途中の人間判断） |
 
 ## 特に重要なClosed Decision
 

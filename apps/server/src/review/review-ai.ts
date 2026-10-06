@@ -31,10 +31,10 @@ export type ReviewOutputCheck =
 
 /** 文字数・件数の上限（暫定値）。長すぎる出力は UI で読まれないので不正として再要求する。 */
 export const REVIEW_TEXT_MAX = 1200;
-const ITEM_TEXT_MAX = 300;
+export const ITEM_TEXT_MAX = 300;
 const ASSUMPTIONS_MAX = 8;
 const CHANGERS_MAX = 6;
-const EVIDENCE_IDS_MAX = 20;
+export const EVIDENCE_IDS_MAX = 20;
 
 /** 構造化出力の項目（この順で並べる。docs/05 §9 の説明の順を含む）。 */
 const OUTPUT_KEYS = [
@@ -256,7 +256,7 @@ export function checkReviewOutput(
   };
 }
 
-function isText(value: unknown, max: number): value is string {
+export function isText(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length <= max;
 }
 
@@ -274,7 +274,7 @@ function section<B extends string>(
 }
 
 /** 1〜max 個の、空でない ITEM_TEXT_MAX 字以内の文字列の配列。 */
-function textList(value: unknown, max: number): string[] | null {
+export function textList(value: unknown, max: number): string[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > max) {
     return null;
   }
@@ -285,8 +285,8 @@ function textList(value: unknown, max: number): string[] | null {
   return texts.length === items.length ? texts.map((v) => v.trim()) : null;
 }
 
-/** Card を "As" 形式の文字列にする（JSON の { rank: 14, suit: "s" } より読みやすくする）。 */
-function cardReplacer(_key: string, value: unknown): unknown {
+/** Card を "As" 形式の文字列にする（JSON の { rank: 14, suit: "s" } より読みやすくする）。Pass B・Follow-up の Prompt も使う。 */
+export function cardReplacer(_key: string, value: unknown): unknown {
   return isCard(value) ? cardToString(value) : value;
 }
 

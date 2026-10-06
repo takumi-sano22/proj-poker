@@ -220,7 +220,7 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 | `version` | Review Version | 同じ Hand・判断・Pass の中の版（1 から） |
 | `created_at` | Created At | ISO 8601（UTC） |
 | `hand_id`・`decision_index`・`action_seq` | Target Hand / Action | `decision_index` は Hero の判断の順番（`heroDecisions` の `index`）、`action_seq` はその `ACTION_TAKEN` の seq。Session は `hands.session_id` から引く |
-| `pass` | — | `decision`（Pass A）。Pass B は #83 |
+| `pass` | — | `decision`（Pass A）。Pass B は別のテーブル `reveal_reviews`（下記） |
 | `depth`・`model_role` | Model Role | `standard` → `review_standard`、`deep`（Hero が「詳しく」を選んだ Spot）→ `review_deep`（D97） |
 | `concrete_model` | Concrete Model | 呼んだ具体モデル名。Evidence Sufficiency Gate で止めた（Review AI を呼んでいない）ときは NULL |
 | `kb_version` | KB Version | Local KB 全体の Version（`apps/server/kb/manifest.json`） |
@@ -234,6 +234,33 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 | `failure` | — | 出力の検証に失敗したときだけ。各回の段（`schema` / `grounding`）と理由 |
 
 User Read（Review Interview。`docs/05` §12）はまだ聞いていないので、`evidence_ids.userRead` は空です。Claude の呼び出しの失敗（未ログイン・利用枠・Timeout 等）では行を作りません（生成の状態はサーバーのメモリにだけ持ち、再起動で消える）。
+
+**Pass B と Follow-up（#83・D99）**: マイグレーション v4 で、追記だけのテーブルを 2 つ足しました。`reviews` を含む既存のテーブルの行・列の定義は変えていません（D76）。どちらも `UPDATE` と `DELETE` は Trigger で拒否し、`hand_id` は `hands` を参照します。追記専用を機械で守るため、v4 では既存の `events`（D37）と `reviews`（D39）にも `DELETE` を拒否する Trigger（`events_no_delete`・`reviews_no_delete`）だけを足しました（v1・v3 は `UPDATE` だけを拒否していた）。Reset / Hand History Delete（§11）を設計するときに、削除の経路と一緒にこの Trigger の扱いを決めます。書き読みは `apps/server/src/review/reveal-store.ts`（`SqliteRevealReviewStore` / `SqliteFollowUpStore`）です。
+
+`reveal_reviews`（Reveal Review = Pass B。`docs/05` §7）: Hero の判断ごとに Version を付けて追記します（`(hand_id, decision_index, version)` が一意。Version の採番と追記は 1 つの書き込みトランザクション）。Pass B は判断時点の評価を付け直さないので、`assessment`・`confidence` の列を持ちません（結果論を判断の評価に混ぜない）。
+
+| 列 | 中身 |
+|---|---|
+| `review_id`・`version`・`created_at`・`hand_id`・`decision_index`・`action_seq`・`depth`・`model_role`・`concrete_model`・`generated_by`・`failure` | `reviews` と同じ意味（`version` は同じ Hand・判断の Pass B の中の版） |
+| `evidence_ids` | JSON。`context` / `reveal` / `equity` / `aggression` と、Review AI が根拠に挙げた ID（`cited`） |
+| `explanation` | JSON。`readComparison`（読みと実際の比較）・`actualEquity`（実際の Equity）・`bluffValue`（Bluff / Value の答え合わせ）・`takeaways`（次に活かす点） |
+| `evidence` | Review AI に渡した Pass B の Evidence。判断時点の卓（Pass A と同じ Decision Context）と、Hand 後に見せた全員の札（`visibility: "learning_only"`。Deck の残りは含まない）・判断時点に仮定した Range との比較・実際の Equity・Bluff / Value の答え合わせ |
+
+`review_followups`（Follow-up Q&A）: Review の Version ごとに、質問と答えを 1 ターン 1 行で追記します（`(review_id, turn)` が一意）。`review_id` は `pass` が `decision` なら `reviews`、`reveal` なら `reveal_reviews` の行を指します。外部キーは 1 つのテーブルしか指せないので、挿入の Trigger（`review_followups_target`）で、指す行が実在し Hand・判断・Version が合うことを確かめます。
+
+| 列 | 中身 |
+|---|---|
+| `followup_id` | UUID |
+| `pass`・`review_id`・`review_version` | 質問の対象の Review（Pass と Version） |
+| `hand_id`・`decision_index` | 対象の Review の Hand と判断 |
+| `turn` | その Review の Version の中のターンの順番（1 から） |
+| `created_at`・`depth`・`model_role`・`concrete_model` | `reviews` と同じ意味（Follow-up は必ず Review AI を呼ぶので `concrete_model` は NOT NULL） |
+| `generated_by` | `review_ai` / `invalid_output_fallback`（答えが 2 回続けて不正。答えは `unanswered`） |
+| `question` | Hero の質問（500 字まで） |
+| `answer` | JSON。`scope`（`answered` / `out_of_scope` / `unanswered`）・`text`・`evidenceIds` |
+| `failure` | 出力の検証に失敗したときだけ。各回の段と理由 |
+
+Pass B・Follow-up でも、Claude の呼び出しの失敗では行を作りません。
 
 ## 9. Replay Metadata
 
@@ -271,7 +298,7 @@ Action単位の完全Crash RecoveryはMVPで過剰実装しません。
 ### Phase 1 の保存（Issue #20。D62・D72）
 
 - 保存先は SQLite（`node:sqlite`）で、`apps/server` だけが扱います。DB ファイルは環境変数 `POKER_DB_PATH`（`:memory:` も可）で変えられ、既定は `apps/server/data/poker.sqlite`（gitignore 済み）です。
-- テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only。削除は §11 の Reset と一緒に設計する）。
+- テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only）。DELETE も v4（#83）から Trigger で拒否します（削除の経路は §11 の Reset と一緒に設計する）。
 - マイグレーションは自前の小さな仕組みで、SQL の配列（`apps/server/src/db/database.ts` の `MIGRATIONS`）を `PRAGMA user_version` より新しい分だけ 1 版ずつトランザクションで当てます。アプリより新しい版の DB は開きません。
 - Review（#82）は Hand の保存とは別に、生成が終わった時点で `reviews` テーブルへ追記します（§8。Hand の保存のトランザクションには入れない）。
 - Hand 途中の Event はメモリに持ち、Hand の終わり（`HAND_FINISHED`、または AI 障害の後の打ち切り `HAND_ABORTED`。#77・D95）を追記した時点で、その Hand の全 Event と `hands` の行（その Session の最初の Hand なら `sessions` の行も。`started_at` はその Hand の開始時刻、`finished_at` は Hand の終わりの時刻）と、その Session の Session Projection（下記）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。

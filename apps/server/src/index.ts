@@ -18,6 +18,10 @@ import {
   createClaudeOpponentFactory,
 } from "./opponents/claude-opponent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
+import {
+  SqliteFollowUpStore,
+  SqliteRevealReviewStore,
+} from "./review/reveal-store.js";
 import { SqliteReviewStore } from "./review/review-store.js";
 import { createSolverAdapterFromEnv } from "./solver/index.js";
 import { SqliteEventStore } from "./sqlite-event-store.js";
@@ -38,6 +42,7 @@ const createOpponent =
 
 // Event Log は SQLite に保存する（D72）。終わった Hand だけが残る（D62）。
 // Review（#82）も同じ DB の reviews テーブルに Version 付きで保存する（reviews.hand_id は hands を参照する）。
+// Pass B（#83）は reveal_reviews、Follow-up の履歴は review_followups に追記する（どちらも hand_id は hands を参照する）。
 const dbPath = resolveDbPath(process.env["POKER_DB_PATH"]);
 const db = openDatabase(dbPath);
 const store = new SqliteEventStore(db);
@@ -61,6 +66,8 @@ const app = buildApp({
   // Review AI は Claude（Agent SDK・OAuth。D87・D97）。API 課金に切り替わる変数を外した環境で呼ぶ。
   review: {
     store: new SqliteReviewStore(db),
+    revealStore: new SqliteRevealReviewStore(db),
+    followUpStore: new SqliteFollowUpStore(db),
     kb,
     solver,
     env: claudeEnv,

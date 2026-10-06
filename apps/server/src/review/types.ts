@@ -22,8 +22,11 @@ import type {
   UnsupportedReason,
 } from "../solver/types.js";
 
-/** Review の Pass。#82 は Pass A（判断時点の情報だけの Decision Review）だけ。Pass B（Reveal Review）は #83。 */
-export type ReviewPass = "decision";
+/**
+ * Review の Pass（docs/05 §7）。decision は Pass A（判断時点の情報だけの Decision Review。reviews テーブル）、
+ * reveal は Pass B（Hand 後に Learning-only Full Reveal で答え合わせする Reveal Review。reveal_reviews テーブル。#83）。
+ */
+export type ReviewPass = "decision" | "reveal";
 
 /** 「標準」は review_standard、Hero が「詳しく」を選んだ Spot は review_deep（D97）。 */
 export type ReviewDepth = "standard" | "deep";
@@ -206,7 +209,7 @@ export interface KnowledgeEvidence {
 
 /** Review AI へ渡す Evidence の全体（docs/05 §6）。これ以外は渡さない。 */
 export interface ReviewEvidence {
-  readonly pass: ReviewPass;
+  readonly pass: "decision";
   readonly handId: string;
   readonly decisionIndex: number;
   readonly context: DecisionContextEvidence;
@@ -271,7 +274,7 @@ export interface ReviewDraft {
   readonly handId: string;
   readonly decisionIndex: number;
   readonly actionSeq: number;
-  readonly pass: ReviewPass;
+  readonly pass: "decision";
   readonly depth: ReviewDepth;
   readonly modelRole: ReviewModelRole;
   /** Review AI を呼んだときの具体モデル名。Gate で止めた（呼んでいない）なら null。 */
