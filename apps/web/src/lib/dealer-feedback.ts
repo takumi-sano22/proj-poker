@@ -4,7 +4,12 @@
 // 裁定そのものはサーバーの Ruling Engine が決めたもので、ここでは裁定の理由（notes）を文言にするだけ（裁定をクライアントで判定しない）。
 // COACHING は判断時点の Hero の情報だけを使う（Hindsight Leak を防ぐ。docs/05 §7）。log の裁定より前の公開 Event だけを読み、
 // 他者の Hidden Cards・未来の Card（裁定より後の Event）・system Event は読まない。
-import type { HandEvent, PhysicalAction, RulingCode } from "@proj-poker/engine";
+import {
+  potOdds,
+  type HandEvent,
+  type PhysicalAction,
+  type RulingCode,
+} from "@proj-poker/engine";
 import { formatChips, formatPercent } from "./format.js";
 import type { VocabId } from "./vocabulary.js";
 import { describeAction } from "./view-model.js";
@@ -240,11 +245,6 @@ export function potBefore(before: readonly HandEvent[]): number {
     }
   }
   return pot;
-}
-
-/** Pot Odds（Call 額 ÷（Pot + Call 額））。Call 額が 0 なら null。 */
-export function potOdds(call: number, pot: number): number | null {
-  return call <= 0 ? null : call / (pot + call);
 }
 
 /**

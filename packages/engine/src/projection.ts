@@ -18,6 +18,7 @@ import {
   type CanonicalAction,
   type LegalActionSet,
 } from "./legal-actions.js";
+import { potOdds } from "./pot-math.js";
 import type { PhysicalAction, RulingCode } from "./ruling.js";
 
 export interface SeatView {
@@ -228,7 +229,7 @@ function decisionMath(table: TableView, me: SeatView): DecisionMath {
   const effectiveStack = Math.min(me.stack, Math.max(0, ...otherStacks));
   return {
     callAmount,
-    potOdds: callAmount === 0 ? null : callAmount / (table.pot + callAmount),
+    potOdds: potOdds(callAmount, table.pot),
     effectiveStack,
     spr: table.pot === 0 ? null : effectiveStack / table.pot,
   };

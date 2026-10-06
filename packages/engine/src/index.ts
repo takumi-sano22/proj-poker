@@ -145,3 +145,38 @@ export type {
 
 export { projectLearningReveal } from "./learning-reveal.js";
 export type { LearningReveal, RevealedHoleCards } from "./learning-reveal.js";
+
+export { breakEvenFoldFrequency, potOdds } from "./pot-math.js";
+
+export { comboKey, parseRange } from "./range.js";
+export type { Combo } from "./range.js";
+
+export {
+  LOOSE_RANGE_PROFILE,
+  RANGE_PROFILES,
+  STANDARD_RANGE_PROFILE,
+  TIGHT_RANGE_PROFILE,
+} from "./range-config.js";
+export type {
+  PositionName,
+  PreflopSpot,
+  RangeProfile,
+} from "./range-config.js";
+
+export { classifyPreflop, positionName, villainRange } from "./range-model.js";
+export type {
+  PostflopNarrowing,
+  RangeAssumption,
+  VillainRange,
+} from "./range-model.js";
+
+export { DEFAULT_EQUITY_OPTIONS, equityVsRanges } from "./equity.js";
+export type { EquityOptions, EquityResult } from "./equity.js";
+
+export { analyzeDecision, compareRangeProfiles } from "./decision-analysis.js";
+export type {
+  AlternativeAction,
+  DecisionAnalysis,
+  DecisionAnalysisOptions,
+  RangeComparison,
+} from "./decision-analysis.js";
