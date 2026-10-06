@@ -6,21 +6,24 @@ import type { HeroView } from "@proj-poker/engine";
 import { useCallback } from "react";
 import { Amount } from "./components/Amount.js";
 import { ChipControls } from "./components/ChipControls.js";
+import { DealerFeedback } from "./components/DealerFeedback.js";
 import { HandLog } from "./components/HandLog.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
 import { Table } from "./components/Table.js";
+import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import type { SessionStatus } from "./lib/api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
-import { TERMS, formatChips, termLabel } from "./lib/format.js";
+import { dealerFeedbackAt } from "./lib/dealer-feedback.js";
+import { STREET_TERMS, TERMS, formatChips, termLabel } from "./lib/format.js";
 import {
   heroRulingStatus,
   heroSeatOf,
   lastSeqOf,
+  latestHeroRulingIndex,
   operationKey,
-  rulingText,
   waitingMessage,
 } from "./lib/view-model.js";
 
@@ -59,7 +62,8 @@ export function App() {
           <Notice session={session} />
         </main>
       ) : (
-        <>
+        // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
+        <VocabularyProvider view={view} nameOf={nameOf}>
           <main className="app__main">
             <div className="app__table">
               <Table
@@ -75,7 +79,7 @@ export function App() {
             </aside>
           </main>
           <HeroDock view={view} nameOf={nameOf} session={session} />
-        </>
+        </VocabularyProvider>
       )}
     </div>
   );
@@ -140,7 +144,9 @@ function HeroDock({ view, nameOf, session }: ViewProps) {
         </div>
         {hero !== undefined && (
           <div className="dock__stack">
-            <span className="dock__label">{termLabel(TERMS.stack)}</span>
+            <span className="dock__label">
+              <Term id="stack" />
+            </span>
             <Amount value={hero.stack} bigBlind={view.bigBlind} />
           </div>
         )}
@@ -212,11 +218,7 @@ function DockBody({ view, nameOf, session }: ViewProps) {
   const ruling = heroRulingStatus(view);
   return (
     <>
-      {ruling !== null && (
-        <p className="dock__ruling" role="status">
-          {rulingText(ruling)}
-        </p>
-      )}
+      <HeroFeedback view={view} />
       <p className="dock__message">
         {view.legalActions !== null ? "Hero の手番です。" : waiting}
       </p>
@@ -230,6 +232,29 @@ function DockBody({ view, nameOf, session }: ViewProps) {
         onSubmit={session.operate}
       />
     </>
+  );
+}
+
+/**
+ * 直近の Hero への裁定の Dealer Feedback（RULING / ETIQUETTE / COACHING。docs/06 §6）。
+ * 前の Street の裁定（Hero の Call で Street が閉じた直後など）には、どの Street の裁定かを添える。
+ */
+function HeroFeedback({ view }: { readonly view: HeroView }) {
+  const index = latestHeroRulingIndex(view);
+  if (index === null) return null;
+  const ruling = view.log[index];
+  if (ruling?.type !== "DEALER_RULING") return null;
+  const heading =
+    ruling.street === view.street
+      ? undefined
+      : `${termLabel(STREET_TERMS[ruling.street])}の裁定`;
+  return (
+    <DealerFeedback
+      // 裁定が変わったら、開いていた補足（作法・学習）を閉じる
+      key={ruling.seq}
+      items={dealerFeedbackAt(view.log, index, view.viewerId)}
+      heading={heading}
+    />
   );
 }
 

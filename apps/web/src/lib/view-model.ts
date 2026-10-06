@@ -226,7 +226,7 @@ function round3(n: number): number {
 }
 
 /**
- * Hero の操作への Dealer の裁定のうち、卓に反映して見せるもの（docs/06 §6 の RULING の最低限。分類・文言は #66）。
+ * Hero の操作への Dealer の裁定のうち、卓に反映して見せるもの（docs/06 §6 の RULING の状態。文言は dealer-feedback.ts）。
  * - pending: 手番でない操作として保留中（Hero の手番が来たら拘束か撤回かを裁定する。保留中は次の操作を送れない）
  * - action: Canonical Action に決まった。action はその結果の ACTION_TAKEN（額を含む）
  * - no_action: Action は決まらなかった（相手の Bet があるときの Check の宣言・撤回した Out-of-Turn）。Hero が選び直す
@@ -240,16 +240,35 @@ export type HeroRulingStatus =
   | { readonly kind: "no_action" };
 
 /**
- * 直近の Hero への裁定（公開 Event の DEALER_RULING から読む。裁定をクライアントで判定しない）。Hand の終了後は出さない。
- * Hero の Action で Street が進んでも、次の Hero の操作が裁定されるまで直近の裁定を出し続ける
- * （Call で Street が閉じると、裁定が見える前に消えてしまうため）。決まらなかった裁定（no_action）は Hero の手番で起き、
- * Hero が選び直すまで Street は進まないので、古い Street の「もう一度操作してください」が残ることはない。
+ * Hero 欄に出す直近の Hero への裁定の、log の中の位置（公開 Event の DEALER_RULING から読む。裁定をクライアントで判定しない）。
+ * 出さないときは null。
+ * - Hand の終了後は出さない
+ * - 保留（out_of_turn）は、Street が進んでも裁定されるまで出す（保留中は次の操作を送れないので、理由が見えている必要がある）
+ * - それ以外は、Hero の Action で Street が進んでも、次の Street で Hero の手番が来るまでは出す
+ *   （Call で Street が閉じると、Street で絞ると裁定が見える前に消えてしまうため）。次の Street で Hero の手番が来たら、
+ *   前の Street の裁定は新しい判断の邪魔になるので消す（進行ログには残る）
  */
-export function heroRulingStatus(view: HeroView): HeroRulingStatus | null {
+export function latestHeroRulingIndex(view: HeroView): number | null {
   if (view.status !== "in_progress") return null;
   const index = view.log.findLastIndex(
     (e) => e.type === "DEALER_RULING" && e.playerId === view.viewerId,
   );
+  const ruling = view.log[index];
+  if (ruling?.type !== "DEALER_RULING") return null;
+  if (
+    ruling.outcome !== "out_of_turn" &&
+    ruling.street !== view.street &&
+    view.legalActions !== null
+  ) {
+    return null;
+  }
+  return index;
+}
+
+/** 直近の Hero への裁定の状態（出す位置は latestHeroRulingIndex と同じ）。 */
+export function heroRulingStatus(view: HeroView): HeroRulingStatus | null {
+  const index = latestHeroRulingIndex(view);
+  if (index === null) return null;
   const ruling = view.log[index];
   if (ruling?.type !== "DEALER_RULING") return null;
   // 保留が解けるのは同じ Player の次の DEALER_RULING（basis: pending_out_of_turn）だけなので、最後の裁定で分かる。
@@ -271,18 +290,6 @@ export function operationKey(view: HeroView): string {
     (e) => e.type === "DEALER_RULING" && e.playerId === view.viewerId,
   ).length;
   return `${view.handId}:${view.street}:${rulings}`;
-}
-
-/** 裁定を卓に出す 1 行（分類・理由の文言〔Dealer Feedback〕は #66 で作る）。 */
-export function rulingText(status: HeroRulingStatus): string {
-  switch (status.kind) {
-    case "pending":
-      return "Dealer: 手番ではない操作として保留しました。Hero の手番で裁定します。";
-    case "action":
-      return `Dealer の裁定: ${describeAction(status.action)}`;
-    case "no_action":
-      return "Dealer の裁定: Action は決まりませんでした。もう一度操作してください。";
-  }
 }
 
 /** Hand のログ 1 行。読めない Event（Hero に届かない種別）は null。 */
@@ -324,13 +331,15 @@ export function describeEvent(
     case "PLAYER_DECLARED":
     case "PHYSICAL_CHIP_ACTION":
     case "DEALER_RULING":
-      // Hero の操作と Dealer の裁定（#64）。表示の文言（Dealer Feedback）は #66 で作るので、まだ行にしない。
+      // Hero の操作と Dealer の裁定（#64）。裁定は Dealer Feedback（dealer-feedback.ts）として分類ごとに別の行にするので、
+      // ここでは行にしない（HandLog が DEALER_RULING の位置で dealerFeedbackAt を呼ぶ）。操作は裁定の文言に含める。
       // 裁定の結果の Chip の動きは、続く ACTION_TAKEN の行に出る。
       return null;
   }
 }
 
-function describeAction(
+/** Action を「日本語（標準 Term） 実額」の 1 句にする（例: 「レイズ（Raise） 30 まで」）。 */
+export function describeAction(
   event: Extract<HandEvent, { type: "ACTION_TAKEN" }>,
 ): string {
   const label = termLabel(ACTION_TERMS[event.action]);

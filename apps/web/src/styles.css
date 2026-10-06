@@ -60,6 +60,11 @@
 
   --color-focus: #8cc8ff;
 
+  /* Dealer Feedback の分類（docs/02 §8。RULING / ETIQUETTE / COACHING を同じ色にしない）。暗い面の上で 4.5:1 以上 */
+  --color-feedback-ruling: #ecc068;
+  --color-feedback-etiquette: #c9b3ff;
+  --color-feedback-coaching: #7fd8b0;
+
   /* 影の 3 段（contact / key / ambient）と上向き */
   --ink: 0, 0, 0;
   --shadow-rest:
@@ -831,6 +836,16 @@ input {
   line-height: 1.7;
 }
 
+/* Dealer Feedback の行は分類の札を先頭に置き、Action の行と区別する */
+.hand-log__feedback {
+  color: var(--color-on-surface-muted);
+}
+
+.hand-log__feedback .feedback-tag {
+  margin-right: 2px;
+  font-size: 10px;
+}
+
 /* ───────── 画面下の Hero 欄 ───────── */
 
 .dock {
@@ -882,13 +897,255 @@ input {
   color: var(--color-on-surface-muted);
 }
 
-.dock__ruling {
+/* ───────── Dealer Feedback（docs/06 §6） ───────── */
+
+.feedback {
+  display: grid;
+  gap: 4px;
+}
+
+.feedback__heading {
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.feedback__list {
+  display: grid;
+  gap: 4px;
   margin: 0;
-  padding: 6px 12px;
-  border-left: 3px solid var(--color-brand-400);
+  padding: 0;
+  list-style: none;
+}
+
+/* 分類ごとに左の縁と札の色を分ける。色だけに頼らず、札に分類の名前を書く */
+.feedback__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--feedback-color);
   border-radius: var(--radius-control);
   background: var(--color-surface-raised);
   font-size: 14px;
+  line-height: 1.55;
+}
+
+.feedback__text {
+  flex: 1 1 16em;
+  min-width: 0;
+}
+
+.feedback__terms {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.feedback-tag {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--feedback-color);
+  border-radius: 999px;
+  color: var(--feedback-color);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+/* 作法・学習を開く button。札と同じ見た目で、開いているときは塗る */
+.feedback__toggle {
+  background: none;
+  cursor: pointer;
+}
+
+.feedback__toggle[aria-expanded="true"] {
+  background: var(--feedback-color);
+  color: var(--color-on-brand);
+}
+
+.feedback__item--ruling,
+.feedback-tag--ruling,
+.hand-log__feedback--ruling {
+  --feedback-color: var(--color-feedback-ruling);
+}
+
+.feedback__item--etiquette,
+.feedback-tag--etiquette,
+.hand-log__feedback--etiquette {
+  --feedback-color: var(--color-feedback-etiquette);
+}
+
+.feedback__item--coaching,
+.feedback-tag--coaching,
+.hand-log__feedback--coaching {
+  --feedback-color: var(--color-feedback-coaching);
+}
+
+/* 狭い画面では札を文の先頭に流し込み（札の列で文の幅を削らない）、用語と補足の button を次の 1 行にまとめる */
+@media (max-width: 719px) {
+  .feedback__item {
+    display: block;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+  .feedback__item > .feedback-tag {
+    margin-right: 6px;
+  }
+  .feedback__terms {
+    display: flex;
+    margin-top: 4px;
+  }
+}
+
+/* ───────── Poker Vocabulary（docs/06 §7） ───────── */
+
+/* 卓の上の用語。文の中に置くので、ボタンの見た目を消して点線の下線だけで「開ける」ことを示す。
+   :where で詳細度を 0 にし、Dealer Button や SB / BB の札など、既存の部品の見た目を上書きしない */
+:where(.term) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+:where(.term:not(.term--bare):not(.term--chip)) {
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+@media (hover: hover) {
+  :where(.term:not(.term--bare):not(.term--chip)):hover {
+    text-decoration-style: solid;
+  }
+}
+
+.term--chip {
+  padding: 0 8px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: 999px;
+  color: var(--color-on-surface);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .term--chip:hover {
+    border-color: var(--color-on-surface-muted);
+  }
+}
+
+.term[aria-expanded="true"] {
+  text-decoration-style: solid;
+}
+
+.vocab {
+  position: fixed;
+  z-index: 50;
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-overlay);
+  color: var(--color-on-surface);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.vocab:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.vocab__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vocab__title {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.vocab__term {
+  margin-left: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* 閉じる操作はタップしやすい大きさ（32px 角）にする */
+.vocab__close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: -4px -8px 0 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--color-on-surface-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .vocab__close:hover {
+    background: var(--color-surface);
+    color: var(--color-on-surface);
+  }
+}
+
+.vocab__body {
+  margin: 4px 0 0;
+}
+
+.vocab__body dt {
+  margin-top: 8px;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.vocab__body dd {
+  margin: 2px 0 0;
+}
+
+.vocab__related {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vocab__link {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: 999px;
+  background: none;
+  color: var(--color-on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .vocab__link:hover {
+    border-color: var(--color-on-surface-muted);
+  }
 }
 
 /* ───────── Chip と宣言の操作（docs/06 §4・§5） ───────── */

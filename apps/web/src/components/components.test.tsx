@@ -7,8 +7,11 @@ import { preflopHeroToAct, seat } from "../testing/fixtures.js";
 import { Amount } from "./Amount.js";
 import { ChipControls } from "./ChipControls.js";
 import { ChipPile, ChipStack } from "./ChipStack.js";
+import { DealerFeedback } from "./DealerFeedback.js";
+import { HandLog } from "./HandLog.js";
 import { OutageDialog } from "./OutageDialog.js";
 import { Table } from "./Table.js";
+import { Term, VocabBody } from "./Vocabulary.js";
 
 const noop = () => {};
 const nameOf = (id: string) => id.toUpperCase();
@@ -293,5 +296,134 @@ describe("OutageDialog（CPU の障害の続け方。D86）", () => {
       <OutageDialog actorName="CPU 3" kind="error" disabled onChoose={noop} />,
     );
     expect(html.match(/disabled=""/g)).toHaveLength(3);
+  });
+});
+
+describe("Poker Vocabulary の用語と詳細（docs/06 §7）", () => {
+  it("卓の用語は詳細を開く button で、開いているかを aria-expanded で示す。記号の表記でも用語の名前で読ませる", () => {
+    const plain = renderToStaticMarkup(<Term id="pot" />);
+    expect(plain).toContain('type="button"');
+    expect(plain).toContain('aria-haspopup="dialog"');
+    expect(plain).toContain('aria-expanded="false"');
+    expect(plain).toContain(">ポット（Pot）<");
+    const symbol = renderToStaticMarkup(<Term id="button">D</Term>);
+    expect(symbol).toContain('aria-label="ボタン（BTN）"');
+    expect(symbol).toContain(">D<");
+  });
+
+  it("詳細は Definition・Current Hand Example・Related Concept・Advanced Detail の 4 項目を出し、関連の用語は選べる", () => {
+    const html = renderToStaticMarkup(
+      <VocabBody
+        id="pot"
+        view={preflopHeroToAct()}
+        nameOf={nameOf}
+        onSelect={noop}
+      />,
+    );
+    expect(html).toContain("意味（Definition）");
+    expect(html).toContain("この Hand では（Current Hand Example）");
+    expect(html).toContain("今の Pot は 3（1.5 BB）。");
+    expect(html).toContain("関連（Related Concept）");
+    expect(html).toContain(">ポットオッズ（Pot Odds）</button>");
+    expect(html).toContain("詳しく（Advanced Detail）");
+  });
+
+  it("卓の上の Street・Pot・Dealer Button・SB / BB は用語として開ける", () => {
+    const html = renderToStaticMarkup(
+      <Table view={preflopHeroToAct()} nameOf={nameOf} />,
+    );
+    for (const id of ["preflop", "pot", "button", "smallBlind", "bigBlind"]) {
+      expect(html).toContain(`data-term="${id}"`);
+    }
+  });
+});
+
+describe("Dealer Feedback（RULING / ETIQUETTE / COACHING を混ぜない。docs/06 §6）", () => {
+  const items = [
+    { category: "ruling", text: "裁定の文", terms: ["oversizedChip"] },
+    { category: "etiquette", text: "作法の文", terms: [] },
+    { category: "coaching", text: "学習の文", terms: ["potOdds"] },
+  ] as const;
+
+  it("RULING は常に出し、ETIQUETTE と COACHING は分類の名前の button で開く（混ぜない・色だけに頼らない）", () => {
+    const html = renderToStaticMarkup(<DealerFeedback items={items} />);
+    // 項目として描くのは RULING だけ（作法・学習の文は 1 つの項目に混ぜない）
+    expect(html.match(/<li /g)).toHaveLength(1);
+    expect(html).toContain('data-category="ruling"');
+    expect(html).toContain("裁定（Ruling）");
+    expect(html).toContain("裁定の文");
+    expect(html).not.toContain("作法の文");
+    expect(html).not.toContain("学習の文");
+    // 作法・学習は分類の名前の button（閉じた状態）
+    expect(html).toMatch(
+      /feedback-tag--etiquette feedback__toggle" aria-expanded="false"[^>]*>作法（Etiquette）</,
+    );
+    expect(html).toMatch(
+      /feedback-tag--coaching feedback__toggle" aria-expanded="false"[^>]*>学習（Coaching）</,
+    );
+    // その場面で起きた概念は用語として開ける
+    expect(html).toContain('data-term="oversizedChip"');
+    expect(renderToStaticMarkup(<DealerFeedback items={[]} />)).toBe("");
+  });
+
+  it("前の Street の裁定には見出しを添える", () => {
+    const html = renderToStaticMarkup(
+      <DealerFeedback items={items} heading="プリフロップ（Preflop）の裁定" />,
+    );
+    expect(html).toContain("プリフロップ（Preflop）の裁定");
+  });
+
+  it("進行ログでも、裁定を分類ごとの別の行にする", () => {
+    const base = preflopHeroToAct();
+    const pub = { type: "public" } as const;
+    const view = preflopHeroToAct({
+      log: [
+        ...base.log,
+        {
+          seq: 5,
+          visibility: pub,
+          type: "PHYSICAL_CHIP_ACTION",
+          playerId: "hero",
+          street: "preflop",
+          motion: "chip_push",
+          chips: [25],
+        },
+        {
+          seq: 6,
+          visibility: pub,
+          type: "DEALER_RULING",
+          playerId: "hero",
+          street: "preflop",
+          basis: "operations",
+          outcome: "action",
+          action: { type: "call" },
+          notes: ["oversized_chip"],
+        },
+        {
+          seq: 7,
+          visibility: pub,
+          type: "ACTION_TAKEN",
+          playerId: "hero",
+          street: "preflop",
+          action: "call",
+          amount: 2,
+          toAmount: 2,
+          allIn: false,
+        },
+      ],
+    });
+    const html = renderToStaticMarkup(<HandLog view={view} nameOf={nameOf} />);
+    expect(html).toContain(
+      'hand-log__feedback--ruling" data-category="ruling"',
+    );
+    expect(html).toContain(
+      'hand-log__feedback--etiquette" data-category="etiquette"',
+    );
+    expect(html).toContain(
+      'hand-log__feedback--coaching" data-category="coaching"',
+    );
+    expect(html).toContain("Chip（25）を 1 枚出しました");
+    // 裁定の結果の Chip の動きは、続く ACTION_TAKEN の行に出る
+    expect(html).toContain("HERO: コール（Call） 2");
   });
 });
