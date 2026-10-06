@@ -54,6 +54,10 @@ describe("sanitizeText", () => {
     );
   });
 
+  it("値の後ろの文末のピリオドは値に含めない（potOdds=0.4. → Pot Odds 0.4.）", () => {
+    expect(sanitizeText("potOdds=0.4.", names)).toBe("Pot Odds 0.4.");
+  });
+
   it("Evidence 内の位置（math.equity.method）と enum の値（monte_carlo）も置換する", () => {
     expect(sanitizeText("math.equity.method は monte_carlo", names)).toBe(
       "Equity の算出方法 は Monte Carlo",

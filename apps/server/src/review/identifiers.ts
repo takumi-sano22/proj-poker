@@ -242,10 +242,11 @@ function termRegExp(name: string, valueSuffix = ""): RegExp {
 
 /** 項目名の直後に付く値。`=` `:` の後は何でも、`が` `は` の後は true / false だけ（「は 〜」の普通の文を壊さない）。 */
 const VALUE_SUFFIX =
-  "(?:\\s*(?:=|＝|:|：)\\s*([-\\w.%]+)|\\s*(?:が|は)\\s*(true|false))";
+  "(?:\\s*(?:=|＝|:|：)\\s*([-\\w%]+(?:\\.\\d+)?)|\\s*(?:が|は)\\s*(true|false))";
 
 /** 普通の英単語と同じ綴りの項目名に付く値は、`=` か `:` だけを見る。 */
-const PLAIN_SUFFIX = "(?:\\s*(?:=|＝|:|：)\\s*(true|false|[-\\w.%]+))";
+const PLAIN_SUFFIX =
+  "(?:\\s*(?:=|＝|:|：)\\s*(true|false|[-\\w%]+(?:\\.\\d+)?))";
 
 const TERMS_LONGEST_FIRST = [...EVIDENCE_TERMS].sort(
   (a, b) => b.name.length - a.name.length,
