@@ -47,6 +47,8 @@ Phase 5（MVP）の最終 PR。docs/09 §8 の Critical E2E（6-max Session 開�
   - 途中の 1 回だけ、`packages/engine` の `hand-summary.property.test.ts`（fast-check・seed は実行ごとに変わる）が 1 件失敗した。失敗の出力を残していなかったため反例は不明。直後に単体で 46 回（約 6,900 ケース）、全体（`pnpm test`）でも 2 回流して再現しなかった。この Issue では Engine を触っていない。→ 残課題。
 - `pnpm e2e`（ローカル・WSL2）: 通過。1 回 約 11 秒（テスト本体）、`pnpm e2e` 全体で約 10〜12 秒。`--repeat-each=3` と `--repeat-each=2` も通過（不安定さなし）。
 - CI（PR の 1 回目・Playwright のキャッシュなし）: `check` 55 秒・`e2e` 56 秒（並行）。`e2e` の内訳は依存の install 3 秒・Playwright の取得と OS の依存 15 秒・`pnpm e2e` 15 秒。
+- CI（キャッシュあり・68852a7）: `check` 50 秒・`e2e` 50 秒（並行）。`e2e` の内訳は依存の install 2 秒・キャッシュの復元 2 秒・`playwright install --with-deps`（ブラウザの取得は省かれ、OS の依存パッケージの apt が大半）17 秒・`pnpm e2e` 13 秒。`check` は E2E を足す前と同じ構成で、所要は変わらない。
+- Codex レビュー（68852a7）: `STATUS=clean`・指摘なし。
 - 実 Solver: `POKER_SOLVER_HOME=<#81 のビルド> pnpm --filter @proj-poker/server smoke:solver` で River 0.95 秒・Turn 7.8 秒、Flop と Multiway は Unsupported、Timeout と Cancel でプロセスが残らないことを確かめた。
 
 ### 実際の Claude での通し（手動 1 回・D98）
