@@ -198,6 +198,23 @@ export function heroSeatOf(view: HeroView): SeatView | undefined {
 }
 
 /**
+ * Fast Forward を使える局面か（D12）。Hero が Fold した後（または Hand から外れている間）の、Hand の途中だけ。
+ * 判定の正本はサーバー（外れていれば not_spectating で拒否する）。ここは操作を出すかどうかの目安で、合法性の判定ではない。
+ */
+export function canFastForward(view: HeroView): boolean {
+  if (view.status === "complete") return false;
+  const hero = heroSeatOf(view);
+  return hero === undefined || hero.folded;
+}
+
+/**
+ * Fast Forward の説明（常に出す）。縮まるのは CPU の思考の待ち（演出）だけで、AI の応答時間そのものは縮まない（D93）。
+ * 速くなると誤解させないよう、AI の判断を待つ間の案内（「<CPU 名> の手番…」）は変えずに、この文で伝える。
+ */
+export const FAST_FORWARD_NOTE =
+  "CPU の思考の待ちを短くします。AI の応答を待つ時間そのものは短くなりません。";
+
+/**
  * 卓の中心から見た席の向き（単位円上の x / y。画面座標なので y は下向きが正）。
  * Hero を画面下の中央に置き、そこから席順（時計回り）に並べる。半径は画面幅ごとに CSS が決める。
  */

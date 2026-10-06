@@ -680,3 +680,129 @@ describe("Hand API（CPU の障害。#52・D86）", () => {
     for (const e of events) expectNoInternals(e.data);
   });
 });
+
+describe("Hand API（Fast Forward。#67・D12・D93）", () => {
+  function fastForward(
+    app: ReturnType<typeof buildApp>,
+    handId: string,
+    payload: unknown,
+  ) {
+    return app.inject({
+      method: "POST",
+      url: `/api/hands/${handId}/fast-forward`,
+      payload: payload as object,
+    });
+  }
+
+  it("開始の応答は fastForward: false。Hero が Hand にいる間は入れられず（409 not_spectating）、形の不正は 400・無い Hand は 404", async () => {
+    const { app } = makeApp();
+    const created = await startRequest(app, null);
+    const {
+      handId,
+      view,
+      fastForward: initial,
+    } = created.json<{
+      handId: string;
+      view: HeroView;
+      fastForward: boolean;
+    }>();
+    expect(initial).toBe(false);
+    // makeApp は思考待ちが 0 なので、最初の応答は Hero の手番（まだ Hand にいる）。
+    expect(view.actorId).toBe(HERO);
+
+    const refused = await fastForward(app, handId, { enabled: true });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toMatchObject({
+      error: { kind: "not_spectating" },
+    });
+    // 切るのは受け付ける
+    const off = await fastForward(app, handId, { enabled: false });
+    expect(off.statusCode).toBe(200);
+    expect(off.json()).toEqual({ fastForward: false });
+
+    expect((await fastForward(app, handId, {})).statusCode).toBe(400);
+    expect(
+      (await fastForward(app, handId, { enabled: "true" })).statusCode,
+    ).toBe(400);
+    expect(
+      (await fastForward(app, handId, { enabled: true, extra: 1 })).statusCode,
+    ).toBe(400);
+    expect((await fastForward(app, "nope", { enabled: true })).statusCode).toBe(
+      404,
+    );
+  });
+
+  it("Hero が Fold した後は入れられ（200）、Hand の終了で切れる。開始の再送の応答には今の状態が入り、観戦中の View に他者の札は無い", async () => {
+    // Hero の Fold の後、最初の CPU の判断を gate で止めて、Hand が進行中のまま Fast Forward を入れる。
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let gateOn = false;
+    const createOpponent: OpponentFactory = (seed, _playerId, persona) => {
+      const bot = new RuleBot(seed, persona);
+      return {
+        decide: async (input) => {
+          if (gateOn) await gate;
+          const action = bot.choose(input);
+          return "amount" in action
+            ? { action: action.type, amount: action.amount }
+            : { action: action.type };
+        },
+      };
+    };
+    const store = new InMemoryEventStore();
+    const app = buildApp({
+      logger: false,
+      botDelayMs: 0,
+      store,
+      createOpponent,
+      nextSeed: () => 42,
+      nextHandId: () => "hand-ff",
+    });
+    apps.push(app);
+    const created = await startRequest(app, null);
+    const { handId, view } = created.json<{ handId: string; view: HeroView }>();
+    expect(view.actorId).toBe(HERO);
+
+    gateOn = true;
+    const folding = app.inject({
+      method: "POST",
+      url: `/api/hands/${handId}/actions`,
+      payload: { lastSeq: lastSeq(view), action: { type: "fold" } },
+    });
+    // Fold が適用され、次の CPU の判断で止まるまで待つ。
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const on = await fastForward(app, handId, { enabled: true });
+    expect(on.statusCode).toBe(200);
+    expect(on.json()).toEqual({ fastForward: true });
+    const resumed = await startRequest(app, null);
+    expect(resumed.statusCode).toBe(200);
+    const resumedBody = resumed.json<{
+      view: HeroView;
+      fastForward: boolean;
+    }>();
+    expect(resumedBody.fastForward).toBe(true);
+    // 観戦中（Hand の途中）の View に他者の札は無い。
+    expect(resumedBody.view.status).toBe("in_progress");
+    for (const seat of resumedBody.view.seats.filter(
+      (s) => s.playerId !== HERO,
+    )) {
+      expect(seat.holeCards).toBeNull();
+    }
+    const log = store.read(handId).map((s) => s.event);
+    expectNoLeak(resumed.json(), resumedBody.view, log);
+
+    release();
+    const done = await folding;
+    expect(done.statusCode).toBe(200);
+    expect(done.json<{ view: HeroView }>().view.status).toBe("complete");
+    // Hand が終わったら切れる（再送の応答も false）。入れ直しもできない。
+    const after = await startRequest(app, null);
+    expect(after.json<{ fastForward: boolean }>().fastForward).toBe(false);
+    expect((await fastForward(app, handId, { enabled: true })).statusCode).toBe(
+      409,
+    );
+  });
+});

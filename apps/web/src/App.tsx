@@ -5,8 +5,14 @@
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback } from "react";
 import { Amount } from "./components/Amount.js";
+import {
+  BbDisplayProvider,
+  BbDisplayToggle,
+  useBbSetting,
+} from "./components/BbDisplay.js";
 import { ChipControls } from "./components/ChipControls.js";
 import { DealerFeedback } from "./components/DealerFeedback.js";
+import { FastForward } from "./components/FastForward.js";
 import { HandLog } from "./components/HandLog.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
@@ -19,6 +25,7 @@ import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { dealerFeedbackAt } from "./lib/dealer-feedback.js";
 import { STREET_TERMS, TERMS, formatChips, termLabel } from "./lib/format.js";
 import {
+  canFastForward,
   heroRulingStatus,
   heroSeatOf,
   lastSeqOf,
@@ -30,6 +37,8 @@ import {
 export function App() {
   const session = useHandSession();
   const { view, players } = session;
+  // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
+  const [showBB, setShowBB] = useBbSetting();
   const nameOf = useCallback(
     (playerId: string) =>
       players.find((p) => p.playerId === playerId)?.displayName ?? playerId,
@@ -37,51 +46,61 @@ export function App() {
   );
 
   return (
-    <div className="app">
-      <header className="app__header">
-        <h1 className="app__title">proj-poker</h1>
-        {view !== null && (
-          <p className="app__meta">
-            ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
-            {formatChips(view.bigBlind)}
-          </p>
-        )}
-      </header>
+    <BbDisplayProvider value={showBB}>
+      {/* Fast Forward 中は卓の動きの演出（transition）も止める（D15）。待ちの短縮はサーバー側 */}
+      <div className={`app${session.fastForward ? " app--fast-forward" : ""}`}>
+        <header className="app__header">
+          <h1 className="app__title">proj-poker</h1>
+          <div className="app__header-end">
+            {view !== null && (
+              <p className="app__meta">
+                ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
+                {formatChips(view.bigBlind)}
+              </p>
+            )}
+            <BbDisplayToggle showBB={showBB} onChange={setShowBB} />
+          </div>
+        </header>
 
-      {view === null ? (
-        <main className="app__empty">
-          <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
-          <button
-            type="button"
-            className="btn btn--primary btn--lg"
-            disabled={session.pending}
-            onClick={session.start}
-          >
-            Hand を始める
-          </button>
-          <Notice session={session} />
-        </main>
-      ) : (
-        // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
-        <VocabularyProvider view={view} nameOf={nameOf}>
-          <main className="app__main">
-            <div className="app__table">
-              <Table
-                view={view}
-                nameOf={nameOf}
-                center={
-                  <TableCenter view={view} nameOf={nameOf} session={session} />
-                }
-              />
-            </div>
-            <aside className="app__side">
-              <HandLog view={view} nameOf={nameOf} />
-            </aside>
+        {view === null ? (
+          <main className="app__empty">
+            <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
+            <button
+              type="button"
+              className="btn btn--primary btn--lg"
+              disabled={session.pending}
+              onClick={session.start}
+            >
+              Hand を始める
+            </button>
+            <Notice session={session} />
           </main>
-          <HeroDock view={view} nameOf={nameOf} session={session} />
-        </VocabularyProvider>
-      )}
-    </div>
+        ) : (
+          // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
+          <VocabularyProvider view={view} nameOf={nameOf}>
+            <main className="app__main">
+              <div className="app__table">
+                <Table
+                  view={view}
+                  nameOf={nameOf}
+                  center={
+                    <TableCenter
+                      view={view}
+                      nameOf={nameOf}
+                      session={session}
+                    />
+                  }
+                />
+              </div>
+              <aside className="app__side">
+                <HandLog view={view} nameOf={nameOf} />
+              </aside>
+            </main>
+            <HeroDock view={view} nameOf={nameOf} session={session} />
+          </VocabularyProvider>
+        )}
+      </div>
+    </BbDisplayProvider>
   );
 }
 
@@ -199,13 +218,32 @@ function DockBody({ view, nameOf, session }: ViewProps) {
     view.actorId === null ? null : nameOf(view.actorId),
     delayed,
   );
-  if (hero === undefined) return <p className="dock__message">{waiting}</p>;
+  // Fast Forward は Hero が Fold した後（または Hand から外れている間）の観戦だけ。待ちの案内（waiting）は速さに依らず変えない
+  // （AI の応答は縮まないので、Fast Forward 中も「<CPU 名> の手番…」のまま出す。D93）。
+  const fastForward = canFastForward(view) && (
+    <FastForward
+      active={session.fastForward}
+      disabled={session.fastForwardPending}
+      onChange={session.setFastForward}
+    />
+  );
+  if (hero === undefined) {
+    return (
+      <>
+        <p className="dock__message">{waiting}</p>
+        {fastForward}
+      </>
+    );
+  }
   if (hero.folded) {
     // Fold 後も観戦を続ける（docs/06 §8）。他者の札は Showdown で公開されたものだけが表に向く。
     return (
-      <p className="dock__message">
-        フォールド（Fold）しました。Hand の終了まで観戦します。{waiting}
-      </p>
+      <>
+        <p className="dock__message">
+          フォールド（Fold）しました。Hand の終了まで観戦します。{waiting}
+        </p>
+        {fastForward}
+      </>
     );
   }
   if (hero.allIn) {

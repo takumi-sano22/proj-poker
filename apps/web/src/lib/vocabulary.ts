@@ -10,8 +10,8 @@ import {
   STREET_TERMS,
   TERMS,
   cardShortLabel,
-  formatBB,
   formatChips,
+  formatChipsWithBB,
   formatPercent,
   type Term,
 } from "./format.js";
@@ -47,6 +47,8 @@ export type VocabId =
 export interface VocabularyContext {
   readonly view: HeroView;
   readonly nameOf: (playerId: string) => string;
+  /** BB 換算を添えるか（BB 補助表示の設定。省略は添える。実額は常に出す。D49）。 */
+  readonly showBB?: boolean;
 }
 
 export interface VocabularyEntry extends Term {
@@ -160,8 +162,8 @@ const ENTRIES: readonly VocabularyEntry[] = [
     related: ["potOdds", "uncalledBet", "showdown"],
     advanced:
       "Stack の違う Player が All-in すると、その Player が争える Main Pot と、残りの Player だけが争う Side Pot に分かれます。卓の Pot の表示は全部の合計です。",
-    example: ({ view }) =>
-      `今の Pot は ${formatChips(view.pot)}（${formatBB(view.pot, view.bigBlind)}）。`,
+    example: ({ view, showBB }) =>
+      `今の Pot は ${formatChipsWithBB(view.pot, view.bigBlind, showBB)}。`,
   },
   {
     id: "stack",
@@ -171,11 +173,11 @@ const ENTRIES: readonly VocabularyEntry[] = [
     related: ["effectiveStack", "allIn", "bigBlind"],
     advanced:
       "Stack の深さは BB の何倍かで測ると比べやすくなります。この卓では実額が正本で、BB 換算は補助として添えています。",
-    example: ({ view }) => {
+    example: ({ view, showBB }) => {
       const stack = heroStack(view);
       return stack === null
         ? "Hero は卓にいません。"
-        : `Hero の Stack は ${formatChips(stack)}（${formatBB(stack, view.bigBlind)}）。`;
+        : `Hero の Stack は ${formatChipsWithBB(stack, view.bigBlind, showBB)}。`;
     },
   },
   {
@@ -187,7 +189,7 @@ const ENTRIES: readonly VocabularyEntry[] = [
     related: ["stack", "allIn", "potOdds"],
     advanced:
       "Multiway では相手ごとに有効スタックが違います。ここでの例は、Fold していない他者のうち最も大きい Stack と比べた値です。有効スタック ÷ Pot（SPR）は、どこまで Pot を大きくできるかの目安になります。",
-    example: ({ view }) => {
+    example: ({ view, showBB }) => {
       const stack = heroStack(view);
       const others = view.seats
         .filter((s) => s.playerId !== view.viewerId && !s.folded)
@@ -196,7 +198,7 @@ const ENTRIES: readonly VocabularyEntry[] = [
         return "有効スタックを比べる相手がいません。";
       }
       const effective = Math.min(stack, Math.max(...others));
-      return `今の Hero の有効スタックは ${formatChips(effective)}（${formatBB(effective, view.bigBlind)}）。`;
+      return `今の Hero の有効スタックは ${formatChipsWithBB(effective, view.bigBlind, showBB)}。`;
     },
   },
   {

@@ -33,6 +33,8 @@ Pot: 37
 
 上段の実額が正本で、BBは補助です。
 
+実装（#67）: BBの補助表示は、画面上部の「BB 補助表示」ボタンでON / OFFできます（既定はON）。OFFにしても実額は常に出し、消えるのはBB換算だけです（Table上のStack・Pot・Bet、Heroの欄のStack、Hand結果の獲得額、宣言Buttonの額、Poker Vocabularyの例の文）。設定はviewerごと（このブラウザの`localStorage`。`apps/web/src/lib/display-settings.ts`）に保存し、保存が使えない環境（プライベートウィンドウ・保存の拒否）でも例外にせず既定の表示で動きます。
+
 ## 3. Card / Chip Asset
 
 Card / Chipは構造描画します。
@@ -114,7 +116,7 @@ Canonical Actionへ影響する裁定。
 - ETIQUETTE: 裁定の理由に応じた進行・作法の注意（例: 先に Raise を宣言する・Chip は 1 回で出す・手番を待つ）。
 - COACHING: 判断時点の Hero の情報だけで作る補足。今は Call の Pot Odds と、Bet の Pot に対する大きさ（相手の Pot Odds）。裁定より前の公開 Event だけを読み、他者の Hidden Cards・未来の Card（裁定より後の Event）・system Event は使いません（Hindsight Leak を防ぐ）。
 
-Hero 欄は RULING を常に出し、ETIQUETTE / COACHING は分類の名前の Button で開きます（Hero 欄を低く保つため）。進行ログには 3 分類とも、分類の札を付けて別の行で残します。Hero 欄の裁定は、Hero の Action で Street が進んでも CPU の手番の間は「<Street> の裁定」として出し続け、次の Street で Hero の手番が来たら消します（保留中の裁定は裁定されるまで出します）。Dealer の進行速度の変更（D15）は #67 の Fast Forward と合わせて扱います。
+Hero 欄は RULING を常に出し、ETIQUETTE / COACHING は分類の名前の Button で開きます（Hero 欄を低く保つため）。進行ログには 3 分類とも、分類の札を付けて別の行で残します。Hero 欄の裁定は、Hero の Action で Street が進んでも CPU の手番の間は「<Street> の裁定」として出し続け、次の Street で Hero の手番が来たら消します（保留中の裁定は裁定されるまで出します）。Dealer の進行速度の変更（D15）は Fast Forward（§8。#67）として扱います。
 
 ## 7. 用語表示
 
@@ -152,6 +154,8 @@ Option:
 - Fast Forward
 
 Handが終わるまではLearning-only Hidden Cardsを見せません。
+
+実装（#67。D12・D15・D93）: Heroが Fold した後（またはHandから外れている間）のHandの途中だけ、Heroの欄に「Fast Forward」のON / OFFを出します（`components/FastForward.tsx`）。ONにすると、そのHandの残りのCPUの思考待ち（`BOT_THINK_DELAY_MS`の演出。待っている最中の分も今すぐ終える）を0にし、卓の動きの演出（transition）も止めます。縮むのは演出の待ちだけで、AI（Claude）の応答を待つ時間そのものは縮まず、`OPPONENT_TIMEOUT_MS`の上限も変わりません。速くなると誤解させないよう、Fast Forward中もCPUの手番の案内は「<CPU 名> の手番…」のまま出し（遅延が長引けば「AI応答が遅延しています」の補足も同じ）、操作の横に「CPU の思考の待ちを短くします。AI の応答を待つ時間そのものは短くなりません。」を常に添えます。Handが終わったら自動で通常の速さに戻り、次のHandはOFFで始まります。観戦中のViewは通常どおりSSEで届くHeroのViewだけで、Showdownで公開された札以外は伏せたままです。FastForwardの操作はEventに残さない運用の状態で、serverのメモリにだけ持ちます（Emergency Botの選択と同じ扱い。D88）。
 
 ## 9. Hint UI
 

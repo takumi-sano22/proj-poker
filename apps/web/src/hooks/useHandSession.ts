@@ -10,6 +10,7 @@ import {
   chooseOutage,
   handStreamUrl,
   sendHeroPhysicalActions,
+  setFastForward as requestFastForward,
   startHand,
   type HeroActionResponse,
   type OutageChoice,
@@ -54,6 +55,12 @@ export interface HandSession {
   /** 表示中の障害の続け方を選ぶ（Retry / Emergency Bot / Session 終了）。 */
   readonly resolveOutage: (choice: OutageChoice) => void;
   readonly retry: () => void;
+  /** 表示中の Hand の Fast Forward が入っているか（Hand が終わっていれば false）。 */
+  readonly fastForward: boolean;
+  /** Fast Forward を送信中か（操作の送信 pending とは別。観戦中の切り替えを操作の送信と取り合わない）。 */
+  readonly fastForwardPending: boolean;
+  /** Fast Forward を入れる・切る。入れられるのは Hero が Fold した後だけ（サーバーが判定する）。 */
+  readonly setFastForward: (enabled: boolean) => void;
 }
 
 /** サーバーの失敗を、驚かせない案内文にする（ui.md: 一時的な失敗は再送へ誘導する）。 */
@@ -91,6 +98,12 @@ function noticeOf(error: unknown): SessionNotice {
           "その操作は受け付けられませんでした。卓の表示を見て、操作し直してください。",
         retryable: false,
       };
+    case "not_spectating":
+      return {
+        message:
+          "Fast Forward は Hero が Fold した後、Hand の終了までの間だけ使えます。",
+        retryable: false,
+      };
     case "hand_complete":
       return { message: "この Hand は終了しています。", retryable: false };
     case "hand_not_found":
@@ -121,6 +134,13 @@ export function useHandSession(): HandSession {
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
+  // Fast Forward（D12）。サーバーの状態を写すだけで、どの Hand のものかを持つ（別の Hand へ持ち越さない）。
+  const [fastForward, setFastForwardState] = useState<{
+    readonly handId: string;
+    readonly enabled: boolean;
+  } | null>(null);
+  const [fastForwardPending, setFastForwardPending] = useState(false);
+  const fastForwardInFlight = useRef(false);
   // SSE を張り直すための世代。開始が成功するたびに進める。
   const [streamEpoch, setStreamEpoch] = useState(0);
 
@@ -199,6 +219,10 @@ export function useHandSession(): HandSession {
           accept(res.view);
           acceptSession({ handId: res.handId, status: res.session });
           acceptOutage({ handId: res.handId, status: res.outage });
+          setFastForwardState({
+            handId: res.handId,
+            enabled: res.fastForward === true,
+          });
           setConnection("idle");
           // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。
           setStreamEpoch((n) => n + 1);
@@ -291,6 +315,34 @@ export function useHandSession(): HandSession {
     [currentOutage, handId, sendOutageChoice],
   );
 
+  /**
+   * Fast Forward を送る。二重送信は止めるが、操作の送信（pending）とは取り合わない（観戦中は操作が無く、障害の選択と別の経路のため）。
+   * 失敗は案内だけを出し、再送ボタンは出さない（もう一度押せば同じ送信になる。再送用の記録 lastFailed は使わない）。
+   */
+  const setFastForward = useCallback(
+    (enabled: boolean) => {
+      if (handId === null || fastForwardInFlight.current) return;
+      fastForwardInFlight.current = true;
+      setFastForwardPending(true);
+      setNotice(null);
+      requestFastForward(handId, enabled)
+        .then((res) => {
+          // 送信中に別の Hand へ移っていたら反映しない
+          if (activeHandId.current !== handId) return;
+          setFastForwardState({ handId, enabled: res.fastForward });
+        })
+        .catch((error: unknown) => {
+          if (activeHandId.current !== handId) return;
+          setNotice({ ...noticeOf(error), retryable: false });
+        })
+        .finally(() => {
+          fastForwardInFlight.current = false;
+          setFastForwardPending(false);
+        });
+    },
+    [handId],
+  );
+
   const retry = useCallback(() => {
     const failed = lastFailed.current;
     if (failed?.kind === "start") requestStart(failed.afterHandId);
@@ -350,5 +402,12 @@ export function useHandSession(): HandSession {
     operate,
     resolveOutage,
     retry,
+    // サーバーは Hand の終了で切る。complete の View を受けた時点で、先に画面でも通常の表示に戻す。
+    fastForward:
+      fastForward?.handId === handId &&
+      fastForward.enabled &&
+      view?.status === "in_progress",
+    fastForwardPending,
+    setFastForward,
   };
 }

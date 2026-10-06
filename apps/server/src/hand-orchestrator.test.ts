@@ -1653,3 +1653,164 @@ describe("Hero の物理的な操作（#64・D90・D91）", () => {
     expect(finishedStacks(events("hand-1"))).toBe(TOTAL_CHIPS);
   });
 });
+
+describe("Fast Forward（#67・D12・D15・D93）", () => {
+  const THINK_MS = 100;
+
+  /** 思考待ちがある Orchestrator で最初の Hand を始め、Hero の手番まで進めて Fold する（その後も Hand は続く）。 */
+  async function startAndFoldHero(overrides: Partial<HandOrchestratorOptions>) {
+    vi.useFakeTimers();
+    const ctx = setup({ botDelayMs: THINK_MS, ...overrides });
+    const started = await ctx.orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const { handId } = started.value;
+    const pushed: HeroView[] = [];
+    ctx.orchestrator.subscribe(handId, (v) => pushed.push(v));
+    // Hero の手番が来るまで CPU を進める（1 手ずつ時間を進めて、手番になったところで止める）。
+    for (let guard = 0; ; guard++) {
+      expect(guard).toBeLessThan(50);
+      const view = ctx.orchestrator.heroView(handId) as HeroView;
+      if (view.actorId === HERO) break;
+      await vi.advanceTimersByTimeAsync(overrides.botDelayMs ?? 10_000);
+    }
+    const view = ctx.orchestrator.heroView(handId) as HeroView;
+    const folded = await ctx.orchestrator.heroAction(handId, lastSeq(view), {
+      type: "fold",
+    });
+    if (!folded.ok) throw new Error(folded.error.message);
+    expect(folded.value.status).toBe("in_progress");
+    return { ...ctx, handId, pushed };
+  }
+
+  it("Hero がまだ Hand にいる間・Hand が終わった後は入れられず（not_spectating）、切るのはいつでも受け付ける", async () => {
+    vi.useFakeTimers();
+    const { orchestrator } = setup({ botDelayMs: THINK_MS });
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    const { handId } = started.value;
+    expect(orchestrator.setFastForward(handId, true)).toMatchObject({
+      ok: false,
+      error: { kind: "not_spectating" },
+    });
+    expect(orchestrator.fastForwardOf(handId)).toBe(false);
+    expect(orchestrator.setFastForward(handId, false)).toEqual({
+      ok: true,
+      value: { fastForward: false },
+    });
+    expect(orchestrator.setFastForward("nope", true)).toMatchObject({
+      ok: false,
+      error: { kind: "hand_not_found" },
+    });
+    expect(orchestrator.fastForwardOf("nope")).toBeNull();
+  });
+
+  it("Hero の Fold 後に入れると、残りの CPU の思考待ちを待たずに Hand が終わり、Hand の終了で通常の速さに戻る", async () => {
+    const { orchestrator, handId, pushed, events } = await startAndFoldHero({});
+    // 入れる前は、CPU の手番は思考待ち（100ms）ごとにしか進まない。
+    const before = events(handId).length;
+    await vi.advanceTimersByTimeAsync(THINK_MS - 1);
+    expect(events(handId).length).toBe(before);
+
+    const on = orchestrator.setFastForward(handId, true);
+    expect(on).toEqual({ ok: true, value: { fastForward: true } });
+    expect(orchestrator.fastForwardOf(handId)).toBe(true);
+    // 待っている最中の思考待ちも終わり、時間を進めなくても Hand の終わりまで進む（microtask だけ流す）。
+    await vi.advanceTimersByTimeAsync(0);
+    const view = orchestrator.heroView(handId) as HeroView;
+    expect(view.status).toBe("complete");
+    expect(finishedStacks(events(handId))).toBe(TOTAL_CHIPS);
+    // 終わった Hand の Fast Forward は切れている。もう入れられない。
+    expect(orchestrator.fastForwardOf(handId)).toBe(false);
+    expect(orchestrator.setFastForward(handId, true)).toMatchObject({
+      ok: false,
+      error: { kind: "not_spectating" },
+    });
+
+    // 観戦中の View（Push されたもの）も、Hand が終わるまで他者の札を含まない（Showdown で公開される前は伏せたまま）。
+    const log = events(handId);
+    const inProgress = pushed.filter((v) => v.status !== "complete");
+    expect(inProgress.length).toBeGreaterThan(0);
+    for (const v of pushed) {
+      expect(leakedCards(v, log, HERO, lastSeq(v))).toEqual([]);
+    }
+    for (const v of inProgress) {
+      for (const seat of v.seats.filter((s) => s.playerId !== HERO)) {
+        expect(seat.holeCards).toBeNull();
+      }
+    }
+
+    // 次の Hand は通常の速さ（思考待ちが効く）。
+    const second = await orchestrator.startHand(handId);
+    if (!second.ok) throw new Error(second.error.message);
+    const next = second.value.handId;
+    expect(orchestrator.fastForwardOf(next)).toBe(false);
+    expect(second.value.view.actorId).not.toBe(HERO);
+    const start = events(next).length;
+    await vi.advanceTimersByTimeAsync(THINK_MS - 1);
+    expect(events(next).length).toBe(start);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events(next).length).toBeGreaterThan(start);
+  });
+
+  it("CPU の判断の待ち（Claude の応答）は縮めない: 思考待ちだけが 0 になり、判断が返るまでは Fast Forward 中でも進まない", async () => {
+    const DECIDE_MS = 5000;
+    // 判断（decide）に 5 秒かかる CPU。Claude の応答時間の代わり。
+    const slowCpus: OpponentFactory = (seed, playerId, persona) => {
+      const bot = createRuleBot(seed, playerId, persona);
+      return {
+        decide: (input, signal) =>
+          new Promise((resolve, reject) => {
+            setTimeout(() => {
+              bot.decide(input, signal).then(resolve, reject);
+            }, DECIDE_MS);
+          }),
+      };
+    };
+    const { orchestrator, handId, events } = await startAndFoldHero({
+      createOpponent: slowCpus,
+      opponentTimeoutMs: 30_000,
+    });
+    expect(orchestrator.setFastForward(handId, true).ok).toBe(true);
+    // 思考待ち（100ms）は飛ばしたので、判断の 5 秒ちょうどで 1 手進む。1 手より早くは進まない。
+    const before = events(handId).length;
+    await vi.advanceTimersByTimeAsync(DECIDE_MS - 1);
+    expect(events(handId).length).toBe(before);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(events(handId).length).toBeGreaterThan(before);
+    // 次の CPU も、判断の 5 秒がかかる（思考待ちは無いが、判断の待ちはそのまま）。
+    const after = events(handId).length;
+    const view = orchestrator.heroView(handId) as HeroView;
+    if (view.status !== "complete") {
+      await vi.advanceTimersByTimeAsync(DECIDE_MS - 1);
+      expect(events(handId).length).toBe(after);
+    }
+  });
+
+  it("Fast Forward 中でも判断の待ちの上限（OPPONENT_TIMEOUT_MS）は変わらず、超えたら障害として止まる（D86）", async () => {
+    const hangingCpus: OpponentFactory = () => ({
+      decide: () => new Promise<OpponentOutput>(() => {}),
+    });
+    // Hero が Fold するまでは判断が返る CPU、Fold 後は返らない CPU にする。
+    let hung = false;
+    const factory: OpponentFactory = (seed, playerId, persona) => {
+      const bot = createRuleBot(seed, playerId, persona);
+      const hanging = hangingCpus(seed, playerId, persona);
+      return {
+        decide: (input, signal) =>
+          hung ? hanging.decide(input, signal) : bot.decide(input, signal),
+      };
+    };
+    const { orchestrator, handId } = await startAndFoldHero({
+      createOpponent: factory,
+      opponentTimeoutMs: 2000,
+    });
+    hung = true;
+    expect(orchestrator.setFastForward(handId, true).ok).toBe(true);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(orchestrator.outageStatus(handId)?.current).toBeNull();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(orchestrator.outageStatus(handId)?.current).toMatchObject({
+      kind: "timeout",
+    });
+  });
+});

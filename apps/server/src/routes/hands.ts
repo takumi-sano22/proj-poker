@@ -41,6 +41,11 @@ interface HeroPhysicalActionBody {
   actions: PhysicalAction[];
 }
 
+interface FastForwardBody {
+  /** true で Fast Forward を入れる（Hero が Fold した後だけ）。false で通常の速さに戻す。 */
+  enabled: boolean;
+}
+
 interface OutageChoiceBody {
   /** クライアントが見ていた障害の状態の revision（古いダイアログ・二重送信の検出に使う）。 */
   revision: number;
@@ -162,6 +167,13 @@ const heroPhysicalActionBodySchema = {
   },
 } as const;
 
+const fastForwardBodySchema = {
+  type: "object",
+  required: ["enabled"],
+  additionalProperties: false,
+  properties: { enabled: { type: "boolean" } },
+} as const;
+
 const outageChoiceBodySchema = {
   type: "object",
   required: ["revision", "choice"],
@@ -177,6 +189,7 @@ const STATUS_BY_ERROR: Record<OrchestratorError["kind"], number> = {
   hand_not_found: 404,
   stale_view: 409,
   stale_outage: 409,
+  not_spectating: 409,
   not_actor: 409,
   hand_complete: 409,
   illegal_action: 422,
@@ -226,6 +239,7 @@ export function registerHandRoutes(
         view,
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
+        fastForward: orchestrator.fastForwardOf(handId) ?? false,
       });
     },
   );
@@ -270,6 +284,21 @@ export function registerHandRoutes(
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
       });
+    },
+  );
+
+  // Fast Forward を入れる・切る（D12・D15・D93）。Hero が Fold した後だけ入れられ、その Hand の残りの CPU の思考待ち（演出）を縮める。
+  // Claude の応答時間そのものは縮まない。Hand が終われば自動で切れる。運用の状態で、Event には残さない。
+  app.post<{ Params: HandParams; Body: FastForwardBody }>(
+    "/api/hands/:handId/fast-forward",
+    { schema: { params: handParamsSchema, body: fastForwardBodySchema } },
+    async (request, reply) => {
+      const result = orchestrator.setFastForward(
+        request.params.handId,
+        request.body.enabled,
+      );
+      if (!result.ok) return sendError(reply, result.error);
+      return reply.send(result.value);
     },
   );
 

@@ -51,6 +51,8 @@ export interface StartHandResponse {
   readonly view: HeroView;
   readonly session: SessionStatus;
   readonly outage: OutageStatus;
+  /** Fast Forward が入っているか（開始の再送・「卓に戻る」で、進行中の Hand の状態を画面へ戻すため）。 */
+  readonly fastForward: boolean;
 }
 
 /** Hero の Action と、障害の続け方の選択の応答。 */
@@ -64,6 +66,7 @@ export interface HeroActionResponse {
 export type ApiErrorKind =
   | "stale_view"
   | "stale_outage"
+  | "not_spectating"
   | "not_actor"
   | "hand_complete"
   | "illegal_action"
@@ -85,6 +88,7 @@ export class ApiError extends Error {
 const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "stale_view",
   "stale_outage",
+  "not_spectating",
   "not_actor",
   "hand_complete",
   "illegal_action",
@@ -145,6 +149,20 @@ export function sendHeroPhysicalActions(
   return postJson<HeroActionResponse>(
     `/api/hands/${encodeURIComponent(handId)}/physical-actions`,
     { lastSeq, actions },
+  );
+}
+
+/**
+ * Fast Forward を入れる・切る（D12・D15・D93）。入れられるのは Hero が Fold した後の Hand の途中だけ（それ以外は not_spectating）。
+ * 縮まるのは CPU の思考の待ち（演出）で、AI（Claude）の応答時間そのものは縮まない。Hand が終わるとサーバーが切る。
+ */
+export function setFastForward(
+  handId: string,
+  enabled: boolean,
+): Promise<{ readonly fastForward: boolean }> {
+  return postJson<{ readonly fastForward: boolean }>(
+    `/api/hands/${encodeURIComponent(handId)}/fast-forward`,
+    { enabled },
   );
 }
 

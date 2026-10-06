@@ -2,7 +2,9 @@ import type { HandEvent } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
 import { preflopHeroToAct } from "../testing/fixtures.js";
 import {
+  FAST_FORWARD_NOTE,
   blindsOf,
+  canFastForward,
   describeEvent,
   heroRulingStatus,
   latestHeroRulingIndex,
@@ -457,5 +459,57 @@ describe("describeEvent", () => {
         nameOf,
       ),
     ).toBe("CPU 1 がポット（Pot） 37 を獲得");
+  });
+});
+
+describe("canFastForward（Hero が Fold した後の Hand の途中だけ操作を出す。D12）", () => {
+  const base = preflopHeroToAct();
+  const folded = {
+    seats: base.seats.map((s) =>
+      s.playerId === "hero" ? { ...s, folded: true } : s,
+    ),
+  };
+
+  it("Hero が Hand にいる間は出さない（手番でも CPU の手番でも）", () => {
+    expect(canFastForward(base)).toBe(false);
+    expect(canFastForward(preflopHeroToAct({ actorId: "cpu1" }))).toBe(false);
+  });
+
+  it("Hero が All-in して Hand に残っている間は出さない（Fold していない）", () => {
+    const allIn = {
+      seats: base.seats.map((s) =>
+        s.playerId === "hero" ? { ...s, allIn: true } : s,
+      ),
+    };
+    expect(canFastForward(preflopHeroToAct(allIn))).toBe(false);
+  });
+
+  it("Hero が Fold した後の Hand の途中は出し、Hand が終わったら出さない", () => {
+    expect(
+      canFastForward(preflopHeroToAct({ ...folded, actorId: "cpu1" })),
+    ).toBe(true);
+    expect(
+      canFastForward(preflopHeroToAct({ ...folded, status: "complete" })),
+    ).toBe(false);
+  });
+
+  it("Hero が卓にいない View（Hand から外れている）でも、Hand の途中なら出す", () => {
+    expect(
+      canFastForward(
+        preflopHeroToAct({
+          seats: base.seats.filter((s) => s.playerId !== "hero"),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("速くなると誤解させない: 待ちの案内は速さに依らず同じで、説明は AI の応答時間が縮まらないと言う（D93）", () => {
+    expect(waitingMessage("CPU 1", false)).toBe("CPU 1 の手番…");
+    expect(waitingMessage("CPU 1", true)).toBe(
+      "CPU 1 の手番…（AI応答が遅延しています）",
+    );
+    expect(FAST_FORWARD_NOTE).toContain(
+      "AI の応答を待つ時間そのものは短くなりません",
+    );
   });
 });
