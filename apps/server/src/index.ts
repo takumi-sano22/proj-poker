@@ -25,10 +25,10 @@ import {
   SqliteFollowUpStore,
   SqliteRevealReviewStore,
 } from "./review/reveal-store.js";
+import { fakeReviewQuery } from "./review/fake-review-query.js";
 import { SqliteReviewStore } from "./review/review-store.js";
 import { createSolverAdapterFromEnv } from "./solver/index.js";
 import { SqliteEventStore } from "./sqlite-event-store.js";
-import { fakeReviewQuery } from "./testing/e2e/fake-review-query.js";
 
 // ローカル専用（D61・非目標: Auth / Online Multiplayer）。外部 NIC へ公開しないため loopback に固定し、設定で変えさせない。
 const HOST = "127.0.0.1";

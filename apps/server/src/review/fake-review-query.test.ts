@@ -7,14 +7,14 @@ import {
   type LearningReveal,
 } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
-import { loadKb } from "../../kb/index.js";
-import { buildReviewEvidence } from "../../review/evidence.js";
-import { generateFollowUp } from "../../review/followup.js";
-import { generateReview } from "../../review/generate.js";
-import { generateRevealReview } from "../../review/generate-reveal.js";
-import { buildRevealEvidence } from "../../review/reveal-evidence.js";
-import { createAmaster97Adapter } from "../../solver/amaster97-adapter.js";
-import { BTN_VS_UTG, playScriptedHand } from "../review-eval/hands.js";
+import { loadKb } from "../kb/index.js";
+import { buildReviewEvidence } from "./evidence.js";
+import { generateFollowUp } from "./followup.js";
+import { generateReview } from "./generate.js";
+import { generateRevealReview } from "./generate-reveal.js";
+import { buildRevealEvidence } from "./reveal-evidence.js";
+import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
+import { BTN_VS_UTG, playScriptedHand } from "../testing/review-eval/hands.js";
 import { FAKE_REVIEW_MARK, fakeReviewQuery } from "./fake-review-query.js";
 
 const kb = loadKb();

@@ -17,7 +17,7 @@ Phase 5（MVP）の最終 PR。docs/09 §8 の Critical E2E（6-max Session 開�
 ## 設計方針
 
 - **server（E2E 用の口。既定は変えない）**
-  - `REVIEW_PROVIDER`（`claude` 既定 / `fake`）: `fake` で Review AI を `apps/server/src/testing/e2e/fake-review-query.ts` の固定応答に差し替える。呼び出しの種類（Pass A / Pass B / Follow-up）は構造化出力の Schema の項目で見分け、`evidenceIds` は Schema の enum の先頭 2 つを使う。文の先頭に「（E2E 用の固定応答）」を付け、実際の Review と取り違えないようにした。Pass A の段階評価は `reasonable`、theory は Solver の有無に関わらず選べる `general_theory`。生成中の表示を一度通るよう 300ms 待つ（abort されたら待たない）。知らない値は起動時に止める（`OPPONENT_PROVIDER` と同じ作法）。
+  - `REVIEW_PROVIDER`（`claude` 既定 / `fake`）: `fake` で Review AI を `apps/server/src/review/fake-review-query.ts` の固定応答に差し替える。呼び出しの種類（Pass A / Pass B / Follow-up）は構造化出力の Schema の項目で見分け、`evidenceIds` は Schema の enum の先頭 2 つを使う。文の先頭に「（E2E 用の固定応答）」を付け、実際の Review と取り違えないようにした。Pass A の段階評価は `reasonable`、theory は Solver の有無に関わらず選べる `general_theory`。生成中の表示を一度通るよう 300ms 待つ（abort されたら待たない）。知らない値は起動時に止める（`OPPONENT_PROVIDER` と同じ作法）。
   - `POKER_SEED`: 設定すると Hand ごとの seed を `値, +1, …`（2^32 で折り返す）にする。不正な値は起動時に止める（黙って乱数に戻すと E2E が不安定になったことに気付けない）。
   - D98 の「録画済みの応答」は、Hand によって Evidence（id）が変わる E2E では引数の指紋で照合する録画（Review Eval の形）が使えないため、検証を通る固定の応答にした。Review Eval の録画の再生は従来どおり `pnpm test` で回る。
 - **E2E（`e2e/`・workspace の `@proj-poker/e2e`）**
@@ -32,8 +32,8 @@ Phase 5（MVP）の最終 PR。docs/09 §8 の Critical E2E（6-max Session 開�
 - server
   - `apps/server/src/config.ts`: `parseReviewProvider`（`REVIEW_PROVIDER`）・`parseFixedSeed`（`POKER_SEED`）・`fixedSeedSequence` を足した。
   - `apps/server/src/index.ts`: 上の 2 つを起動時に読み、`fake` なら Review AI の `query` を固定応答に、`POKER_SEED` があれば `nextSeed` を固定の並びにする。どちらも使っているときは起動ログに warn を出す。
-  - `apps/server/src/testing/e2e/fake-review-query.ts`（新規）: E2E 用の Review AI。
-  - テスト: `config.test.ts`（3 件）・`testing/e2e/fake-review-query.test.ts`（3 件。Pass A / Pass B / Follow-up が本番の生成・検証の関数を通る・知らない Schema は誤り）。
+  - `apps/server/src/review/fake-review-query.ts`（新規）: E2E 用の Review AI。起動から選べるので build（dist）に入る `src/review` に置いた（`src/testing` は `tsconfig.build.json` で build から外しているが、起動から import すると dist に出てしまい、外す意図と食い違うため）。
+  - テスト: `config.test.ts`（3 件）・`review/fake-review-query.test.ts`（3 件。Pass A / Pass B / Follow-up が本番の生成・検証の関数を通る・知らない Schema は誤り）。
 - web: `apps/web/vite.config.ts` の `/api` の proxy 先を `PORT`（既定 3001）にした。
 - E2E（新規）: `e2e/package.json`（`@playwright/test` 1.63.0・`@types/node`）・`e2e/tsconfig.json`・`e2e/playwright.config.ts`・`e2e/support/server.ts`・`e2e/tests/session.spec.ts`。`pnpm-workspace.yaml` に `e2e` を足し、ルートに `pnpm e2e` を足した（`pnpm test` には入らない。`pnpm typecheck` と `pnpm lint` には入る）。
 - CI: `.github/workflows/ci.yml` に `e2e` ジョブ。

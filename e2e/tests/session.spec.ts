@@ -12,7 +12,7 @@ import {
   type RunningServer,
 } from "../support/server.js";
 
-/** E2E の固定応答の印（apps/server/src/testing/e2e/fake-review-query.ts の FAKE_REVIEW_MARK）。 */
+/** E2E の固定応答の印（apps/server/src/review/fake-review-query.ts の FAKE_REVIEW_MARK）。 */
 const FAKE_MARK = "（E2E 用の固定応答）";
 
 /** Chip の額面（大きい順）。PHASE1_CASH_PRESET の額面（OI-004 の暫定値）。 */

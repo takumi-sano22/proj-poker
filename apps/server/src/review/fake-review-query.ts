@@ -4,8 +4,9 @@
 // - evidenceIds は Schema の enum（その Evidence が持つ id）から選ぶので、どの Hand でも検証（grounding）を通る
 // - 検証・保存・画面は本番と同じ経路を通る（runStructuredQuery が result の structured_output を読む）
 // 文はどの Hand にも当てはまる一般的な内容にし、固定応答であることを先頭に明記する（実際の Review と取り違えないため）。
+// 起動（index.ts）から選べるので、build（dist）に入る src/review に置く（src/testing は build から外す）。
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ClaudeQuery } from "../../claude/structured-query.js";
+import type { ClaudeQuery } from "../claude/structured-query.js";
 
 /** 応答の文の先頭に付ける印。画面で固定応答と分かるようにし、E2E はこの印で応答が届いたことを確かめる。 */
 export const FAKE_REVIEW_MARK = "（E2E 用の固定応答）";
