@@ -12,6 +12,7 @@
     "test": "vitest run",
     "smoke:claude": "tsx --conditions=@proj-poker/source src/testing/claude-smoke.ts",
     "smoke:solver": "tsx --conditions=@proj-poker/source src/testing/solver-smoke.ts",
+    "smoke:reveal": "tsx --conditions=@proj-poker/source src/testing/reveal-smoke.ts",
     "eval:opponent": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/run.ts",
     "eval:review": "tsx --conditions=@proj-poker/source src/testing/review-eval/run.ts"
   },
