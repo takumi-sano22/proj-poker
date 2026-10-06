@@ -238,7 +238,9 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - 設計ドキュメント（`docs/`）と人間判断（D01〜D88）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
 - Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
+- テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）
 - ブラウザで遊べる Basic UI（`apps/web`）: 2Dの卓（2〜8 席）・実額表示（BBは補助）・合法Actionだけの宣言ボタン・進行ログ・Hero Fold 後の観戦・Session 終了の表示
+- 既定の CPU（D71）: seed付きの決定論ルールBot（RuleBot）。そのCPUに見える情報だけで合法Actionから選びます。Claude の CPU の Fallback・Emergency Bot にも使います
 - **AI Opponents（Phase 3）**:
   - CPU ごとの KnowledgeState（#46・D28）: その CPU に見える Event だけから作り、他者の Hole Cards・未来のカード・他 CPU の Persona を渡しません
   - Claude の CPU（#50・D87）: Claude Agent SDK で、ローカルでログイン済みの Claude Code の OAuth（サブスク枠）を使います。`OPPONENT_PROVIDER=claude` で切り替え（既定は RuleBot）。手順は上の「Claudeの認証」

@@ -51,6 +51,7 @@ Phase 3（AI Opponents）の最終 PR。docs/09 §5 の AI Opponent Eval を、�
 | Persona Differentiation | 0.642 | 0.675 |
 
 - 暫定の合格ラインには変更前・変更後とも全部届いた（`run.ts` の出力「合格ライン: すべて届いた」）。
+- Latency は 4 本同時に呼んだときの値（1 本ずつの #50・#51 の実測 5.5〜15.5 秒と同程度）。変更前の max 21767ms は 1 回だけの外れ値で、変更後は 10578ms。
 
 変更後の最終 Action（Claude の判断。4 回ずつ）:
 

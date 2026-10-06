@@ -24,7 +24,7 @@ import {
   type PersonaPresetId,
 } from "../../opponents/persona.js";
 import { allowedCardsAt, forbiddenKeys, leakedCards } from "../leaks.js";
-import { buildSpot, type EvalSpot } from "./spots.js";
+import { buildSpot, type EvalSpot, type SpotFixture } from "./spots.js";
 
 /** 1 回の判断（Spot × Persona × 何回目）。 */
 export interface EvalCase {
@@ -224,7 +224,7 @@ async function runCase(
  */
 function promptLeaks(
   prompt: string,
-  fixture: ReturnType<typeof buildSpot>,
+  fixture: SpotFixture,
   personaId: PersonaPresetId,
 ): string[] {
   const allowed = allowedCardsAt(
