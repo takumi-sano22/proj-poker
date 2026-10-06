@@ -391,13 +391,11 @@ function parseOutput(stdout: string, spot: AnalysisSpot): ParsedOutput {
     return fail("warnings が不正");
   }
 
-  const aggregate = readFrequencies(o.range_aggregate);
-  if (aggregate === null || Object.keys(aggregate).length === 0) {
-    return fail("range_aggregate が不正");
-  }
-  const sum = Object.values(aggregate).reduce((a, b) => a + b, 0);
-  if (Math.abs(sum - 1) > FREQUENCY_TOLERANCE) {
-    return fail(`range_aggregate の頻度の合計が 1 ではない: ${sum}`);
+  const aggregate = readDistribution(o.range_aggregate);
+  if (aggregate === null) {
+    return fail(
+      "range_aggregate が不正（空・範囲外の頻度・合計が 1 ではない）",
+    );
   }
   const strategy: SolverActionFrequency[] = [];
   for (const [key, frequency] of Object.entries(aggregate)) {
@@ -406,14 +404,22 @@ function parseOutput(stdout: string, spot: AnalysisSpot): ParsedOutput {
     strategy.push({ key, action, frequency });
   }
 
-  if (typeof o.per_class !== "object" || o.per_class === null) {
-    return fail("per_class が不正");
+  if (
+    typeof o.per_class !== "object" ||
+    o.per_class === null ||
+    Array.isArray(o.per_class) ||
+    Object.keys(o.per_class).length === 0
+  ) {
+    return fail("per_class が不正（空）");
   }
+  // Hand Class ごとも Range 全体と同じ基準で確かめる（Review が Hero の Hand Class の頻度を引くため、不完全な戦略を通さない）。
   const byHandClass: Record<string, Record<string, number>> = {};
   for (const [handClass, value] of Object.entries(o.per_class)) {
-    const freqs = readFrequencies(value);
+    const freqs = readDistribution(value);
     if (freqs === null || Object.keys(freqs).some((k) => !(k in aggregate))) {
-      return fail(`per_class の ${handClass} が不正`);
+      return fail(
+        `per_class の ${handClass} が不正（空・範囲外の頻度・合計が 1 ではない・知らない行動）`,
+      );
     }
     byHandClass[handClass] = freqs;
   }
@@ -428,9 +434,17 @@ function parseOutput(stdout: string, spot: AnalysisSpot): ParsedOutput {
   };
 }
 
-/** { ラベル: 頻度 } を読む。頻度は 0〜1 の有限の数（誤差の幅は許す）。 */
-function readFrequencies(value: unknown): Record<string, number> | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+/**
+ * 行動の確率分布 { ラベル: 頻度 } を読む。空でなく、頻度は 0〜1 の有限の数で、合計が 1（誤差の幅は許す）でなければ null。
+ * Range 全体（range_aggregate）と Hand Class ごと（per_class）の両方に使う。
+ */
+function readDistribution(value: unknown): Record<string, number> | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length === 0
+  ) {
     return null;
   }
   const out: Record<string, number> = {};
@@ -445,7 +459,8 @@ function readFrequencies(value: unknown): Record<string, number> | null {
     }
     out[key] = f;
   }
-  return out;
+  const sum = Object.values(out).reduce((a, b) => a + b, 0);
+  return Math.abs(sum - 1) <= FREQUENCY_TOLERANCE ? out : null;
 }
 
 /** amaster97 の行動ラベル（"check" / "bet_50" / "all_in"）を正規化した行動にする。Root（OOP の最初の判断）にあり得ないものは null。 */

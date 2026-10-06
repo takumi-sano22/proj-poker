@@ -509,6 +509,19 @@ describe("Parse Failure と異常終了", () => {
       "per_class に知らない行動",
       () => fake.command("json", json({ per_class: { AQs: { fold: 1 } } })),
     ],
+    [
+      "per_class の Hand Class の頻度の合計が 1 ではない",
+      () =>
+        fake.command(
+          "json",
+          json({ per_class: { AQs: { check: 0.5, bet_50: 0.2 } } }),
+        ),
+    ],
+    [
+      "per_class の Hand Class が空",
+      () => fake.command("json", json({ per_class: { AQs: {} } })),
+    ],
+    ["per_class が空", () => fake.command("json", json({ per_class: {} }))],
   ] as const)("%s → parse_failure", async (_name, command) => {
     await expectSolverError(
       adapter(command()).analyze(RIVER_SPOT),
