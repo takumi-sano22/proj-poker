@@ -7,6 +7,14 @@ import { cardCode, handScore, type CardCode } from "./hand-strength.js";
 import type { Combo } from "./range.js";
 import { createRng, randomInt } from "./rng.js";
 
+/**
+ * 入力は正しいが、Range の組み合わせのせいで Equity を出せない（Card Removal で空になる Range がある・相手同士の Range が
+ * 重なって有効な試行が無い）。不正な入力（札の枚数・重複）の RangeError と区別し、呼び出し側が「出せない」と明示できるようにする。
+ */
+export class EquityUnavailableError extends RangeError {
+  override name = "EquityUnavailableError";
+}
+
 export interface EquityOptions {
   /** Monte Carlo の seed。 */
   readonly seed: number;
@@ -72,7 +80,9 @@ export function equityVsRanges(
       .filter(([a, b]) => !dead.has(a) && !dead.has(b)),
   );
   if (live.some((r) => r.length === 0)) {
-    throw new RangeError("Hero の札・Board を除くと空になる Range がある");
+    throw new EquityUnavailableError(
+      "Hero の札・Board を除くと空になる Range がある",
+    );
   }
 
   const deck: CardCode[] = [];
@@ -221,7 +231,9 @@ function monteCarlo(
     }
   }
   if (trials === 0) {
-    throw new RangeError("相手の Range が互いに重なり、有効な試行が無い");
+    throw new EquityUnavailableError(
+      "相手の Range が互いに重なり、有効な試行が無い",
+    );
   }
   return {
     equity: equity / trials,

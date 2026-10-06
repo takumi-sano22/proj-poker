@@ -7,6 +7,7 @@ import type { ActionType, Street } from "./hand-events.js";
 import type { HeroInformationSet } from "./hand-summary.js";
 import {
   DEFAULT_EQUITY_OPTIONS,
+  EquityUnavailableError,
   equityVsRanges,
   type EquityOptions,
   type EquityResult,
@@ -59,7 +60,7 @@ export interface DecisionAnalysis {
   readonly spr: number | null;
   /** Fold していない相手ごとの Range の Assumption。 */
   readonly ranges: readonly RangeAssumption[];
-  /** 仮定した Range に対する Hero の Equity。札が無い・Range が空なら null。 */
+  /** 仮定した Range に対する Hero の Equity。札が無い・Range が空・相手同士の Range が重なって試行が作れないなら null。 */
   readonly equity: EquityResult | null;
   readonly alternatives: readonly AlternativeAction[];
   /** 簡易 EV の性質（GTO / Solver の値ではない）。 */
@@ -100,7 +101,7 @@ export function analyzeDecision(
   }
   if (equity === null) {
     assumptions.push(
-      "Hero の札が無い、または Range が空のため Equity と簡易 EV は出していない。",
+      "Hero の札が無い、相手の Range が空、または相手同士の Range が重なって試行が作れないため、Equity と簡易 EV は出していない。",
     );
   }
   return {
@@ -169,12 +170,19 @@ function equityOf(
   ) {
     return null;
   }
-  return equityVsRanges(
-    hero,
-    knowledge.board,
-    villains.map((v) => v.combos),
-    options,
-  );
+  try {
+    return equityVsRanges(
+      hero,
+      knowledge.board,
+      villains.map((v) => v.combos),
+      options,
+    );
+  } catch (error) {
+    // 相手同士の Range が重なって試行が作れないときだけ「出せない」として null にする（Assumption に理由を書く）。
+    // 不正な入力など、それ以外の失敗は握りつぶさずに投げ直す。
+    if (error instanceof EquityUnavailableError) return null;
+    throw error;
+  }
 }
 
 /**

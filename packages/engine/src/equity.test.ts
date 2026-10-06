@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseCards, type Card } from "./card.js";
 import {
   DEFAULT_EQUITY_OPTIONS,
+  EquityUnavailableError,
   equityVsRanges,
   type EquityOptions,
 } from "./equity.js";
@@ -145,7 +146,18 @@ describe("equityVsRanges: 決定論", () => {
     // Hero が AA を 2 枚持つと、相手の AA は残り 1 通り。Ad Ac が Board にあれば空。
     expect(() =>
       equityVsRanges(cards("Ah As"), cards("Ad Ac 4d"), [parseRange("AA")]),
-    ).toThrow(RangeError);
+    ).toThrow(EquityUnavailableError);
+  });
+
+  it("相手同士の Range が重なって試行が作れないときは EquityUnavailableError（不正な入力の RangeError と区別する）", () => {
+    // 2 人の相手がどちらも Kd Kc しか持ちえない → 同時には配れない。
+    expect(() =>
+      equityVsRanges(cards("Ah As"), [], [[combo("Kd Kc")], [combo("Kd Kc")]]),
+    ).toThrow(EquityUnavailableError);
+    // 札の枚数が不正なのは入力の誤りで、EquityUnavailableError ではない。
+    expect(() =>
+      equityVsRanges(cards("Ah"), [], [parseRange("KK")]),
+    ).not.toThrow(EquityUnavailableError);
   });
 });
 

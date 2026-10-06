@@ -170,7 +170,11 @@ export type {
   VillainRange,
 } from "./range-model.js";
 
-export { DEFAULT_EQUITY_OPTIONS, equityVsRanges } from "./equity.js";
+export {
+  DEFAULT_EQUITY_OPTIONS,
+  EquityUnavailableError,
+  equityVsRanges,
+} from "./equity.js";
 export type { EquityOptions, EquityResult } from "./equity.js";
 
 export { analyzeDecision, compareRangeProfiles } from "./decision-analysis.js";

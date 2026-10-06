@@ -33,7 +33,7 @@ Phase 5 の子 Issue。決定論の Math / Equity Engine と Range Model を Eng
 - `packages/engine/src/range.ts`（新規）: `parseRange` / `comboKey` / `Combo`。不正な表記（逆順の `KA`・両端の揃わない範囲など）は例外にする。
 - `packages/engine/src/range-config.ts`（新規）: `RangeProfile` / `PositionName` / `PreflopSpot` と `STANDARD_RANGE_PROFILE` / `TIGHT_RANGE_PROFILE` / `LOOSE_RANGE_PROFILE` / `RANGE_PROFILES`（暫定値）。
 - `packages/engine/src/range-model.ts`（新規）: `positionName` / `classifyPreflop` / `villainRange`（Assumption = Profile・Position・Preflop の分類と表記・Postflop の絞り込みの各段の Combo 数・最終の Combo 数）。
-- `packages/engine/src/equity.ts`（新規）: `equityVsRanges` / `DEFAULT_EQUITY_OPTIONS`（結果に method・trials・seed を含む）。
+- `packages/engine/src/equity.ts`（新規）: `equityVsRanges` / `DEFAULT_EQUITY_OPTIONS`（結果に method・trials・seed を含む）/ `EquityUnavailableError`（Card Removal で空になる Range・相手同士の Range の重なりで試行が作れないとき。不正な入力の RangeError と区別し、`analyzeDecision` はこれだけを Equity なし〔null と Assumption の文〕にする）。
 - `packages/engine/src/decision-analysis.ts`（新規）: `analyzeDecision` / `compareRangeProfiles`。
 - `packages/engine/src/index.ts`: 上記を公開。
 - `apps/web/src/lib/dealer-feedback.ts` / `vocabulary.ts`: web の `potOdds` を消し、Engine の `potOdds` を使う。`apps/web/vite.config.ts` のコメント（ブラウザが使う Engine の値）を更新した。
@@ -55,7 +55,7 @@ Phase 5 の子 Issue。決定論の Math / Equity Engine と Range Model を Eng
 ## 実行した確認
 
 - `pnpm lint` / `pnpm typecheck` / `pnpm format:check`: 通過。
-- `pnpm test`: engine 323・web 109・server 195 件が通過。engine のテストは 3 回続けて実行し、すべて通過（Property Test・性能の上限を含む）。
+- `pnpm test`: engine 324・web 109・server 195 件が通過。engine のテストは 3 回続けて実行し、すべて通過（Property Test・性能の上限を含む）。
 - 性能の実測（vitest の各テストの所要時間）: Flop の手札 vs 全 1326 Combo の全列挙 約 160ms、Preflop の手札 vs BTN の Open Range（Monte Carlo 2 万回）約 10ms、Flop の 3-way（Monte Carlo 2 万回）約 20ms。上限は 500ms。
 - web を `vite build` し、バンドルに Engine の Equity・Range のコードが入っていないこと（Pot Odds の関数だけ）を確かめた。
 
