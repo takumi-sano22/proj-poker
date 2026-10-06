@@ -133,7 +133,7 @@ type Visibility =
   | { type: "system" };
 ```
 
-`engine` はEngine内部専用で、Deckの順序（未来のCard）のようにどのPlayerにも見せない情報に付けます。Heroの宣言・物理的なChipの操作・Dealerの裁定（D90）は、実卓で全員が見聞きする事実なので `public` です。`system` は卓の外の運用記録（CPUの不正な出力・Fallbackの利用。D83）に付け、CPUの出力の値を含みうるので、Hero・CPU（記録されたCPU本人を含む）のどのProjectionにも入れません。読むのはServer（Debug・Reviewの集計）だけです。Engineが発行するのは `public` / `private` / `engine` / `system` で、`learning_only` のEventは発行しません。Learning-only Full Reveal（Hand後に全員の札を見せる情報）はEventのVisibilityを増やさず、別のProjection `projectLearningReveal(events)`（`packages/engine/src/learning-reveal.ts`。#78）で作ります。Handが終わった（`HAND_FINISHED`か`HAND_ABORTED`）後だけ配られた全員の札を返し（進行中は`null`。Deckの残りは含まない）、値に`visibility: "learning_only"`の印を付けます。Hero View・CPUの`KnowledgeState`・判断時点のHero Information Set（Pass Aの入力）はこれを参照せず、そこでだけ見える札が入らないことをProperty Testで確かめます（INV-TEST-008に相当。CPU Memoryはまだ無いので`KnowledgeState`で確かめる）。
+`engine` はEngine内部専用で、Deckの順序（未来のCard）のようにどのPlayerにも見せない情報に付けます。Heroの宣言・物理的なChipの操作・Dealerの裁定（D90）は、実卓で全員が見聞きする事実なので `public` です。`system` は卓の外の運用記録（CPUの不正な出力・Fallbackの利用〔D83〕・Sessionの開始・終了などの運用〔D95〕・Handごとの Metadata〔#97〕）に付け、CPUの出力の値を含みうるので、Hero・CPU（記録されたCPU本人を含む）のどのProjectionにも入れません。読むのはServer（Debug・Reviewの集計）だけです。Engineが発行するのは `public` / `private` / `engine` / `system` で、`learning_only` のEventは発行しません。Learning-only Full Reveal（Hand後に全員の札を見せる情報）はEventのVisibilityを増やさず、別のProjection `projectLearningReveal(events)`（`packages/engine/src/learning-reveal.ts`。#78）で作ります。Handが終わった（`HAND_FINISHED`か`HAND_ABORTED`）後だけ配られた全員の札を返し（進行中は`null`。Deckの残りは含まない）、値に`visibility: "learning_only"`の印を付けます。Hero View・CPUの`KnowledgeState`・判断時点のHero Information Set（Pass Aの入力）はこれを参照せず、そこでだけ見える札が入らないことをProperty Testで確かめます（INV-TEST-008に相当。CPU Memoryはまだ無いので`KnowledgeState`で確かめる）。
 
 これにより以下を再構築できます。
 
