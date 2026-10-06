@@ -67,6 +67,8 @@ Opponent KnowledgeStateに他PlayerのHidden Cardsが含まれない。
 
 Learning-only RevealがCPU Memoryへ入らない。
 
+CPU Memoryができるまでは、Learning-only Full Reveal（`projectLearningReveal`）でだけ見える札が、どのCPUの`KnowledgeState`（Handの全prefix）にも、判断時点のHero Information Set（Pass Aの入力）にも入らないことで確かめます（`packages/engine/src/hand-summary.property.test.ts`。#78）。
+
 ## 4. Scenario Regression
 
 固定Scenario:

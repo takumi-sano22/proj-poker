@@ -15,6 +15,12 @@ Hand Event Logを、実際に何が起きたかを表す**唯一の正本**と�
 
 独立した二つの「正しいHand表現」を持たないでください。
 
+Hand Summaryと、Reviewの入力の元になる判断時点のHero Information Setは、Engineの`packages/engine/src/hand-summary.ts`がEvent Logから作ります（#78。保存しない派生）。
+
+- `projectHandSummary(events, heroId)`: Hand Summary（席と開始Stack・終わり方〔`complete` / `aborted` / `in_progress`〕・Board・Potごとの配分・Showdownで公開された札・最終Stack・Heroの収支・Heroの判断の一覧・Important Spot）。Heroに見えるEventだけから作ります。例外として、打ち切り（`HAND_ABORTED`はsystem Visibility）だけはHero自身の選択なので`aborted`として読みます（Replayと同じ。D95）。
+- `heroDecisions` / `heroInformationSets(events, heroId)`: Heroの`ACTION_TAKEN`ごとの判断と、その判断時点のInformation Set。判断時点は、そのActionの直前に続くHero自身の操作（宣言・Chipの操作・裁定。`no_action`の後の選び直しを含む）を除いた、その前のHeroに見えるEvent（`decisionPointSeq`）です。判断時点までのEventを先に切り出してからHeroに見えるEventだけを畳み込み、HeroのKnowledgeState（`projectKnowledgeState`と同じwhitelist）を作るので、判断より後のEvent（その後のBoard・Showdown・配分）・他者のHidden Cards・`engine` / `system`のEventは入りません（不変条件3。全判断のProperty Testで確かめる）。Out-of-Turnで保留した操作は手番より前の公開の出来事として判断時点の情報に残り、手番での拘束の裁定（`out_of_turn_binding`）は判断の`rulingNotes`に入ります。
+- `extractImportantSpots(sets, rules)`: Important Spotを判断時点のInformation Setだけから決定論で選びます（結果を見ない）。理由は`big_pot`（判断時点のPotが`bigPotBb`＝20BB以上）・`all_in`（HeroがAll-in、またはAll-inした相手がいてCallが要る）・`river_big_bet`（RiverでPot Odds が`riverBigBetMinPotOdds`＝0.3以上＝3/4 Pot以上のBetに直面）・`ruling`（Heroの操作に理由つきの裁定が入った）です。しきい値は`DEFAULT_IMPORTANT_SPOT_RULES`の暫定値で、永久仕様にしません。
+
 ## 2. 主要ID
 
 推奨:
@@ -122,7 +128,7 @@ type Visibility =
   | { type: "system" };
 ```
 
-`engine` はEngine内部専用で、Deckの順序（未来のCard）のようにどのPlayerにも見せない情報に付けます。Heroの宣言・物理的なChipの操作・Dealerの裁定（D90）は、実卓で全員が見聞きする事実なので `public` です。`system` は卓の外の運用記録（CPUの不正な出力・Fallbackの利用。D83）に付け、CPUの出力の値を含みうるので、Hero・CPU（記録されたCPU本人を含む）のどのProjectionにも入れません。読むのはServer（Debug・Reviewの集計）だけです。Engineが発行するのは `public` / `private` / `engine` / `system` で、`learning_only` はReviewのRevealを実装するときに使います。
+`engine` はEngine内部専用で、Deckの順序（未来のCard）のようにどのPlayerにも見せない情報に付けます。Heroの宣言・物理的なChipの操作・Dealerの裁定（D90）は、実卓で全員が見聞きする事実なので `public` です。`system` は卓の外の運用記録（CPUの不正な出力・Fallbackの利用。D83）に付け、CPUの出力の値を含みうるので、Hero・CPU（記録されたCPU本人を含む）のどのProjectionにも入れません。読むのはServer（Debug・Reviewの集計）だけです。Engineが発行するのは `public` / `private` / `engine` / `system` で、`learning_only` のEventは発行しません。Learning-only Full Reveal（Hand後に全員の札を見せる情報）はEventのVisibilityを増やさず、別のProjection `projectLearningReveal(events)`（`packages/engine/src/learning-reveal.ts`。#78）で作ります。Handが終わった（`HAND_FINISHED`か`HAND_ABORTED`）後だけ配られた全員の札を返し（進行中は`null`。Deckの残りは含まない）、値に`visibility: "learning_only"`の印を付けます。Hero View・CPUの`KnowledgeState`・判断時点のHero Information Set（Pass Aの入力）はこれを参照せず、そこでだけ見える札が入らないことをProperty Testで確かめます（INV-TEST-008に相当。CPU Memoryはまだ無いので`KnowledgeState`で確かめる）。
 
 これにより以下を再構築できます。
 
