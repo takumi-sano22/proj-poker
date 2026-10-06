@@ -1,0 +1,15 @@
+{
+  "name": "@proj-poker/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "6-max Session の E2E（Playwright）。CPU は RuleBot、Review AI は固定応答（REVIEW_PROVIDER=fake）で Claude を呼ばない（D98）",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.19.1"
+  }
+}

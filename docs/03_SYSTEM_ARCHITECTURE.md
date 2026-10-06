@@ -30,9 +30,10 @@ packages/
 apps/
 ├─ server/   Local Application Runtime（Fastify。Claude・SQLiteはここだけが扱う）
 └─ web/      Local Browser UI（Vite + React。ブラウザへClaudeの資格情報を渡さない）
+e2e/         6-max SessionのE2E（Playwright。#85・D98。プロダクトのコードは持たない）
 ```
 
-- `apps/web`はdev時に`/api`を`apps/server`へproxyし、ブラウザは同一originの`/api`だけを呼びます。
+- `apps/web`はdev時に`/api`を`apps/server`へproxyし、ブラウザは同一originの`/api`だけを呼びます。proxy先のポートは`apps/server`と同じ環境変数`PORT`（既定3001）です（#85）。
 - `apps/server`はlocal専用で`127.0.0.1`にbindします。
 - `packages/engine`はruntime依存を持たず、`apps/*`へも依存しません（D68）。
 - `apps/server`は`packages/engine`をworkspace依存で使います。typecheck・lint・dev（tsx）・testではEngineをbuildせずに`src`から読みます（Engineの`package.json`の`exports`にある条件`@proj-poker/source`を、serverの`tsconfig.json`の`customConditions`・`vitest.config.mjs`・`tsx --conditions`で指定）。`build`（`tsconfig.build.json`）と`start`はbuild済みの`dist`を使います。
@@ -151,7 +152,7 @@ CPU等のClaude呼び出しは、APIキーではなく、ローカルでログ�
 - **API課金への切り替わりを防ぐ**: 環境に`ANTHROPIC_API_KEY`があるとAgent SDKはそちらを優先し、サブスク枠ではなくAPI課金になります。そのため`apps/server`はClaudeを呼ぶ子プロセスの環境から`ANTHROPIC_API_KEY`を外します（実装は#50）。利用者にも、serverを起動するシェルに無いことを確認してもらいます。
 - **前提と範囲**: 本人のログインを本人が使うローカル単一ユーザー（D61）に限ります。第三者が自分の製品でclaude.aiログインを提供することは公式に認められていないので、配布・共有・複数ユーザー化の方向には使いません（Auth Providerは§11の非目標のまま。ここでいう認証はClaudeを呼ぶ資格であり、プロダクトのログインではありません）。
 - **利用枠**: サブスクの利用枠は開発で使うClaude Codeと共有です。ログイン切れ・上限到達は、Claudeの呼び出しの失敗として§6の「AI障害」で扱います（Retry / Emergency Botで続行 / Session終了。卓上のダイアログで選ぶ。#52）。
-- **テスト**: CIと`pnpm test`はClaudeを呼びません（FakeのModelと録画済み応答だけ。D84から変わらず）。開発中の実呼び出しは制限しません。
+- **テスト**: CIと`pnpm test`はClaudeを呼びません（FakeのModelと録画済み応答だけ。D84から変わらず）。開発中の実呼び出しは制限しません。E2E（`docs/09` §8。#85）は、serverを`REVIEW_PROVIDER=fake`（Review AIを固定応答〔`apps/server/src/review/fake-review-query.ts`〕に差し替える。既定は`claude`、それ以外の値は起動時に誤りとして止める）と`POKER_SEED`（Handごとの山札のseedを`POKER_SEED`, +1, …の固定の並びにする。未設定なら乱数、不正な値は起動時に止める）で起動し、CPUはRuleBotのまま通します（D98）。どちらもE2E用で、本番の既定は変えません。
 - **CPUをClaudeに切り替える設定（#50）**: 環境変数`OPPONENT_PROVIDER=claude`（既定`rulebot`。それ以外の値は起動時に誤りとして止めます）。モデル名はrole-based config（`apps/server/src/config.ts`の`MODEL_ROLES`。`opponent_fast: claude-haiku-4-5`はD85・OI-001の暫定値）から渡し、Domain Logicには書きません。
 - **呼び方（#50。`opponents/claude-opponent.ts`）**: Agent SDKの`query()`を1回の判断として使います。構造化出力（`outputFormat: { type: "json_schema" }`。`action`の候補は今選べるtypeに絞る）でaction / amount / rationaleを受け取り、§5の検証に回します。単発にするため`maxTurns: 1`・組み込みツールなし（`tools: []`）・設定ファイル（CLAUDE.md / settings）を読まない（`settingSources: []`）・MCPを読まない（`mcpServers: {}`・`strictMcpConfig: true`）・セッション履歴を保存しない（`persistSession: false`）・作業ディレクトリをリポジトリの外（OSの一時ディレクトリ）にする（git の状態等をCPUへ渡さない）にします。子プロセスの`env`は`process.env`から`ANTHROPIC_API_KEY`と`ANTHROPIC_AUTH_TOKEN`を外したものです（SDKの`env`は環境を丸ごと置き換えるため）。Promptに入れるのはそのCPUの`KnowledgeState`・Legal Action・前回の不正の理由・そのCPU自身のPersona（`describePersona`の文章。#51。割り当てが無ければ入れない）だけです。Legal Actionの行のうち額が決まっているcall / all_inには「amount は付けない」と書きます（#53。callに額を付けてSchemaの不正→Retryになる回があったため。検証は緩めない）。代表Spotでの品質の測り方（AI Opponent Eval）は`docs/09` §5です。
 - **失敗の分け方（#50）**: ログイン切れ・利用枠の上限（assistant messageの`error`と`is_error`のresult）・実行中の失敗・子プロセスの起動失敗は例外にし、§5の「障害」になります。構造化出力を作れなかった（`error_max_turns` / `error_max_structured_output_retries`）は不正な出力として§5の検証・Retryに乗せます。判断待ちの上限を超えた・アプリを終了したときは、`decide`に渡した`AbortSignal`をabortし、SDKの`abortController`で子プロセスを止めます。

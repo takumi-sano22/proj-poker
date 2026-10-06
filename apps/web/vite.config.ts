@@ -23,8 +23,9 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     proxy: {
-      // ブラウザからは同一 origin の /api だけを呼ぶ。Runtime のポートは apps/server の既定（3001）に合わせる。
-      "/api": "http://127.0.0.1:3001",
+      // ブラウザからは同一 origin の /api だけを呼ぶ。Runtime のポートは apps/server と同じ環境変数 PORT（既定 3001）に合わせる
+      // （ルートの `PORT=3101 pnpm dev` で両方がそろう。E2E は dev と重ならないポートで動かす）。
+      "/api": `http://127.0.0.1:${process.env["PORT"] ?? "3001"}`,
     },
   },
 });

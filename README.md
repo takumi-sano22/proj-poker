@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: Phase 4（Live Mechanics）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊べます**。Bet は **実際の Chip の額面を Click / Drag で出す操作と宣言**で行い、Dealer が Oversized Chip・String Bet・Out of Turn を TDA 準拠で裁定して、理由・作法・学習の補足を出します。卓の用語は開くと説明が出ます。終わった Hand（と途中で終わった Hand）は **Replay** で Hero の視点のまま一手ずつ見返せます。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられます（Hand Review はまだありません）
+> 現在の状態: Phase 5（MVP Review）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊び、終わった Hand を Review できます**。Bet は **実際の Chip の額面を Click / Drag で出す操作と宣言**で行い、Dealer が TDA 準拠で裁定します。終わった Hand は **Replay** で一手ずつ見返し、**Hand Review** で判断時点の情報だけを使った評価（Pass A）・Hand 後の全員の札での答え合わせ（Pass B）・追加質問（Follow-up）を受けられます。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられ、Review は Claude が書きます。サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます
 
 ## このプロジェクトを作る理由
 
@@ -108,13 +108,15 @@ AIは「もっともらしい答えを作る計算機」ではなく、**複数�
   - `packages/engine`: 決定論的Poker Engine（純粋TypeScript。I/O・DB・LLMをimportしない。lintでも禁止）
   - `apps/server`: Local Runtime（常駐Node / Fastify。`127.0.0.1`だけで待ち受け。ClaudeとSQLiteはここだけが扱う）
   - `apps/web`: Local Browser UI（Vite + ReactのSPA。SSRなし。ブラウザへClaudeの資格情報を渡さない）
+  - `e2e`: 6-max Session の E2E（Playwright。D98）
 - **品質ツール**（D69）: ESLint（typescript-eslint）・Prettier（版を厳密固定）・Vitest・fast-check・`tsc --noEmit`。CIはGitHub Actions。pre-commit hookは使いません
 - Node 24 LTS（`.nvmrc`）。pnpmの版は`package.json`の`packageManager`で固定（corepack）
 - SQLite（Node 24内蔵の`node:sqlite`。ORMなし・生SQL・自前マイグレーション。D72）: 終わったHandのEvent Logを保存
-- 対戦CPU: Claude Haiku級を初期候補 / Review: より上位のClaudeモデルを初期候補
-- ローカルSolverをAdapter経由で接続（必要ならRust / Python / C++の専門解析器もAdapter越しに利用）
+- Claude: Claude Agent SDK で、Claude Code の OAuth（サブスクリプション枠）を使います（API キーは使いません。D87）。モデルは Role で選び、暫定値は対戦 CPU `opponent_fast` = `claude-haiku-4-5`・Review `review_standard` = `claude-sonnet-5-5`・「詳しく」`review_deep` = `claude-opus-5-5` です（D85・D97・OI-001。永久仕様ではありません）
+- Solver: ローカルの amaster97/poker_solver（MIT）を Solver Adapter 経由で使います（Heads-Up の Turn / River だけ。D96・OI-002）
+- Local KB: `apps/server/kb/` の Curated KB（Metadata 付き Markdown・Version 付き。D98）
 
-具体的なモデル名・Solverは固定せず、実装時にコスト・速度・品質をPoCで比較します。構成の詳細は [`docs/03_SYSTEM_ARCHITECTURE.md`](./docs/03_SYSTEM_ARCHITECTURE.md) を参照してください。
+モデル名・Solver は Domain Logic に書かず、Config（role-based config・Adapter）で差し替えます。構成の詳細は [`docs/03_SYSTEM_ARCHITECTURE.md`](./docs/03_SYSTEM_ARCHITECTURE.md) を参照してください。
 
 ## セットアップ
 
@@ -131,6 +133,7 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 - **Bet の操作**: 画面下の Hero 欄で Stack の Chip（額面 1 / 5 / 25 / 100 / 500）を Click で手に取り（Click の回数が枚数）、Click か Drag で Betting Area に出して「確定して Dealer に渡す」で送ります。宣言 Button だけでも、宣言と Chip の組み合わせでも操作できます。裁定はサーバーの Ruling Engine が行います。
 - **見出しの切り替え**: 「BB 補助表示」で BB 換算の表示を ON / OFF できます（実額は常に出ます。設定はこのブラウザに保存）。「Replay を見る」で保存済みの Hand の一覧を開き、選んだ Hand を「前へ / 再生 / 一時停止 / 次へ」で一手ずつ見返せます。「卓に戻る」で卓の画面に戻ります（Replay を見ている間も卓の Hand はそのまま続きます）。
 - **Fast Forward**: Hero が Fold した後の観戦中だけ、Hero 欄の Fast Forward で CPU の思考の待ち（演出）を縮められます。Claude の応答時間そのものは縮みません。
+- **Hand Review**: Hand が終わると Hero 欄に「この Hand の Review」が出ます（Replay の画面からも開けます）。Important Spot（判断時点の情報だけで選んだ見直す価値の高い判断）が先に並び、判断を選んで「Review を作る」を押すと、判断時点の Review（段階評価・実戦的な Baseline・理論・前提・結論が変わる条件と根拠の Evidence）が出ます。「Hand 後の答え合わせ」のタブでは全員の札を見せて、読みと実際の比較・実際の Equity・Bluff / Value を答え合わせします（評価は付け直しません）。どちらにも質問（Follow-up）を続けられます。作り直すと新しい Version として残り、「詳しく作る」は上位のモデルを使います。Review は Claude を使うので、下の「Claudeの認証」が前提です（1 回に十数秒〜数十秒かかります）。「Replay でこの場面を見る」と Replay の「Important Spot へ」で、判断の場面へ移れます。
 
 | 環境変数 | 既定 | 内容 |
 |---|---|---|
@@ -146,16 +149,18 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | `SOLVER_MAX_CONCURRENCY` | `1` | Solver を同時に動かす数。超えた分は待つ。1 以上の整数 |
 | `SOLVER_ITERATIONS` | `200`（暫定値） | Solver の Iteration 数。1 以上の整数 |
 | `REVIEW_TIMEOUT_MS` | `120000`（暫定値） | Review AI（Claude）の 1 回の呼び出しを待つ上限。超えたらその Review の生成を失敗にする（Hand は止めない）。1 以上の整数。不正値は既定に戻す |
+| `REVIEW_PROVIDER` | `claude` | Review AI の実装。`fake` は **E2E 用**の固定応答（Claude を呼ばない）で、普段は設定しない。それ以外の値は起動時にエラーで止める |
+| `POKER_SEED` | 未設定 | **E2E 用**。設定すると Hand ごとの山札の seed を固定の並び（値, +1, …）にする。未設定なら毎回乱数。0〜4294967295 の整数以外は起動時にエラーで止める |
 
-### Claudeの認証（CPU を Claude にするとき）
+### Claudeの認証（Hand Review を作るとき・CPU を Claude にするとき）
 
-CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 認証（サブスクリプション枠）** を Claude Agent SDK 経由で使います（D87。D84 を変更）。既定の CPU は RuleBot なので、CPU を Claude に切り替えない・Hand Review を作らない限りこの手順は不要です。
+CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 認証（サブスクリプション枠）** を Claude Agent SDK 経由で使います（D87。D84 を変更）。既定の CPU は RuleBot なので、遊ぶだけならこの手順は不要です。Hand Review を作るとき（と CPU を Claude に切り替えるとき）に必要です。
 
 1. **ログイン**: ターミナルで `claude` を起動し、`/login` でサブスクリプションのアカウントにログインします。
 2. **動作確認**: `claude -p "OK とだけ返して"` が応答すれば、ログインできています。
 3. **`ANTHROPIC_API_KEY` が無いことの確認**: server を起動するシェルで `[ -z "${ANTHROPIC_API_KEY:-}" ] && echo "未設定（OK）" || echo "設定あり（unset してください）"` を実行します。環境に `ANTHROPIC_API_KEY` があると、Agent SDK はそちらを優先し、サブスク枠ではなく **API 課金** になります（server は Claude を呼ぶ子プロセスの環境から外しますが〔#50〕、シェル側にも置かないでください）。
 4. **CPU を Claude に切り替える**: server を起動するシェルで `OPPONENT_PROVIDER=claude` を設定して起動します（例: `OPPONENT_PROVIDER=claude pnpm dev`）。モデルは `opponent_fast` Role（暫定値 `claude-haiku-4-5`）です。起動ログに `"provider":"claude"` が出れば切り替わっています。CPU ごとの Persona は `CPU_PERSONAS` で選べます（例: `OPPONENT_PROVIDER=claude CPU_PERSONAS=maniac,calling_station TABLE_SIZE=3 pnpm dev`）。
-5. **Hand Review（#82。画面は #84）**: 終わった Hand の判断の Review は、`OPPONENT_PROVIDER` に関わらず Claude（`review_standard` Role。暫定値 `claude-sonnet-5-5`、「詳しく」は `review_deep`・`claude-opus-5-5`）で作ります。同じログインを使い、利用枠を使います。
+5. **Hand Review**: 終わった Hand の判断の Review（Pass A・Pass B・Follow-up）は、`OPPONENT_PROVIDER` に関わらず Claude（`review_standard` Role。暫定値 `claude-sonnet-5-5`、「詳しく」は `review_deep`・`claude-opus-5-5`）で作ります。同じログインを使い、利用枠を使います。
 6. **Eval（任意）**: `pnpm --filter @proj-poker/server eval:opponent` で、代表 Spot（Preflop の Open・3-bet に直面・Flop の C-bet・River の大きな Bet に直面）× 6 Persona の判断を実際に集め、出力の正しさ・Retry 率・Latency・Persona の差・情報漏れを表示します（`docs/09` §5）。1 回あたり数分かかり、利用枠を使います。
 
 守ること:
@@ -163,9 +168,9 @@ CPU の Claude 呼び出しは、API キーではなく **Claude Code の OAuth 
 - 資格情報は Claude Code が `~/.claude/` に持つものを使います。リポジトリ・`.env`・`apps/web`（ブラウザ）へ置かない・コピーしない・渡しません。Claude を呼ぶのはローカルの `apps/server` だけです（`claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` は使いません）。
 - 本人のログインを本人がローカルで使う前提です。第三者が自分の製品で claude.ai ログインを提供することは公式に認められていないので、配布・共有はしないでください。
 - サブスクの利用枠は、開発で使う Claude Code と**共有**です。CPU の判断を Claude にすると、そのぶん開発側の枠も減ります。
-- ログイン切れ・利用枠の上限に達すると、CPU の判断が失敗し、障害として Hand が止まり、卓の中央に続け方を選ぶダイアログが出ます（Retry / Emergency Bot で続行 / Session を終了）。対処は、ログイン切れなら `claude` で `/login` し直してから Retry／上限なら枠が戻るまで待って Retry／すぐ続けたいときは Emergency Bot（その CPU を Session の終わりまで RuleBot で動かす）、のいずれかです。
+- ログイン切れ・利用枠の上限に達すると、Review の生成は失敗の理由を出し、もう一度作れます（Hand は止まりません）。CPU を Claude にしているときは CPU の判断が失敗し、障害として Hand が止まり、卓の中央に続け方を選ぶダイアログが出ます（Retry / Emergency Bot で続行 / Session を終了）。対処は、ログイン切れなら `claude` で `/login` し直してから Retry／上限なら枠が戻るまで待って Retry／すぐ続けたいときは Emergency Bot（その CPU を Session の終わりまで RuleBot で動かす）、のいずれかです。
 - **CPU の 1 手に数秒〜十数秒かかります**（子プロセスの起動を含む。実測は [`docs/taskLog/issue-53-opponent-eval.md`](./docs/taskLog/issue-53-opponent-eval.md)）。待ちが長いと卓に「AI応答が遅延しています」が出ます。判断待ちの上限は `OPPONENT_TIMEOUT_MS` です。
-- CI と `pnpm test` は Claude を呼びません（Fake と録画済み応答だけ）。開発中の実呼び出しは制限しません。
+- CI・`pnpm test`・`pnpm e2e` は Claude を呼びません（Fake と録画済み・固定の応答だけ）。開発中の実呼び出しは制限しません。
 
 ### Solver の導入（任意）
 
@@ -183,7 +188,7 @@ Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poke
 
 ## 開発コマンド
 
-リポジトリのルートで実行します。CI（`.github/workflows/ci.yml`）も同じ4つを実行します。
+リポジトリのルートで実行します。CI（`.github/workflows/ci.yml`）の `check` ジョブも上の4つを実行します。
 
 | コマンド | 内容 |
 |---|---|
@@ -191,6 +196,22 @@ Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poke
 | `pnpm typecheck` | 全パッケージの `tsc --noEmit` |
 | `pnpm test` | Vitest（`packages/engine`・`apps/server`・`apps/web`） |
 | `pnpm format:check` | Prettier の整形チェック（適用は `pnpm format`） |
+| `pnpm e2e` | 6-max Session の E2E（Playwright。下の「E2E の実行」）。CI では別のジョブ `e2e` で動きます |
+
+### E2E の実行
+
+`e2e/tests/session.spec.ts` が、6-max の Session を開始 → Chip 操作と宣言で Hand を Play → Hand 終了 → Review（判断時点の段階評価 → Hand 後の答え合わせ → Follow-up）→ Replay（Important Spot へのジャンプ）→ 次の Hand → server を再起動して Resume（同じ Session・Stack を持ち越す）までを 1 本で通します（`docs/09` §8・D98）。
+
+```bash
+# 初回だけ: Playwright の Chromium（headless shell）を取得する。OS の依存パッケージも入れるなら --with-deps（sudo が要る）
+pnpm --filter @proj-poker/e2e exec playwright install --only-shell chromium
+pnpm e2e
+```
+
+- server（`127.0.0.1:3101`）と web（`127.0.0.1:5174`）を E2E が自分で起動・停止します。`pnpm dev`（3001 / 5173）と同時に動かせます。
+- 決定論にするため、server は `POKER_SEED`（山札の seed の固定）・CPU は RuleBot・`REVIEW_PROVIDER=fake`（Review AI を固定応答に差し替え）・空の一時 DB で動きます。Claude と Solver は呼びません。
+- 失敗したら `e2e/test-results/` に Trace・スクリーンショット・server のログが残ります（`pnpm --filter @proj-poker/e2e exec playwright show-trace <trace.zip>` で開けます）。
+- 実際の Claude（OAuth）での通しは手動で行います（結果の例は [`docs/taskLog/issue-85-e2e-readme.md`](./docs/taskLog/issue-85-e2e-readme.md)）。
 
 ## MVPの完成条件
 
@@ -255,7 +276,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 4 — Live Mechanics** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。MVP の完成条件のうち 1〜4（Session を遊べる・2D UI と Chip 操作・Event Log の保存・Replay）が動き、5〜8（Review・全 Hole Cards の学習用の確認・解析・追加質問）は Phase 5 です。
+**Phase 5 — MVP Review** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3。「ここでMVP完成」の Phase）。MVP の完成条件 1〜8（Session を遊べる・2D UI と Chip 操作・Event Log の保存・Replay・判断時点の情報だけの Review・全 Hole Cards の学習用の確認・数学 / AI / 対応可能な Solver による解析・追加質問）の機能がそろい、6-max Session の E2E で通しています。Definition of Done の確認は [親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) で行います。
 
 できていること:
 
@@ -275,16 +296,28 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - BB 補助表示の切り替えと Fast Forward（#67・D49・D93）: BB 換算の ON / OFF（実額は常に表示）と、Hero Fold 後の CPU の思考待ちの短縮（Claude の応答時間は縮まない）
   - **Replay**（#68・D38・D93）: Hand の一覧（開始の新しい順・最大 100 件）から選び、保存済みの Event を Hero の視点で一手ずつ再生します（前へ / 再生 / 一時停止 / 次へ）。AI や Engine で作り直さず（Re-simulation ではない）、他者の札は Showdown で公開された時点から見えます。宣言・Chip の操作・裁定も一手ずつ再生し、Dealer Feedback・Chip の構成・用語の説明は卓と同じものを出します
 - Event Log（D37）: Handの進行はすべてEventで表し、終わったHandのEventをSQLiteへ1トランザクションで保存します（Completed Handが保存の境界。D62）
+- **MVP Review（Phase 5）**:
+  - Session の Event と Resume（#77・D95）: Session の開始・終了・Hand の打ち切り・Emergency Bot への切り替えを Event にし（`schema_version` 6）、Session Projection からサーバーの再起動後も同じ Session を続けます（Stack・Button・Emergency Bot を持ち越す）
+  - 判断時点の Hero Information Set と Important Spot（#78）: Event Log から、判断の時点に Hero が知り得た情報だけを再構築し（未来の Card・他者の札・system の記録は入らない）、見直す価値の高い判断を決定論で選びます
+  - Math / Equity / Range（#79）: Pot Odds・必要 Equity・仮定した Range に対する Equity（全列挙か Monte Carlo）・Alternative Action の簡易 EV を決定論で計算します（Range は前提付きの仮定）
+  - Local KB（#80・D98）: `apps/server/kb/` の Curated KB（Metadata 付き・Version 付き）から、判断に関係する項目を Metadata と全文で引きます
+  - Solver Adapter（#81・D96）: amaster97/poker_solver を Heads-Up の Turn / River で使い、Flop・Multiway・Side Pot・Rake・未導入は Unsupported として正常に Fallback します（HU の結果を Multiway の Exact GTO として扱いません）
+  - Decision Review（Pass A。#82・D97）: Evidence（Math・Range・Solver・KB）を構造化してから Review AI（`review_standard`）に書かせ、Schema と根拠の参照を検証します（不正なら 1 回だけ再要求、根拠が足りなければ評価しない）。Version 付きで保存します（D39）
+  - Reveal Review（Pass B）と Follow-up（#83・D99）: Hand 後に全員の札を学習用にだけ見せて答え合わせをし（評価は付け直さない・CPU には渡さない）、Review の Version ごとに追加質問を続けられます
+  - Review の画面と Jump to Important Spot（#84）: Important Spot を先に並べた Review の一覧・Pass A / Pass B のタブ・Evidence・Version の選択・Follow-up と、Replay の Important Spot へのジャンプ
+  - 6-max Session の E2E（#85・D98）: Playwright で Play → Review → Replay → 次の Hand → 再起動して Resume までを CI で通します（CPU は RuleBot、Review AI は固定応答）
 
 制約・未実装:
 
 - Ruling の規則（Oversized Chip・String Bet・Multiple Chip・宣言・Out of Turn）は OI-008 の暫定値、Chip の額面は OI-004 の暫定値です（永久仕様ではありません）。物理的な誤操作をするのは Hero だけで、CPU は Canonical Action で行動します（D91）
-- Replay の Hand 一覧に出る「未完了」の Hand（進行中・内部エラーで止まった Hand）はサーバーのメモリにだけあり、サーバーを再起動すると消えます。AI 障害の後に Session 終了で打ち切った Hand は「打ち切り」として保存され、再起動後も残ります（#77）。Learning-only Full Reveal（全員の札の学習用の公開）と Jump to Important Spot は Phase 5 の Review で扱います（D93）
+- Replay の Hand 一覧に出る「未完了」の Hand（進行中・内部エラーで止まった Hand）はサーバーのメモリにだけあり、サーバーを再起動すると消えます。AI 障害の後に Session 終了で打ち切った Hand は「打ち切り」として保存され、再起動後も残ります（#77）
 - Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
-- Persona の数値（OI-005）・モデル名 `claude-haiku-4-5` と判断待ちの上限（OI-001）・Eval の合格ライン（`docs/09` §5）は暫定値です。Tilt（一時的な状態）・CPU の観察記憶は Phase 7 です
+- Persona の数値（OI-005）・モデル名（`claude-haiku-4-5` / `claude-sonnet-5-5` / `claude-opus-5-5`）と判断待ち・Review・Solver の上限（OI-001）・Primary Solver（OI-002）・Eval の合格ライン（`docs/09` §5・§6）は暫定値です（永久仕様ではありません）。Tilt（一時的な状態）・CPU の観察記憶は Phase 7 です
+- **Solver は Heads-Up の Turn / River だけ**です。Preflop・Flop・Multiway（3 人以上）・Side Pot あり・Rake ありの Spot は Unsupported で、Math・Range・KB で Review します（Multiway の Deep Solver は OI-009）。Solver の結果は Street の最初の判断（OOP）の頻度だけで、Action EV は出しません
+- **Web Fallback（根拠が足りないときの Web 検索）はありません**（D94・OI-010）。根拠が足りない判断は Review AI を呼ばずに「根拠が足りない」として評価しません
+- Review は Claude（サブスク枠）を使い、1 回に十数秒〜数十秒かかります。相手の Observation（CPU ごとの傾向の記録）はまだ無いので、Exploit の観点は出ません
 - 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）はまだありません。Ante・Blind Level は Phase 8（Tournament）です
 - サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます（Stack・Button・Emergency Bot を持ち越す。#77）。Hand の途中で止めた場合は、その Hand は消え、最後に終わった Hand から続きます
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
-- Hand Review（判断時点の情報だけの Decision Review・Reveal Review・解析・追加質問）は未実装です。MVPの完成条件（[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) のDefinition of Done）はまだ満たしていません
 
-次は **Phase 5 — MVP Review**（Decision Reconstruction・Math / Equity・KB・Review AI・Solver Adapter・Reveal Review・Follow-up）です。
+次は **Phase 6 — Session Learning** です（MVP の後の Phase。`docs/08` §3）。

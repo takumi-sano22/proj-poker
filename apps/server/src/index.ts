@@ -3,10 +3,13 @@ import { buildApp } from "./app.js";
 import {
   MODEL_ROLES,
   buildTableSetup,
+  fixedSeedSequence,
   parseBotDelayMs,
+  parseFixedSeed,
   parseOpponentProvider,
   parseOpponentTimeoutMs,
   parsePersonaRotation,
+  parseReviewProvider,
   parseReviewTimeoutMs,
   parseTableSize,
   resolveDbPath,
@@ -22,6 +25,7 @@ import {
   SqliteFollowUpStore,
   SqliteRevealReviewStore,
 } from "./review/reveal-store.js";
+import { fakeReviewQuery } from "./review/fake-review-query.js";
 import { SqliteReviewStore } from "./review/review-store.js";
 import { createSolverAdapterFromEnv } from "./solver/index.js";
 import { SqliteEventStore } from "./sqlite-event-store.js";
@@ -39,6 +43,11 @@ const createOpponent =
   provider === "claude"
     ? createClaudeOpponentFactory({ model: opponentModel, env: claudeEnv })
     : createRuleBot;
+
+// Review AI の実装（既定 Claude）。REVIEW_PROVIDER=fake は E2E 用の固定応答で、Claude を呼ばない（D98。本番では使わない）。
+const reviewProvider = parseReviewProvider(process.env["REVIEW_PROVIDER"]);
+// 山札の seed。POKER_SEED を設定したときだけ固定の並びにする（E2E の決定論のため。D98）。未設定なら Hand ごとに乱数（app.ts の既定）。
+const fixedSeed = parseFixedSeed(process.env["POKER_SEED"]);
 
 // Event Log は SQLite に保存する（D72）。終わった Hand だけが残る（D62）。
 // Review（#82）も同じ DB の reviews テーブルに Version 付きで保存する（reviews.hand_id は hands を参照する）。
@@ -63,7 +72,8 @@ const app = buildApp({
   ),
   store,
   createOpponent,
-  // Review AI は Claude（Agent SDK・OAuth。D87・D97）。API 課金に切り替わる変数を外した環境で呼ぶ。
+  ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),
+  // Review AI は Claude（Agent SDK・OAuth。D87・D97）。API 課金に切り替わる変数を外した環境で呼ぶ（REVIEW_PROVIDER=fake のときだけ E2E 用の固定応答）。
   review: {
     store: new SqliteReviewStore(db),
     revealStore: new SqliteRevealReviewStore(db),
@@ -71,7 +81,7 @@ const app = buildApp({
     kb,
     solver,
     env: claudeEnv,
-    query: sdkQuery,
+    query: reviewProvider === "fake" ? fakeReviewQuery : sdkQuery,
     timeoutMs: parseReviewTimeoutMs(process.env["REVIEW_TIMEOUT_MS"]),
   },
 });
@@ -91,6 +101,15 @@ app.log.info(
   },
   "Review の設定",
 );
+if (reviewProvider === "fake") {
+  app.log.warn(
+    { reviewProvider },
+    "Review AI は E2E 用の固定応答（Claude を呼ばない）",
+  );
+}
+if (fixedSeed !== null) {
+  app.log.warn({ seed: fixedSeed }, "山札の seed を固定している（E2E 用）");
+}
 app.log.info(
   provider === "claude" ? { provider, model: opponentModel } : { provider },
   "CPU の判断に使う実装",
