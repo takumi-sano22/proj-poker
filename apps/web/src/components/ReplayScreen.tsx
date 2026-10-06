@@ -192,7 +192,7 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
               disabled={replay.step <= 0}
               onClick={replay.previous}
             >
-              <span>前へ</span>
+              <span>前へ</span>{" "}
               <span className="replay-controls__sub">Previous</span>
             </button>
             {replay.playing ? (
@@ -201,7 +201,7 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
                 className="btn btn--primary btn--sm"
                 onClick={replay.pause}
               >
-                <span>一時停止</span>
+                <span>一時停止</span>{" "}
                 <span className="replay-controls__sub">Pause</span>
               </button>
             ) : (
@@ -211,7 +211,7 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
                 disabled={last <= 0}
                 onClick={replay.play}
               >
-                <span>再生</span>
+                <span>再生</span>{" "}
                 <span className="replay-controls__sub">Play</span>
               </button>
             )}
@@ -221,7 +221,7 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
               disabled={replay.step >= last}
               onClick={replay.next}
             >
-              <span>次へ</span>
+              <span>次へ</span>{" "}
               <span className="replay-controls__sub">Next</span>
             </button>
           </div>
