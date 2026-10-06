@@ -99,8 +99,10 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'reviews is append-only');
   END;
   `,
-  // v4: Reveal Review（Pass B）と Follow-up の履歴（#83・docs/04 §8）。どちらも追記だけで、UPDATE は Trigger で拒否する（D39）。
-  // 既存のテーブル（reviews を含む）・行は変えない（D76）。Pass B は判断時点の評価を付け直さないので assessment 列を持たない（結果論を混ぜない）。
+  // v4: Reveal Review（Pass B）と Follow-up の履歴（#83・docs/04 §8・D99）。どちらも追記だけで、UPDATE と DELETE は Trigger で拒否する（D39）。
+  // 既存のテーブル（reviews を含む）の列・行は変えない（D76）。追記専用を機械で守るため、既存の events（D37）・reviews（D39）にも
+  // DELETE を拒否する Trigger だけを足す（v1・v3 では UPDATE だけを拒否していた）。Reset / Hand History Delete（docs/04 §11）を設計するときは、
+  // 削除の経路と一緒にこの Trigger の扱いを決める。Pass B は判断時点の評価を付け直さないので assessment 列を持たない（結果論を混ぜない）。
   // reveal_reviews: Hand の判断ごとの Pass B を Version 付きで追記する（(hand_id, decision_index, version) が一意）。evidence は Hand 後に見せた
   //   全員の札（Learning-only Full Reveal）と、そこから決定論で計算した実際の Equity・Bluff / Value の答え合わせを含む。
   // review_followups: Review の Version（pass と review_id）ごとに、Follow-up の質問と答えを 1 ターン 1 行で追記する（(review_id, turn) が一意）。
@@ -127,6 +129,12 @@ export const MIGRATIONS: readonly string[] = [
 
   CREATE TRIGGER reveal_reviews_append_only
   BEFORE UPDATE ON reveal_reviews
+  BEGIN
+    SELECT RAISE(ABORT, 'reveal_reviews is append-only');
+  END;
+
+  CREATE TRIGGER reveal_reviews_no_delete
+  BEFORE DELETE ON reveal_reviews
   BEGIN
     SELECT RAISE(ABORT, 'reveal_reviews is append-only');
   END;
@@ -169,6 +177,24 @@ export const MIGRATIONS: readonly string[] = [
   BEFORE UPDATE ON review_followups
   BEGIN
     SELECT RAISE(ABORT, 'review_followups is append-only');
+  END;
+
+  CREATE TRIGGER review_followups_no_delete
+  BEFORE DELETE ON review_followups
+  BEGIN
+    SELECT RAISE(ABORT, 'review_followups is append-only');
+  END;
+
+  CREATE TRIGGER events_no_delete
+  BEFORE DELETE ON events
+  BEGIN
+    SELECT RAISE(ABORT, 'events is append-only');
+  END;
+
+  CREATE TRIGGER reviews_no_delete
+  BEFORE DELETE ON reviews
+  BEGIN
+    SELECT RAISE(ABORT, 'reviews is append-only');
   END;
   `,
 ];

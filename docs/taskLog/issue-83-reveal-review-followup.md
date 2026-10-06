@@ -71,7 +71,8 @@ Phase 5 の子 Issue。Hand の後に Learning-only Full Reveal（全員の札�
   - Follow-up（Pass A）「相手の実際の札は？結果的に正しかった？」: 5.6 秒。`out_of_scope` で、実際の札は知らない・Reveal Review で確かめられると答えた（Hand 後の情報は出なかった）。
   - Follow-up（Pass B）1「River の Bet は Value？」: 5.0 秒。`answered`。value と基準を説明した。
   - Follow-up（Pass B）2「次は Fold すべき？」: 6.1 秒。`answered`。1 回目の答えを踏まえ、1 Hand の結果で Fold とは言えないと答えた（履歴の文脈が効いている）。
-- 新しいテーブル: `reveal_reviews`・`review_followups`（追記だけ）。`reviews` の行と定義が v4 で変わらないことをテストで確かめた。
+- 新しいテーブル: `reveal_reviews`・`review_followups`（追記だけ）。`reviews` の行と列が v4 で変わらないことをテストで確かめた。
+- Codex の再実行で [P1]（追記専用の Trigger が UPDATE だけで、DELETE で履歴を消せる）が出た。親の判定は CONFIRMED で、same-root として events（v1）・reviews（v3）も同じだった。v4 に 4 テーブル（events・reviews・reveal_reviews・review_followups）の DELETE を拒否する Trigger を足し、4 テーブルとも DELETE が拒否されることのテストを足した。server のコードとテストに DELETE は無い。
 
 ## 残課題
 

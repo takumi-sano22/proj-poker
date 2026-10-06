@@ -235,7 +235,7 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 
 User Read（Review Interview。`docs/05` §12）はまだ聞いていないので、`evidence_ids.userRead` は空です。Claude の呼び出しの失敗（未ログイン・利用枠・Timeout 等）では行を作りません（生成の状態はサーバーのメモリにだけ持ち、再起動で消える）。
 
-**Pass B と Follow-up（#83）**: マイグレーション v4 で、追記だけのテーブルを 2 つ足しました。`reviews` を含む既存のテーブル・行・列の定義は変えていません（D76）。どちらも `UPDATE` は Trigger で拒否し、`hand_id` は `hands` を参照します。書き読みは `apps/server/src/review/reveal-store.ts`（`SqliteRevealReviewStore` / `SqliteFollowUpStore`）です。
+**Pass B と Follow-up（#83・D99）**: マイグレーション v4 で、追記だけのテーブルを 2 つ足しました。`reviews` を含む既存のテーブルの行・列の定義は変えていません（D76）。どちらも `UPDATE` と `DELETE` は Trigger で拒否し、`hand_id` は `hands` を参照します。追記専用を機械で守るため、v4 では既存の `events`（D37）と `reviews`（D39）にも `DELETE` を拒否する Trigger（`events_no_delete`・`reviews_no_delete`）だけを足しました（v1・v3 は `UPDATE` だけを拒否していた）。Reset / Hand History Delete（§11）を設計するときに、削除の経路と一緒にこの Trigger の扱いを決めます。書き読みは `apps/server/src/review/reveal-store.ts`（`SqliteRevealReviewStore` / `SqliteFollowUpStore`）です。
 
 `reveal_reviews`（Reveal Review = Pass B。`docs/05` §7）: Hero の判断ごとに Version を付けて追記します（`(hand_id, decision_index, version)` が一意。Version の採番と追記は 1 つの書き込みトランザクション）。Pass B は判断時点の評価を付け直さないので、`assessment`・`confidence` の列を持ちません（結果論を判断の評価に混ぜない）。
 
@@ -298,7 +298,7 @@ Action単位の完全Crash RecoveryはMVPで過剰実装しません。
 ### Phase 1 の保存（Issue #20。D62・D72）
 
 - 保存先は SQLite（`node:sqlite`）で、`apps/server` だけが扱います。DB ファイルは環境変数 `POKER_DB_PATH`（`:memory:` も可）で変えられ、既定は `apps/server/data/poker.sqlite`（gitignore 済み）です。
-- テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only。削除は §11 の Reset と一緒に設計する）。
+- テーブルは `sessions`（`session_id`・`started_at`）/ `hands`（`hand_id`・`session_id`・`started_at`・`finished_at`）/ `events`（`event_id`・`hand_id`・`seq`・`type`・`schema_version`・`recorded_at`・`payload`）です。`payload` は Engine の `HandEvent` をそのまま入れた JSON 列で、`(hand_id, seq)` は一意です。`events` の UPDATE は Trigger で拒否します（append-only）。DELETE も v4（#83）から Trigger で拒否します（削除の経路は §11 の Reset と一緒に設計する）。
 - マイグレーションは自前の小さな仕組みで、SQL の配列（`apps/server/src/db/database.ts` の `MIGRATIONS`）を `PRAGMA user_version` より新しい分だけ 1 版ずつトランザクションで当てます。アプリより新しい版の DB は開きません。
 - Review（#82）は Hand の保存とは別に、生成が終わった時点で `reviews` テーブルへ追記します（§8。Hand の保存のトランザクションには入れない）。
 - Hand 途中の Event はメモリに持ち、Hand の終わり（`HAND_FINISHED`、または AI 障害の後の打ち切り `HAND_ABORTED`。#77・D95）を追記した時点で、その Hand の全 Event と `hands` の行（その Session の最初の Hand なら `sessions` の行も。`started_at` はその Hand の開始時刻、`finished_at` は Hand の終わりの時刻）と、その Session の Session Projection（下記）を 1 トランザクションで書きます。再起動すると途中の Hand は消え、終わった Hand だけが残ります。終わった Hand への追記は拒否します。

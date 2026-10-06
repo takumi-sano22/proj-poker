@@ -49,14 +49,18 @@ describe("openDatabase（マイグレーション）", () => {
     expect(tableNames(dbPath)).toEqual([
       "events",
       "events_append_only",
+      "events_no_delete",
       "hands",
       "reveal_reviews",
       "reveal_reviews_append_only",
+      "reveal_reviews_no_delete",
       "review_followups",
       "review_followups_append_only",
+      "review_followups_no_delete",
       "review_followups_target",
       "reviews",
       "reviews_append_only",
+      "reviews_no_delete",
       "session_projections",
       "sessions",
     ]);
@@ -241,6 +245,38 @@ describe("openDatabase（マイグレーション）", () => {
           "UPDATE review_followups SET question = 'x' WHERE followup_id = 'f1'",
         ),
       ).toThrow(/append-only/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("events・reviews・reveal_reviews・review_followups は DELETE を Trigger で拒否する（追記専用。D37・D39・D99）", () => {
+    const db = openDatabase(":memory:");
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 6, '2026-10-05T00:00:00.000Z', '{"type":"HAND_STARTED"}');
+        INSERT INTO reviews VALUES ('r1', 'h1', 0, 5, 'decision', 1, '2026-10-05T00:02:00.000Z', 'standard', 'review_standard',
+          'claude-sonnet-5-5', '1.0.0', NULL, 'review_ai', 'reasonable', 'medium', '[]', '{}', '{}', '{}', NULL);
+        INSERT INTO reveal_reviews VALUES ('v1', 'h1', 0, 5, 1, '2026-10-05T00:03:00.000Z', 'standard', 'review_standard',
+          'claude-sonnet-5-5', 'review_ai', '{}', '{}', '{}', NULL);
+        INSERT INTO review_followups VALUES ('f1', 'reveal', 'v1', 'h1', 0, 1, 1, '2026-10-05T00:04:00.000Z', 'standard',
+          'review_standard', 'claude-sonnet-5-5', 'review_ai', '質問', '{}', NULL);
+      `);
+      for (const table of [
+        "review_followups",
+        "reveal_reviews",
+        "reviews",
+        "events",
+      ]) {
+        expect(() => db.exec(`DELETE FROM ${table}`)).toThrow(
+          new RegExp(`${table} is append-only`),
+        );
+        expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({
+          n: 1,
+        });
+      }
     } finally {
       db.close();
     }
