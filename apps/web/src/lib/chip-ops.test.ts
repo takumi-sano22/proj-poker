@@ -1,7 +1,10 @@
 import { DEFAULT_CHIP_DENOMINATIONS } from "@proj-poker/engine";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_DRAFT,
+  MAX_CHIPS_PER_MOTION,
+  MAX_OPERATIONS,
   completesTurn,
   countChips,
   declarationOf,
@@ -104,6 +107,32 @@ describe("chip-ops（Hero の 1 回の手番の PhysicalAction を組む）", ()
       { type: "chip_push", chips: [25] },
       { type: "declare", declaration: { kind: "call" } },
     ]);
+  });
+
+  it("サーバーの入力の上限（1 手番 20 操作・1 動作 100 枚）を超える操作は組まない", () => {
+    let d = EMPTY_DRAFT;
+    for (let i = 0; i < 25; i++) d = pickChip(d, 1000, 1);
+    expect(d.hand).toHaveLength(25);
+    for (let i = 0; i < 80; i++) d = pickChip(d, 1000, 1);
+    expect(d.hand).toHaveLength(MAX_CHIPS_PER_MOTION);
+    let ops = EMPTY_DRAFT;
+    for (let i = 0; i < 15; i++) ops = pushChip(ops, 1000, 1);
+    for (let i = 0; i < 10; i++) ops = declare(ops, { kind: "raise" });
+    expect(ops.ops).toHaveLength(MAX_OPERATIONS);
+  });
+
+  it("上限の値はサーバーの入力の形（heroPhysicalActionBodySchema の maxItems）と同じ", () => {
+    const schema = readFileSync(
+      new URL("../../../server/src/routes/hands.ts", import.meta.url),
+      "utf8",
+    );
+    const body = schema.slice(
+      schema.indexOf("const heroPhysicalActionBodySchema"),
+      schema.indexOf("const outageChoiceBodySchema"),
+    );
+    expect(
+      [...body.matchAll(/maxItems: (\d+)/g)].map((m) => Number(m[1])),
+    ).toEqual([MAX_OPERATIONS, MAX_CHIPS_PER_MOTION]);
   });
 
   it("countChips: 額面ごとの枚数に、大きい額面から並べる（額から組み直さない）", () => {

@@ -12,15 +12,15 @@ Hero の操作を、数値の Bet Box（Slider・Preset）から、Chip の Clic
 
 ## 変更内容
 
-- `apps/web/src/lib/chip-ops.ts`（新規）: 手番の操作の下書き（手元 `hand` と卓に出した操作 `ops`）を組む純粋関数。`pickChip`（Click で 1 枚手に取る。持っている額を超えるなら変えない）・`returnHand`（出す前なら戻せる）・`pushHand` / `pushChip`（1 回の動作で出す。最初は `chip_push`、以降は `chip_add`）・`declarationOf`（Bet / Raise は手に Chip があればその額を to 額として宣言、無ければ額なし）・`declare`・`completesTurn`・`countChips`。合法性も裁定も判定しない。
+- `apps/web/src/lib/chip-ops.ts`（新規）: 手番の操作の下書き（手元 `hand` と卓に出した操作 `ops`）を組む純粋関数。`pickChip`（Click で 1 枚手に取る。持っている額を超えるなら変えない）・`returnHand`（出す前なら戻せる）・`pushHand` / `pushChip`（1 回の動作で出す。最初は `chip_push`、以降は `chip_add`）・`declarationOf`（Bet / Raise は手に Chip があればその額を to 額として宣言、無ければ額なし）・`declare`・`completesTurn`・`countChips`。合法性も裁定も判定しない。サーバーの入力の形の上限（1 手番 20 操作・1 動作 100 枚。`heroPhysicalActionBodySchema` の `maxItems`）を超える操作は組まない（`MAX_OPERATIONS` / `MAX_CHIPS_PER_MOTION`。値の一致はテストでサーバーのソースから確かめる）。
 - `apps/web/src/hooks/useChipDrag.ts`（新規）: Pointer Events の Drag。6px を超えて動いたら Drag、離した位置が Betting Area の矩形内なら投入。Drag で終えた押下の直後の click を 1 回捨てる。落とした結果の描画は `setTimeout(0)` で押下の一連のイベントを配り終えてから行う（下の「判断理由」）。
 - `apps/web/src/components/ChipControls.tsx`（新規。`ActionBar.tsx` は削除）: Stack の Chip（Config の額面ごと）・手元の山と「戻す」・Betting Area（1 回の動作ごとに積みを分けて置く・宣言も表示）・「確定して Dealer に渡す」・宣言 Button 6 つ（局面によらず全部。手番でも手番でなくても押せる。Call / All-in の額は手番のときだけ Legal Action の額を補助で出す）。
 - `apps/web/src/components/ChipStack.tsx`: 積みの描画を `ChipColumns` に分け、出した Chip を枚数のまま描く `ChipPile` を足した（500 の 1 枚を 100 × 5 に組み直さない）。
 - `apps/web/src/lib/view-model.ts`: `heroRulingStatus`（直近の Hero の `DEALER_RULING` から pending / action〔直後の `ACTION_TAKEN`〕/ no_action）・`rulingText`（最低限の 1 行。理由の文言は #66）・`operationKey`（下書きを作り直す単位: Hand・Street・Hero への裁定の数）。`sizingPresets` は使わなくなったので削除。
 - `apps/web/src/lib/api.ts` / `hooks/useHandSession.ts`: `sendHeroAction`（`/actions`）を `sendHeroPhysicalActions`（`/physical-actions`）に、`act` を `operate(actions)` に置き換え。再送は送ったときの `lastSeq` と操作の列のまま。`not_actor`（保留中の再操作）と `invalid_input` の案内文を足した。
 - `apps/web/src/App.tsx`: Hero 欄で、Fold / All-in 済みでなければ手番でなくても `ChipControls` を出す。保留中と送信中は押せない。直近の裁定を `dock__ruling` に出す。
-- `apps/web/src/styles.css`: Chip のトークン（既存の `--color-chip-*` を流用）・手元・Betting Area（フェルトの色。Drag 中に上へ来たら金の縁）・宣言の grid・Drag 中の Chip。PC は「Chip・手元・Betting Area・確定」を 1 行、宣言を 1 行。モバイルは「Chip・手元」「Betting Area・確定」「宣言 3 × 2」。360px 未満は手元を次の行へ。`ActionBar` / Slider 用の CSS は削除。
-- テスト: `chip-ops.test.ts`（新規 9 件）、`components.test.tsx`（`ChipPile`・`ChipControls` の宣言 6 つ・数値の Bet Box が無いこと・持っていない額の Chip だけ押せない・手番でなくても押せる・送信中 / 保留中は押せない）、`view-model.test.ts`（裁定の表示・下書きの単位）。
+- `apps/web/src/styles.css`: Chip のトークン（既存の `--color-chip-*` を流用）・手元・Betting Area（フェルトの色。Drag 中に上へ来たら金の縁）・宣言の grid・Drag 中の Chip。PC は「Chip・手元・Betting Area・確定」を 1 行、宣言を 1 行。モバイルは「Chip・手元」「Betting Area・確定」「宣言 3 × 2」。360px 未満は手元を次の行へ。`ActionBar` / Slider / Preset 用の CSS は削除。
+- テスト: `chip-ops.test.ts`（新規 11 件）、`components.test.tsx`（`ChipPile`・`ChipControls` の宣言 6 つ・数値の Bet Box が無いこと・持っていない額の Chip だけ押せない・手番でなくても押せる・送信中 / 保留中は押せない）、`view-model.test.ts`（裁定の表示・下書きの単位）。
 - docs: docs/06 §4・§5 に Chip 操作と宣言 Button の実装、docs/03 の web（`useHandSession` の送信先・`ChipControls`）を更新。
 
 ## 判断理由
@@ -33,11 +33,12 @@ Hero の操作を、数値の Bet Box（Slider・Preset）から、Chip の Clic
 - **下書きの単位**: CPU の行動だけでは下書きを捨てない（手番を待つ間に組んだ操作を消さない）。Hero への裁定が増えた（送った操作が裁定された）・Street が進んだ・Hand が変わったら捨てる。
 - **直近の裁定は Street をまたいでも出す**: Hero の Call で Street が閉じると、Street で絞ると裁定が見える前に消えた（375px の実測で発見）。no_action は Hero の手番で起き、選び直すまで Street は進まないので、古い「もう一度操作してください」は残らない。
 - **Drag の結果の描画を遅らせる**: タッチで手元の山を Drag して落とすと、`pointerup` の時点で山が消え（手元が空になる）、`touchend` が消えた要素に配られて、次のタップが Click にならなかった（Chromium・CDP のタッチで実測）。手元の山を常に置いたうえで、投入の描画を押下の一連のイベントの後に回して直した。
+- **入力の大きさの上限を UI でも持つ**: 卓に出した操作は取り消せないので、サーバーの形の上限（20 操作・100 枚）を超えて組めると、送っても 400 で弾かれ続けて手番を進められなくなる（自己レビューで発見）。合法性ではなく入力の大きさの上限。
 - **BB 換算は狭い画面の宣言 Button だけ省く**: 実額は常に出す（D49）。375px で額と BB が 3 行に割れるため、補助の BB だけを省いた（PC では出す）。
 
 ## 実行した確認
 
-- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 232・server 162・web 59 件すべて成功）/ `pnpm format:check`（ルート）。`pnpm --filter @proj-poker/web build` が通る。
+- `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 232・server 162・web 61 件すべて成功）/ `pnpm format:check`（ルート）。`pnpm --filter @proj-poker/web build` が通る。
 - dev サーバー（worktree・`POKER_DB_PATH` は scratchpad / `:memory:`・`BOT_THINK_DELAY_MS=1500`〜`4000`・RuleBot）と Playwright（headless Chromium。リポジトリ外のスクリプト）で実測。dev サーバーは確認後に停止した。
   - **1280×800（マウス）**:
     - Click だけで Raise: 「レイズ（Raise）」→ 25 と 5 を Click → Betting Area を Click → 確定。送信 `[declare raise, chip_push [25,5]]`、表示「Dealer の裁定: レイズ（Raise） 30 まで」。

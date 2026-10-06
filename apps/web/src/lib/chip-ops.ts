@@ -21,6 +21,14 @@ export interface TurnDraft {
 
 export const EMPTY_DRAFT: TurnDraft = { hand: [], ops: [] };
 
+/**
+ * 1 回の手番で送れる操作の数と、1 回の動作で出せる Chip の枚数の上限。サーバーの入力の形（apps/server/src/routes/hands.ts の
+ * heroPhysicalActionBodySchema の maxItems）と同じ値にする。入力の大きさの上限で、合法性ではない。超える操作を組めると、
+ * 卓に出した操作は取り消せないので、送っても形の誤りで弾かれ続けて手番が進められなくなる。
+ */
+export const MAX_OPERATIONS = 20;
+export const MAX_CHIPS_PER_MOTION = 100;
+
 function sum(chips: readonly number[]): number {
   return chips.reduce((total, c) => total + c, 0);
 }
@@ -72,6 +80,7 @@ export function pickChip(
   value: number,
 ): TurnDraft {
   if (value > remainingStack(stack, draft)) return draft;
+  if (draft.hand.length >= MAX_CHIPS_PER_MOTION) return draft;
   return { ...draft, hand: [...draft.hand, value] };
 }
 
@@ -85,14 +94,16 @@ export function returnHand(draft: TurnDraft): TurnDraft {
  * （String Bet の判定に使う区別。Ruling Engine の入力の規則）。
  */
 function pushChips(draft: TurnDraft, chips: readonly number[]): TurnDraft {
-  if (chips.length === 0) return draft;
+  if (chips.length === 0 || draft.ops.length >= MAX_OPERATIONS) return draft;
   const type = pushedMotions(draft).length === 0 ? "chip_push" : "chip_add";
   return { ...draft, ops: [...draft.ops, { type, chips: [...chips] }] };
 }
 
 /** 手に取った Chip をまとめて 1 回の動作で出す。 */
 export function pushHand(draft: TurnDraft): TurnDraft {
-  return returnHand(pushChips(draft, draft.hand));
+  const pushed = pushChips(draft, draft.hand);
+  // 出せなかった（手が空・操作の上限）なら手元はそのまま残す
+  return pushed === draft ? draft : returnHand(pushed);
 }
 
 /** Stack の Chip を 1 枚、直接（手に取らずに）出す。持っている額を超えるなら変えない。 */
@@ -129,6 +140,7 @@ export function declarationOf(
 
 /** 宣言を操作の列に足す（Chip の後の宣言・2 つ目の宣言も、そのまま足して裁定に任せる）。 */
 export function declare(draft: TurnDraft, declaration: Declaration): TurnDraft {
+  if (draft.ops.length >= MAX_OPERATIONS) return draft;
   return {
     ...draft,
     ops: [...draft.ops, { type: "declare", declaration }],
