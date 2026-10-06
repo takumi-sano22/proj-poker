@@ -136,13 +136,15 @@ Knowledge Evidenceは、Local KB（`apps/server/kb/`。#80・D98・`docs/03` §9
 
 Evidenceの組み立て（#82。`apps/server/src/review/evidence.ts`）: 判断時点のHero Information Setだけを入力に、次の形でReview AIへ渡します（Event Log・`KnowledgeState`をそのまま渡さず、whitelistで写す）。各項目は`id`を持ち、Review AIは根拠に挙げた`id`を返します（実在しない`id`は不正）。
 
-- Decision Context（`ctx:`）: Street・Blind・HeroのPositionと札・判断時点のBoard・Pot・各席のPosition / Stack / Commit / Fold / All-in（他者の札は持たない）・Public Actionの履歴・裁定の履歴・Legal Action・Heroが選んだAction・Important Spotの理由。
+- Decision Context（`ctx:`）: Street・Blind・HeroのPositionと札・判断時点のBoard・Pot・各席の表示名（Heroの画面に出ている名前。CPU 3など。Personaは入れない。#96）/ Position / Stack / Commit / Fold / All-in（他者の札は持たない）・Public Actionの履歴・裁定の履歴・Legal Action・Heroが選んだAction・Important Spotの理由。
 - Math（`math:`）: `analyzeDecision`の値（Pot・Call額・Pot Odds・有効Stack・SPR・Equity・Alternative Action・前提）。Monte Carloのseedは入れません。
 - Range（`range:`）: 相手ごとのRangeのAssumption。Important Spotだけ、Rangeの想定（標準・狭い・広い）ごとのEquityの比較（`compareRangeProfiles`）。
 - Opponent Observation: 相手の過去の傾向の記録はまだ無いので`unavailable`（Exploitは根拠なしとして書かせる）。
 - Solver（`solver:`）: Capability Gateを通って解けたときだけ`supported`（`docs/03` §7）。それ以外はUnsupported / 当てはまらないNode / 失敗の理由を前提として渡します。
 - Knowledge（`kb:<KB Version>:<id>@<version>`）: 判断時点のSpotの特徴（Street・HeroのPosition・Heads-Up / Multiway・Spotの種類・相手のPreflopのAction列）で`searchKb`した上位4項目。
 - User Read / Intent: まだ聞いていない（`not_collected`）。
+
+**内部の識別子を文に出さない**（#96・D101）: Reviewは Hero が読む学習用の文なので、`cpu3` のようなplayerIdや`inAssumedRange=false`のようなEvidenceの項目名を、そのまま出しません（内部実装を前面に出さない方針。`docs/06` §11）。対策は3段で、①Evidenceの席に表示名を添える、②Promptで識別子を書かないよう指示し、「Evidenceの項目の説明」（項目名 → 自然な言葉。`apps/server/src/review/identifiers.ts`の`EVIDENCE_TERMS`が1か所の正本。Pass Aには判断時点の項目だけ、Pass Bにはreveal側の項目も出す）を添える、③出力の文を保存の前に機械的に置換する（playerId → 表示名、項目名 → 説明、`monte_carlo`のような値 → 書き方。根拠のidとenumは触らない）。識別子が見つかっても**Retryはしません**（言い直しを求めても残ることがあり、呼び出しと利用枠が増えるだけのため）。置換するのは対応表にある既知のものだけで、未知の識別子は残り、Review Evalの「識別子の残存率」で数えて対応表に足します（`docs/09` §6）。Pass B・Follow-upにも同じ置換を通します。
 
 Evidenceに他者のHidden Cards・未来のCard・`system`のEvent・CPUのPersonaが入らないこと、判断より後のEventを切り落としても見えないEventの中身を差し替えてもEvidenceが変わらないことをテストで確かめます（`evidence.test.ts`）。
 

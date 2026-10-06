@@ -4,6 +4,7 @@
 // 条件付きの指示（Solver があるときだけ〜）は文で書かず、Schema の enum と検証で守らせる（llm ガイダンス 4）。
 import { cardToString, type Card } from "@proj-poker/engine";
 import { allEvidenceIds } from "./evidence.js";
+import { evidenceGlossary } from "./identifiers.js";
 import {
   ASSESSMENTS,
   CONFIDENCES,
@@ -56,13 +57,14 @@ export const REVIEW_SYSTEM_PROMPT = [
   "# 守ること",
   "- Evidence は判断の時点に Hero が知り得た情報と、そこから決定論で計算した値です。Hand の結果・相手の実際の札は渡していません。結果ではなく判断の質を評価してください。",
   "- 数値（Pot・Pot Odds・Equity・必要 Equity・簡易 EV・Combo 数・頻度）は Evidence の値をそのまま使い、自分で計算し直したり作ったりしないでください。",
-  "- math.equity.method が exact なら仮定した Range の全列挙（標本の誤差は無い。trials は数えた組の数）、monte_carlo なら trials 回の試行による推定です。",
+  "- Equity の算出方法が exact なら仮定した Range の全列挙（標本の誤差は無い。試行回数は数えた組の数）、Monte Carlo なら試行回数分の試行による推定です。",
   "- 額は Chip の実額で書き、BB 換算は必要なときに括弧で添えてください。",
   "- Range と Equity は Assumption（仮定した Range）に基づく推定です。断定せず、前提を書いてください。",
-  "- 簡易 EV（math.alternatives の ev）は前提付きの目安で、GTO / Solver の値ではありません。",
-  "- Solver の結果（solver.status が supported のときだけある）は Heads-Up・抽象化した Bet Tree の近似です。Exact GTO・正解とは書かず、前提（scope・betTree・rangeAssumptions・assumptions）を添えてください。Solver の結果が無いときは Solver の結論を書かないでください。",
+  "- 簡易 EV（他の Action の簡易 EV）は前提付きの目安で、GTO / Solver の値ではありません。",
+  "- Solver の結果（Evidence に入っているときだけある）は Heads-Up・抽象化した Bet Tree の近似です。Exact GTO・正解とは書かず、前提（Heads-Up の近似であること・Bet Tree・Range の想定）を添えてください。Solver の結果が無いときは Solver の結論を書かないでください。",
   "- 「GTO で X だから常に X が正しい」とは教えないでください。",
-  "- knowledge の項目のうち label が HEURISTIC / EXPLOIT のものは経験則として書き、普遍的なルールとして断定しないでください。",
+  "- KB の項目のうち、ラベルが HEURISTIC / EXPLOIT のものは経験則として書き、普遍的なルールとして断定しないでください。",
+  "- 文は Hero が読みます。内部の識別子（playerId・Evidence の項目名・英字と _ でつないだ値・Evidence の id）は文に書かず、席は seats の displayName、項目は「Evidence の項目の説明」の言葉で書いてください。Evidence の id は evidenceIds にだけ入れてください。",
   "- 根拠が足りず評価できないときは assessment を insufficient_evidence にしてください。",
   "",
   "# 出力（StructuredOutput ツールで、文章を書かずにすぐ返す。値はすべて JSON の文字列か文字列の配列。文は日本語）",
@@ -84,6 +86,7 @@ export function buildReviewPrompt(
   const sections = [
     "## Evidence（Card は 2 文字で、As はスペードの A、Td はダイヤの 10）",
     JSON.stringify(evidence, cardReplacer),
+    evidenceGlossary("decision"),
   ];
   if (correction !== undefined) {
     sections.push(

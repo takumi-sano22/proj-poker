@@ -19,6 +19,7 @@ import {
   type Street,
 } from "@proj-poker/engine";
 import { decisionContext, yieldToEventLoop } from "./evidence.js";
+import type { PlayerNames } from "./identifiers.js";
 import type {
   AggressionCheck,
   MadeHand,
@@ -52,6 +53,7 @@ export async function buildRevealEvidence(
   reveal: LearningReveal,
   events: readonly HandEvent[],
   importantSpotReasons: readonly ImportantSpotReason[],
+  playerNames: PlayerNames = {},
 ): Promise<RevealEvidence> {
   if (reveal.handId !== set.handId) {
     throw new RangeError(
@@ -78,6 +80,9 @@ export async function buildRevealEvidence(
     const keys = new Set(assumed?.combos.map(comboKey));
     villains.push({
       playerId: seat.playerId,
+      ...(playerNames[seat.playerId] === undefined
+        ? {}
+        : { displayName: playerNames[seat.playerId] }),
       position: positionName(
         (seatIndex(seat.playerId) - buttonIndex + n) % n,
         n,
@@ -110,7 +115,7 @@ export async function buildRevealEvidence(
     pass: "reveal",
     handId: set.handId,
     decisionIndex: set.decision.index,
-    context: decisionContext(set, importantSpotReasons, prefix),
+    context: decisionContext(set, importantSpotReasons, prefix, playerNames),
     reveal: {
       id: `reveal:${prefix}`,
       visibility: reveal.visibility,

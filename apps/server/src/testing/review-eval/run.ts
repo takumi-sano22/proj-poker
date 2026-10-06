@@ -67,7 +67,7 @@ const records = await runReviewEval({
   onRecord: (r, done, total) => {
     const final =
       r.final.kind === "review"
-        ? `${r.final.generatedBy} ${r.final.assessment}\n${r.final.text}\n根拠: ${r.final.cited.join(", ")}`
+        ? `${r.final.generatedBy} ${r.final.assessment}\n${r.final.text}\n根拠: ${r.final.cited.join(", ")}\n識別子（置換前）: ${r.final.identifiers.raw.join(", ") || "なし"} / （置換後）: ${r.final.identifiers.residual.join(", ") || "なし"}`
         : `障害: ${r.final.message}`;
     console.log(
       `[${done}/${total}] ${r.caseId}#${r.repeat}（${r.attempts.length} 回・${r.attempts.map((a) => a.ms).join(" / ")} ms・Solver ${r.solverStatus}）${final}\n`,

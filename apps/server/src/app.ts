@@ -117,6 +117,7 @@ export function buildApp(options: AppOptions = {}) {
     reveals: review.revealStore ?? new InMemoryRevealReviewStore(),
     followUps: review.followUpStore ?? new InMemoryFollowUpStore(),
     heroId,
+    players: setup.players,
     kb: review.kb ?? loadKb(),
     solver:
       review.solver ??

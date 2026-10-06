@@ -9,6 +9,7 @@ import {
   modelRoleFor,
   type GenerateReviewOptions,
 } from "./generate.js";
+import { playerNamesOf, sanitizeOutput } from "./identifiers.js";
 import type { ReviewCorrection } from "./review-ai.js";
 import {
   REVEAL_SYSTEM_PROMPT,
@@ -92,7 +93,11 @@ export async function generateRevealReview(
     const check = checkRevealOutput(output, evidence);
     options.onAttempt?.({ prompt, output, check });
     if (check.ok) {
-      const { evidenceIds, ...explanation } = check.value;
+      // 識別子の置換は Pass A と同じ（Retry はしない。#96）。
+      const { evidenceIds, ...explanation } = sanitizeOutput(
+        check.value,
+        playerNamesOf(evidence.context),
+      );
       return {
         ...base,
         concreteModel: model,

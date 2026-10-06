@@ -66,6 +66,8 @@ export interface DecisionContextEvidence {
   readonly currentBet: number;
   readonly seats: readonly {
     readonly playerId: string;
+    /** Hero の画面に出ている名前（文ではこの名前で呼ぶ。#96）。#96 より前に保存された Evidence には無い。 */
+    readonly displayName?: string;
     readonly position: PositionName;
     readonly isHero: boolean;
     readonly stack: number;

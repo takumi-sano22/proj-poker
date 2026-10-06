@@ -22,6 +22,7 @@ import type { LoadedKb } from "../kb/index.js";
 import type { SolverAdapter } from "../solver/types.js";
 import { buildReviewEvidence } from "./evidence.js";
 import { generateReview } from "./generate.js";
+import { toPlayerNames } from "./identifiers.js";
 import { generateRevealReview } from "./generate-reveal.js";
 import { FOLLOWUP_MAX_TURNS, generateFollowUp } from "./followup.js";
 import { buildRevealEvidence } from "./reveal-evidence.js";
@@ -117,6 +118,11 @@ export interface ReviewServiceDeps {
   /** Follow-up の履歴（review_followups）。 */
   readonly followUps: FollowUpStore;
   readonly heroId: string;
+  /** 卓の Player。Review の文で席を呼ぶ表示名（Hero の画面に出ている名前）を Evidence に添える（#96）。 */
+  readonly players: readonly {
+    readonly playerId: string;
+    readonly displayName: string;
+  }[];
   readonly kb: LoadedKb;
   readonly solver: SolverAdapter;
   /** Claude を呼ぶ子プロセスの環境（buildClaudeEnv の結果）。 */
@@ -509,6 +515,7 @@ export class ReviewService {
       extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
         ?.reasons ?? [];
     const evidence = await buildReviewEvidence(set, reasons, {
+      playerNames: toPlayerNames(this.deps.players),
       kb: this.deps.kb,
       solver: this.deps.solver,
       signal: this.closing.signal,
@@ -556,7 +563,13 @@ export class ReviewService {
     const reasons =
       extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
         ?.reasons ?? [];
-    const evidence = await buildRevealEvidence(set, reveal, events, reasons);
+    const evidence = await buildRevealEvidence(
+      set,
+      reveal,
+      events,
+      reasons,
+      toPlayerNames(this.deps.players),
+    );
     const draft = await generateRevealReview(evidence, {
       depth,
       actionSeq: set.decision.actionSeq,

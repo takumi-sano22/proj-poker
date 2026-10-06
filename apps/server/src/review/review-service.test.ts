@@ -2,6 +2,7 @@
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it } from "vitest";
 import type { ClaudeQuery } from "../claude/structured-query.js";
+import { PHASE1_TABLE_SETUP } from "../config.js";
 import { InMemoryEventStore } from "../event-store.js";
 import { loadKb } from "../kb/index.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
@@ -24,9 +25,11 @@ const solver = createAmaster97Adapter({
 /** abort されるまで何も返さない query（SDK と同じく、abort されたら例外で終わる）。渡された Options を記録する。 */
 function hangingQuery() {
   const options: Options[] = [];
+  const prompts: string[] = [];
   let active = 0;
   let maxActive = 0;
   const query: ClaudeQuery = (params) => {
+    prompts.push(params.prompt);
     options.push(params.options);
     const signal = params.options.abortController?.signal;
     return (async function* () {
@@ -48,7 +51,7 @@ function hangingQuery() {
       }
     })();
   };
-  return { query, options, maxActive: () => maxActive };
+  return { query, options, prompts, maxActive: () => maxActive };
 }
 
 function setup(query: ClaudeQuery, timeoutMs: number) {
@@ -63,6 +66,7 @@ function setup(query: ClaudeQuery, timeoutMs: number) {
     reveals: new InMemoryRevealReviewStore(),
     followUps: new InMemoryFollowUpStore(),
     heroId: "hero",
+    players: PHASE1_TABLE_SETUP.players,
     kb,
     solver,
     env: {},
@@ -92,6 +96,17 @@ describe("ReviewService", () => {
     });
     expect(fake.options[0]?.abortController?.signal.aborted).toBe(true);
     expect(reviews.list(handId, 0, "decision")).toEqual([]);
+  });
+
+  it("Review AI へ渡す Evidence の席に、卓の表示名（Hero の画面に出ている名前）を添える（#96）", async () => {
+    const fake = hangingQuery();
+    const { service, handId } = setup(fake.query, 20);
+    service.request(handId, 0, "standard");
+    await service.idle();
+    expect(fake.prompts[0]).toContain(
+      '"playerId":"cpu5","displayName":"CPU 5"',
+    );
+    expect(fake.prompts[0]).toContain('"playerId":"hero","displayName":"Hero"');
   });
 
   it("アプリの終了で進行中の呼び出しを止め、待ちの生成は始めない", async () => {

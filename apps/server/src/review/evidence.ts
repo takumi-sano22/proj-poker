@@ -16,6 +16,7 @@ import {
 import { searchKb, type LoadedKb } from "../kb/index.js";
 import type { KbSpot, KbSpotKind } from "../kb/types.js";
 import type { SolverAdapter } from "../solver/types.js";
+import type { PlayerNames } from "./identifiers.js";
 import { buildSolverEvidence } from "./solver-evidence.js";
 import type {
   DecisionContextEvidence,
@@ -27,6 +28,8 @@ import type {
 } from "./types.js";
 
 export interface EvidenceDeps {
+  /** playerId → 表示名（Hero の画面に出ている名前。#96）。Evidence の席に添える。 */
+  readonly playerNames?: PlayerNames;
   readonly kb: LoadedKb;
   readonly solver: SolverAdapter;
   /** Review の生成を止める（アプリ終了）。Solver の子プロセスも止める。 */
@@ -52,7 +55,12 @@ export async function buildReviewEvidence(
   deps: EvidenceDeps,
 ): Promise<ReviewEvidence> {
   const prefix = `${set.handId}/d${set.decision.index}`;
-  const context = decisionContext(set, importantSpotReasons, prefix);
+  const context = decisionContext(
+    set,
+    importantSpotReasons,
+    prefix,
+    deps.playerNames,
+  );
   const analysis = analyzeDecision(set);
   const math = mathEvidence(analysis, prefix);
   // Equity の計算は同期で数百 ms かかりうる。Hand の進行（SSE 等）を止め続けないよう、区切りごとに Event Loop へ戻す。
@@ -123,6 +131,7 @@ export function decisionContext(
   set: HeroInformationSet,
   importantSpotReasons: readonly ImportantSpotReason[],
   prefix: string,
+  playerNames: PlayerNames = {},
 ): DecisionContextEvidence {
   const { knowledge, decision } = set;
   const positionOf = (playerId: string) => {
@@ -147,6 +156,10 @@ export function decisionContext(
     currentBet: knowledge.currentBet,
     seats: knowledge.seats.map((s) => ({
       playerId: s.playerId,
+      // 表示名は Hero の画面に出ている名前だけ（Persona など画面に出ない設定は入れない。不変条件 2）。
+      ...(playerNames[s.playerId] === undefined
+        ? {}
+        : { displayName: playerNames[s.playerId] }),
       position: positionOf(s.playerId),
       isHero: s.playerId === knowledge.viewerId,
       stack: s.stack,

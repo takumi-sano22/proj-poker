@@ -11,14 +11,19 @@ import {
   ClaudeCallError,
   type ClaudeQuery,
 } from "../claude/structured-query.js";
-import { MODEL_ROLES } from "../config.js";
+import { MODEL_ROLES, PHASE1_TABLE_SETUP } from "../config.js";
 import { loadKb } from "../kb/index.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
+import { forbiddenKeys } from "../testing/leaks.js";
+import { withoutKbBodies } from "../testing/review-eval/harness.js";
 import { BTN_VS_UTG, playScriptedHand } from "../testing/review-eval/hands.js";
 import { allEvidenceIds, buildReviewEvidence } from "./evidence.js";
+import { toPlayerNames } from "./identifiers.js";
 import { REVIEW_MAX_TURNS, generateReview, modelRoleFor } from "./generate.js";
 import {
+  REVIEW_SYSTEM_PROMPT,
   REVIEW_TEXT_MAX,
+  buildReviewPrompt,
   checkReviewOutput,
   reviewOutputSchema,
 } from "./review-ai.js";
@@ -126,6 +131,65 @@ function scriptedQuery(outputs: readonly unknown[]) {
   };
   return { query, calls };
 }
+
+const named = await (async () => {
+  const sets = heroInformationSets(playScriptedHand(BTN_VS_UTG), "hero");
+  const set = sets[3] as HeroInformationSet;
+  return buildReviewEvidence(set, [], {
+    playerNames: toPlayerNames(PHASE1_TABLE_SETUP.players),
+    kb,
+    solver: notInstalled,
+  });
+})();
+
+describe("識別子の置換（#96・D101）", () => {
+  it("Evidence の席に表示名（Hero の画面に出ている名前）が添い、Persona は入らない", () => {
+    expect(named.context.seats.map((s) => [s.playerId, s.displayName])).toEqual(
+      PHASE1_TABLE_SETUP.players.map((p) => [p.playerId, p.displayName]),
+    );
+    expect(forbiddenKeys(withoutKbBodies(named))).toEqual([]);
+  });
+
+  it("Prompt に項目の説明と、識別子を書かない指示が入る", () => {
+    const prompt = buildReviewPrompt(named);
+    expect(prompt).toContain('"displayName":"CPU 3"');
+    expect(prompt).toContain("## Evidence の項目の説明");
+    expect(prompt).toContain("- potOdds: Pot Odds");
+    expect(REVIEW_SYSTEM_PROMPT).toContain("内部の識別子");
+    // Pass A の Prompt に、Hand 後（Pass B）の項目の名前を出さない。
+    expect(prompt).not.toContain("inAssumedRange");
+  });
+
+  it("出力に識別子があっても Retry せず、保存する説明は表示名と自然な言葉に置換する（根拠の id は触らない）", async () => {
+    const fake = scriptedQuery([
+      {
+        ...validOutput(named),
+        practical:
+          "cpu3 の Bet に対する Call。potOdds=0.4 で、heroHoleCards は AJo。",
+        assumptions: ["cpu3 の Range は標準の想定"],
+        conclusionChangers: ["cpu3 が Bluff を増やすなら結論が変わる"],
+      },
+    ]);
+    const draft = await generateReview(named, {
+      depth: "standard",
+      actionSeq: 1,
+      env: {},
+      query: fake.query,
+    });
+    expect(fake.calls).toHaveLength(1);
+    expect(draft).toMatchObject({
+      generatedBy: "review_ai",
+      failure: null,
+      explanation: {
+        practical:
+          "CPU 3 の Bet に対する Call。Pot Odds 0.4 で、Hero の札 は AJo。",
+        conclusionChangers: ["CPU 3 が Bluff を増やすなら結論が変わる"],
+      },
+      assumptions: ["CPU 3 の Range は標準の想定"],
+    });
+    expect(draft.evidenceIds.cited).toContain(named.math.id);
+  });
+});
 
 describe("checkReviewOutput", () => {
   it("検証を通る出力は、文字列の前後の空白を除いて返す", () => {

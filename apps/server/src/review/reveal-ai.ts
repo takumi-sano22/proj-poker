@@ -11,6 +11,7 @@ import {
   type ReviewCorrection,
   type ReviewInvalidStage,
 } from "./review-ai.js";
+import { evidenceGlossary } from "./identifiers.js";
 import { allRevealEvidenceIds } from "./reveal-evidence.js";
 import type { RevealEvidence, RevealExplanation } from "./reveal-types.js";
 
@@ -44,15 +45,16 @@ export const REVEAL_SYSTEM_PROMPT = [
   "# 守ること",
   "- 判断の良し悪しの評価は、判断時点の情報だけを使った別の Review（Decision Review）で済んでいます。この答え合わせで評価を付け直したり、結果（勝った・負けた・相手の実際の札）を理由に判断が良かった・悪かったと言ったりしないでください。結果と判断の質を分けて書いてください。",
   "- reveal の札は Hand の後に学習のためだけに見せた情報です。判断の時点で Hero は知り得なかったことを前提に書いてください。",
-  "- 数値（Equity・Combo 数・人数）は Evidence の値をそのまま使い、自分で計算し直したり作ったりしないでください。equity.actual は判断時点の Board からの、相手の実際の札に対する勝率、equity.assumed は判断時点に仮定した Range に対する勝率です。",
-  "- reveal.villains の inAssumedRange は、実際の札が判断時点に仮定した Range（assumedRange）に入っていたかです。1 Hand の結果だけで Range の想定が誤りだったとは断定しないでください。",
-  "- aggression の label（value / bluff）は aggression.rule の基準で決めた目安です。基準を添えて書いてください。",
+  "- 数値（Equity・Combo 数・人数）は Evidence の値をそのまま使い、自分で計算し直したり作ったりしないでください。「実際の札に対する Equity」は判断時点の Board からの、相手の実際の札に対する勝率、「仮定した Range に対する Equity」は判断時点に仮定した Range に対する勝率です。",
+  "- 相手ごとに、実際の札が判断時点に仮定した Range に入っていたかを Evidence に入れています。1 Hand の結果だけで Range の想定が誤りだったとは断定しないでください。",
+  "- Bet / Raise の value / bluff の区別は、Evidence に添えた基準で決めた目安です。基準を添えて書いてください。",
+  "- 文は Hero が読みます。内部の識別子（playerId・Evidence の項目名・英字と _ でつないだ値・Evidence の id）は文に書かず、席は seats の displayName、項目は「Evidence の項目の説明」の言葉で書いてください。Evidence の id は evidenceIds にだけ入れてください。",
   "- 額は Chip の実額で書いてください。",
   "",
   "# 出力（StructuredOutput ツールで、文章を書かずにすぐ返す。値はすべて JSON の文字列か文字列の配列。文は日本語）",
   "- readComparison: 読みと実際の比較（判断時点に仮定した相手の Range と、実際の札。Range に入っていたか）",
-  "- actualEquity: 実際の Equity（equity.actual）と、判断時点に仮定した Range に対する Equity（equity.assumed）の違いと、その違いから学べること",
-  "- bluffValue: Bluff / Value の答え合わせ（aggression の各 Action が value だったか bluff だったか）。aggression が空なら、Bet / Raise が無かったことを書く",
+  "- actualEquity: 実際の札に対する Equity と、判断時点に仮定した Range に対する Equity の違いと、その違いから学べること",
+  "- bluffValue: Bluff / Value の答え合わせ（各 Bet / Raise が value だったか bluff だったか）。Bet / Raise の記録が空なら、Bet / Raise が無かったことを書く",
   "- takeaways: 次に同じような Spot で活かせる点（結果ではなく、読みの立て方・Range の想定の幅について）",
   "- evidenceIds: 根拠にした Evidence の id",
 ].join("\n");
@@ -65,6 +67,7 @@ export function buildRevealPrompt(
   const sections = [
     "## Evidence（Card は 2 文字で、As はスペードの A、Td はダイヤの 10）",
     JSON.stringify(evidence, cardReplacer),
+    evidenceGlossary("reveal"),
   ];
   if (correction !== undefined) {
     sections.push(
