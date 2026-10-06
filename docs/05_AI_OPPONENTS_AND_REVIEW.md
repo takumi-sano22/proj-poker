@@ -132,6 +132,8 @@ Math EvidenceとRange Evidenceは、Engineの`analyzeDecision`（`packages/engin
 - Alternative Action: Legal ActionからFold / Check / Call / Bet（Potの半分・Pot）/ Raise（最小・Pot Size）/ All-inを候補にし、Heroが実際に選んだ額を足して、それぞれの必要Equity・簡易EV（Foldを0とした差。Check / Callはこの後のBetが無い前提、Bet / Raiseは相手全員がCallする前提でFold Equityを含めず、Break-even Fold Frequencyを別に示す）を出します。簡易EVはAssumption付きの目安で、GTO / Solverの値として表示しません（D20）。
 - 重要Spotでは`compareRangeProfiles`で標準・狭い（Tight）・広い（Loose）のRange想定ごとにEquityを比べられます（D08）。
 
+Knowledge Evidenceは、Local KB（`apps/server/kb/`。#80・D98・`docs/03` §9）の`searchKb`が、判断時点のSpotの特徴（Street・Position・Player数・Spotの種類・相手のPreflopのAction列）と全文の語から決定論で返します。各項目のID・Version・KB全体のVersionを`evidenceId`としてEvidenceに残します。KBは概念とPracticalな指針で、Math / Range Evidenceの数値を置き換えません（数値の根拠はEngine）。`label`がHEURISTIC / EXPLOITの項目は経験則として書き、断定しません。
+
 ## 7. Two-pass Review
 
 ### Pass A — Decision Review

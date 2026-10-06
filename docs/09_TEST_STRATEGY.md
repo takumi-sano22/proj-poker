@@ -147,6 +147,13 @@ Math / Equity / Range（#79。Engineの決定論のテスト）:
 - 性能の上限: Flopの手札 vs Range（全1326 Comboの全列挙を含む）・PreflopとMultiwayのMonte Carloを、それぞれ500ms以内で終えることをテストで守ります。
 - Decision Analysisは判断時点のInformation Setだけを入力にし、相手の実際の札・判断より後のBoardとActionを変えても結果が変わらないことを確かめます（Pass AにHindsight Leakがない）。
 
+Local KB（#80。`apps/server/src/kb/`のテスト）:
+
+- **Metadataの検証**: 必須項目の欠け・未知のTopic・未知の項目名・idとファイル名の不一致・実在しないdate・1未満のversion・書式の違うsourceなどを弾くことをテストで確かめます。実物のKB（`apps/server/kb/`）が全項目で検証を通り、sourceが`docs/research`の実在するファイル・節と`SOURCES.md`の見出しを指すこと、使っていないTopicが無いこと、本文が参照する項目IDが実在すること、1項目が研究資料の丸写しにならない長さであることも確かめます。
+- **KB全体のVersion**: 項目の内容のハッシュが`manifest.json`と一致すること（内容を変えてmanifestの更新を忘れるとテストが落ちる）。
+- **検索の決定性**: 同じ入力で同じ結果になること、項目の並び順に依らないこと、同点がidの昇順になること、Spotの特徴・Topic・全文の加点を手計算の値で確かめます。結果にKBのVersionと項目のID・Version・Evidence IDが入ることも確かめます。
+- 実物のKBで、代表的なSpot（Riverでの大きなBetへの直面・FlopのC-bet・BBのBlind Defense・Multiway）に対して、期待する項目が出ることを確かめます。
+
 ## 7. Solver Adapter Test
 
 - Capability Detection
