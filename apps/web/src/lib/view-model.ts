@@ -294,6 +294,12 @@ export function describeEvent(
     case "AI_FALLBACK_USED":
       // engine / system Visibility の Event。Hero の View には入らない（届いても表示しない）。
       return null;
+    case "PLAYER_DECLARED":
+    case "PHYSICAL_CHIP_ACTION":
+    case "DEALER_RULING":
+      // Hero の操作と Dealer の裁定（#64）。表示の文言（Dealer Feedback）は #66 で作るので、まだ行にしない。
+      // 裁定の結果の Chip の動きは、続く ACTION_TAKEN の行に出る。
+      return null;
   }
 }
 

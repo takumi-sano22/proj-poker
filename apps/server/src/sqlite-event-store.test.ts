@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   applyAction,
+  composeChips,
   foldHandEvents,
   getLegalActions,
   PHASE1_CASH_PRESET,
@@ -363,7 +364,7 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
-  it("CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED）も版 4 で保存し、再起動後に同じ Event Log を読み出せる", async () => {
+  it("CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED）も現在の版で保存し、再起動後に同じ Event Log を読み出せる", async () => {
     const store = open();
     const orchestrator = new HandOrchestrator({
       store,
@@ -403,7 +404,92 @@ describe("SqliteEventStore（保存の経路）", () => {
     try {
       expect(
         db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 5 }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("版 4 の行（CPU の判断の経緯を含む）は変換せずに読む。行は書き換えない（D76・D90）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    // 版 4 の Hand: 最初の手番の前に AI_ACTION_INVALID を挟む（以降の seq を 1 つずつずらす）。
+    const actor = getLegalActions(foldHandEvents(started))?.playerId;
+    if (actor === undefined) throw new Error("手番が無い");
+    const v4: HandEvent[] = [
+      ...started,
+      {
+        type: "AI_ACTION_INVALID",
+        playerId: actor,
+        attempt: 1,
+        stage: "schema",
+        reason: "不正",
+        seq: started.length,
+        visibility: { type: "system" },
+      },
+      ...rest.map((e) => ({ ...e, seq: e.seq + 1 })),
+    ];
+    insertRows("h1", 4, v4);
+
+    expect(
+      open()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(v4);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
       ).toEqual([{ schema_version: 4 }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("Hero の宣言・Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING）を版 5 で保存し、再起動後に同じ Event Log を読み出せる（D90）", async () => {
+    const store = open();
+    const orchestrator = new HandOrchestrator({
+      store,
+      setup: PHASE1_TABLE_SETUP,
+      createOpponent: createRuleBot,
+      botDelayMs: 0,
+      opponentTimeoutMs: 1000,
+      nextSeed: () => 42,
+      nextHandId: () => "hand-1",
+    });
+    const started = await orchestrator.startHand(null);
+    if (!started.ok) throw new Error(started.error.message);
+    let view: HeroView = started.value.view;
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      // Hero は Call 額ちょうどの Chip を出す（宣言なし → Call）か、Call 額が 0 なら Check を宣言する。
+      const call = view.legalActions?.actions.find((a) => a.type === "call");
+      const result = await orchestrator.heroPhysicalAction(
+        "hand-1",
+        view.log.at(-1)?.seq ?? -1,
+        call?.type === "call"
+          ? [{ type: "chip_push", chips: chipsFor(call.amount) }]
+          : [{ type: "declare", declaration: { kind: "check" } }],
+      );
+      if (!result.ok) throw new Error(result.error.message);
+      view = result.value;
+    }
+    orchestrator.close();
+    const before = store.read("hand-1").map((s) => s.event);
+    const types = new Set(before.map((e) => e.type));
+    expect(types.has("PLAYER_DECLARED")).toBe(true);
+    expect(types.has("PHYSICAL_CHIP_ACTION")).toBe(true);
+    expect(types.has("DEALER_RULING")).toBe(true);
+
+    expect(
+      reopen()
+        .read("hand-1")
+        .map((s) => s.event),
+    ).toEqual(before);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 5 }]);
     } finally {
       db.close();
     }
@@ -445,10 +531,16 @@ describe("SqliteEventStore（保存の経路）", () => {
   });
 });
 
-/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4 で足した種類は版 2 に無いので渡さない。 */
+/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4・5 で足した種類は版 2 に無いので渡さない。 */
 function toV2(events: readonly HandEvent[]): HandEventV2[] {
   return events.map((e): HandEventV2 => {
-    if (e.type === "AI_ACTION_INVALID" || e.type === "AI_FALLBACK_USED") {
+    if (
+      e.type === "AI_ACTION_INVALID" ||
+      e.type === "AI_FALLBACK_USED" ||
+      e.type === "PLAYER_DECLARED" ||
+      e.type === "PHYSICAL_CHIP_ACTION" ||
+      e.type === "DEALER_RULING"
+    ) {
       throw new Error(`版 2 に無い Event: ${e.type}`);
     }
     if (e.type !== "HAND_STARTED") return e;
@@ -456,6 +548,13 @@ function toV2(events: readonly HandEvent[]): HandEventV2[] {
     delete v2.reopenRule;
     return v2 as HandEventV2;
   });
+}
+
+/** 額ちょうどの Chip の額面の列（大きい額面から）。 */
+function chipsFor(amount: number): number[] {
+  return composeChips(amount).flatMap((c) =>
+    Array.from({ length: c.count }, () => c.denomination.value),
+  );
 }
 
 /** Call できれば Call、できなければ Check、どちらも無ければ Fold。 */

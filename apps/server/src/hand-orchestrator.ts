@@ -12,15 +12,19 @@
 //   RuleBot にし、手番ごとに AI_FALLBACK_USED の emergency_bot を残す）/ Session 終了（その Hand を打ち切り、次は新しい Session）。
 //   選ぶまでは止めたまま（Pause）。Hero に返す障害の情報は「どの CPU の手番か・障害の種類」だけで、エラー本文は返さない。
 // - CPU に渡すのはその CPU の KnowledgeState（projectKnowledgeState）と Legal Action だけ、Hero へ返すのは projectHeroView だけ（D28・D71・D73）。
+// - Hero の物理的な操作（宣言・Chip を出す・足す）は Ruling Engine で Canonical Action に裁定し、操作と裁定も Event Log に残す
+//   （heroPhysicalAction。D90・D91）。手番でない操作は保留し、Hero の手番が来た時点で拘束か撤回かを裁定する（runCpuTurns）。
 import { randomUUID } from "node:crypto";
 import {
   applyAction,
+  applyPhysicalActions,
   foldHandEvents,
   getLegalActions,
   nextHandSeating,
   projectHeroView,
   projectKnowledgeState,
   recordAiEvent,
+  resolvePendingOutOfTurn,
   startHand,
   type EngineError,
   type FallbackKind,
@@ -28,6 +32,7 @@ import {
   type HandProgress,
   type HandState,
   type HeroView,
+  type PhysicalAction,
   type PlayerAction,
   type SeatInit,
 } from "@proj-poker/engine";
@@ -335,21 +340,60 @@ export class HandOrchestrator {
     const rt = this.hands.get(handId);
     if (rt === undefined) return notFound(handId);
     const events = this.events(handId);
-    const seen = projectHeroView(events, this.heroId).log.at(-1)?.seq;
-    if (seen !== lastSeq) {
-      return {
-        ok: false,
-        error: {
-          kind: "stale_view",
-          message: `卓の状態が更新されている（最新の seq は ${seen}、送信は ${lastSeq}）`,
-        },
-      };
-    }
+    const stale = this.staleView(events, lastSeq);
+    if (stale !== null) return stale;
     const result = applyAction(foldHandEvents(events), this.heroId, action);
     if (!result.ok) return result;
     this.commit(rt, result.value.events);
     await this.proceed(rt);
     return { ok: true, value: this.heroViewOf(handId) };
+  }
+
+  /**
+   * Hero の物理的な操作（した順の宣言・Chip を出す・足す）を Ruling Engine で裁定し、操作・裁定・決まった Action を
+   * 1 回で Event Log へ追記する（D90・D91）。lastSeq の扱いは heroAction と同じ。
+   * 手番でなければ Out-of-Turn として保留し（CPU は保留を公開の事実として KnowledgeState で見る）、Hero の手番が来た時点で
+   * runCpuTurns が拘束か撤回かを裁定する。その後、次に Hero の手番が来るか Hand が終わるまで CPU を進める。
+   */
+  async heroPhysicalAction(
+    handId: string,
+    lastSeq: number,
+    actions: readonly PhysicalAction[],
+  ): Promise<OrchestratorResult<HeroView>> {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return notFound(handId);
+    const events = this.events(handId);
+    const stale = this.staleView(events, lastSeq);
+    if (stale !== null) return stale;
+    const result = applyPhysicalActions(
+      foldHandEvents(events),
+      this.heroId,
+      actions,
+      this.options.setup.table,
+    );
+    if (!result.ok) return result;
+    this.commit(rt, result.value.events);
+    await this.proceed(rt);
+    return { ok: true, value: this.heroViewOf(handId) };
+  }
+
+  /**
+   * Hero が見ていた HeroView の log の最後の seq（lastSeq）より Log が進んでいれば stale_view を返す
+   * （二重送信や、CPU の行動を見る前の画面からの送信を、手番の判定より先に弾く）。
+   */
+  private staleView(
+    events: readonly HandEvent[],
+    lastSeq: number,
+  ): { ok: false; error: OrchestratorError } | null {
+    const seen = projectHeroView(events, this.heroId).log.at(-1)?.seq;
+    if (seen === lastSeq) return null;
+    return {
+      ok: false,
+      error: {
+        kind: "stale_view",
+        message: `卓の状態が更新されている（最新の seq は ${seen}、送信は ${lastSeq}）`,
+      },
+    };
   }
 
   /** Hero に見える卓の状態。未知の Hand なら null。 */
@@ -600,8 +644,16 @@ export class HandOrchestrator {
     try {
       while (this.canRun(rt)) {
         const events = this.events(rt.handId);
-        const legal = getLegalActions(foldHandEvents(events));
-        if (legal === null || legal.playerId === this.heroId) return;
+        const state = foldHandEvents(events);
+        const legal = getLegalActions(state);
+        if (legal === null) return;
+        if (legal.playerId === this.heroId) {
+          // Hero の手番。保留した Out-of-Turn があれば、ここで拘束か撤回かを裁定する（D91）。
+          // 拘束して Action が決まれば次の手番へ続き、撤回なら Hero が選び直すので止まる。
+          if (state.pendingOutOfTurn?.playerId !== this.heroId) return;
+          this.resolveHeroOutOfTurn(rt, state);
+          continue;
+        }
         const expectedSeq = events.length;
         if (this.options.botDelayMs > 0) {
           await this.wait(rt, this.options.botDelayMs);
@@ -611,6 +663,17 @@ export class HandOrchestrator {
     } catch (error) {
       this.fail(rt, error);
     }
+  }
+
+  /** 保留した Hero の Out-of-Turn を裁定し、裁定（と決まった Action）を 1 回で追記する。 */
+  private resolveHeroOutOfTurn(rt: HandRuntime, state: HandState): void {
+    const resolved = resolvePendingOutOfTurn(state, this.options.setup.table);
+    if (!resolved.ok) {
+      throw new Error(
+        `保留した Out-of-Turn を裁定できない: ${resolved.error.message}`,
+      );
+    }
+    this.commit(rt, resolved.value.events);
   }
 
   private canRun(rt: HandRuntime): boolean {

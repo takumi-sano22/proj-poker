@@ -56,6 +56,8 @@ export type {
   HandEventType,
   InvalidOutputStage,
   PlayerChips,
+  RulingBasis,
+  RulingOutcome,
   SeatInit,
   Street,
   Visibility,
@@ -73,12 +75,19 @@ export type {
   PlayerAction,
 } from "./legal-actions.js";
 
-export { applyAction, recordAiEvent, startHand } from "./hand-engine.js";
+export {
+  applyAction,
+  applyPhysicalActions,
+  recordAiEvent,
+  resolvePendingOutOfTurn,
+  startHand,
+} from "./hand-engine.js";
 export type {
   AiEventBody,
   EngineError,
   EngineResult,
   HandProgress,
+  PhysicalProgress,
   StartHandInput,
 } from "./hand-engine.js";
 
@@ -105,6 +114,7 @@ export type {
   KnowledgeState,
   PositionInfo,
   PublicActionRecord,
+  PublicRulingRecord,
   SeatView,
   TableView,
 } from "./projection.js";

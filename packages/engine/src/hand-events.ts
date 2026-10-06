@@ -1,7 +1,10 @@
 // Hand の Event 型と Visibility。Event Log が唯一の正本で、State は Event の畳み込みで作る（D37・docs/04 §1）。
-// Event 種別は docs/04 §3 のうち Phase 1 で必要なものと、CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED。D83）を持つ
+// Event 種別は docs/04 §3 のうち Phase 1 で必要なものと、CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED。D83）と、
+// Hero の宣言・物理的な Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING。D90）を持つ
 // （統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
+import type { CanonicalAction } from "./legal-actions.js";
+import type { Declaration, RulingCode } from "./ruling.js";
 import type { OddChipRule, ReopenRule } from "./table-config.js";
 
 /**
@@ -33,6 +36,21 @@ export type InvalidOutputStage = "schema" | "legal_action" | "amount_range";
  * - emergency_bot: 障害の後にユーザーが選んだ Emergency Bot（D86。発行は #52）
  */
 export type FallbackKind = "automatic" | "emergency_bot";
+
+/**
+ * Dealer の裁定が何を対象にしたか（D90）。
+ * - operations: 直前に置いた同じ Player の PLAYER_DECLARED / PHYSICAL_CHIP_ACTION（同じ追記で置く）
+ * - pending_out_of_turn: 保留していた Out-of-Turn の操作（その Player の手番が来た時点で裁定した。直前に操作の Event は無い）
+ */
+export type RulingBasis = "operations" | "pending_out_of_turn";
+
+/**
+ * 裁定の結果の種類（ruling.ts の RulingResult.kind）。
+ * - action: Canonical Action に決まった（直後の Event がその ACTION_TAKEN）
+ * - out_of_turn: 手番でない操作。手番を正しい Player へ戻して警告し、操作を保留した
+ * - no_action: Action を決めない（相手の Bet があるときの Check の宣言・撤回した Out-of-Turn）。その Player が選び直す
+ */
+export type RulingOutcome = "action" | "out_of_turn" | "no_action";
 
 export interface SeatInit {
   readonly playerId: string;
@@ -124,6 +142,36 @@ export type HandEventBody =
       readonly stacks: readonly PlayerChips[];
     }
   | {
+      // Hero の口頭の宣言（D90）。卓の State（Chip・手番）は変えない。直後に同じ追記の操作の Event か DEALER_RULING が続く。
+      readonly type: "PLAYER_DECLARED";
+      readonly playerId: string;
+      readonly street: Street;
+      readonly declaration: Declaration;
+    }
+  | {
+      // Hero が Chip を出した 1 回の動作（D90）。卓の State は変えない（Chip が動くのは裁定の後の ACTION_TAKEN）。
+      readonly type: "PHYSICAL_CHIP_ACTION";
+      readonly playerId: string;
+      readonly street: Street;
+      /** chip_push は最初の動作、chip_add は 2 回目以降（String Bet の判定に使う）。 */
+      readonly motion: "chip_push" | "chip_add";
+      /** 出した Chip の額面の列。 */
+      readonly chips: readonly number[];
+    }
+  | {
+      // Dealer の裁定（Dealer Feedback の RULING。docs/02 §8・D90）。卓の State（Chip・手番）は変えない。
+      // outcome が action なら、直後の Event が同じ Player のその Canonical Action の ACTION_TAKEN（同じ追記で置く）。
+      readonly type: "DEALER_RULING";
+      readonly playerId: string;
+      readonly street: Street;
+      readonly basis: RulingBasis;
+      readonly outcome: RulingOutcome;
+      /** outcome が action のときの Canonical Action。それ以外は null。 */
+      readonly action: CanonicalAction | null;
+      /** 裁定の理由（表示の文言は呼び出し側が持つ）。 */
+      readonly notes: readonly RulingCode[];
+    }
+  | {
       // CPU の出力を検証で不正と判定した（D41・D83）。Retry で正常に戻った不正も残す。卓の State は変えない。
       // その手番の Action（ACTION_TAKEN）より前に置く（seq は Event 自身の seq）。
       readonly type: "AI_ACTION_INVALID";
@@ -165,6 +213,10 @@ export function visibilityOf(body: HandEventBody): Visibility {
     case "AI_ACTION_INVALID":
     case "AI_FALLBACK_USED":
       return { type: "system" };
+    // Hero の宣言・Chip の操作・Dealer の裁定は、卓の全員が見聞きする事実（D90）。
+    case "PLAYER_DECLARED":
+    case "PHYSICAL_CHIP_ACTION":
+    case "DEALER_RULING":
     case "HAND_STARTED":
     case "BLIND_POSTED":
     case "ACTION_TAKEN":

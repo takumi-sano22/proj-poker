@@ -8,10 +8,17 @@ import {
   type ActionType,
   type HandEvent,
   type PlayerChips,
+  type RulingBasis,
+  type RulingOutcome,
   type Street,
 } from "./hand-events.js";
 import { foldHandEvents, type HandState } from "./hand-state.js";
-import { getLegalActions, type LegalActionSet } from "./legal-actions.js";
+import {
+  getLegalActions,
+  type CanonicalAction,
+  type LegalActionSet,
+} from "./legal-actions.js";
+import type { PhysicalAction, RulingCode } from "./ruling.js";
 
 export interface SeatView {
   readonly playerId: string;
@@ -61,6 +68,22 @@ export interface PublicActionRecord {
   readonly allIn: boolean;
 }
 
+/**
+ * 公開された Dealer の裁定の記録（Hero の宣言・Chip の操作と、それへの裁定。D90）。
+ * 卓の全員が見聞きする事実（public の PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING）だけから作る。
+ */
+export interface PublicRulingRecord {
+  readonly playerId: string;
+  readonly street: Street;
+  readonly basis: RulingBasis;
+  /** 裁定した操作（した順）。保留した Out-of-Turn の裁定（basis: pending_out_of_turn）では、保留した操作。 */
+  readonly operations: readonly PhysicalAction[];
+  readonly outcome: RulingOutcome;
+  /** outcome が action のときの Canonical Action（その結果の ACTION_TAKEN は actionHistory にもある）。 */
+  readonly action: CanonicalAction | null;
+  readonly notes: readonly RulingCode[];
+}
+
 /** 自分の Position。席順（時計回り）と Button から決まる公開情報。 */
 export interface PositionInfo {
   /** Button から時計回りに数えた席の距離（0 = Button）。Heads-Up では Button = SB なので 0 が SB、1 が BB。 */
@@ -96,6 +119,11 @@ export interface KnowledgeState extends TableView {
   readonly position: PositionInfo;
   /** 自分が観察できた Public Action の履歴（時系列）。 */
   readonly actionHistory: readonly PublicActionRecord[];
+  /**
+   * Hero の操作への Dealer の裁定の履歴（時系列。手番でない操作の保留と、その後の拘束・撤回を含む）。
+   * 裁定が 1 つも無い Hand では項目ごと持たない（Hero が物理的な操作をしない Hand で、CPU への入力〔Prompt〕を変えないため）。
+   */
+  readonly rulingHistory?: readonly PublicRulingRecord[];
   readonly math: DecisionMath;
 }
 
@@ -133,6 +161,7 @@ export function projectKnowledgeState(
       });
     }
   }
+  const rulingHistory = rulingRecords(visible);
   const table = buildTableView(visible, playerId);
   const seatIndex = table.seats.findIndex((s) => s.playerId === playerId);
   const me = table.seats[seatIndex] as SeatView;
@@ -146,8 +175,45 @@ export function projectKnowledgeState(
       playerCount,
     },
     actionHistory,
+    ...(rulingHistory.length > 0 ? { rulingHistory } : {}),
     math: decisionMath(table, me),
   };
+}
+
+/**
+ * 見える Event から裁定の記録を組む。操作の Event は直後の DEALER_RULING（basis: operations）にまとめ、
+ * 保留した Out-of-Turn の裁定には保留した操作を添える。
+ */
+function rulingRecords(visible: readonly HandEvent[]): PublicRulingRecord[] {
+  const records: PublicRulingRecord[] = [];
+  let operations: PhysicalAction[] = [];
+  const held = new Map<string, readonly PhysicalAction[]>();
+  for (const e of visible) {
+    if (e.type === "PLAYER_DECLARED") {
+      operations.push({ type: "declare", declaration: e.declaration });
+    } else if (e.type === "PHYSICAL_CHIP_ACTION") {
+      operations.push({ type: e.motion, chips: e.chips });
+    } else if (e.type === "DEALER_RULING") {
+      const ops =
+        e.basis === "operations" ? operations : (held.get(e.playerId) ?? []);
+      if (e.basis === "operations") {
+        if (e.outcome === "out_of_turn") held.set(e.playerId, ops);
+        operations = [];
+      } else {
+        held.delete(e.playerId);
+      }
+      records.push({
+        playerId: e.playerId,
+        street: e.street,
+        basis: e.basis,
+        operations: ops,
+        outcome: e.outcome,
+        action: e.action,
+        notes: e.notes,
+      });
+    }
+  }
+  return records;
 }
 
 /** 公開情報だけから Call 額・Pot Odds・有効 Stack・SPR を計算する。 */

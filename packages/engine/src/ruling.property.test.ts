@@ -1,10 +1,16 @@
 // Ruling Engine の Property テスト（poker-engine-testing §5）。Hero の物理的な操作をランダムに作って Hand を最後まで進め、
 // 裁定した Canonical Action が必ず合法（applyAction が拒否しない。D40）であることと、各ステップの Invariant
 // （INV-TEST-001〜005。Chip 保存を含む）・Event の畳み込みを確かめる。Out-of-Turn も混ぜる。
+// 操作と裁定を Event にする経路（applyPhysicalActions / resolvePendingOutOfTurn。D90）でも同じことを確かめる。
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { HandEvent, SeatInit } from "./hand-events.js";
-import { applyAction, startHand } from "./hand-engine.js";
+import {
+  applyAction,
+  applyPhysicalActions,
+  resolvePendingOutOfTurn,
+  startHand,
+} from "./hand-engine.js";
 import { foldHandEvents } from "./hand-state.js";
 import {
   getLegalActions,
@@ -169,6 +175,110 @@ function playWithRuling(
   }
 }
 
+/**
+ * playWithRuling と同じ進め方を、操作と裁定を Event にする経路で行う。保留は State（pendingOutOfTurn）だけが持ち、
+ * 呼び出し側は覚えない（Event の並びだけで保留 → 拘束 / 撤回を復元できることを確かめる）。
+ */
+function playWithEvents(
+  seats: readonly SeatInit[],
+  seed: number,
+  choices: readonly number[],
+): void {
+  const started = startHand({
+    handId: "ruling-events-prop",
+    seats,
+    buttonPlayerId: (seats[seed % seats.length] as SeatInit).playerId,
+    config: PHASE1_CASH_PRESET,
+    deal: { seed },
+  });
+  if (!started.ok) throw new Error(started.error.message);
+  const total = initialChipTotal(seats);
+  let state = started.value.state;
+  const events: HandEvent[] = [...started.value.events];
+  let cursor = 0;
+  const next = () => choices[cursor++ % choices.length] ?? 0;
+  const take = (r: ReturnType<typeof applyAction>) => {
+    if (!r.ok) throw new Error(r.error.message);
+    state = r.value.state;
+    events.push(...r.value.events);
+    expect(checkInvariants(state, total)).toEqual([]);
+    expect(foldHandEvents(events)).toEqual(state);
+  };
+
+  for (let step = 0; state.status === "in_progress"; step++) {
+    if (step >= MAX_STEPS) throw new Error("Hand が終わらない");
+    const legal = getLegalActions(state);
+    if (legal === null) throw new Error("進行中なのに Actor がいない");
+    const hero = state.players.find((p) => p.playerId === HERO);
+    const heroCanAct = hero !== undefined && !hero.folded && !hero.allIn;
+
+    if (
+      legal.playerId !== HERO &&
+      heroCanAct &&
+      state.pendingOutOfTurn === null &&
+      next() % 4 === 0
+    ) {
+      const r = applyPhysicalActions(
+        state,
+        HERO,
+        physicalFrom(next, hero.stack),
+        PHASE1_CASH_PRESET,
+      );
+      take(r);
+      // 手番でない操作は保留だけが残り、手番は変わらない。
+      expect(r.ok && r.value.ruling.kind).toBe("out_of_turn");
+      // （state は take の中で更新するので、Event の畳み込みから読む。）
+      expect(foldHandEvents(events).pendingOutOfTurn?.playerId).toBe(HERO);
+      expect(getLegalActions(state)).toEqual(legal);
+    }
+
+    if (legal.playerId === HERO && hero !== undefined) {
+      const r =
+        state.pendingOutOfTurn !== null
+          ? resolvePendingOutOfTurn(state, PHASE1_CASH_PRESET)
+          : applyPhysicalActions(
+              state,
+              HERO,
+              physicalFrom(next, hero.stack),
+              PHASE1_CASH_PRESET,
+            );
+      take(r);
+      expect(state.pendingOutOfTurn).toBeNull();
+      if (r.ok && r.value.ruling.kind === "action") continue;
+    }
+    // CPU の手番、または Hero が選び直す（no_action）ときは Legal Action から選ぶ。
+    take(
+      applyAction(
+        state,
+        legal.playerId,
+        canonicalFrom(
+          legal.actions[next() % legal.actions.length] as LegalAction,
+          next(),
+        ),
+      ),
+    );
+  }
+
+  // 操作・裁定は public で、Action に決まった裁定の直後は同じ Player の ACTION_TAKEN。
+  events.forEach((e, i) => {
+    if (
+      e.type !== "PLAYER_DECLARED" &&
+      e.type !== "PHYSICAL_CHIP_ACTION" &&
+      e.type !== "DEALER_RULING"
+    ) {
+      return;
+    }
+    expect(e.visibility).toEqual({ type: "public" });
+    expect(e.playerId).toBe(HERO);
+    if (e.type === "DEALER_RULING" && e.outcome === "action") {
+      expect(events[i + 1]).toMatchObject({
+        type: "ACTION_TAKEN",
+        playerId: HERO,
+      });
+    }
+  });
+}
+
 describe("Ruling Engine（Property）", () => {
   it("裁定した Canonical Action は常に合法で、Invariant を壊さない", () => {
     fc.assert(
@@ -185,6 +295,27 @@ describe("Ruling Engine（Property）", () => {
             .slice(0, n)
             .map((stack, i) => ({ playerId: `p${i}`, stack }));
           playWithRuling(seats, seed, choices);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it("操作と裁定を Event にしても、裁定した Action は常に合法で、Invariant と Event の畳み込みを保つ（D90）", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 6 }),
+        fc.array(fc.integer({ min: 20, max: 2000 }), {
+          minLength: 6,
+          maxLength: 6,
+        }),
+        fc.integer({ min: 0, max: 2 ** 31 - 1 }),
+        fc.array(fc.nat(), { minLength: 1, maxLength: 200 }),
+        (n, stacks, seed, choices) => {
+          const seats = stacks
+            .slice(0, n)
+            .map((stack, i) => ({ playerId: `p${i}`, stack }));
+          playWithEvents(seats, seed, choices);
         },
       ),
       { numRuns: 300 },

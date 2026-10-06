@@ -2,9 +2,21 @@
 // 保存済みの行は書き換えない（events は append-only。D37）。読むたびに同じ変換をする。
 import type { HandEvent } from "@proj-poker/engine";
 
+/** 版 1〜4 に無い Event（Hero の宣言・Chip の操作・Dealer の裁定。版 5 で足した。D90）。 */
+type LiveEventV5 = Extract<
+  HandEvent,
+  { type: "PLAYER_DECLARED" | "PHYSICAL_CHIP_ACTION" | "DEALER_RULING" }
+>;
+
+/**
+ * 版 4 の Event。版 5 は Event の種類（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING）を足しただけで、
+ * 版 4 にあった Event の形は変えていないので、版 4 の Event はそのまま版 5 の Event として読める（変換は要らない）。
+ */
+export type HandEventV4 = Exclude<HandEvent, LiveEventV5>;
+
 /** 版 1〜3 に無い Event（CPU の判断の経緯。版 4 で足した。D83）。 */
 type AiEventV4 = Extract<
-  HandEvent,
+  HandEventV4,
   { type: "AI_ACTION_INVALID" | "AI_FALLBACK_USED" }
 >;
 
@@ -12,7 +24,7 @@ type AiEventV4 = Extract<
  * 版 3 の Event。版 4 は Event の種類（AI_ACTION_INVALID / AI_FALLBACK_USED）を足しただけで、
  * 版 3 にあった Event の形は変えていないので、版 3 の Event はそのまま版 4 の Event として読める（変換は要らない）。
  */
-export type HandEventV3 = Exclude<HandEvent, AiEventV4>;
+export type HandEventV3 = Exclude<HandEventV4, AiEventV4>;
 
 /** 版 1・2 の HAND_STARTED（reopenRule が無い）。 */
 type HandStartedV2 = Omit<
