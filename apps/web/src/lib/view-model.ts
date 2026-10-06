@@ -341,6 +341,7 @@ export function describeEvent(
     case "HAND_FINISHED":
       return "Hand 終了";
     case "DECK_SHUFFLED":
+    case "HAND_METADATA_RECORDED":
     case "AI_ACTION_INVALID":
     case "AI_FALLBACK_USED":
     case "SESSION_STARTED":

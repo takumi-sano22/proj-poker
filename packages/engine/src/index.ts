@@ -50,6 +50,8 @@ export type { Pot, PotContributor } from "./side-pots.js";
 export { isVisibleTo, visibilityOf } from "./hand-events.js";
 export type {
   ActionType,
+  CpuProviderKind,
+  CpuSeatMetadata,
   FallbackKind,
   HandAbortReason,
   HandEvent,
@@ -90,6 +92,7 @@ export type {
   AiEventBody,
   EngineError,
   EngineResult,
+  HandMetadataInput,
   HandProgress,
   PhysicalProgress,
   SessionEventBody,

@@ -28,6 +28,7 @@ import {
   hiddenMarkers,
   leakedCards,
   tamperHiddenEvents,
+  testMetadata,
 } from "./testing/view-leaks.js";
 
 const MAX_STEPS = 500;
@@ -54,6 +55,8 @@ function playHand(
     buttonPlayerId,
     config: PHASE1_CASH_PRESET,
     deal: { seed },
+    // system Visibility の Metadata（#97）も混ぜ、View・KnowledgeState・Hero Information Set に届かないことを一緒に確かめる。
+    metadata: testMetadata(seats),
   });
   // 正しい入力の開始は拒否されない（Stack が Blind に満たなくても Blind で All-in して始まる）。
   if (!started.ok) throw new Error(started.error.message);

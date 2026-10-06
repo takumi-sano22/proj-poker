@@ -2,7 +2,8 @@
 // Event 種別は docs/04 §3 のうち Phase 1 で必要なものと、CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED。D83）と、
 // Hero の宣言・物理的な Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING。D90）と、
 // Session の開始・終了、Hand の打ち切り、Emergency Bot への切り替え（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED /
-// EMERGENCY_BOT_ENGAGED。D95）を持つ（統合した種別は docs/04 §3 の構成表を参照）。
+// EMERGENCY_BOT_ENGAGED。D95）と、Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）を持つ
+// （統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
 import type { CanonicalAction } from "./legal-actions.js";
 import type { Declaration, RulingCode } from "./ruling.js";
@@ -14,7 +15,7 @@ import type { OddChipRule, ReopenRule } from "./table-config.js";
  * - private: 指定 Player だけ（自分の Hole Cards）
  * - engine: Engine 内部専用。どの Player の Projection にも入れない（Deck の順序＝未来の Card）
  * - system: 卓の外の運用記録（CPU の不正な出力・Fallback の利用。D83。Session の開始・終了・Hand の打ち切り・
- *   Emergency Bot への切り替え。D95）。CPU の出力の値を含みうるので、Hero・CPU（本人を含む）のどの Projection にも入れない。
+ *   Emergency Bot への切り替え。D95。Hand ごとの Best-effort Metadata。#97）。CPU の出力の値を含みうるので、Hero・CPU（本人を含む）のどの Projection にも入れない。
  *   読むのは Server（Session の Resume・Debug・Review の集計）だけ
  * learning_only（Review 用の開示）はまだ発行しない。
  */
@@ -72,6 +73,23 @@ export type SessionEndReason =
 
 /** Hand を途中で打ち切った理由（D95）。ai_outage: CPU の障害のダイアログで Hero が Session 終了を選んだ。 */
 export type HandAbortReason = "ai_outage";
+
+/**
+ * その Hand の開始時点で、CPU の判断に使う実装（#97）。
+ * - rule_bot: 決定論の RuleBot（既定。D71）/ claude: Claude（Model Role で解決したモデル。D85・D87）/
+ *   emergency_bot: 障害の後に Hero が選んだ Emergency Bot（D86。Session の終わりまで RuleBot で動く）
+ */
+export type CpuProviderKind = "rule_bot" | "claude" | "emergency_bot";
+
+/** 席ごとの CPU の実装の記録（#97）。Persona の割り当ては入れない（他 CPU の Secret Persona。D28・docs/04 §10）。 */
+export interface CpuSeatMetadata {
+  readonly playerId: string;
+  readonly provider: CpuProviderKind;
+  /** claude のときの Model Role（例: opponent_fast）。rule_bot / emergency_bot は null。 */
+  readonly modelRole: string | null;
+  /** Model Role を role-based config で解決した具体モデル名。rule_bot / emergency_bot は null。 */
+  readonly model: string | null;
+}
 
 export interface SeatInit {
   readonly playerId: string;
@@ -238,6 +256,23 @@ export type HandEventBody =
       readonly playerId: string;
       /** 切り替えのきっかけの障害の種類（内部のエラー本文は入れない）。 */
       readonly cause: OutageKind;
+    }
+  | {
+      // Hand ごとの Best-effort な Debug / Re-analysis 用 Metadata（docs/04 §9・#97）。HAND_STARTED の直後（seq 1）に置く。
+      // 卓の State は変えず、Replay・Review の入力にも使わない（完全な Re-simulation を保証するものではない）。
+      // AI の Request / Response の生データは入れない（容量と機密。D100）。
+      readonly type: "HAND_METADATA_RECORDED";
+      /** アプリの版（apps/server の package.json の version）。 */
+      readonly appVersion: string;
+      /** Rule Profile の版つき ID（HAND_STARTED の ruleProfile と同じ値。Metadata だけで版が分かるよう写す）。 */
+      readonly ruleProfileVersion: string;
+      /**
+       * CPU の性格の Preset 一式の版（Persona Profile Version。docs/04 §9 の CPU Profile Version）。
+       * どの CPU にどの Preset を割り当てたかは入れない（Secret Persona。割り当ては Session Projection にだけ置く）。
+       */
+      readonly cpuProfileVersion: string;
+      /** この Hand に座った CPU の実装（席順）。Hero は入れない。 */
+      readonly cpuSeats: readonly CpuSeatMetadata[];
     };
 
 export type HandEventType = HandEventBody["type"];
@@ -258,8 +293,9 @@ export function visibilityOf(body: HandEventBody): Visibility {
       return { type: "private", playerId: body.playerId };
     case "DECK_SHUFFLED":
       return { type: "engine" };
-    // CPU の判断の経緯（D83）と、Session・Hand の運用の記録（D95）。Hero の View・CPU の KnowledgeState・Replay には入れない
-    // （Hero へは Session の状態を API が別に返す）。
+    // CPU の判断の経緯（D83）と、Session・Hand の運用の記録（D95）と、Hand ごとの Metadata（#97）。Hero の View・
+    // CPU の KnowledgeState・Replay には入れない（Hero へは Session の状態を API が別に返す）。
+    case "HAND_METADATA_RECORDED":
     case "AI_ACTION_INVALID":
     case "AI_FALLBACK_USED":
     case "SESSION_STARTED":
