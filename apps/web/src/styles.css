@@ -65,6 +65,17 @@
   --color-feedback-etiquette: #c9b3ff;
   --color-feedback-coaching: #7fd8b0;
 
+  /* Review（#84）。段階評価は色だけに頼らず文字でも示す。暗い面の上で 4.5:1 以上 */
+  --color-assess-good: #7fd8b0;
+  --color-assess-neutral: #b8c7d3;
+  --color-assess-caution: #ecc068;
+  --color-assess-bad: #ff9486;
+  --color-assess-unknown: #a9b5bf;
+  /* Hand 後の答え合わせ（Pass B）の面。判断時点の Review（Pass A）と見た目で分ける */
+  --color-reveal: #f0a3c4;
+  --color-reveal-surface: #22171e;
+  --color-reveal-border: #6b3d55;
+
   /* 影の 3 段（contact / key / ambient）と上向き */
   --ink: 0, 0, 0;
   --shadow-rest:
@@ -1687,4 +1698,737 @@ input {
   font-size: 11px;
   font-weight: 500;
   opacity: 0.8;
+}
+
+/* ───────── Jump to Important Spot（#84・D93） ───────── */
+
+.replay__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spot-jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.spot-jump__label {
+  display: grid;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.spot-jump__item[aria-pressed="true"] {
+  border-color: var(--color-brand-400);
+  color: var(--color-on-surface);
+  box-shadow: var(--shadow-turn);
+}
+
+.spot-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.spot-jump__review {
+  flex: none;
+}
+
+@media (max-width: 719px) {
+  .spot-tools,
+  .spot-jump {
+    flex-wrap: nowrap;
+  }
+  .spot-tools {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .spot-jump__item {
+    flex: none;
+  }
+  .spot-jump__item .replay-controls__sub {
+    display: none;
+  }
+}
+
+/* ───────── Hand Review（#84・docs/06 §10） ───────── */
+
+.review {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+
+.review__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.review__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.review__hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.review-section {
+  display: grid;
+  gap: 8px;
+}
+
+.review-section__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.review-section__note {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.spot-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 1 行 = Hero の判断 1 つ。Street・選択と理由・Review の状態を、狭い画面でも 1 行目に Street と状態が並ぶようにする */
+.spot-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-rest);
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .spot-row:hover {
+    border-color: var(--color-border-interactive);
+    box-shadow: var(--shadow-raise);
+  }
+}
+
+.spot-row__street {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.spot-row__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.spot-row__action {
+  font-weight: 600;
+}
+
+.spot-row__reasons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.spot-row__state {
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 479px) {
+  .spot-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .spot-row__main {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+.spot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Pass A / Pass B の切り替え。押している側を Pass の色で示す */
+.pass-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.pass-tab {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 0;
+  background: var(--color-surface-sunken);
+  color: var(--color-on-surface-muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pass-tab--decision[aria-pressed="true"] {
+  background: var(--color-surface-raised);
+  color: var(--color-brand-400);
+  box-shadow: inset 0 -3px 0 var(--color-brand-400);
+}
+
+.pass-tab--reveal[aria-pressed="true"] {
+  background: var(--color-reveal-surface);
+  color: var(--color-reveal);
+  box-shadow: inset 0 -3px 0 var(--color-reveal);
+}
+
+.review-pass {
+  display: grid;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-rest);
+}
+
+.review-pass--decision {
+  border-top: 3px solid var(--color-brand-500);
+}
+
+.review-pass--reveal {
+  border-color: var(--color-reveal-border);
+  border-top: 3px solid var(--color-reveal);
+  background: var(--color-reveal-surface);
+}
+
+.review-pass__lead {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.generation {
+  display: grid;
+  gap: 8px;
+}
+
+.generation__status {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  font-size: 13px;
+}
+
+.generation__status--failed {
+  border-color: var(--color-danger-600);
+}
+
+.generation__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.generation__version {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.generation__version select {
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 13px;
+}
+
+.generation__hint {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.review-body {
+  display: grid;
+  gap: 12px;
+}
+
+.review-body__note {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.review-verdict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.review-verdict__meta {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.review-verdict__reveal {
+  border-color: var(--color-reveal);
+  color: var(--color-reveal);
+}
+
+/* 段階評価。色は補助で、ラベルの文字が正本 */
+.assessment {
+  font-weight: 700;
+}
+
+.review-verdict .assessment {
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 15px;
+}
+
+.assessment--good {
+  color: var(--color-assess-good);
+}
+.assessment--neutral {
+  color: var(--color-assess-neutral);
+}
+.assessment--caution {
+  color: var(--color-assess-caution);
+}
+.assessment--bad {
+  color: var(--color-assess-bad);
+}
+.assessment--unknown {
+  color: var(--color-assess-unknown);
+}
+
+.review-point {
+  display: grid;
+  gap: 4px;
+}
+
+.review-point p {
+  margin: 0;
+}
+
+.review-point__title {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.evidence-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.evidence-stack__title {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.evidence {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-aside);
+  background: var(--color-surface-sunken);
+}
+
+.evidence__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.evidence__body {
+  padding: 0 12px 12px;
+}
+
+.evidence__cited {
+  border-color: var(--color-assess-good);
+  color: var(--color-assess-good);
+}
+
+.evidence__chosen {
+  margin-left: 6px;
+  border-color: var(--color-brand-400);
+  color: var(--color-brand-400);
+}
+
+.evidence__muted,
+.evidence__note {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.evidence-grid {
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.evidence-grid p {
+  margin: 0;
+}
+
+/* 項目と値の並び。狭い画面では 1 列、広い画面では 2 列 */
+.facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+}
+
+@media (min-width: 560px) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.facts dt {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.evidence-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.evidence-cards__label {
+  margin: 0 0 4px;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.evidence-cards__row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* 表は横に溢れたら表の中だけでスクロールし、ページは横にスクロールさせない */
+.evidence-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-table caption {
+  padding-bottom: 4px;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.evidence-table th,
+.evidence-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.evidence-table thead th {
+  color: var(--color-on-surface-muted);
+  font-weight: 600;
+}
+
+.evidence-table tbody th {
+  font-weight: 600;
+}
+
+.evidence-table__hero {
+  background: var(--color-surface-raised);
+}
+
+.timeline {
+  margin: 0;
+  padding-left: 24px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.timeline__street {
+  display: inline-block;
+  min-width: 52px;
+  color: var(--color-on-surface-muted);
+}
+
+.evidence-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.evidence-list--muted {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.freq {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.freq__row {
+  display: grid;
+  grid-template-columns: minmax(0, 12em) minmax(0, 1fr) 3.5em;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.freq__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-surface-raised);
+  overflow: hidden;
+}
+
+.freq__fill {
+  display: block;
+  height: 100%;
+  background: var(--color-brand-500);
+}
+
+.freq__value {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.kb summary {
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.kb__body {
+  margin: 4px 0 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+.signed {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.reveal-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reveal-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.reveal-list__name {
+  min-width: 8em;
+  font-weight: 600;
+}
+
+.reveal-list__note {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+/* ───────── Follow-up（#84） ───────── */
+
+.followup {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.followup__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.followup__turns {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.followup__turn {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.followup__q,
+.followup__a {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-aside);
+}
+
+.followup__q {
+  background: var(--color-surface-raised);
+}
+
+.followup__a {
+  border: 1px solid var(--color-border);
+}
+
+.followup__a p {
+  margin: 0;
+}
+
+.followup__who {
+  display: block;
+  color: var(--color-on-surface-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.followup__note {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.followup__status {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.followup__status--failed {
+  color: var(--color-on-surface);
+}
+
+.followup__form {
+  display: grid;
+  gap: 8px;
+}
+
+.followup__input {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 15px;
+  resize: vertical;
+}
+
+.followup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.followup__deep {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
 }

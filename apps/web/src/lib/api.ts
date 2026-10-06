@@ -1,5 +1,12 @@
 // Runtime の Hand API（D73: Hero の Action は REST、卓の状態は SSE）。ブラウザは同一 origin の /api だけを呼ぶ（D67）。
-import type { Card, HeroView, PhysicalAction } from "@proj-poker/engine";
+import type {
+  ActionType,
+  Card,
+  HeroView,
+  ImportantSpotReason,
+  PhysicalAction,
+  Street,
+} from "@proj-poker/engine";
 
 /** 卓に座る Player の表示情報（POST /api/hands の players）。 */
 export interface TablePlayer {
@@ -72,6 +79,13 @@ export type ApiErrorKind =
   | "illegal_action"
   | "hand_not_found"
   | "invalid_input"
+  // Review の API（#84）
+  | "hand_not_finished"
+  | "decision_not_found"
+  | "review_not_found"
+  | "followup_in_progress"
+  | "followup_limit"
+  | "invalid_question"
   | "network"
   | "unknown";
 
@@ -94,9 +108,15 @@ const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "illegal_action",
   "hand_not_found",
   "invalid_input",
+  "hand_not_finished",
+  "decision_not_found",
+  "review_not_found",
+  "followup_in_progress",
+  "followup_limit",
+  "invalid_question",
 ];
 
-async function getJson<T>(path: string): Promise<T> {
+export async function getJson<T>(path: string): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path);
@@ -108,7 +128,7 @@ async function getJson<T>(path: string): Promise<T> {
   return payload as T;
 }
 
-async function postJson<T>(path: string, body?: unknown): Promise<T> {
+export async function postJson<T>(path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -209,6 +229,27 @@ export interface ReplayHandSummary {
   readonly heroNet: number | null;
 }
 
+/** Hero の判断 1 つ（サーバーの ReplayDecision と同じ形）。stepIndex の step が判断の直前（Hero に手番が来た時点）の卓。 */
+export interface ReplayDecision {
+  readonly stepIndex: number;
+  /** この Hand での Hero の判断の順番（0 始まり。Review の API の decisionIndex）。 */
+  readonly decisionIndex: number;
+  readonly street: Street;
+  readonly action: ActionType;
+  /** この Action で Stack から出した額。 */
+  readonly amount: number;
+  readonly toAmount: number;
+  readonly allIn: boolean;
+}
+
+/** Jump to Important Spot の飛び先（サーバーの ReplayImportantSpot と同じ形。判断時点の情報だけから選ばれる）。 */
+export interface ReplayImportantSpot {
+  readonly stepIndex: number;
+  readonly decisionIndex: number;
+  readonly street: Street;
+  readonly reasons: readonly ImportantSpotReason[];
+}
+
 /** 再生する 1 Hand。steps[i] は Hero に見える Event の先頭 i + 1 件までの Hero の視点（legalActions は常に null）。 */
 export interface ReplayHand {
   readonly handId: string;
@@ -217,6 +258,10 @@ export interface ReplayHand {
   readonly aborted: boolean;
   readonly players: readonly TablePlayer[];
   readonly steps: readonly HeroView[];
+  /** Important Spot（判断の順）。 */
+  readonly importantSpots: readonly ReplayImportantSpot[];
+  /** Hero の判断のすべて（判断の順）。 */
+  readonly decisions: readonly ReplayDecision[];
 }
 
 /** Replay の Hand 一覧（開始の新しい順）。保存済みの Event だけから作られ、AI で作り直さない（D38）。 */

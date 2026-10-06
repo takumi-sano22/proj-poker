@@ -3,6 +3,7 @@
 // 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
 // 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
+// Hand が終わったら、卓の中央と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback, useState } from "react";
 import { Amount } from "./components/Amount.js";
@@ -18,10 +19,12 @@ import { HandLog } from "./components/HandLog.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
 import { ReplayScreen } from "./components/ReplayScreen.js";
+import { ReviewScreen } from "./components/ReviewScreen.js";
 import { Table } from "./components/Table.js";
 import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
+import type { ReplayStart } from "./hooks/useReplay.js";
 import type { SessionStatus } from "./lib/api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
@@ -34,10 +37,29 @@ import {
   waitingMessage,
 } from "./lib/view-model.js";
 
+/** 見ている画面。Replay は開く Hand と step を、Review は Hand と最初に開く判断を持てる。 */
+type Screen =
+  | { readonly kind: "table" }
+  | { readonly kind: "replay"; readonly start: ReplayStart | null }
+  | {
+      readonly kind: "review";
+      readonly handId: string;
+      readonly decisionIndex: number | null;
+    };
+
 export function App() {
   const session = useHandSession();
-  // 卓を見ているか、Replay を見ているか。
-  const [screen, setScreen] = useState<"table" | "replay">("table");
+  const [screen, setScreen] = useState<Screen>({ kind: "table" });
+  const openReview = useCallback(
+    (handId: string, decisionIndex: number | null) =>
+      setScreen({ kind: "review", handId, decisionIndex }),
+    [],
+  );
+  const openReplay = useCallback(
+    (handId: string, step: number) =>
+      setScreen({ kind: "replay", start: { handId, step } }),
+    [],
+  );
   const { view, players } = session;
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
   const [showBB, setShowBB] = useBbSetting();
@@ -54,7 +76,7 @@ export function App() {
         <header className="app__header">
           <h1 className="app__title">proj-poker</h1>
           <div className="app__header-end">
-            {screen === "table" && view !== null && (
+            {screen.kind === "table" && view !== null && (
               <p className="app__meta">
                 ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
                 {formatChips(view.bigBlind)}
@@ -64,15 +86,37 @@ export function App() {
             <button
               type="button"
               className="btn btn--ghost btn--sm"
-              onClick={() => setScreen(screen === "table" ? "replay" : "table")}
+              onClick={() =>
+                setScreen(
+                  screen.kind === "table"
+                    ? { kind: "replay", start: null }
+                    : { kind: "table" },
+                )
+              }
             >
-              {screen === "table" ? "Replay を見る" : "卓に戻る"}
+              {screen.kind === "table" ? "Replay を見る" : "卓に戻る"}
             </button>
           </div>
         </header>
 
-        {screen === "replay" ? (
-          <ReplayScreen />
+        {screen.kind === "replay" ? (
+          // 開く Hand・step が変わったら作り直す（Review から別の場面を開いたとき）。
+          <ReplayScreen
+            key={
+              screen.start === null
+                ? "list"
+                : `${screen.start.handId}:${screen.start.step}`
+            }
+            start={screen.start}
+            onOpenReview={openReview}
+          />
+        ) : screen.kind === "review" ? (
+          <ReviewScreen
+            key={`${screen.handId}:${screen.decisionIndex ?? "list"}`}
+            handId={screen.handId}
+            initialDecision={screen.decisionIndex}
+            onOpenReplay={openReplay}
+          />
         ) : view === null ? (
           <main className="app__empty">
             <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
@@ -99,6 +143,7 @@ export function App() {
                       view={view}
                       nameOf={nameOf}
                       session={session}
+                      onOpenReview={openReview}
                     />
                   }
                 />
@@ -124,9 +169,23 @@ interface ViewProps {
 /**
  * 卓の中央の欄: Hand の結果、CPU の障害のダイアログ、障害で Session を終えた後の案内のどれか（無ければ何も出さない）。
  */
-function TableCenter({ view, nameOf, session }: ViewProps) {
+function TableCenter({
+  view,
+  nameOf,
+  session,
+  onOpenReview,
+}: ViewProps & {
+  readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
+}) {
   if (view.status === "complete") {
-    return <HandResult view={view} nameOf={nameOf} session={session} />;
+    return (
+      <HandResult
+        view={view}
+        nameOf={nameOf}
+        session={session}
+        onOpenReview={onOpenReview}
+      />
+    );
   }
   const status = session.sessionStatus;
   if (status?.state === "ended") {
@@ -303,7 +362,14 @@ function sessionEndMessage(
  * 次 Hand のボタンは Session が続くときだけ出し、Session が終わったら理由と、新しい Session を始めるボタンを出す。
  * Session の状態がまだ届いていなければ、どちらのボタンも出さない（終わった Session で次 Hand を押させない）。
  */
-function HandResult({ view, nameOf, session }: ViewProps) {
+function HandResult({
+  view,
+  nameOf,
+  session,
+  onOpenReview,
+}: ViewProps & {
+  readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
+}) {
   const status = session.sessionStatus;
   return (
     <div className="result" role="status">
@@ -338,6 +404,14 @@ function HandResult({ view, nameOf, session }: ViewProps) {
           新しい Session を始める
         </button>
       )}
+      {/* 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く） */}
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        onClick={() => onOpenReview(view.handId, null)}
+      >
+        この Hand の Review
+      </button>
     </div>
   );
 }

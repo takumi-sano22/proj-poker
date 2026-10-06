@@ -1,12 +1,17 @@
 // Replay の画面（#68・D93・docs/06 §10）。Hand 一覧から選び、保存済みの Event を Hero の視点で Previous / Next / Play / Pause で再生する。
 // 表示はサーバーが返した step（Hero の視点の HeroView）だけに基づき、他者の札は Showdown で公開された時点から表に向く。
 // 卓・進行ログ・Chip の構成（#62）・Dealer Feedback（#66）・用語の詳細は、卓の画面と同じ部品を使う。
-// Learning-only Full Reveal と Jump to Important Spot は Phase 5 の Review で扱う（D93）。
+// Jump to Important Spot（#84・D93）: サーバーが返した Important Spot（判断時点の情報だけから選ばれる）の判断時点の step へ移る。
+// 判断時点の step では、その判断の Review を開ける。Learning-only Full Reveal は Review の答え合わせ（Pass B）で扱い、Replay には出さない。
 import type { HeroView } from "@proj-poker/engine";
 import { useCallback } from "react";
-import { useReplay, type ReplayState } from "../hooks/useReplay.js";
+import {
+  useReplay,
+  type ReplayStart,
+  type ReplayState,
+} from "../hooks/useReplay.js";
 import type { ReplayHand } from "../lib/api.js";
-import { TERMS, termLabel } from "../lib/format.js";
+import { STREET_TERMS, TERMS, termLabel } from "../lib/format.js";
 import {
   formatHeroNet,
   formatStartedAt,
@@ -14,6 +19,7 @@ import {
   stepCaption,
   unfinishedLabel,
 } from "../lib/replay.js";
+import { IMPORTANT_SPOT_REASON_LABELS } from "../lib/review.js";
 import { heroSeatOf } from "../lib/view-model.js";
 import { Amount } from "./Amount.js";
 import { useShowBB } from "./BbDisplay.js";
@@ -23,12 +29,26 @@ import { PlayingCard } from "./PlayingCard.js";
 import { Table } from "./Table.js";
 import { Term, VocabularyProvider } from "./Vocabulary.js";
 
-export function ReplayScreen() {
-  const replay = useReplay();
+interface ReplayScreenProps {
+  /** 最初に開く Hand と step（Review から開いたとき）。null は一覧から。 */
+  readonly start?: ReplayStart | null;
+  /** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
+  readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
+}
+
+export function ReplayScreen({
+  start = null,
+  onOpenReview,
+}: ReplayScreenProps) {
+  const replay = useReplay(start);
   return replay.hand === null ? (
     <ReplayList replay={replay} />
   ) : (
-    <ReplayPlayer replay={replay} hand={replay.hand} />
+    <ReplayPlayer
+      replay={replay}
+      hand={replay.hand}
+      onOpenReview={onOpenReview}
+    />
   );
 }
 
@@ -109,9 +129,10 @@ function ReplayList({ replay }: { readonly replay: ReplayState }) {
 interface PlayerProps {
   readonly replay: ReplayState;
   readonly hand: ReplayHand;
+  readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
 }
 
-function ReplayPlayer({ replay, hand }: PlayerProps) {
+function ReplayPlayer({ replay, hand, onOpenReview }: PlayerProps) {
   const { players, steps } = hand;
   const nameOf = useCallback(
     (playerId: string) =>
@@ -122,6 +143,10 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
   if (view === undefined) return null;
   const last = steps.length - 1;
   const hero = heroSeatOf(view);
+  // Review を作れるのは終わった Hand と打ち切った Hand（サーバーと同じ条件）。
+  const reviewable = hand.complete || hand.aborted;
+  // 今の step が Hero の判断の直前の卓なら、その判断の Review を開ける。
+  const decisionHere = hand.decisions.find((d) => d.stepIndex === replay.step);
 
   return (
     <VocabularyProvider view={view} nameOf={nameOf}>
@@ -132,13 +157,24 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
             <span className="badge">{unfinishedLabel(hand)}</span>
           )}
         </p>
-        <button
-          type="button"
-          className="btn btn--ghost btn--sm"
-          onClick={replay.close}
-        >
-          一覧へ戻る
-        </button>
+        <div className="replay__head-actions">
+          {reviewable && (
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={() => onOpenReview(hand.handId, null)}
+            >
+              この Hand の Review
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={replay.close}
+          >
+            一覧へ戻る
+          </button>
+        </div>
       </div>
       <main className="app__main">
         <div className="app__table">
@@ -232,6 +268,53 @@ function ReplayPlayer({ replay, hand }: PlayerProps) {
               <span className="replay-controls__sub">Next</span>
             </button>
           </div>
+          {(hand.importantSpots.length > 0 ||
+            (reviewable && decisionHere !== undefined)) && (
+            // 狭い画面では 1 行に並べ、溢れた分はこの行の中だけで横に送る（Hero 欄を高くして卓を隠さない）。
+            <div className="spot-tools">
+              {hand.importantSpots.length > 0 && (
+                <div
+                  className="spot-jump"
+                  role="group"
+                  aria-label="Important Spot へ移動（Jump to Important Spot）"
+                >
+                  <span className="spot-jump__label">
+                    Important Spot へ
+                    <span className="replay-controls__sub">Jump</span>
+                  </span>
+                  {hand.importantSpots.map((spot, i) => (
+                    <button
+                      key={spot.decisionIndex}
+                      type="button"
+                      className="btn btn--ghost btn--sm spot-jump__item"
+                      aria-pressed={replay.step === spot.stepIndex}
+                      onClick={() => replay.jump(spot.stepIndex)}
+                    >
+                      <span>
+                        {i + 1}. {STREET_TERMS[spot.street].term}
+                      </span>
+                      <span className="replay-controls__sub">
+                        {spot.reasons
+                          .map((r) => IMPORTANT_SPOT_REASON_LABELS[r])
+                          .join("・")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {reviewable && decisionHere !== undefined && (
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm spot-jump__review"
+                  onClick={() =>
+                    onOpenReview(hand.handId, decisionHere.decisionIndex)
+                  }
+                >
+                  この判断の Review を見る
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </section>
     </VocabularyProvider>
