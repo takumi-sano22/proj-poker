@@ -167,6 +167,18 @@ Pass Bの情報を理由にPass Aを勝手に変更しないでください。
 
 全員の札は、Pass Aの入力とは別のProjection `projectLearningReveal`（#78。`docs/04` §4）から取ります。
 
+実装（#83。`apps/server/src/review/reveal-evidence.ts`・`reveal-ai.ts`・`generate-reveal.ts`）: Pass BのEvidenceは、Pass Aと同じ判断時点のDecision Contextに、次を決定論で足したものです（LLMに計算させない）。
+
+- 読みと実際の比較（`reveal:`）: 相手ごとの実際の札と、判断時点でFoldしていなかった相手は、判断時点に仮定した標準のRange（Pass AのRange Evidenceと同じ作り方）と、実際の札がそのRangeに入っていたか・判断時点のBoardでの役。
+- 実際のEquity（`equity:`）: 判断時点のBoardからの、Potを争っていた相手の実際の札に対するHeroの勝率と、判断時点に仮定したRangeに対する勝率。
+- Bluff / Valueの答え合わせ（`aggression:`）: 判断時点までのBet / Raiseと、Heroの判断がBet / Raiseならその判断の、本人の実際の札の、その時点でPotを争っていた残りの相手の実際の札に対するEquity。公平な取り分（1 / 人数）以上ならvalue、未満ならbluff（暫定の基準。Evidenceに基準の文を添える）。
+
+Review AIは評価（Assessment）を出さず、`readComparison`（読みと実際の比較）・`actualEquity`・`bluffValue`・`takeaways`（次に活かす点）だけを書きます。Promptで、判断の評価はPass Aで済んでいて結果を理由に付け直さないこと、1 Handの結果でRangeの想定を断定しないことを指示します。Pass Bは`reveal_reviews`に別のVersionの列として保存し、Pass Aの`reviews`は変えません（`docs/04` §8）。Pass BのEvidenceはCPUの入力・Pass Aの入力に渡しません（INV-TEST-008。`docs/09`）。
+
+### Follow-up Q&A
+
+Heroは、PassとVersionで指定したReviewに続けて質問できます（#83。`apps/server/src/review/followup.ts`）。答えの根拠は、そのReviewのEvidenceと説明だけです。Pass Aへの質問のPromptにはPass AのEvidence（判断時点の情報）しか入らないので、Hand後の情報（相手の実際の札・結果）は混ざりません。範囲の指示はPassごとに文で出し分け（Pass Aは「Hand後の情報は知らない。聞かれたら`out_of_scope`にしてReveal Reviewで確かめられると答える」、Pass Bは「結果で判断の評価を付け直さない」）、Evidenceで答えられない質問は`out_of_scope`にさせます。複数ターンは、同じVersionのこれまでの質問と答えを古い順にPromptへ入れ、1回の単発の問い合わせで呼びます（D87）。答えの検証はSchema（`scope`・本文・件数）→ Grounding（`answered`なら根拠のidが1つ以上で、すべてそのReviewのEvidenceに実在する）の順で、不正なら1回だけ再要求し、2回続けて不正なら答えずに（`unanswered`）失敗を残します。履歴はReviewのVersionに紐づけて`review_followups`に保存します。
+
 ## 8. Assessment Style
 
 一つのActionにFake Precisionな点数をつけるより、段階評価を基本にします。

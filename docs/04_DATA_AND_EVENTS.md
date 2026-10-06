@@ -220,7 +220,7 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 | `version` | Review Version | 同じ Hand・判断・Pass の中の版（1 から） |
 | `created_at` | Created At | ISO 8601（UTC） |
 | `hand_id`・`decision_index`・`action_seq` | Target Hand / Action | `decision_index` は Hero の判断の順番（`heroDecisions` の `index`）、`action_seq` はその `ACTION_TAKEN` の seq。Session は `hands.session_id` から引く |
-| `pass` | — | `decision`（Pass A）。Pass B は #83 |
+| `pass` | — | `decision`（Pass A）。Pass B は別のテーブル `reveal_reviews`（下記） |
 | `depth`・`model_role` | Model Role | `standard` → `review_standard`、`deep`（Hero が「詳しく」を選んだ Spot）→ `review_deep`（D97） |
 | `concrete_model` | Concrete Model | 呼んだ具体モデル名。Evidence Sufficiency Gate で止めた（Review AI を呼んでいない）ときは NULL |
 | `kb_version` | KB Version | Local KB 全体の Version（`apps/server/kb/manifest.json`） |
@@ -234,6 +234,33 @@ Reviewは「構造化された根拠」と「説明文」の両方を保存し�
 | `failure` | — | 出力の検証に失敗したときだけ。各回の段（`schema` / `grounding`）と理由 |
 
 User Read（Review Interview。`docs/05` §12）はまだ聞いていないので、`evidence_ids.userRead` は空です。Claude の呼び出しの失敗（未ログイン・利用枠・Timeout 等）では行を作りません（生成の状態はサーバーのメモリにだけ持ち、再起動で消える）。
+
+**Pass B と Follow-up（#83）**: マイグレーション v4 で、追記だけのテーブルを 2 つ足しました。`reviews` を含む既存のテーブル・行・列の定義は変えていません（D76）。どちらも `UPDATE` は Trigger で拒否し、`hand_id` は `hands` を参照します。書き読みは `apps/server/src/review/reveal-store.ts`（`SqliteRevealReviewStore` / `SqliteFollowUpStore`）です。
+
+`reveal_reviews`（Reveal Review = Pass B。`docs/05` §7）: Hero の判断ごとに Version を付けて追記します（`(hand_id, decision_index, version)` が一意。Version の採番と追記は 1 つの書き込みトランザクション）。Pass B は判断時点の評価を付け直さないので、`assessment`・`confidence` の列を持ちません（結果論を判断の評価に混ぜない）。
+
+| 列 | 中身 |
+|---|---|
+| `review_id`・`version`・`created_at`・`hand_id`・`decision_index`・`action_seq`・`depth`・`model_role`・`concrete_model`・`generated_by`・`failure` | `reviews` と同じ意味（`version` は同じ Hand・判断の Pass B の中の版） |
+| `evidence_ids` | JSON。`context` / `reveal` / `equity` / `aggression` と、Review AI が根拠に挙げた ID（`cited`） |
+| `explanation` | JSON。`readComparison`（読みと実際の比較）・`actualEquity`（実際の Equity）・`bluffValue`（Bluff / Value の答え合わせ）・`takeaways`（次に活かす点） |
+| `evidence` | Review AI に渡した Pass B の Evidence。判断時点の卓（Pass A と同じ Decision Context）と、Hand 後に見せた全員の札（`visibility: "learning_only"`。Deck の残りは含まない）・判断時点に仮定した Range との比較・実際の Equity・Bluff / Value の答え合わせ |
+
+`review_followups`（Follow-up Q&A）: Review の Version ごとに、質問と答えを 1 ターン 1 行で追記します（`(review_id, turn)` が一意）。`review_id` は `pass` が `decision` なら `reviews`、`reveal` なら `reveal_reviews` の行を指します。外部キーは 1 つのテーブルしか指せないので、挿入の Trigger（`review_followups_target`）で、指す行が実在し Hand・判断・Version が合うことを確かめます。
+
+| 列 | 中身 |
+|---|---|
+| `followup_id` | UUID |
+| `pass`・`review_id`・`review_version` | 質問の対象の Review（Pass と Version） |
+| `hand_id`・`decision_index` | 対象の Review の Hand と判断 |
+| `turn` | その Review の Version の中のターンの順番（1 から） |
+| `created_at`・`depth`・`model_role`・`concrete_model` | `reviews` と同じ意味（Follow-up は必ず Review AI を呼ぶので `concrete_model` は NOT NULL） |
+| `generated_by` | `review_ai` / `invalid_output_fallback`（答えが 2 回続けて不正。答えは `unanswered`） |
+| `question` | Hero の質問（500 字まで） |
+| `answer` | JSON。`scope`（`answered` / `out_of_scope` / `unanswered`）・`text`・`evidenceIds` |
+| `failure` | 出力の検証に失敗したときだけ。各回の段と理由 |
+
+Pass B・Follow-up でも、Claude の呼び出しの失敗では行を作りません。
 
 ## 9. Replay Metadata
 
