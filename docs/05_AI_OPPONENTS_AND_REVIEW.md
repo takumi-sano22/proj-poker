@@ -124,6 +124,14 @@ Review AIへ渡す前に、以下を構造化します。
 
 AI文章はこの後に生成します。
 
+Math EvidenceとRange Evidenceは、Engineの`analyzeDecision`（`packages/engine/src/decision-analysis.ts`。#79）が判断時点のHero Information Setだけから決定論で作ります（LLMに計算させない）。
+
+- Math: 判断時点のPot・Call額・Pot Odds（計算は`pot-math.ts`の`potOdds` 1か所。KnowledgeStateの`math`・webのDealer Feedbackも同じ関数）・有効Stack・SPR。
+- Range: Fold していない相手ごとに、Position（Buttonからの距離）とPreflopのAction列（open / limp / call_open / three_bet / call_three_bet / four_bet_plus / check_option / not_acted）で標準Rangeを選び、Heroの札と判断時点のBoardを除き（Card Removal）、PostflopのBet / Raise / Callごとに、そのStreetのBoardでの役の強さの上位を残す簡易モデルで絞ります（Drawは数えない）。標準Rangeと絞る割合はConfig（`range-config.ts`の`RangeProfile`）の暫定値で、永久仕様にしません。結果には必ずAssumption（どのRangeを仮定し、どう絞ったか）を付けます。
+- Equity: 仮定したRangeに対するShowdownまでの勝率（`equity.ts`）。相手1人のFlop・Turn・Riverは全列挙、PreflopとMultiwayはseed固定のMonte Carloで、同じ入力から同じ結果になります。
+- Alternative Action: Legal ActionからFold / Check / Call / Bet（Potの半分・Pot）/ Raise（最小・Pot Size）/ All-inを候補にし、Heroが実際に選んだ額を足して、それぞれの必要Equity・簡易EV（Foldを0とした差。Check / Callはこの後のBetが無い前提、Bet / Raiseは相手全員がCallする前提でFold Equityを含めず、Break-even Fold Frequencyを別に示す）を出します。簡易EVはAssumption付きの目安で、GTO / Solverの値として表示しません（D20）。
+- 重要Spotでは`compareRangeProfiles`で標準・狭い（Tight）・広い（Loose）のRange想定ごとにEquityを比べられます（D08）。
+
 ## 7. Two-pass Review
 
 ### Pass A — Decision Review
