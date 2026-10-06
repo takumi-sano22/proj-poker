@@ -1,5 +1,5 @@
 // Runtime の Hand API（D73: Hero の Action は REST、卓の状態は SSE）。ブラウザは同一 origin の /api だけを呼ぶ（D67）。
-import type { HeroView, PhysicalAction } from "@proj-poker/engine";
+import type { Card, HeroView, PhysicalAction } from "@proj-poker/engine";
 
 /** 卓に座る Player の表示情報（POST /api/hands の players）。 */
 export interface TablePlayer {
@@ -96,6 +96,18 @@ const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "invalid_input",
 ];
 
+async function getJson<T>(path: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path);
+  } catch {
+    throw new ApiError("network", "サーバーに届かなかった");
+  }
+  const payload: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res.status, payload);
+  return payload as T;
+}
+
 async function postJson<T>(path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -180,4 +192,40 @@ export function chooseOutage(
 
 export function handStreamUrl(handId: string): string {
   return `/api/hands/${encodeURIComponent(handId)}/stream`;
+}
+
+/** Replay の Hand 一覧の 1 行（サーバーの ReplayHandSummary と同じ形。値は Hero に見える Event だけから作られる）。 */
+export interface ReplayHandSummary {
+  readonly handId: string;
+  readonly startedAt: string;
+  /** HAND_FINISHED の無い Hand（進行中・AI 障害の後に打ち切った Hand）は null。 */
+  readonly finishedAt: string | null;
+  readonly complete: boolean;
+  readonly bigBlind: number;
+  readonly heroHoleCards: readonly Card[] | null;
+  /** Hero の収支（実額）。未完了の Hand は null。 */
+  readonly heroNet: number | null;
+}
+
+/** 再生する 1 Hand。steps[i] は Hero に見える Event の先頭 i + 1 件までの Hero の視点（legalActions は常に null）。 */
+export interface ReplayHand {
+  readonly handId: string;
+  readonly complete: boolean;
+  readonly players: readonly TablePlayer[];
+  readonly steps: readonly HeroView[];
+}
+
+/** Replay の Hand 一覧（開始の新しい順）。保存済みの Event だけから作られ、AI で作り直さない（D38）。 */
+export async function fetchReplayHands(): Promise<
+  readonly ReplayHandSummary[]
+> {
+  const body = await getJson<{ hands: readonly ReplayHandSummary[] }>(
+    "/api/replay/hands",
+  );
+  return body.hands;
+}
+
+/** 1 Hand の再生の材料（Hero の視点の step の列）。 */
+export function fetchReplayHand(handId: string): Promise<ReplayHand> {
+  return getJson<ReplayHand>(`/api/replay/hands/${encodeURIComponent(handId)}`);
 }

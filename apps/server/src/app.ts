@@ -10,7 +10,9 @@ import { InMemoryEventStore, type EventStore } from "./event-store.js";
 import { HandOrchestrator } from "./hand-orchestrator.js";
 import type { OpponentFactory } from "./opponents/opponent-agent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
+import { ReplayService } from "./replay.js";
 import { registerHandRoutes } from "./routes/hands.js";
+import { registerReplayRoutes } from "./routes/replay.js";
 
 /** 組み立ての差し替え口。テストでは seed・待ち時間・ログを固定する。 */
 export interface AppOptions {
@@ -34,10 +36,13 @@ export function buildApp(options: AppOptions = {}) {
 
   app.get("/api/health", () => ({ status: "ok" }));
 
+  // 起動時（index.ts）は SQLite の Store を渡す（D72）。省略時のメモリ内実装はテスト用。
+  // Orchestrator（書く側）と Replay（読む側）は同じ Store を使う。
+  const store = options.store ?? new InMemoryEventStore();
+  const setup = options.setup ?? PHASE1_TABLE_SETUP;
   const orchestrator = new HandOrchestrator({
-    // 起動時（index.ts）は SQLite の Store を渡す（D72）。省略時のメモリ内実装はテスト用。
-    store: options.store ?? new InMemoryEventStore(),
-    setup: options.setup ?? PHASE1_TABLE_SETUP,
+    store,
+    setup,
     createOpponent: options.createOpponent ?? createRuleBot,
     botDelayMs: options.botDelayMs ?? DEFAULT_BOT_THINK_DELAY_MS,
     opponentTimeoutMs: options.opponentTimeoutMs ?? DEFAULT_OPPONENT_TIMEOUT_MS,
@@ -52,6 +57,9 @@ export function buildApp(options: AppOptions = {}) {
   });
 
   registerHandRoutes(app, orchestrator);
+  // Hero はちょうど 1 人（Orchestrator の生成で検証済み）。
+  const heroId = setup.players.find((p) => p.kind === "hero")?.playerId ?? "";
+  registerReplayRoutes(app, new ReplayService(store, heroId, setup.players));
 
   return app;
 }

@@ -1543,3 +1543,148 @@ input {
 .notice p {
   margin: 0;
 }
+
+/* ───────── Replay（#68・docs/06 §10） ───────── */
+
+.replay-list {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 0 32px;
+}
+
+.replay-list > p {
+  margin: 0;
+}
+
+.replay-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.replay-list__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.replay-list__note,
+.replay-list__empty {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.replay-list__items {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 1 行 = 1 Hand。開始時刻・Hero の札・収支（または未完了）を、狭い画面でも 1 行に収める */
+.replay-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-rest);
+  transition: box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.replay-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .replay-item:hover:not(:disabled) {
+    border-color: var(--color-border-interactive);
+    box-shadow: var(--shadow-raise);
+  }
+}
+
+.replay-item__time {
+  color: var(--color-on-surface-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-item__cards {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.replay-item__net {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.replay__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.replay__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* その step で起きたことと、何 step 目か */
+.replay__now {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.replay__caption {
+  margin: 0;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.replay__count {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 420px;
+}
+
+.replay-controls__sub {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.8;
+}

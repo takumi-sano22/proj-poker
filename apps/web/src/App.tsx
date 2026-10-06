@@ -2,8 +2,9 @@
 // CPU の全員 Bust で Session が終わる（D80）。
 // 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
+// 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
 import type { HeroView } from "@proj-poker/engine";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { Amount } from "./components/Amount.js";
 import {
   BbDisplayProvider,
@@ -11,31 +12,32 @@ import {
   useBbSetting,
 } from "./components/BbDisplay.js";
 import { ChipControls } from "./components/ChipControls.js";
-import { DealerFeedback } from "./components/DealerFeedback.js";
+import { HeroFeedback } from "./components/DealerFeedback.js";
 import { FastForward } from "./components/FastForward.js";
 import { HandLog } from "./components/HandLog.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
+import { ReplayScreen } from "./components/ReplayScreen.js";
 import { Table } from "./components/Table.js";
 import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import type { SessionStatus } from "./lib/api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
-import { dealerFeedbackAt } from "./lib/dealer-feedback.js";
-import { STREET_TERMS, TERMS, formatChips, termLabel } from "./lib/format.js";
+import { TERMS, formatChips, termLabel } from "./lib/format.js";
 import {
   canFastForward,
   heroRulingStatus,
   heroSeatOf,
   lastSeqOf,
-  latestHeroRulingIndex,
   operationKey,
   waitingMessage,
 } from "./lib/view-model.js";
 
 export function App() {
   const session = useHandSession();
+  // 卓を見ているか、Replay を見ているか。
+  const [screen, setScreen] = useState<"table" | "replay">("table");
   const { view, players } = session;
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
   const [showBB, setShowBB] = useBbSetting();
@@ -52,17 +54,26 @@ export function App() {
         <header className="app__header">
           <h1 className="app__title">proj-poker</h1>
           <div className="app__header-end">
-            {view !== null && (
+            {screen === "table" && view !== null && (
               <p className="app__meta">
                 ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
                 {formatChips(view.bigBlind)}
               </p>
             )}
             <BbDisplayToggle showBB={showBB} onChange={setShowBB} />
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => setScreen(screen === "table" ? "replay" : "table")}
+            >
+              {screen === "table" ? "Replay を見る" : "卓に戻る"}
+            </button>
           </div>
         </header>
 
-        {view === null ? (
+        {screen === "replay" ? (
+          <ReplayScreen />
+        ) : view === null ? (
           <main className="app__empty">
             <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
             <button
@@ -270,29 +281,6 @@ function DockBody({ view, nameOf, session }: ViewProps) {
         onSubmit={session.operate}
       />
     </>
-  );
-}
-
-/**
- * 直近の Hero への裁定の Dealer Feedback（RULING / ETIQUETTE / COACHING。docs/06 §6）。
- * 前の Street の裁定（Hero の Call で Street が閉じた直後など）には、どの Street の裁定かを添える。
- */
-function HeroFeedback({ view }: { readonly view: HeroView }) {
-  const index = latestHeroRulingIndex(view);
-  if (index === null) return null;
-  const ruling = view.log[index];
-  if (ruling?.type !== "DEALER_RULING") return null;
-  const heading =
-    ruling.street === view.street
-      ? undefined
-      : `${termLabel(STREET_TERMS[ruling.street])}の裁定`;
-  return (
-    <DealerFeedback
-      // 裁定が変わったら、開いていた補足（作法・学習）を閉じる
-      key={ruling.seq}
-      items={dealerFeedbackAt(view.log, index, view.viewerId)}
-      heading={heading}
-    />
   );
 }
 

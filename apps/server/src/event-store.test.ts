@@ -159,4 +159,27 @@ describe.each(implementations)("%s", (_name, createStore) => {
     copy.pop();
     expect(store.read("h1").length).toBe(length);
   });
+
+  it("listHands は開始の新しい順に返し、HAND_FINISHED の無い Hand は finishedAt が null（limit で件数を絞る）", () => {
+    let minute = 0;
+    const store = createStore({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    expect(store.listHands(10)).toEqual([]);
+    const started = sampleEvents();
+    // h1: 終わった Hand（00:00 に開始・00:01 に終了）。h2: 途中の Hand（00:02 に開始）。
+    store.append("h1", started);
+    store.append("h1", finishingEvents(started));
+    store.append("h2", started);
+
+    expect(store.listHands(10)).toEqual([
+      { handId: "h2", startedAt: "2026-10-05T00:02:00.000Z", finishedAt: null },
+      {
+        handId: "h1",
+        startedAt: "2026-10-05T00:00:00.000Z",
+        finishedAt: "2026-10-05T00:01:00.000Z",
+      },
+    ]);
+    expect(store.listHands(1).map((h) => h.handId)).toEqual(["h2"]);
+  });
 });
