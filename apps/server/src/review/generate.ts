@@ -11,7 +11,7 @@ import {
   type ClaudeQuery,
 } from "../claude/structured-query.js";
 import { evidenceIdsOf } from "./evidence.js";
-import { playerNamesOf, sanitizeOutput } from "./identifiers.js";
+import { replacementNamesOf, sanitizeOutput } from "./identifiers.js";
 import {
   REVIEW_SYSTEM_PROMPT,
   buildReviewPrompt,
@@ -118,10 +118,7 @@ export async function generateReview(
     options.onAttempt?.({ prompt, output, check });
     if (check.ok) {
       // 識別子が出ていても Retry はせず、保存の前に既知のものを機械的に置換する（#96・D101）。
-      const value = sanitizeOutput(
-        check.value,
-        playerNamesOf(evidence.context),
-      );
+      const value = sanitizeOutput(check.value, replacementNamesOf(evidence));
       return {
         ...base,
         concreteModel: model,

@@ -9,6 +9,7 @@
 - `apps/server/src/review/identifiers.ts`（新規）: 識別子の扱いを 1 か所に集めた。
   - `EVIDENCE_TERMS`: Evidence の項目名 → 自然な言葉の説明（boolean の項目は true / false ごとの言い回し）。Prompt の「Evidence の項目の説明」と出力の置換の両方がこの表を見る。`pass: "reveal"` の項目は Pass A・その Follow-up の Prompt に出さない（Pass A の Prompt に Hand 後の項目の名前を出さない）。
   - `sanitizeText` / `sanitizeOutput`: playerId → 表示名、項目名（`name=値`・`name が true`・`` `name` ``）→ 説明、`monte_carlo` 等の値 → 書き方。未知の識別子は推測せず残す。根拠の id と enum（assessment・basis・scope・evidenceIds）は触らない。`hero` のように表示名と大文字小文字しか違わない id、`folded` / `trials` / `spr` のように普通の英単語と同じ綴りの項目名は、文中の語と区別できないので置換しない（後者は `name=値` のときだけ）。
+  - 対応表の網羅: Codex レビューの指摘（`playerId` `displayName` `decisionIndex` など Prompt へ実際に渡す項目名が表に無かった）を受け、Evidence の型を洗って camelCase の項目名（`playerId` `handId` `toAmount` `winnablePot` `requiredEquity` `betPotFractions` ほか）と enum の値（Preflop の Spot・役・Solver の理由・裁定の記録など）を表に足した。KB の項目の id は Evidence 自身が持つタイトルに置換する（`replacementNamesOf`）。固定 Hand の全判断の実際の Evidence（Pass A・Pass B）から camelCase の項目名・enum の値を集め、対応表に無いものがあればテストが落ちる（`identifiers.test.ts`「対応表の網羅」）。
   - `findIdentifiers`: 識別子の疑い（`cpu\d+`・camelCase・snake_case・`math.equity.method` のような位置・`math:...` のような Evidence の id）の検出。置換の後に残っていないかの検査と Eval の指標に使う。
 - Evidence: `DecisionContextEvidence.seats[]` と Pass B の `villains[]` に `displayName`（Hero の画面に出ている名前。`ReviewServiceDeps.players` = 卓の `SeatPlayer`）を添える。型は optional（#96 より前に保存された Evidence には無い。その Follow-up は置換の対応が空になり、置換しない）。
 - Prompt（Pass A・Pass B・Follow-up）: 「文は Hero が読む。識別子は書かず、席は seats の displayName、項目は項目の説明の言葉で書く」を追加し、Evidence の JSON の後ろに項目の説明を添える。Prompt 自身が `math.equity.method` `solver.status` `equity.actual` のような識別子で項目を指していた文を自然な言葉に直した。
@@ -26,7 +27,7 @@
 
 条件: `pnpm --filter @proj-poker/server eval:review`・review_standard（claude-sonnet-5-5）・Solver なし・固定 4 判断。前（Before）は main の Prompt・Evidence に、**測定コード（harness / metrics / identifiers の検出）だけを載せて**取った（置換は効かない状態）。後（After）はこの PR。指標は `metrics.ts` が機械的に出した値。
 
-| | Before（`--repeats 3`） | After 1（`--repeats 3 --record`） | After 2（`--repeats 5`） |
+| | Before（`--repeats 3`） | After（`--repeats 3 --record`） | After（`--repeats 5`） |
 |---|---|---|---|
 | reviews / calls | 12 / 12 | 12 / 12 | 20 / 20 |
 | 識別子の出現率（置換前） | **0.333**（4/12。`cpu3` が 2 件・`userRead` が 2 件） | **0**（0/12） | **0**（0/20） |
@@ -35,10 +36,12 @@
 | Retry率 / Fallback率 | 0 / 0 | 0 / 0 | 0 / 0 |
 | Math / KB Grounding率 | 1 / 1 | 1 / 1 | 1 / 1 |
 | Hindsight Leak・障害 | 0・0 | 0・0 | 0・0 |
-| Exact GTO の言及 | 0 | 0 | 0 |
-| Latency median / p90（ms） | 12,793 / 17,848 | 12,519 / 18,614 | 12,390 / 17,995 |
+| Exact GTO の言及（否定も数える） | 0 | 0 | 1 |
+| Latency median / p90（ms） | 12,793 / 17,848 | 12,283 / 19,209 | 13,016 / 19,094 |
 
-- After の文では席が「CPU 3」「UTG（CPU 3）」と書かれるようになった（Prompt と Evidence の表示名の効果）。Prompt だけで出現率が 0 になり、置換が効く場面は今回の測定では出なかった（置換の効きは単体テストで確かめた。下記）。母集団が小さい（Before 12・After 32）ので「0」は「出にくくなった」の目安で、保証は置換の側が持つ。
+- After は最終の対応表（Codex 指摘で拡張した後）の Prompt での値。拡張前の Prompt でも同じ条件で `--repeats 3`（0/12）・`--repeats 5`（0/20）を取り、出現率・残存率はともに 0 だった（Prompt の項目の説明が増えただけで、結果は変わらなかった）。
+
+- After の文では席が「CPU 3」「UTG（CPU 3）」と書かれるようになった（Prompt と Evidence の表示名の効果）。Prompt だけで出現率が 0 になり、置換が効く場面は今回の測定では出なかった（置換の効きは単体テストで確かめた。下記）。母集団が小さい（Before 12・After 12 + 20）ので「0」は「出にくくなった」の目安で、保証は置換の側が持つ。
 - 参考: 同じ Prompt・Evidence での Pass B・Follow-up を `smoke:reveal`（実際の Claude）で 1 回ずつ通した。Pass A・Pass B・Follow-up（Pass A / Pass B 2 ターン）の文に識別子は無く、「CPU 3」と書かれていた（Pass B・Follow-up の指標は Eval に無いので、目視と `findIdentifiers` の対象外。人が読んで確認）。
 
 ## 実行した確認

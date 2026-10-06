@@ -1,11 +1,26 @@
 // Review の文から内部の識別子を消す処理（#96・D101）のテスト。
+import {
+  extractImportantSpots,
+  heroInformationSets,
+  projectLearningReveal,
+} from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
+import { loadKb } from "../kb/index.js";
+import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
+import {
+  BTN_VS_UTG,
+  MULTIWAY_FLOP,
+  SB_VS_BTN,
+  playScriptedHand,
+} from "../testing/review-eval/hands.js";
+import { buildReviewEvidence } from "./evidence.js";
+import { buildRevealEvidence } from "./reveal-evidence.js";
 import {
   EVIDENCE_TERMS,
   evidenceGlossary,
   findIdentifiers,
   outputTexts,
-  playerNamesOf,
+  replacementNamesOf,
   sanitizeOutput,
   sanitizeText,
   toPlayerNames,
@@ -56,6 +71,12 @@ describe("sanitizeText", () => {
 
   it("値の後ろの文末のピリオドは値に含めない（potOdds=0.4. → Pot Odds 0.4.）", () => {
     expect(sanitizeText("potOdds=0.4.", names)).toBe("Pot Odds 0.4.");
+  });
+
+  it("playerId=cpu3 のように項目名と playerId が並んでも、どちらも残さない（席 CPU 3）", () => {
+    expect(
+      sanitizeText("playerId=cpu3 の handId と decisionIndex", names),
+    ).toBe("席 CPU 3 の Hand の ID と 判断の番号");
   });
 
   it("Evidence 内の位置（math.equity.method）と enum の値（monte_carlo）も置換する", () => {
@@ -136,6 +157,81 @@ describe("sanitizeOutput", () => {
   });
 });
 
+describe("対応表の網羅（Evidence の項目名・enum の値）", () => {
+  /** Supported の Solver Evidence の形（録画の Eval は Solver 未導入なので、実際の Evidence に出ないキーをここで補う）。 */
+  const solverSupported = {
+    status: "supported",
+    solver: { id: "x", version: "1", commit: "abc", pinnedCommit: true },
+    scope: "heads_up",
+    node: { street: "river", actor: "oop" },
+    betTree: {
+      betPotFractions: [0.5],
+      raiseMultipliers: [3],
+      allIn: true,
+      raiseCap: 4,
+    },
+    heroHandClass: "AJo",
+    heroHandClassStrategy: null,
+    rangeAssumptions: { oop: { comboCount: 6 }, ip: { comboCount: 6 } },
+  };
+  const rulingRecord = {
+    basis: "pending_out_of_turn",
+    outcome: "out_of_turn",
+    notes: ["out_of_turn_binding", "under_half_raise"],
+  };
+
+  it("Review AI へ渡す Evidence（Pass A・Pass B。固定 Hand の全判断）の camelCase の項目名と enum の値が、すべて対応表にある", async () => {
+    const kb = loadKb();
+    const solver = createAmaster97Adapter({
+      install: { installed: false, detail: "テスト" },
+      timeoutMs: 1,
+      maxConcurrency: 1,
+      iterations: 1,
+    });
+    const keys = new Set<string>();
+    const values = new Set<string>();
+    const names: Record<string, string> = {};
+    const walk = (v: unknown): void => {
+      if (typeof v === "string") {
+        if (/^[a-z]+(?:_[a-z0-9]+)+$/.test(v)) values.add(v);
+      } else if (Array.isArray(v)) {
+        v.forEach(walk);
+      } else if (typeof v === "object" && v !== null) {
+        for (const [k, x] of Object.entries(v)) {
+          keys.add(k);
+          walk(x);
+        }
+      }
+    };
+    for (const hand of [BTN_VS_UTG, SB_VS_BTN, MULTIWAY_FLOP]) {
+      const events = playScriptedHand(hand);
+      const sets = heroInformationSets(events, "hero");
+      const spots = extractImportantSpots(sets);
+      const reveal = projectLearningReveal(events);
+      for (const [i, set] of sets.entries()) {
+        const reasons = spots.find((s) => s.decisionIndex === i)?.reasons ?? [];
+        const evidence = await buildReviewEvidence(set, reasons, {
+          kb,
+          solver,
+        });
+        Object.assign(names, replacementNamesOf(evidence));
+        walk(evidence);
+        if (reveal !== null) {
+          walk(await buildRevealEvidence(set, reveal, events, reasons));
+        }
+      }
+    }
+    walk(solverSupported);
+    walk(rulingRecord);
+    const known = new Set(EVIDENCE_TERMS.map((t) => t.name));
+    const camelKeys = [...keys].filter((k) => /[A-Z]/.test(k));
+    expect(camelKeys.filter((k) => !known.has(k))).toEqual([]);
+    // enum の値と KB の項目の id は、置換で別の語になる（残らない）こと。
+    const left = [...values].filter((v) => sanitizeText(v, names) === v);
+    expect(left).toEqual([]);
+  }, 60_000);
+});
+
 describe("evidenceGlossary", () => {
   it("Pass A の説明には Hand 後（Pass B）の項目を出さない。Pass B には両方出す", () => {
     const decision = evidenceGlossary("decision");
@@ -153,8 +249,8 @@ describe("evidenceGlossary", () => {
   });
 });
 
-describe("playerNamesOf", () => {
-  it("席の displayName から対応を作る（displayName が無い古い Evidence は空）", () => {
+describe("replacementNamesOf", () => {
+  it("席の displayName と KB の項目のタイトルから対応を作る（displayName が無い古い Evidence は席の分が空）", () => {
     const seat = (playerId: string, displayName?: string) => ({
       playerId,
       ...(displayName === undefined ? {} : { displayName }),
@@ -162,8 +258,19 @@ describe("playerNamesOf", () => {
     const context = (seats: unknown[]) =>
       ({ seats }) as unknown as DecisionContextEvidence;
     expect(
-      playerNamesOf(context([seat("hero", "Hero"), seat("cpu1", "CPU 1")])),
-    ).toEqual({ hero: "Hero", cpu1: "CPU 1" });
-    expect(playerNamesOf(context([seat("cpu1")]))).toEqual({});
+      replacementNamesOf({
+        context: context([seat("hero", "Hero"), seat("cpu1", "CPU 1")]),
+        knowledge: { items: [{ kbId: "rake_effect", title: "Rake の影響" }] },
+      }),
+    ).toEqual({ hero: "Hero", cpu1: "CPU 1", rake_effect: "Rake の影響" });
+    expect(replacementNamesOf({ context: context([seat("cpu1")]) })).toEqual(
+      {},
+    );
+  });
+
+  it("KB の項目の id はタイトルに置換する", () => {
+    expect(
+      sanitizeText("rake_effect を参照", { rake_effect: "Rake の影響" }),
+    ).toBe("Rake の影響 を参照");
   });
 });

@@ -3,6 +3,7 @@
 // 対策は 3 段: ① Evidence に表示名を添える ② Prompt で識別子を書かないよう指示し、項目の説明を添える ③ 出力の文を保存の前に機械的に置換する。
 // 識別子が見つかっても Retry はしない（言い直しを求めても残ることがあり、呼び出しの回数と利用枠が増えるだけのため）。置換できなかった分は
 // findIdentifiers で数え、Review Eval の指標（残存率）で見る。ここで扱う表示名は Hero の画面に出ている名前だけで、Persona 等は入れない（不変条件 2）。
+import { KB_TOPICS } from "../kb/types.js";
 import type { DecisionContextEvidence } from "./types.js";
 
 /** playerId → 表示名（Hero の画面に出ている名前）。 */
@@ -27,6 +28,14 @@ interface EvidenceTerm {
 
 /** Evidence の項目の説明（Prompt に添える説明と、出力の置換の両方がこの 1 か所を見る）。 */
 export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
+  { name: "playerId", text: "席", pass: "decision" },
+  { name: "displayName", text: "表示名", pass: "decision" },
+  { name: "heroId", text: "Hero の席", pass: "decision" },
+  { name: "handId", text: "Hand の ID", pass: "decision" },
+  { name: "decisionIndex", text: "判断の番号", pass: "decision" },
+  { name: "smallBlind", text: "Small Blind", pass: "decision" },
+  { name: "bigBlind", text: "Big Blind", pass: "decision" },
+  { name: "toAmount", text: "その Street の累計の額", pass: "decision" },
   { name: "heroPosition", text: "Hero の Position", pass: "decision" },
   { name: "playerCount", text: "席に座っている人数", pass: "decision" },
   {
@@ -79,6 +88,13 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
     pass: "decision",
   },
   { name: "callAmount", text: "Call に必要な額", pass: "decision" },
+  { name: "winnablePot", text: "取りうる Pot", pass: "decision" },
+  { name: "requiredEquity", text: "必要 Equity", pass: "decision" },
+  {
+    name: "breakEvenFoldFrequency",
+    text: "損をしない Fold 率",
+    pass: "decision",
+  },
   { name: "potOdds", text: "Pot Odds", pass: "decision" },
   { name: "effectiveStack", text: "有効 Stack", pass: "decision" },
   {
@@ -112,6 +128,14 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
     pass: "decision",
   },
   { name: "profileId", text: "Range の想定の種類", pass: "decision" },
+  { name: "preflopSpot", text: "相手の Preflop の動き", pass: "decision" },
+  {
+    name: "preflopNotation",
+    text: "仮定した Preflop の Range の表記",
+    pass: "decision",
+  },
+  { name: "combosBefore", text: "絞り込み前の Combo 数", pass: "decision" },
+  { name: "combosAfter", text: "絞り込み後の Combo 数", pass: "decision" },
   { name: "heroHandClass", text: "Hero の札の Hand Class", pass: "decision" },
   {
     name: "heroHandClassStrategy",
@@ -121,6 +145,14 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
   { name: "rangeAssumptions", text: "Range の想定", pass: "decision" },
   { name: "comboCount", text: "Combo 数", pass: "decision" },
   { name: "betTree", text: "Bet Tree", pass: "decision" },
+  {
+    name: "betPotFractions",
+    text: "Bet の大きさ（Pot に対する割合）",
+    pass: "decision",
+  },
+  { name: "raiseMultipliers", text: "Raise の倍率", pass: "decision" },
+  { name: "raiseCap", text: "Bet / Raise の回数の上限", pass: "decision" },
+  { name: "pinnedCommit", text: "Solver の版の固定", pass: "decision" },
   { name: "kbVersion", text: "KB の Version", pass: "decision" },
   { name: "kbId", text: "KB の項目", pass: "decision" },
   {
@@ -155,6 +187,15 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
     pass: "reveal",
   },
   { name: "holeCards", text: "実際の札", pass: "reveal" },
+  {
+    name: "isDecision",
+    text: "Review の対象の判断かどうか",
+    whenTrue: "Review の対象の判断",
+    whenFalse: "Review の対象の判断ではない",
+    pass: "reveal",
+  },
+  { name: "playersInPot", text: "Pot を争っていた人数", pass: "reveal" },
+  { name: "actorEquity", text: "Action した本人の Equity", pass: "reveal" },
   { name: "finalBoard", text: "Hand の最後の Board", pass: "reveal" },
   { name: "equity.actual", text: "実際の札に対する Equity", pass: "reveal" },
   {
@@ -165,13 +206,71 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
   { name: "aggression.rule", text: "value / bluff の基準", pass: "reveal" },
 ];
 
-/** 英字と _ の値（enum）→ 文での書き方。 */
+/** 英字と _ の値（enum）→ 文での書き方。Evidence と出力に出る enum の値（網羅は identifiers.test.ts が実際の Evidence で確かめる）。 */
 const VALUE_TERMS: Readonly<Record<string, string>> = {
+  // Equity の算出方法・Solver
   monte_carlo: "Monte Carlo",
+  bet_or_raise: "Bet / Raise",
   heads_up: "Heads-Up",
-  all_in: "All-in",
+  not_applicable: "当てはまらない",
+  not_root_node: "Root の判断ではない",
+  not_collected: "未収集",
+  player_count: "人数",
+  side_pot: "Side Pot",
+  bet_tree: "Bet Tree",
+  solver_not_installed: "Solver 未導入",
+  invalid_input: "不正な入力",
+  process_failed: "Solver の異常終了",
+  parse_failure: "Solver の出力の読み取り失敗",
+  // 段階評価・理論の根拠
+  mixed_marginal: "僅差",
+  improvement_suggested: "改善の余地あり",
+  major_leak: "大きな損失につながる判断",
   insufficient_evidence: "根拠不足",
   general_theory: "一般的な理論",
+  // Action・Preflop の Spot・役
+  all_in: "All-in",
+  call_open: "Open への Call",
+  three_bet: "3-bet",
+  call_three_bet: "3-bet への Call",
+  four_bet_plus: "4-bet 以上",
+  check_option: "BB の Check Option",
+  not_acted: "まだ Action していない",
+  high_card: "High Card",
+  two_pair: "Two Pair",
+  three_of_a_kind: "Three of a Kind",
+  full_house: "Full House",
+  four_of_a_kind: "Four of a Kind",
+  straight_flush: "Straight Flush",
+  // Important Spot の理由・Reveal・裁定
+  big_pot: "大きい Pot",
+  river_big_bet: "River の大きい Bet",
+  learning_only: "答え合わせのために見せた情報",
+  pending_out_of_turn: "保留した手番外の操作",
+  out_of_turn: "手番外の操作",
+  out_of_turn_binding: "手番外の操作の拘束",
+  out_of_turn_released: "手番外の操作の撤回",
+  no_action: "Action なし",
+  declaration_ignored: "宣言を採らなかった裁定",
+  declaration_adjusted: "宣言を合法な Action に寄せた裁定",
+  check_facing_bet: "Bet に対する Check の宣言",
+  oversized_chip: "Oversized Chip",
+  string_bet: "String Bet",
+  every_chip_needed: "Chip がすべて Call に必要だった裁定",
+  half_raise_completed: "Half Raise の補完",
+  under_half_raise: "Half Raise に満たない上乗せ",
+  under_call: "Call に満たない額",
+  under_min_bet: "最小 Bet に満たない額",
+  raise_not_allowed: "Raise できない操作",
+  chip_push: "Chip を出す操作",
+  chip_add: "Chip を足す操作",
+  // KB の Topic（snake_case をそのまま語に開く）
+  ...Object.fromEntries(
+    KB_TOPICS.filter((t) => t.includes("_")).map((t) => [
+      t,
+      t.replaceAll("_", " "),
+    ]),
+  ),
 };
 
 /** 卓の Player（SeatPlayer）から、playerId → 表示名の対応を作る。 */
@@ -184,11 +283,26 @@ export function toPlayerNames(
   return Object.fromEntries(players.map((p) => [p.playerId, p.displayName]));
 }
 
-/** Hero を含む席の表示名の対応（Hero の画面に出ている名前）。Evidence の席から作る。古い Evidence（displayName 無し）は対応が空になる。 */
-export function playerNamesOf(context: DecisionContextEvidence): PlayerNames {
+/**
+ * 置換に使う「Evidence の id → 文での名前」の対応を、Evidence 自身から作る（Evidence に無い名前は使わない）。
+ * 席の playerId → 表示名（Hero の画面に出ている名前）と、KB の項目の id → タイトル（Pass A の Evidence だけが持つ）。
+ * 古い Evidence（displayName 無し）は、その分の対応が空になる。
+ */
+export function replacementNamesOf(evidence: {
+  readonly context: DecisionContextEvidence;
+  readonly knowledge?: {
+    readonly items: readonly {
+      readonly kbId: string;
+      readonly title: string;
+    }[];
+  };
+}): PlayerNames {
   const names: Record<string, string> = {};
-  for (const seat of context.seats) {
+  for (const seat of evidence.context.seats) {
     if (seat.displayName !== undefined) names[seat.playerId] = seat.displayName;
+  }
+  for (const item of evidence.knowledge?.items ?? []) {
+    names[item.kbId] = item.title;
   }
   return names;
 }

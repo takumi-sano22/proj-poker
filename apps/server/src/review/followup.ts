@@ -8,7 +8,7 @@ import { runStructuredQuery } from "../claude/structured-query.js";
 import { allEvidenceIds } from "./evidence.js";
 import {
   evidenceGlossary,
-  playerNamesOf,
+  replacementNamesOf,
   sanitizeOutput,
 } from "./identifiers.js";
 import {
@@ -268,7 +268,7 @@ export async function generateFollowUp(
         // 識別子の置換は Review と同じ（Retry はしない。#96）。
         answer: sanitizeOutput(
           check.value,
-          playerNamesOf(target.evidence.context),
+          replacementNamesOf(target.evidence),
         ),
         failure: null,
       };
