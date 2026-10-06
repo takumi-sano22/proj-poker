@@ -539,6 +539,10 @@ describe("Parse Failure と異常終了", () => {
       "per_class の Hand Class が空",
       () => fake.command("json", json({ per_class: { AQs: {} } })),
     ],
+    [
+      "per_class の Hand Class に行動の欠けがある",
+      () => fake.command("json", json({ per_class: { AQs: { check: 1 } } })),
+    ],
     ["per_class が空", () => fake.command("json", json({ per_class: {} }))],
   ] as const)("%s → parse_failure", async (_name, command) => {
     await expectSolverError(

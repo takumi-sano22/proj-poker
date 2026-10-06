@@ -424,9 +424,15 @@ function parseOutput(stdout: string, spot: AnalysisSpot): ParsedOutput {
   const byHandClass: Record<string, Record<string, number>> = {};
   for (const [handClass, value] of Object.entries(o.per_class)) {
     const freqs = readDistribution(value);
-    if (freqs === null || Object.keys(freqs).some((k) => !(k in aggregate))) {
+    // 行動のキーの集合が Range 全体と一致すること（欠けがあると Review が引いた頻度が undefined になる）。
+    const keys = freqs === null ? [] : Object.keys(freqs);
+    if (
+      freqs === null ||
+      keys.length !== Object.keys(aggregate).length ||
+      keys.some((k) => !(k in aggregate))
+    ) {
       return fail(
-        `per_class の ${handClass} が不正（空・範囲外の頻度・合計が 1 ではない・知らない行動）`,
+        `per_class の ${handClass} が不正（空・範囲外の頻度・合計が 1 ではない・行動の欠けか知らない行動）`,
       );
     }
     byHandClass[handClass] = freqs;

@@ -54,7 +54,7 @@ Phase 5 の子 Issue。Primary Solver（amaster97/poker_solver。D96）を包む
 
 ## 実行した確認
 
-- 品質チェック（worktree のルート）: `pnpm lint`（エラーなし）・`pnpm typecheck`（3 パッケージ Done）・`pnpm test`（engine 326 / web 109 / server 298 passed。Codex の指摘の修正後）・`pnpm format:check`（All matched files use Prettier code style!）。`pnpm -r build` も通った。
+- 品質チェック（worktree のルート）: `pnpm lint`（エラーなし）・`pnpm typecheck`（3 パッケージ Done）・`pnpm test`（engine 326 / web 109 / server 299 passed。Codex の指摘の修正後）・`pnpm format:check`（All matched files use Prettier code style!）。`pnpm -r build` も通った。
 - 導入スクリプト: `POKER_SOLVER_HOME=<scratchpad>/solver-home bash apps/server/solver/setup-amaster97.sh` → `導入した: amaster97/poker_solver 1.11.0 (f78f1b2bc338dd8cbb5226ecb8398bbdb3635676)`。clone 済みの状態での再実行も exit 0。導入先をリポジトリの中（本体・worktree）にすると `POKER_SOLVER_HOME はリポジトリの外に置く` で exit 1、ディレクトリは作られない。
 - **実 Solver での手動確認**（WSL2・Ubuntu 24.04・Ryzen 5 7500F、`POKER_SOLVER_HOME=… pnpm --filter @proj-poker/server smoke:solver`、200 Iteration）:
 
