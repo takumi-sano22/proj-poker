@@ -88,7 +88,8 @@ ScoreはConfidence / Sample Size / Evidence IDs / Trendと必ず一緒に扱い�
 - **Trend（暫定）**: 直近10件とその前の10件の加重平均を比べ、5点以上上がればimproving、下がればdeclining、それ以外はstable。20件に満たなければinsufficient。
 - **Drillの除外**: `excludeHandIds`で除くHandのidを受け取り、M・N・Scoreのどれにも入れません（D116。呼び出し側が`drills`テーブル〔#117〕のHandを渡す）。Drillの系列（§7）は逆に、`firstDecisionIndex`でDrillのHandのScriptが再現した判断を除き、練習した判断から数えます。
 - **Versionを変えた計算し直し**: `computeScoreReport`に別のPolicyを渡せば、同じEvent Logと`reviews`から計算し直せます。結果には計算したPolicyのVersion（`policyVersion`）を必ず残します。
-- 表示用のAPI・UIは#116、Learning Resetの区切り（D114）は#118で足します。
+- 表示用のAPI・UIは#116です。
+- **Learning Reset（D114・#118）**: カテゴリ`score`のResetの後は、Player ProfileのRecent / Long-termのScoreと「M件中N件」を、Resetより後に終わったHandの判断だけで数えます（Reviewの作成時刻では切らない。区切りの判定は`docs/04` §11）。Session ReviewのDecision Quality Summary（§6）は1 Sessionの振り返りなので区切りません（暫定）。
 
 ## 3. Detailed Statistics
 
@@ -127,7 +128,7 @@ Stats Projection（D103）:
 実装（#112）: `packages/engine/src/stats.ts` の `projectPlayerStats(hands, options)` が、HandごとのEvent Logの配列から全PlayerのStatsを計算します（I/O・LLMを持たない純粋関数。結果は保存しない。D111）。
 
 - 入力はpublicのEventだけです（`projection.ts` の `publicEvents`。卓に座った全員が見聞きした事実）。Hole Cards（private）・Deck（engine）・CPUの判断の経緯やSessionの運用・HandのMetadata（system）は読まないので、Hidden Cards・Persona・Learning-only Revealは入力の経路にありません。publicでないEventの中身を差し替えても取り除いても結果が変わらないことをProperty Testで確かめます（INV-TEST-007に相当）。
-- 集計に入れるのは `HAND_FINISHED` まで済んだHandです（進行中のHandと、`HAND_ABORTED` で打ち切ったHandは入れない）。`options.excludeHandIds` で除くHandを渡せます（DrillのHandを通常の集計から除く口。D116。呼び出し側が`drills`テーブル〔#117〕のHandを渡す）。Learning Resetの区切り（D114）で範囲を絞る引数は、#118で足します。
+- 集計に入れるのは `HAND_FINISHED` まで済んだHandです（進行中のHandと、`HAND_ABORTED` で打ち切ったHandは入れない）。`options.excludeHandIds` で除くHandを渡せます（DrillのHandを通常の集計から除く口。D116。呼び出し側が`drills`テーブル〔#117〕のHandを渡す）。Statsは Learning Reset（D114）の対象ではないので、Resetの後も全期間で数えます（範囲を絞る引数は持たない）。
 - 指標の定義は `STAT_DEFINITIONS` の1か所に集め、定義の版を `STATS_DEFINITION_VERSION`（最初は `phase6_stats_v1`）として結果に付けます。指標を足すときは定義を1つ足し、意味を変えたら版を上げます。指標ごとにNumerator / Denominator / Opportunity Countを返し、Percentageは表示側が計算します。Playerごとに、全体・Position別（UTG / HJ / CO / BTN / SB / BB。`positionName` と同じ分け方）・Street別の3つの表を持ちます。
 - Raiseの数え方は、Bet / Raiseと、その時点の最高額を超えるAll-inをAggressiveとします（Range Modelの `isAggressive` と同じ規則）。Preflopの機会は「そのPlayerがPreflopでActionしたHand」で数え、Blindを出しただけでActionが来なかったHand（Walk・BlindでAll-in）は入れません。
 
@@ -173,7 +174,8 @@ Structured Profileが正本で、自然言語のPlayer Profileはそこからの
 - **有効Decision**: Pass AのReviewがある判断です（D115）。Recentは、判断の順で末尾の`recentDecisions`件（暫定値100。`ProfilePolicy`に置き、変えるときはVersionを足す）、Long-termは全件です。どちらも`scoreEvidence`（Scoreと同じ集計）でOverall / Abilityを出し、件数（`reviewed`・`scored`）を持ちます。Long-termの集計は`computeScoreReport`と同じ値になります。
 - **持つもの**: Policyの各Version（Profile・Hypothesis・Scoring）、対象の判断の数とReview済みの数（M件中N件。D115）、Recent・Long-term、Weakness Hypothesis（§5。Snapshotを読まず、同じEvidenceから同じ関数で作る）。Improvementは、各AbilityのTrend（§2）とHypothesisの`improving` / `resolved`で表します。
 - **自然言語のProfile**: `renderProfileText`が、Structured Profileだけを受け取る決定論のテンプレートで作ります（LLMを呼ばない。APIの課金経路を増やさない）。表示用の派生で、Structured Profileは文を持たず、過去の文を次の計算の入力にしません。
-- **Drillの除外**: `excludeHandIds`（D116。Scoreと同じ口）。Learning Resetの区切り（D114）は#118で足します。表示用のAPI・UIは#116です（§6の実装）。
+- **Drillの除外**: `excludeHandIds`（D116。Scoreと同じ口）。表示用のAPI・UIは#116です（§6の実装）。
+- **Learning Reset（D114・#118）**: Profileの各部分は、そのカテゴリの最後のResetより後に終わったHandだけで作ります。Recent / Long-termのScoreと「M件中N件」は`score`、Weakness Hypothesisは`hypothesis`、自然言語のProfile（まとめの文）は`profile`のカテゴリに従います（カテゴリは独立。区切りの判定は`docs/04` §11）。Long-termは「全有効Evidence」ではなく「`score`のResetより後の全有効Evidence」になり、画面は「Reset 後」と区切りの時刻を出します。自然言語のProfileは、その区切りのHandだけで作ったStructured Profileからテンプレートで作り直し、過去の文・Snapshotを入力にしません。
 
 ## 5. Hypothesis Lifecycle
 
@@ -217,7 +219,8 @@ Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDs�
 
   Counter Evidenceが増えると、strong → supported → improving → resolvedと弱くなります。
 - **Snapshot（D113）**: `rebuildHypothesisSnapshot`が、reviewsから作り直した結果でマイグレーションv6の`hypothesis_snapshots`の全行を1トランザクションで入れ替えます（列は`docs/04` §7）。消して作り直しても同じ行になる派生データで、正本にしません。Player Profile（§4）はSnapshotを読まず、同じ関数で作ります。Profileの API（#116）は、読むたびに同じEvidenceのHypothesisでSnapshotを入れ替えます（`writeHypothesisSnapshot` / `readHypothesisSnapshot`。§6の実装）。
-- **Drillの除外**: `excludeHandIds`（D116）。Learning Resetの区切り（D114）は#118で足します。
+- **Drillの除外**: `excludeHandIds`（D116）。
+- **Learning Reset（D114・#118）**: `hypothesis`の最後のResetより後に終わったHandのEvidenceだけでHypothesisを作り、Snapshotの全行を入れ替えます（Resetの時点と、Profileを読むたびに）。Reset前のEvidenceは、Reset後にReviewしても入りません。
 
 ## 6. Session Review
 
@@ -247,6 +250,7 @@ Decision Quality SummaryとScoreは、Pass AのReviewがある判断だけで計
 - **Stats**: §3の`projectPlayerStats`をSessionのHand（Profileは全期間）で呼び、Heroの行だけを返します（他Playerの詳細HUDを出さない。D32）。
 - **Recommended Drill**: 候補はLeakの最初の判断（Pass AのReviewがある判断）で、候補があれば`available: true`です。その判断からTargeted Drill（§7）を始めます（#117）。
 - **Drillの除外**: `excludeHandIds`（D116）。`drills`テーブル（#117）のHandを渡します。
+- **Learning Reset**: Session Reviewは1 Sessionの振り返り（HandのReviewと同じく過去の記録の見方）なので、Learning Reset（D114）で区切りません（暫定。`docs/04` §11）。
 - **Weakness Hypothesis**: Profileの API を読むたびに、Profileと同じEvidenceから作ったHypothesisで§5のSnapshotを入れ替え、その行（作り直した時刻つき）を返します。
 
 ## 7. Targeted Drill
@@ -302,6 +306,7 @@ Engineの`packages/engine/src/drill.ts`（Spotの作成と検証）と、server�
 - **記録**: マイグレーションv7の追記型の`drills`テーブル（`docs/04` §12）に、元のHand・判断・Pass AのReviewのid・変形の種類と値・Policyの Version・seed・DrillのHandのidを、DrillのHandを始める前に足します（Handが保存されるより先に、通常の集計・Resumeから除く対象に入れる）。途中で止まったDrillのHandは保存されず、行だけが残ります（Drillの一覧では`finished: false`）。同じ元の判断のDrillのHandがこのプロセスでまだ終わっていなければ、開始の要求は新しく作らずそのDrillを返します（応答だけが失われた開始の再送で、Drillを増やさない）。
 - **通常の集計から除く（D116）**: Stats・Score・Profile・Hypothesis・Session Review・Replayの一覧・Resume（`latestSessionProjection`）は、`drills`にあるHandとその専用のSessionを除きます。1 Handの再生（`GET /api/replay/hands/:handId`）とReviewは、DrillのHandでも開けます。
 - **DrillのReviewと結果（D105）**: DrillのHandの判断のReviewは、既存のPass Aの経路（`/api/reviews/...`）をそのまま使います。Pass AはEvent Logの判断時点の情報だけから作るので、Drillの設定（相手の傾向のPreset）はReviewの入力に入りません。Drillの結果は通常のAbility / Overall Scoreと別の系列で、終わったDrillのHandの練習した判断（Scriptが再現した元の判断を除く）だけを、同じ`ScoringPolicy`で集計します（`GET /api/drills`の`score`。M件中N件つき）。
+- **Learning Reset（D114・#118。暫定）**: Drillの系列のScoreは、通常のScoreと同じカテゴリ`score`のResetより後に終わったDrillのHandだけで数えます（`score.since`に区切りの時刻）。Drillの一覧（行と段階評価）はResetで変えません。Drillの系列を別のカテゴリにするかは、使ってみて必要なら決め直します。
 - **LLMでSpotを作る経路**: Phase 6の範囲外です（D110）。将来入れる場合も、`startDrillHand`と同じEngineのValidationを通します。
 
 ## 8. Opponent Reading Training

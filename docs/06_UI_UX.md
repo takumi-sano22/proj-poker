@@ -257,7 +257,8 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 - **Stats**: Hero自身の代表Stats（VPIP・PFR・3-bet等）を、割合と分子 / 分母で出します（機会が無ければ割合を出さない）。他Playerの統計は出しません。
 - **Recommended Drill**: 候補（Leakの最初の判断）と「Drill を始める」を出します。候補が無ければButtonは押せません。押すとTargeted Drill（下記）を始めます（#117）。
 - **Drill の結果**: 「Drill の結果（通常の Score と別に数えます）」の欄に、練習した判断の「M 件中 N 件を Review 済み」とOverall（確度と件数つき）と、Drillごとの行（変えた要素・段階評価または「未 Review」）を出します。行から、練習した判断のReviewを開きます（D105）。
-- **Player Profile**: 「直近 N 件（Recent）」「全期間（Long-term）」のタブで、Review済みの数・Overall・Abilityを出し分け、全期間のWeakness Hypothesis（状態の文字と支持 / 反証の件数）・決定論の文のまとめ・全期間のHeroのStatsを続けます。
+- **Player Profile**: 「直近 N 件（Recent）」「全期間（Long-term）」のタブで、Review済みの数・Overall・Abilityを出し分け、全期間のWeakness Hypothesis（状態の文字と支持 / 反証の件数）・決定論の文のまとめ・全期間のHeroのStatsを続けます。Learning Reset（下記）の後は、Resetしたカテゴリの欄だけ「全期間」を「Reset 後」にし、「<日時> の Learning Reset より後に終わった Hand から数えています。」を添えます（Statsは全期間のまま）。Drillの結果の欄も、カテゴリ`score`のResetの後は同じ文を添えます。
+- **Learning Reset（#118・D114・`docs/04` §11）**: Player Profileの下に「学習の記録を数え直す（Learning Reset）」の欄を置きます（`components/LearningReset.tsx`）。数え直す項目（Score・弱点の仮説・まとめの文）をチェックで選び（既定は全部）、「数え直す…」で確認の面を開きます。確認の面は危険色の縁で区切り、選んだ項目・「この操作は取り消せません」・「Hand の記録・Review・Note / Tag・User Read・Stats は消えません」を出し、初期フォーカスは「やめる」に置きます（開いた直後の Enter で確定させない）。確定は`.btn--danger`の「数え直す」です。送信中は Button を押せなくし、失敗したら驚かせない文言で再送を促します。終わったらProfileとDrillの結果を読み直し、最後のResetの時刻をカテゴリごとに出します。1280×900・375×667・320×568で横スクロールが出ないこと・確定の Button が覆われないことを確かめました。
 - Hidden Persona・CPUのPrivateな状態・他者の札・Learning-only Revealは画面に届きません（APIが返さない）。値はすべて`ui-design-recipes`の既存トークン（Reviewの面・段階評価の色・`.spot-row`・`.pass-tab`）で描き、横スクロールが出ないこと・Buttonが覆われないことを1280×900・375×667・320×568で確かめました。
 
 ### Targeted Drill（#117・D105・D110・D116・`docs/07` §7）
