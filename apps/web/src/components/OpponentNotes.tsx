@@ -18,6 +18,8 @@ import {
 interface OpponentNotesProps {
   readonly handId: string;
   readonly players: readonly TablePlayer[];
+  /** 今の Hand に座っている席（Bust して座っていない CPU は対象にできない）。 */
+  readonly seatedIds: readonly string[];
 }
 
 /** どの Hand・席の Note / Tag か（Hand・席を切り替えた後に届いた古い応答を捨てるための鍵）。 */
@@ -35,10 +37,20 @@ function messageOf(error: unknown): string {
   return "うまく処理できませんでした。もう一度送ってください。";
 }
 
-export function OpponentNotes({ handId, players }: OpponentNotesProps) {
-  const cpus = players.filter((p) => p.kind === "cpu");
+export function OpponentNotes({
+  handId,
+  players,
+  seatedIds,
+}: OpponentNotesProps) {
+  const cpus = players.filter(
+    (p) => p.kind === "cpu" && seatedIds.includes(p.playerId),
+  );
   const [open, setOpen] = useState(false);
-  const [playerId, setPlayerId] = useState(cpus[0]?.playerId ?? "");
+  const [chosen, setChosen] = useState(cpus[0]?.playerId ?? "");
+  // 選んでいた CPU が次の Hand で座っていなければ（Bust）、座っている最初の CPU にする。
+  const playerId = cpus.some((p) => p.playerId === chosen)
+    ? chosen
+    : (cpus[0]?.playerId ?? "");
   // Hand・席（keyOf）ごとに、最後に届いた今の Note / Tag と失敗の案内を持つ。席を切り替えた後に前の席の応答が届いても、
   // その席の欄に入るだけで、表示中の席の欄を上書きしない。
   const [loaded, setLoaded] = useState<Readonly<Record<string, SubjectNotes>>>(
@@ -48,6 +60,16 @@ export function OpponentNotes({ handId, players }: OpponentNotesProps) {
   const [busy, setBusy] = useState(false);
   // 同じ tick の連打は state の更新より先に来るので、ref でも止める（2 層のガード）。
   const inFlight = useRef(false);
+  // Hand・席ごとの、最後に送った要求の番号。読み直しと追加・削除が行き違ったとき、後に送った要求の応答だけを残す。
+  const issued = useRef(new Map<string, number>());
+  const nextRequest = useRef(0);
+  const issue = (requested: string): number => {
+    const n = ++nextRequest.current;
+    issued.current.set(requested, n);
+    return n;
+  };
+  const isLatest = (requested: string, n: number): boolean =>
+    issued.current.get(requested) === n;
   const [noteText, setNoteText] = useState("");
   const [tagText, setTagText] = useState("");
   const key = keyOf(handId, playerId);
@@ -64,21 +86,18 @@ export function OpponentNotes({ handId, players }: OpponentNotesProps) {
     setErrors((prev) => ({ ...prev, [requested]: messageOf(error) }));
 
   // 開いている間、Hand・席が変わるたびに読み直す（別の Session の席は別の相手）。
-  // 読み込みの間は追加・削除を止める（読み込みの応答が追加の応答より後に届いて、古い状態で上書きしないため）。
+  // 読み込みの間（その席の今の状態をまだ持たない間）は追加・削除を止める。
   useEffect(() => {
     if (!open || playerId === "") return;
     const requested = keyOf(handId, playerId);
-    let cancelled = false;
+    const n = issue(requested);
     fetchSubjectNotes(handId, playerId)
       .then((notes) => {
-        if (!cancelled) store(requested, notes);
+        if (isLatest(requested, n)) store(requested, notes);
       })
       .catch((e: unknown) => {
-        if (!cancelled) fail(requested, e);
+        if (isLatest(requested, n)) fail(requested, e);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [open, handId, playerId]);
 
   const current = loaded[key] ?? null;
@@ -93,12 +112,14 @@ export function OpponentNotes({ handId, players }: OpponentNotesProps) {
     if (inFlight.current) return false;
     inFlight.current = true;
     const requested = key;
+    const n = issue(requested);
     setBusy(true);
     try {
-      store(requested, await request());
+      const notes = await request();
+      if (isLatest(requested, n)) store(requested, notes);
       return true;
     } catch (e: unknown) {
-      fail(requested, e);
+      if (isLatest(requested, n)) fail(requested, e);
       return false;
     } finally {
       inFlight.current = false;
@@ -140,7 +161,7 @@ export function OpponentNotes({ handId, players }: OpponentNotesProps) {
           <select
             className="opponent-notes__select"
             value={playerId}
-            onChange={(e) => setPlayerId(e.target.value)}
+            onChange={(e) => setChosen(e.target.value)}
           >
             {cpus.map((p) => (
               <option key={p.playerId} value={p.playerId}>

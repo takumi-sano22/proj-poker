@@ -667,13 +667,17 @@ describe("User Read の入口（#115）", () => {
 });
 
 describe("CPU の Note / Tag（#115）", () => {
-  it("既定は閉じた欄（summary だけ）で、CPU がいなければ出さない", () => {
+  it("既定は閉じた欄（summary だけ）で、今の Hand に座っている CPU がいなければ出さない", () => {
     const players = [
       { playerId: "hero", displayName: "Hero", kind: "hero" as const },
       { playerId: "cpu1", displayName: "CPU 1", kind: "cpu" as const },
     ];
     const html = renderToStaticMarkup(
-      <OpponentNotes handId="h1" players={players} />,
+      <OpponentNotes
+        handId="h1"
+        players={players}
+        seatedIds={["hero", "cpu1"]}
+      />,
     );
     expect(html).toContain("CPU の Note / Tag");
     expect(html).toContain("<details");
@@ -681,7 +685,7 @@ describe("CPU の Note / Tag（#115）", () => {
     expect(html).toContain("CPU には伝わりません");
     expect(
       renderToStaticMarkup(
-        <OpponentNotes handId="h1" players={players.slice(0, 1)} />,
+        <OpponentNotes handId="h1" players={players} seatedIds={["hero"]} />,
       ),
     ).toBe("");
   });

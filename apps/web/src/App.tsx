@@ -159,7 +159,11 @@ export function App() {
               <aside className="app__side">
                 <HandLog view={view} nameOf={nameOf} />
                 {/* Hero の CPU ごとの Note / Tag（#115）。HUD（統計）ではなく Hero 自身のメモ（D32） */}
-                <OpponentNotes handId={view.handId} players={players} />
+                <OpponentNotes
+                  handId={view.handId}
+                  players={players}
+                  seatedIds={view.seats.map((s) => s.playerId)}
+                />
               </aside>
             </main>
             <HeroDock
