@@ -328,9 +328,7 @@ async function recordReadAndNotes(page: Page): Promise<void> {
   await expect(
     log.getByText("Hero の読み（CPU 1）: Value が多そう"),
   ).toBeVisible();
-  await expect(
-    dock.getByRole("button", { name: "読みを記録" }),
-  ).toBeVisible();
+  await expect(dock.getByRole("button", { name: "読みを記録" })).toBeVisible();
 
   const notes = page.locator(".opponent-notes");
   await notes.getByText("CPU の Note / Tag").click();
