@@ -86,7 +86,7 @@ ScoreはConfidence / Sample Size / Evidence IDs / Trendと必ず一緒に扱い�
 - **Live Mechanics（D48。暫定式）**: その判断のHeroの操作に理由のある裁定（Oversized Chip等。`docs/02`）が入れば0点、入らなければ100点。Assessmentを使わないのでinsufficient_evidenceの判断も数え、裁定は決定論なのでWeightは1です。Overallには入れません。
 - **ScoreのConfidence（暫定）**: 集計に入ったEvidenceの数で決めます。0件はinsufficient（Scoreはnull）、1〜9件はlow、10〜29件はmedium、30件以上はhigh。
 - **Trend（暫定）**: 直近10件とその前の10件の加重平均を比べ、5点以上上がればimproving、下がればdeclining、それ以外はstable。20件に満たなければinsufficient。
-- **Drillの除外**: `excludeHandIds`で除くHandのidを受け取り、M・N・Scoreのどれにも入れません（D116。`drills`テーブルは#117）。
+- **Drillの除外**: `excludeHandIds`で除くHandのidを受け取り、M・N・Scoreのどれにも入れません（D116。呼び出し側が`drills`テーブル〔#117〕のHandを渡す）。Drillの系列（§7）は逆に、`firstDecisionIndex`でDrillのHandのScriptが再現した判断を除き、練習した判断から数えます。
 - **Versionを変えた計算し直し**: `computeScoreReport`に別のPolicyを渡せば、同じEvent Logと`reviews`から計算し直せます。結果には計算したPolicyのVersion（`policyVersion`）を必ず残します。
 - 表示用のAPI・UIは#116、Learning Resetの区切り（D114）は#118で足します。
 
@@ -127,7 +127,7 @@ Stats Projection（D103）:
 実装（#112）: `packages/engine/src/stats.ts` の `projectPlayerStats(hands, options)` が、HandごとのEvent Logの配列から全PlayerのStatsを計算します（I/O・LLMを持たない純粋関数。結果は保存しない。D111）。
 
 - 入力はpublicのEventだけです（`projection.ts` の `publicEvents`。卓に座った全員が見聞きした事実）。Hole Cards（private）・Deck（engine）・CPUの判断の経緯やSessionの運用・HandのMetadata（system）は読まないので、Hidden Cards・Persona・Learning-only Revealは入力の経路にありません。publicでないEventの中身を差し替えても取り除いても結果が変わらないことをProperty Testで確かめます（INV-TEST-007に相当）。
-- 集計に入れるのは `HAND_FINISHED` まで済んだHandです（進行中のHandと、`HAND_ABORTED` で打ち切ったHandは入れない）。`options.excludeHandIds` で除くHandを渡せます（DrillのHandを通常の集計から除く口。D116。`drills` テーブルは#117で作り、呼び出し側が渡す）。Learning Resetの区切り（D114）で範囲を絞る引数は、#118で足します。
+- 集計に入れるのは `HAND_FINISHED` まで済んだHandです（進行中のHandと、`HAND_ABORTED` で打ち切ったHandは入れない）。`options.excludeHandIds` で除くHandを渡せます（DrillのHandを通常の集計から除く口。D116。呼び出し側が`drills`テーブル〔#117〕のHandを渡す）。Learning Resetの区切り（D114）で範囲を絞る引数は、#118で足します。
 - 指標の定義は `STAT_DEFINITIONS` の1か所に集め、定義の版を `STATS_DEFINITION_VERSION`（最初は `phase6_stats_v1`）として結果に付けます。指標を足すときは定義を1つ足し、意味を変えたら版を上げます。指標ごとにNumerator / Denominator / Opportunity Countを返し、Percentageは表示側が計算します。Playerごとに、全体・Position別（UTG / HJ / CO / BTN / SB / BB。`positionName` と同じ分け方）・Street別の3つの表を持ちます。
 - Raiseの数え方は、Bet / Raiseと、その時点の最高額を超えるAll-inをAggressiveとします（Range Modelの `isAggressive` と同じ規則）。Preflopの機会は「そのPlayerがPreflopでActionしたHand」で数え、Blindを出しただけでActionが来なかったHand（Walk・BlindでAll-in）は入れません。
 
@@ -245,8 +245,8 @@ Decision Quality SummaryとScoreは、Pass AのReviewがある判断だけで計
 - **Strength / Leak（暫定）**: Pass Aの段階評価が`strong`の判断をStrength、`major_leak` / `improvement_suggested`の判断をLeak（重い順）とします。`reasonable`・`mixed_marginal`はどちらにも入れません。
 - **Important Hands（暫定）**: Important Spot（`docs/05`。判断時点の情報だけで選ぶ）か、Strength / Leakの判断があるHandを、Leakの多い順 → Important Spotの多い順 → Handの順に並べ、5 Handまで出します。結果（収支）では選びません。行はHeroの札・Important Spotの理由・Review済みの数で、他者の札は出しません。
 - **Stats**: §3の`projectPlayerStats`をSessionのHand（Profileは全期間）で呼び、Heroの行だけを返します（他Playerの詳細HUDを出さない。D32）。
-- **Recommended Drill**: 入口だけです（D116）。候補はLeakの最初の判断で、Drillの生成・開始は#117です（`available: false`）。
-- **Drillの除外**: `excludeHandIds`（D116）。`drills`テーブルは#117で作るので、今は空集合を渡します。
+- **Recommended Drill**: 候補はLeakの最初の判断（Pass AのReviewがある判断）で、候補があれば`available: true`です。その判断からTargeted Drill（§7）を始めます（#117）。
+- **Drillの除外**: `excludeHandIds`（D116）。`drills`テーブル（#117）のHandを渡します。
 - **Weakness Hypothesis**: Profileの API を読むたびに、Profileと同じEvidenceから作ったHypothesisで§5のSnapshotを入れ替え、その行（作り直した時刻つき）を返します。
 
 ## 7. Targeted Drill
@@ -281,6 +281,28 @@ Phase 6のDrill（D105）:
 - Effective Stack変更
 - Opponent Tendency変更
 - Bet Size変更
+
+### 実装（#117。`phase6_drill_v1` の種類と値はすべてOI-006の暫定値）
+
+Engineの`packages/engine/src/drill.ts`（Spotの作成と検証）と、serverの`apps/server/src/drill/`（変形の選び方・記録・開始と集計）・`routes/drills.ts`（API）です。LLMは使いません（D110）。
+
+- **題材（provenance）**: 元のHandのHeroの判断1つで、Pass AのReviewがある判断だけです（Evidenceのprovenance。ReviewはDrillを作った時点の最新のVersion）。Session Review（§6）のRecommended Drill（Leakの最初の判断）から始めます。DrillのHandからDrillは作りません。題材の選び方にHeroの判断とReview（Hero側の処理）を使うだけで、ユーザーの弱点（Profile・Hypothesis・Score）はCPUの入力へ渡しません（下記）。
+- **Underlying Concept（Spot）**: 判断時点のHero Information Set（`heroInformationSets`。判断時点までにHeroに見えたEventだけ）から作ります。元のHandの席順・Button・Blind、Heroの札、判断時点までに公開されたBoard、判断の直前までの全員の公開のAction（`ACTION_TAKEN`。Heroの前の判断を含む）を写し、Deckの残り（相手の札・この後のBoard）はseedで配り直します。他者のHidden Cards・判断より後のBoard・Learning-only Revealは入力の経路に無いので、Heroが元のHandで見ていない札をDrillで見せることはありません（元のHandの相手の札・この後のBoardを変えても、同じseedなら同じSpotになることをテストで確かめる）。
+- **一要素だけ変える（変形の種類）**:
+
+  | 種類 | 変えるもの | 値（`phase6_drill_v1`） | 当てはまらない判断 |
+  |---|---|---|---|
+  | `effective_stack` | 開始時の全員のStackを倍率で変える（Blindは変えない。有効StackとSPRが変わる。Chipは整数に丸める） | 0.5倍・2倍 | Scriptの額がStackを超えて合法でなくなる |
+  | `bet_size` | 判断のStreetでHeroが直面した相手の最初のBet（そのStreetのAggressiveなActionがそのBetだけ）の額を、Betの直前のPotの割合にする（BB未満にしない） | 33%・75%・150% | Betに直面していない判断（Preflop・Checkで回ったStreet・Raiseがある）、額が元と同じ |
+  | `opponent_tendency` | Spotは変えず、判断の後の相手（全員）のActionを、PersonaのPresetのRuleBotで決める。どのPresetかはDrillの設定としてHeroに見せる（元のHandのCPUのHidden Personaは読まない・見せない） | 6つのPreset（`docs/05` §2・OI-005） | —（Spotが元の卓のRule Profileで成り立つ限り当てはまる） |
+
+- **選び方（決定論）**: seedから、変形の種類の順 → 種類ごとの値の順を決め（値の数が多い種類に偏らせない）、EngineのValidationを通る最初の候補を使います。通る候補が無ければDrillを出しません（`drill_unavailable`）。同じ元の判断・同じseed・同じPolicyからは同じDrill（変形・Spot・相手のPersona）になります。seedはサーバーだけが持ち、応答に出しません。
+- **EngineのValidation**: `startDrillHand`が、Spotの開始（`startHand`。Deckは52枚の重複なし）と`SESSION_STARTED`と判断の直前までのScriptを、Engineの`applyAction`で順に適用します。通るのは、すべてのActionをEngineが受け付け、Chipの総量（StackとPotの合計）が開始時と同じで、Handが終わらずに元の判断と同じStreetでHeroの手番になり、Heroの判断の数が元の判断の番号と同じときだけです。元のHandのRule Profileが今の卓と違えば始めません。
+- **DrillのHand**: 専用のSession（そのHandだけ）の通常のHandとしてEngineで終局まで進め、Event Logに残します（Eventの形は変えない。D116）。判断の直前までは元のHandの公開のActionをScriptとして再現し、練習する判断からはHeroが選び、相手はRuleBot（`opponent_tendency`ならそのPreset、それ以外は既定のRuleBot）が決定論で決めます（CPUのLLMを呼ばない。課金の経路を増やさない）。RuleBotの入力はそのCPUの`KnowledgeState`とLegal Actionだけで、ユーザーの弱点・Note / Tag・User Readは入りません（不変条件2。`drill/drill-plan.ts`から`learning/`に届かないことを`learning-isolation.test.ts`で確かめる）。DrillのHandの間も、通常のSession（次のHand・Resume）は変えません。
+- **記録**: マイグレーションv7の追記型の`drills`テーブル（`docs/04` §12）に、元のHand・判断・Pass AのReviewのid・変形の種類と値・Policyの Version・seed・DrillのHandのidを、DrillのHandを始める前に足します（Handが保存されるより先に、通常の集計・Resumeから除く対象に入れる）。途中で止まったDrillのHandは保存されず、行だけが残ります（Drillの一覧では`finished: false`）。
+- **通常の集計から除く（D116）**: Stats・Score・Profile・Hypothesis・Session Review・Replayの一覧・Resume（`latestSessionProjection`）は、`drills`にあるHandとその専用のSessionを除きます。1 Handの再生（`GET /api/replay/hands/:handId`）とReviewは、DrillのHandでも開けます。
+- **DrillのReviewと結果（D105）**: DrillのHandの判断のReviewは、既存のPass Aの経路（`/api/reviews/...`）をそのまま使います。Pass AはEvent Logの判断時点の情報だけから作るので、Drillの設定（相手の傾向のPreset）はReviewの入力に入りません。Drillの結果は通常のAbility / Overall Scoreと別の系列で、終わったDrillのHandの練習した判断（Scriptが再現した元の判断を除く）だけを、同じ`ScoringPolicy`で集計します（`GET /api/drills`の`score`。M件中N件つき）。
+- **LLMでSpotを作る経路**: Phase 6の範囲外です（D110）。将来入れる場合も、`startDrillHand`と同じEngineのValidationを通します。
 
 ## 8. Opponent Reading Training
 
