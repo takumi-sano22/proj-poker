@@ -4,6 +4,8 @@
 //   Button は置かない（D115）。Review は Strength / Leak・Important Hands の行から Hand の Review 画面を開いて 1 つずつ作る
 // - Stats は Hero 自身の行だけ（他 Player の HUD を出さない。D32）。Hidden Persona・CPU の Private な状態・他者の札・Pass B は届かない
 // - Recommended Drill は候補（Leak の最初の判断）から Targeted Drill を始める入口（#117）。Drill の結果は通常の Score と別の欄に出す（D105）
+// - Learning Reset（#118・D114）の入口は Player Profile の下に置く。Reset 後は Score・弱点の仮説・まとめの文に区切りの時刻を添える
+//   （Session Review と Stats は Reset の対象ではない）
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ACTION_TERMS, STREET_TERMS, termLabel } from "../lib/format.js";
 import {
@@ -16,6 +18,7 @@ import {
   durationText,
   hypothesisTone,
   netText,
+  resetSinceNote,
   sampleCaveat,
   scoreMeta,
   scoreText,
@@ -41,6 +44,7 @@ import {
 } from "../lib/review.js";
 import type { Assessment } from "../lib/review-api.js";
 import { useShowBB } from "./BbDisplay.js";
+import { LearningReset } from "./LearningReset.js";
 import { PlayingCard } from "./PlayingCard.js";
 
 /** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
@@ -140,6 +144,13 @@ export function SessionReviewScreen({
           />
         )}
       </section>
+      <LearningReset
+        resets={profile.state === "ready" ? profile.value.resets : null}
+        onDone={() => {
+          retryProfile();
+          retryDrills();
+        }}
+      />
     </main>
   );
 }
@@ -538,12 +549,14 @@ export function DrillResultsBody({
   if (finished.length === 0) {
     return <p className="evidence__muted">終わった Drill はまだありません。</p>;
   }
+  const since = resetSinceNote(score.since);
   return (
     <div className="learning-card">
       <p className="learning-count">
         練習した判断 {score.decisions.total} 件中 {score.decisions.reviewed}{" "}
         件を Review 済み
       </p>
+      {since !== null && <p className="review-section__note">{since}</p>}
       <div className="learning-score">
         <span className="learning-score__value">
           {scoreText(score.overall)}
@@ -595,12 +608,20 @@ export function ProfileBody({
   const { profile } = response;
   const shown: ProfileWindow =
     tab === "recent" ? profile.recent : profile.longTerm;
+  // Learning Reset（D114）の後は、カテゴリごとに Reset より後に終わった Hand から数える。
+  const scoreSince = resetSinceNote(response.resets.score);
+  const hypothesisSince = resetSinceNote(response.resets.hypothesis);
+  const textSince = resetSinceNote(response.resets.profile);
   return (
     <>
       <p className="learning-count">
-        全期間の判断 {profile.decisions.total} 件中 {profile.decisions.reviewed}{" "}
-        件を Review 済み
+        {scoreSince === null ? "全期間" : "Reset 後"}の判断{" "}
+        {profile.decisions.total} 件中 {profile.decisions.reviewed} 件を Review
+        済み
       </p>
+      {scoreSince !== null && (
+        <p className="review-section__note">{scoreSince}</p>
+      )}
       <div className="pass-tabs" role="group" aria-label="期間">
         <TabButton active={tab === "recent"} onClick={() => setTab("recent")}>
           直近 {profile.recent.window} 件（Recent）
@@ -609,7 +630,7 @@ export function ProfileBody({
           active={tab === "longTerm"}
           onClick={() => setTab("longTerm")}
         >
-          全期間（Long-term）
+          {scoreSince === null ? "全期間" : "Reset 後"}（Long-term）
         </TabButton>
       </div>
       <div className="learning-card">
@@ -632,8 +653,12 @@ export function ProfileBody({
       </div>
       <section className="review-section" aria-labelledby="learning-hypo">
         <h4 className="review-section__title" id="learning-hypo">
-          弱点の仮説（Weakness Hypothesis・全期間）
+          弱点の仮説（Weakness Hypothesis・
+          {hypothesisSince === null ? "全期間" : "Reset 後"}）
         </h4>
+        {hypothesisSince !== null && (
+          <p className="review-section__note">{hypothesisSince}</p>
+        )}
         {profile.hypotheses.length === 0 ? (
           <p className="evidence__muted">
             弱点の仮説はまだありません（改善の余地がある判断が Review
@@ -666,6 +691,9 @@ export function ProfileBody({
         <h4 className="review-section__title" id="learning-text">
           まとめ
         </h4>
+        {textSince !== null && (
+          <p className="review-section__note">{textSince}</p>
+        )}
         <p className="learning-text">{response.text}</p>
       </section>
       <section className="review-section" aria-labelledby="learning-stats-all">

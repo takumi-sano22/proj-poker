@@ -8,7 +8,7 @@ import type {
   StatTable,
   Street,
 } from "@proj-poker/engine";
-import { getJson } from "./api.js";
+import { getJson, postJson } from "./api.js";
 import type { Assessment, Confidence } from "./review-api.js";
 
 /** Ability Dimension（docs/07 §2。サーバーの ScoringPolicy の一覧。並びはサーバーが決める）。 */
@@ -145,11 +145,40 @@ export interface PlayerProfile {
   readonly hypotheses: readonly Hypothesis[];
 }
 
+/**
+ * Learning Reset のカテゴリ（D114。サーバーの LEARNING_RESET_CATEGORIES と同じ）。
+ * score: Ability / Overall Score（Profile の直近・全期間と Drill の系列）/ hypothesis: 弱点の仮説 / profile: まとめの文
+ */
+export type LearningResetCategory = "score" | "hypothesis" | "profile";
+
+export const LEARNING_RESET_CATEGORIES: readonly LearningResetCategory[] = [
+  "score",
+  "hypothesis",
+  "profile",
+];
+
+/** カテゴリごとの最後の Learning Reset の時刻（ISO 8601。Reset していなければ null）。 */
+export type ResetBoundaries = Readonly<
+  Record<LearningResetCategory, string | null>
+>;
+
 export interface ProfileResponse {
+  /** decisions・recent・longTerm は score、hypotheses は hypothesis の区切りより後の Hand から作られる。 */
   readonly profile: PlayerProfile;
-  /** Structured Profile からの決定論の文（表示用の派生）。 */
+  /** Structured Profile からの決定論の文（表示用の派生。profile の区切りより後の Hand から）。 */
   readonly text: string;
+  readonly resets: ResetBoundaries;
+  /** Stats は Learning Reset の対象ではない（全期間）。 */
   readonly heroStats: HeroStats;
+}
+
+export interface LearningResetResponse {
+  readonly reset: {
+    readonly resetId: string;
+    readonly createdAt: string;
+    readonly categories: readonly LearningResetCategory[];
+  };
+  readonly resets: ResetBoundaries;
 }
 
 /** handId の Hand が属する Session の Session Review。 */
@@ -162,4 +191,13 @@ export function fetchSessionReview(handId: string): Promise<SessionReview> {
 /** Recent / Long-term の Player Profile。 */
 export function fetchProfile(): Promise<ProfileResponse> {
   return getJson<ProfileResponse>("/api/learning/profile");
+}
+
+/** Learning Reset（区切りの行を足すだけ。Hand の記録・Review・Note / Tag・Stats は消えない）。 */
+export function resetLearning(
+  categories: readonly LearningResetCategory[],
+): Promise<LearningResetResponse> {
+  return postJson<LearningResetResponse>("/api/learning/resets", {
+    categories,
+  });
 }
