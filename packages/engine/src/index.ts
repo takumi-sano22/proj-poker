@@ -114,6 +114,7 @@ export type { NextHandSeating, PreviousHandResult } from "./position.js";
 export {
   projectHeroView,
   projectKnowledgeState,
+  publicEvents,
   visibleEvents,
 } from "./projection.js";
 export type {
@@ -147,6 +148,26 @@ export type {
 } from "./hand-summary.js";
 
 export { projectLearningReveal } from "./learning-reveal.js";
+
+export {
+  STAT_DEFINITIONS,
+  STATS_DEFINITION_VERSION,
+  projectPlayerStats,
+  toStatsHand,
+} from "./stats.js";
+export type {
+  PlayerStats,
+  StatContribution,
+  StatDefinition,
+  StatId,
+  StatKind,
+  StatTable,
+  StatValue,
+  StatsAction,
+  StatsHand,
+  StatsOptions,
+  StatsProjection,
+} from "./stats.js";
 export type { LearningReveal, RevealedHoleCards } from "./learning-reveal.js";
 
 export { breakEvenFoldFrequency, potOdds } from "./pot-math.js";

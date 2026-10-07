@@ -97,6 +97,24 @@ Stats Projection（D103）:
 - 指標をSchemaへ固定で埋め込みすぎず、後から指標を足せる境界にします。
 - Play中のHUDは足しません（D32）。Heroが他Playerの統計を見るのはReviewで、Heroが観察可能だった範囲に限ります（§8）。
 
+実装（#112）: `packages/engine/src/stats.ts` の `projectPlayerStats(hands, options)` が、HandごとのEvent Logの配列から全PlayerのStatsを計算します（I/O・LLMを持たない純粋関数。結果は保存しない。D111）。
+
+- 入力はpublicのEventだけです（`projection.ts` の `publicEvents`。卓に座った全員が見聞きした事実）。Hole Cards（private）・Deck（engine）・CPUの判断の経緯やSessionの運用・HandのMetadata（system）は読まないので、Hidden Cards・Persona・Learning-only Revealは入力の経路にありません。publicでないEventの中身を差し替えても取り除いても結果が変わらないことをProperty Testで確かめます（INV-TEST-007に相当）。
+- 集計に入れるのは `HAND_FINISHED` まで済んだHandです（進行中のHandと、`HAND_ABORTED` で打ち切ったHandは入れない）。`options.excludeHandIds` で除くHandを渡せます（DrillのHandを通常の集計から除く口。D116。`drills` テーブルは#117で作り、呼び出し側が渡す）。Learning Resetの区切り（D114）で範囲を絞る引数は、#118で足します。
+- 指標の定義は `STAT_DEFINITIONS` の1か所に集め、定義の版を `STATS_DEFINITION_VERSION`（最初は `phase6_stats_v1`）として結果に付けます。指標を足すときは定義を1つ足し、意味を変えたら版を上げます。指標ごとにNumerator / Denominator / Opportunity Countを返し、Percentageは表示側が計算します。Playerごとに、全体・Position別（UTG / HJ / CO / BTN / SB / BB。`positionName` と同じ分け方）・Street別の3つの表を持ちます。
+- Raiseの数え方は、Bet / Raiseと、その時点の最高額を超えるAll-inをAggressiveとします（Range Modelの `isAggressive` と同じ規則）。Preflopの機会は「そのPlayerがPreflopでActionしたHand」で数え、Blindを出しただけでActionが来なかったHand（Walk・BlindでAll-in）は入れません。
+
+  | 指標 | 種類 | 機会（Opportunity） | 分子 | 分母 |
+  |---|---|---|---|---|
+  | `vpip` | percentage | PreflopでActionしたHand | 自分からChipを出した（Call / Bet / Raise / All-in）Hand | 機会 |
+  | `pfr` | percentage | 同上 | RaiseしたHand | 機会 |
+  | `three_bet` | percentage | Raise 1回（Open）に直面してActionしたHand（Openした本人は除く） | そこでRaise | 機会 |
+  | `fold_to_three_bet` | percentage | Openした後に3-bet（Raise 2回目）に直面してActionしたHand | そこでFold | 機会 |
+  | `cbet_flop` | percentage | Preflop Aggressor（Preflopで最後にRaiseしたPlayer）が、Flopで誰もBetしていない時点でActionしたHand | そこでBet | 機会 |
+  | `fold_to_cbet_flop` | percentage | Preflop AggressorのFlopのContinuation Betに（Raiseの前に）直面してActionしたHand | そこでFold | 機会 |
+  | `aggression_frequency` | percentage | PostflopのCheck以外のAction（Bet / Raise / Call / Fold） | Bet / Raise | 機会 |
+  | `aggression_factor` | ratio | PostflopのBet / RaiseとCallの回数 | Bet / Raise | Call |
+
 ## 4. Evidence-backed User Profile
 
 正本:

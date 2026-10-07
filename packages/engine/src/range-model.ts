@@ -206,8 +206,14 @@ function boardSize(street: Exclude<Street, "preflop">): number {
   return street === "flop" ? 3 : street === "turn" ? 4 : 5;
 }
 
-/** Bet / Raise、またはその時点の最高額を超える All-in なら Aggressive。 */
-function isAggressive(a: PublicActionRecord, currentBet: number): boolean {
+/**
+ * Bet / Raise、またはその時点の最高額を超える All-in なら Aggressive。
+ * Stats Projection（stats.ts）も同じ規則で Raise を数える（Range の分類と Stats で Raise の数え方をそろえる）。
+ */
+export function isAggressive(
+  a: Pick<PublicActionRecord, "action" | "toAmount">,
+  currentBet: number,
+): boolean {
   return (
     a.action === "bet" ||
     a.action === "raise" ||
