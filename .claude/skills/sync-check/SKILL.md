@@ -45,7 +45,11 @@ Step 3（設計書の全確認）では、上記ファイルを優先的に確�
 
 ```bash
 gh issue list --state open --limit 200
-gh api repos/takumi-sano22/proj-poker/issues/2/sub_issues --jq '.[] | "\(.number)\t\(.state)\t\(.title)"'
+# MVP（Phase 0〜5）は #2、Post-MVP は #104 と Phase 親 #105〜#107 の配下を見る
+for p in 2 104 105 106 107; do
+  echo "== #$p"
+  gh api repos/takumi-sano22/proj-poker/issues/$p/sub_issues --jq '.[] | "\(.number)\t\(.state)\t\(.title)"'
+done
 ```
 
 ## Open Issue の分類観点
