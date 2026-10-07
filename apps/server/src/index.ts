@@ -30,7 +30,10 @@ import {
   SqliteFollowUpStore,
   SqliteRevealReviewStore,
 } from "./review/reveal-store.js";
-import { fakeReviewQuery } from "./review/fake-review-query.js";
+import {
+  createFakeReviewQuery,
+  parseFakeReviewAssessment,
+} from "./review/fake-review-query.js";
 import { SqliteReviewStore } from "./review/review-store.js";
 import { createSolverAdapterFromEnv } from "./solver/index.js";
 import { SqliteEventStore } from "./sqlite-event-store.js";
@@ -52,6 +55,13 @@ const createOpponent =
 
 // Review AI の実装（既定 Claude）。REVIEW_PROVIDER=fake は E2E 用の固定応答で、Claude を呼ばない（D98。本番では使わない）。
 const reviewProvider = parseReviewProvider(process.env["REVIEW_PROVIDER"]);
+// 固定応答の Pass A の段階評価（FAKE_REVIEW_ASSESSMENT。既定 reasonable）。fake のときだけ読み、不正な値は DB を開く前に起動を止める。
+const fakeReviewQuery =
+  reviewProvider === "fake"
+    ? createFakeReviewQuery(
+        parseFakeReviewAssessment(process.env["FAKE_REVIEW_ASSESSMENT"]),
+      )
+    : null;
 // 山札の seed。POKER_SEED を設定したときだけ固定の並びにする（E2E の決定論のため。D98）。未設定なら Hand ごとに乱数（app.ts の既定）。
 const fixedSeed = parseFixedSeed(process.env["POKER_SEED"]);
 
@@ -96,7 +106,7 @@ const app = buildApp({
     kb,
     solver,
     env: claudeEnv,
-    query: reviewProvider === "fake" ? fakeReviewQuery : sdkQuery,
+    query: fakeReviewQuery ?? sdkQuery,
     timeoutMs: parseReviewTimeoutMs(process.env["REVIEW_TIMEOUT_MS"]),
   },
 });
