@@ -497,7 +497,7 @@ export function ProfileBody({
 }) {
   const [tab, setTab] = useState<ProfileTab>(initialTab);
   const { profile } = response;
-  const window: ProfileWindow =
+  const shown: ProfileWindow =
     tab === "recent" ? profile.recent : profile.longTerm;
   return (
     <>
@@ -519,20 +519,20 @@ export function ProfileBody({
       <div className="learning-card">
         <p className="learning-count">
           {tab === "recent"
-            ? `直近の Review 済みの判断 ${window.reviewed} 件`
-            : `Review 済みの判断 ${window.reviewed} 件`}
+            ? `直近の Review 済みの判断 ${shown.reviewed} 件`
+            : `Review 済みの判断 ${shown.reviewed} 件`}
         </p>
         <div className="learning-score">
           <span className="learning-score__value">
-            {scoreText(window.overall)}
+            {scoreText(shown.overall)}
           </span>
-          {window.overall.score !== null && (
+          {shown.overall.score !== null && (
             <span className="learning-score__meta">
-              {scoreMeta(window.overall)}
+              {scoreMeta(shown.overall)}
             </span>
           )}
         </div>
-        <ScoreRows abilities={window.abilities} />
+        <ScoreRows abilities={shown.abilities} />
       </div>
       <section className="review-section" aria-labelledby="learning-hypo">
         <h4 className="review-section__title" id="learning-hypo">
