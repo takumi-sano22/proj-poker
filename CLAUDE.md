@@ -10,7 +10,7 @@
 
 ## リポジトリ・プロダクト
 
-- **リポジトリ**: `takumi-sano22/proj-poker`。**進捗管理**: GitHub Project は使わず、親 Issue #2（MVP Parent）への **sub-issue 紐付け**と親の DoD チェックボックスで管理する（`create-issue` / `issue-patrol`）。
+- **リポジトリ**: `takumi-sano22/proj-poker`。**進捗管理**: GitHub Project は使わず、親 Issue への **sub-issue 紐付け**と親の DoD チェックボックスで管理する（`create-issue` / `issue-patrol`）。親は MVP（Phase 0〜5）が #2（Close 済み）、Post-MVP は Post-MVP Parent #104 の下の Phase 親（Phase 6 #105・Phase 7 #106・Phase 8 #107。D102）。
 - **プロダクト**: ライブ実戦を意識した No-Limit Texas Hold'em 練習 + AI コーチング環境。ローカル単一ユーザー（Auth / Tenant / Online Multiplayer / Real Money は作らない）。正本は `docs/`、採用済みの人間判断は `docs/decision_log.yaml`（D01〜）、未確定事項は `docs/11_OPEN_ITEMS.md`。
 
 ## 不変条件（mode・自走の有無に依らず常に適用）
@@ -26,10 +26,10 @@
 ## 自走ルール（このプロジェクトの既定）
 
 - **人間判断はセッション冒頭にまとめる**: 着手前に調査を済ませ、迷う点・提案をまとめて `AskUserQuestion` を 1 回で出す。以降は**完全自走**（Issue 選択 → worktree → 実装 → 確認 → ログ → コミット → PR → 自己レビュー → Codex レビュー → マージ）。停止するのは上の 7、`github-workflow`「必ず人間確認で停止する条件」、および docs が定める停止ゲート（下記）。
-- **実装開始ゲート**: `docs/00` §7・`docs/08` §5 により、Phase 0 / 1 の**プロダクト実装**は親 #2 の Gate「追加された Skills / Harness をこの PJ の開発規約として確認する」に人間がチェックを入れるまで開始しない（harness・docs の整備は可）。AI がこのゲートを自己判断で解除しない。
+- **実装開始ゲート**: `docs/00` §7・`docs/08` §5 により、Phase 0 / 1 の**プロダクト実装**は親 #2 の Gate「追加された Skills / Harness をこの PJ の開発規約として確認する」に人間がチェックを入れるまで開始しない（harness・docs の整備は可）。Post-MVP は、#104 の「⛔ 実装開始 Gate」（Documentation Gate）と、前 Phase の Phase Gate（`docs/08` §3.2）を満たすまで次 Phase の機能実装を始めない。AI がこれらのゲートを自己判断で解除しない。
 - Codex モードは repo 上書きで `autonomous`（`~/bin/codex-mode.sh get /home/ai/project/proj-poker` で確認。worktree 内で引数を省くとグローバル既定になる）。**複数 Issue は `issue-worker` 経路**（親は計画・`NEEDS_HUMAN` 仲介・マージ・後始末）。
 - **1 PR 単位でレビュー・マージし、原則順次**。マージできなかったら次に入らず停止し、停止理由と次の作業を PR コメントに残す。
-- 積み残し・分割が必要なら**新 Issue を作成し親 #2 へ紐付け**てから進める。可逆な暫定値（Open Items）は Config で置き、永久仕様として確定しない（`decision-log` skill）。
+- 積み残し・分割が必要なら**新 Issue を作成し、その Phase の親（Post-MVP は #105〜#107。Phase に属さない横断は #104）へ紐付け**てから進める。可逆な暫定値（Open Items）は Config で置き、永久仕様として確定しない（`decision-log` skill）。
 
 ## 開発フローの固有ルール（手順の一次情報は `github-workflow`。**タイトル規約はここが一次情報**）
 

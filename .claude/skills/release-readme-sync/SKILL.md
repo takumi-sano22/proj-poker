@@ -13,26 +13,26 @@ model: haiku
 
 ## 役割
 
-ルート `README.md` の「現在の状態」「現在のフェーズ」と MVP 進捗を、マージ済みの実装・親 Issue #2 の DoD チェックと一致した状態に保つ。古い Phase 記述や、未マージの機能を「実装済み」とする記述を残さない。
+ルート `README.md` の「現在の状態」「現在のフェーズ」と進捗を、マージ済みの実装・その Phase の親 Issue（MVP は #2、Post-MVP は #105〜#107 と #104 の Phase Gate）の DoD チェックと一致した状態に保つ。古い Phase 記述や、未マージの機能を「実装済み」とする記述を残さない。
 
 ## 手順
 
 1. **現在地の確認**
    - 直前にマージされた PR の内容を確認する
    - `docs/08_MVP_AND_ROADMAP.md` で該当 Phase（Phase 0〜8）の完了条件を確認する
-   - 親 Issue #2 の DoD チェックリストを確認し、完了した項目がチェック済みか確認する（未チェックなら親 #2 側を更新する提案を出す）
+   - その Phase の親 Issue の DoD チェックリストを確認し、完了した項目がチェック済みか確認する（未チェックなら親側を更新する提案を出す）
 
 2. **ルートREADMEの更新**
    - 「現在の状態」セクション（無ければ「現在のフェーズ」に併記）を最新 Phase の到達点（動く範囲・セットアップ・制約）に更新する
    - 「現在のフェーズ」セクションの Phase 番号・名称を `docs/08_MVP_AND_ROADMAP.md` と一致させる
-   - MVP 進捗（「MVPの完成条件」と親 #2 の DoD の達成状況）を更新する
+   - 進捗を更新する（MVP は「MVPの完成条件」と親 #2 の DoD の達成状況、Post-MVP はその Phase の親の DoD と #104 の Phase Gate の達成状況）
    - 設計書への参照が `docs/`（索引 `docs/00_DOCUMENTATION_INDEX.md`）を指しているか確認する
    - セットアップ手順とコマンドは、ルートの `package.json` の scripts・`.nvmrc`・`CLAUDE.md`「品質チェック」と一致させる（存在しないコマンドを推測で書かない）
 
 3. **チェックリスト**
    - [ ] 「現在のフェーズ」が `docs/08_MVP_AND_ROADMAP.md` の現在地と一致している
    - [ ] 「現在の状態」がマージ済みの実装と一致している（未マージの Phase の機能を「実装中」「実装済み」と書かない）
-   - [ ] MVP 進捗が親 #2 の DoD チェックと一致している
+   - [ ] 進捗がその Phase の親 Issue の DoD チェックと一致している
    - [ ] 設計書の出典が `docs/` を指している
    - [ ] 「制約・未実装」の記述が現状と一致している
 
@@ -43,10 +43,10 @@ model: haiku
 
 ## 完了条件
 
-- ルート README の現在地（フェーズ・状態・MVP 進捗・制約）が最新 Phase と親 #2 の DoD に一致している
+- ルート README の現在地（フェーズ・状態・MVP 進捗・制約）が最新 Phase とその Phase の親 Issue の DoD に一致している
 
 ## 出典
 
 - `docs/08_MVP_AND_ROADMAP.md`（Phase 定義・完了条件）
 - `docs/decision_log.yaml`（採用済み判断。README 記述が矛盾しないこと）
-- 親 Issue #2（MVP Parent・DoD チェックリスト）
+- 親 Issue #2（MVP Parent・DoD チェックリスト）、Post-MVP Parent #104（Phase Gate）と Phase 親 #105〜#107（Phase の DoD）
