@@ -13,7 +13,7 @@ import { InMemoryEventStore } from "../event-store.js";
 import type { ProfileResponse } from "../learning/learning-service.js";
 import type { ReplayHandSummary } from "../replay.js";
 import { InMemoryReviewStore } from "../review/review-store.js";
-import { forbiddenKeys, leakedCards } from "../testing/leaks.js";
+import { collectCards, forbiddenKeys, leakedCards } from "../testing/leaks.js";
 import {
   LEARNING_HANDS,
   loadLearningFixtures,
@@ -117,7 +117,10 @@ describe("POST /api/drills", () => {
     const lastSeq = drillEvents.at(-1)?.seq ?? 0;
     expect(leakedCards(body, drillEvents, "hero", lastSeq)).toEqual([]);
     expect(forbiddenKeys(body.view)).toEqual([]);
-    expect(JSON.stringify(body)).not.toContain("Ks"); // 元の Hand の UTG の札（Ks Qs）
+    // 応答に出る札は Hero の札と判断時点の Flop だけ（元の Hand の UTG の Ks Qs・この後の Board は出ない）。
+    expect([...new Set(collectCards(body).map(cardToString))].sort()).toEqual(
+      ["3d", "8s", "Ah", "Jc", "Jd"].sort(),
+    );
     expect(JSON.stringify(body)).not.toContain('"seed"');
   });
 
