@@ -53,3 +53,6 @@
 - Codex 1 回目（`findings`）: [P1] 2 件。どちらも CONFIRMED。
   - Observation の Subject を `cpuProfileId` としていたため Hero を表せない → Observer は `cpuProfileId`、Subject は Hero・Fixed CPU・Guest を表せる参加者の参照にした（docs/04 §6・同じ原因の docs/02 INV-INFO-003）。
   - `sync-check` が Issue の正本を #2 としていた → MVP は #2、Post-MVP は #104・#105〜#107 に直した。差分外の同じ原因（CLAUDE.md・create-issue 等）は #110 に分離。
+- Codex 2 回目（`clean`）: 本文に [P2] 1 件（sync-check の sub-issue の取得例が #2 だけ）。CONFIRMED で 1bf5145 で修正。P2 だけの修正で条件付き再レビューの①〜④に当たらないため再実行なし。
+- 学習 Capture: round 1 で 3 件（docs P2 / docs P1 / harness P1）。round 2 の P2 は round 1 の harness の候補と同じ root failure class のため新しい候補にしない。
+- マージは #104 の Documentation Gate の解除にあたるため人間の確認後。
