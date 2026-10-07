@@ -167,6 +167,15 @@ export interface KnowledgeItem {
   readonly body: string;
 }
 
+/** 判断の前に Hero が記録した読み 1 つ（サーバーの UserReadItem と同じ形。#115）。 */
+export interface UserReadItem {
+  readonly id: string;
+  readonly street: Street;
+  /** 読みの対象の席。相手を特定しない読み・意図には無い。 */
+  readonly playerId?: string;
+  readonly text: string;
+}
+
 /** Pass A の Evidence（判断時点の情報だけ）。 */
 export interface ReviewEvidence {
   readonly context: DecisionContext;
@@ -174,6 +183,10 @@ export interface ReviewEvidence {
   readonly range: RangeEvidence;
   readonly solver: SolverEvidence;
   readonly knowledge: { readonly items: readonly KnowledgeItem[] };
+  /** 判断の前の Hero の読み（D112）。読みの無い判断は not_collected。 */
+  readonly userRead?:
+    | { readonly status: "not_collected" }
+    | { readonly status: "collected"; readonly items: readonly UserReadItem[] };
 }
 
 /** Pass A の Review の 1 Version（上書きしない。D39）。 */

@@ -15,8 +15,10 @@ import { ChipPile, ChipStack } from "./ChipStack.js";
 import { DealerFeedback } from "./DealerFeedback.js";
 import { FastForward } from "./FastForward.js";
 import { HandLog } from "./HandLog.js";
+import { OpponentNotes } from "./OpponentNotes.js";
 import { OutageDialog } from "./OutageDialog.js";
 import { Seat, Table } from "./Table.js";
+import { UserReadToggle } from "./UserRead.js";
 import { Term, VocabBody } from "./Vocabulary.js";
 
 const noop = () => {};
@@ -645,5 +647,46 @@ describe("Dealer Feedback（RULING / ETIQUETTE / COACHING を混ぜない。docs
     expect(html).toContain("Chip（25）を 1 枚出しました");
     // 裁定の結果の Chip の動きは、続く ACTION_TAKEN の行に出る
     expect(html).toContain("HERO: コール（Call） 2");
+  });
+});
+
+describe("User Read の入口（#115）", () => {
+  it("閉じている間は Button 1 つだけを出し（Hero 欄を低く保つ）、読みの当たり外れは出さない", () => {
+    const html = renderToStaticMarkup(
+      <UserReadToggle
+        view={preflopHeroToAct()}
+        nameOf={nameOf}
+        disabled={false}
+        onRecord={() => Promise.resolve(true)}
+      />,
+    );
+    expect(html).toContain("読みを記録");
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("<select");
+  });
+});
+
+describe("CPU の Note / Tag（#115）", () => {
+  it("既定は閉じた欄（summary だけ）で、今の Hand に座っている CPU がいなければ出さない", () => {
+    const players = [
+      { playerId: "hero", displayName: "Hero", kind: "hero" as const },
+      { playerId: "cpu1", displayName: "CPU 1", kind: "cpu" as const },
+    ];
+    const html = renderToStaticMarkup(
+      <OpponentNotes
+        handId="h1"
+        players={players}
+        seatedIds={["hero", "cpu1"]}
+      />,
+    );
+    expect(html).toContain("CPU の Note / Tag");
+    expect(html).toContain("<details");
+    expect(html).not.toContain(" open");
+    expect(html).toContain("CPU には伝わりません");
+    expect(
+      renderToStaticMarkup(
+        <OpponentNotes handId="h1" players={players} seatedIds={["hero"]} />,
+      ),
+    ).toBe("");
   });
 });

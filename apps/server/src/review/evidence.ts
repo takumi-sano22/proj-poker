@@ -25,6 +25,7 @@ import type {
   MathEvidence,
   RangeEvidence,
   ReviewEvidence,
+  UserReadEvidence,
 } from "./types.js";
 
 export interface EvidenceDeps {
@@ -91,7 +92,32 @@ export async function buildReviewEvidence(
     },
     solver,
     knowledge: knowledgeEvidence(set.knowledge, deps.kb),
-    userRead: { status: "not_collected" },
+    userRead: userReadEvidence(set, deps.playerNames),
+  };
+}
+
+/**
+ * User Read / Intent（D112）。判断の前に Hero が記録した読み（Information Set の userReads。判断より後の読みは入っていない）を写す。
+ * 読みが無ければ not_collected（読みの無い判断の Evidence・Prompt は従来と同じ）。
+ */
+function userReadEvidence(
+  set: HeroInformationSet,
+  playerNames: PlayerNames = {},
+): UserReadEvidence {
+  if (set.userReads.length === 0) return { status: "not_collected" };
+  return {
+    status: "collected",
+    items: set.userReads.map((read) => {
+      const target = read.targetPlayerId;
+      const name = target === null ? undefined : playerNames[target];
+      return {
+        id: `read:${set.handId}/${read.seq}`,
+        street: read.street,
+        ...(target === null ? {} : { playerId: target }),
+        ...(name === undefined ? {} : { displayName: name }),
+        text: read.text,
+      };
+    }),
   };
 }
 
@@ -109,7 +135,10 @@ export function evidenceIdsOf(
     ],
     solver: evidence.solver.status === "supported" ? [evidence.solver.id] : [],
     knowledge: evidence.knowledge.items.map((i) => i.id),
-    userRead: [],
+    userRead:
+      evidence.userRead.status === "collected"
+        ? evidence.userRead.items.map((i) => i.id)
+        : [],
     cited,
   };
 }
@@ -123,6 +152,7 @@ export function allEvidenceIds(evidence: ReviewEvidence): Set<string> {
     ...ids.range,
     ...ids.solver,
     ...ids.knowledge,
+    ...ids.userRead,
   ]);
 }
 

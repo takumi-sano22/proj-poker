@@ -158,6 +158,25 @@ export function DecisionReviewBody({
         <EvidenceSection title="知識（KB）" cited={citedAny("kb:")}>
           <KnowledgeView items={evidence.knowledge.items} cited={cited} />
         </EvidenceSection>
+        {evidence.userRead?.status === "collected" && (
+          // 判断の前に Hero が記録した読み（D112）。Hero の主張で、当たり外れはここでは出さない。
+          <EvidenceSection
+            title="Hero の読み（User Read）"
+            cited={citedAny("read:")}
+          >
+            <ul className="evidence-list">
+              {evidence.userRead.items.map((item) => (
+                <li key={item.id}>
+                  {termLabel(STREET_TERMS[item.street])}・
+                  {item.playerId === undefined
+                    ? "相手を特定しない"
+                    : nameOf(item.playerId)}
+                  : {item.text}
+                </li>
+              ))}
+            </ul>
+          </EvidenceSection>
+        )}
       </div>
 
       <FollowUp

@@ -230,6 +230,49 @@ describe("Pass A（判断時点の Review）", () => {
     expect(insufficientNote("review_ai")).toBeNull();
   });
 
+  it("判断の前の Hero の読み（User Read。#115）は根拠の欄に出し、読みの無い判断では欄を出さない", () => {
+    const base = decisionRecord();
+    const withRead = renderToStaticMarkup(
+      <DecisionReviewBody
+        record={decisionRecord({
+          evidenceIds: { cited: ["read:h1/12"] },
+          evidence: {
+            ...base.evidence,
+            userRead: {
+              status: "collected",
+              items: [
+                {
+                  id: "read:h1/12",
+                  street: "turn",
+                  playerId: "cpu1",
+                  text: "Turn の Bet は Value 寄り",
+                },
+                { id: "read:h1/14", street: "turn", text: "Pot Odds で Call" },
+              ],
+            },
+          },
+        })}
+        nameOf={nameOf}
+        handId="h1"
+        decisionIndex={0}
+      />,
+    );
+    expect(withRead).toContain("Hero の読み（User Read）");
+    expect(withRead).toContain("CPU1: Turn の Bet は Value 寄り");
+    expect(withRead).toContain("相手を特定しない: Pot Odds で Call");
+    const withoutRead = renderToStaticMarkup(
+      <DecisionReviewBody
+        record={decisionRecord({
+          evidence: { ...base.evidence, userRead: { status: "not_collected" } },
+        })}
+        nameOf={nameOf}
+        handId="h1"
+        decisionIndex={0}
+      />,
+    );
+    expect(withoutRead).not.toContain("Hero の読み");
+  });
+
   it("相手の傾向の記録が無いときは、Exploit の調整をしていないと書く", () => {
     const html = renderToStaticMarkup(
       <DecisionReviewBody

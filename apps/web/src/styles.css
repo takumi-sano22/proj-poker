@@ -1077,6 +1077,14 @@ input {
   box-shadow: none;
 }
 
+/* 卓の右（狭い画面は下）の欄: 進行ログと、CPU ごとの Note / Tag（#115）を縦に積む */
+.app__side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
 /* ───────── 進行ログ ───────── */
 
 .hand-log {
@@ -1110,6 +1118,110 @@ input {
 .hand-log__feedback .feedback-tag {
   margin-right: 2px;
   font-size: 10px;
+}
+
+/* ───────── CPU ごとの Note / Tag（#115）。既定は閉じ、卓の情報量を増やさない ───────── */
+
+.opponent-notes {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-aside);
+  background: var(--color-surface-sunken);
+}
+
+.opponent-notes__summary {
+  min-height: 44px;
+  padding: 10px 12px;
+  color: var(--color-on-surface-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.opponent-notes__body {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.opponent-notes__hint,
+.opponent-notes__empty {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.opponent-notes__field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opponent-notes__label {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.opponent-notes__select {
+  flex: 1;
+  min-width: 0;
+}
+
+.opponent-notes__title {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.opponent-notes__list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.opponent-notes__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.opponent-notes__note {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.opponent-notes__tag {
+  padding: 2px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  font-size: 13px;
+}
+
+.opponent-notes__item .btn {
+  flex: none;
+}
+
+.opponent-notes__form {
+  display: grid;
+  gap: 8px;
+}
+
+.opponent-notes__form--inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.opponent-notes__input {
+  width: 100%;
+  min-width: 0;
+}
+
+.opponent-notes__input--multiline {
+  min-height: 64px;
+  resize: vertical;
 }
 
 /* ───────── 画面下の Hero 欄 ───────── */
@@ -1161,6 +1273,71 @@ input {
 .dock__message {
   margin: 0;
   color: var(--color-on-surface-muted);
+}
+
+/* 手番の案内と、判断の前の読み（User Read。#115）の入口を 1 行に並べる（Hero 欄を低く保つ） */
+.dock__turn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.user-read__open {
+  flex: none;
+}
+
+/* User Read の入力。開いたときだけ手番の行の下に出る */
+.user-read {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-basis: 100%;
+}
+
+.user-read__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.user-read__label {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.user-read__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-read__note {
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+/* 入力欄（User Read・Note / Tag）。Follow-up の入力欄と同じ面と縁 */
+.user-read__select,
+.user-read__input,
+.opponent-notes__select,
+.opponent-notes__input {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 15px;
+}
+
+.user-read__input {
+  flex: 1 1 120px;
+  min-width: 0;
 }
 
 /* Hand の終了後の案内と Review への入口（#84） */

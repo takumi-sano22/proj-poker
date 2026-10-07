@@ -78,6 +78,14 @@ export const REVIEW_SYSTEM_PROMPT = [
   "- evidenceIds: 根拠にした Evidence の id",
 ].join("\n");
 
+/** Hero の読み（userRead）があるときだけ Pass A の Prompt に添える、読みの扱い方（D112・docs/05 §6）。 */
+export const USER_READ_GUIDE = [
+  "## Hero 自身の読み（userRead）の扱い",
+  "- userRead は、Hero がこの判断の前に記録した読み・意図です。Hero の主張で、相手の観察の記録（Observation）ではありません。",
+  "- 判断がその読みに沿っているか、読みが判断時点の公開情報（Action の履歴・Board・Pot）と整合するかを、practical で触れてください。",
+  "- 相手の実際の札は渡していません。読みが当たっていたかどうかは書かないでください。",
+].join("\n");
+
 /** Review AI へ渡す Prompt（user message）。Evidence の JSON と、再要求のときだけ前回の不正の理由。 */
 export function buildReviewPrompt(
   evidence: ReviewEvidence,
@@ -88,6 +96,10 @@ export function buildReviewPrompt(
     JSON.stringify(evidence, cardReplacer),
     evidenceGlossary("decision"),
   ];
+  // Hero の読みがあるときだけ扱い方を添える（構造ゲート。読みの無い判断の Prompt は従来と同じ文字列のまま）。
+  if (evidence.userRead.status === "collected") {
+    sections.push(USER_READ_GUIDE);
+  }
   if (correction !== undefined) {
     sections.push(
       "## 前回の答えは使えなかった",

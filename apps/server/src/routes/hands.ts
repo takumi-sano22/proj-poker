@@ -5,10 +5,11 @@
 // 返す・Push するのは projectHeroView の結果と、Session の状態（Hero 自身の結果と次 Hand の有無）と、
 // CPU の障害の状態（どの CPU の手番か・障害の種類だけ。D86）だけ
 // （他者の Hole Cards・Deck・seed・CPU の Persona・内部のエラー本文を含めない）。
-import type {
-  HeroView,
-  PhysicalAction,
-  PlayerAction,
+import {
+  USER_READ_TEXT_MAX,
+  type HeroView,
+  type PhysicalAction,
+  type PlayerAction,
 } from "@proj-poker/engine";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type {
@@ -39,6 +40,14 @@ interface HeroPhysicalActionBody {
   lastSeq: number;
   /** 1 回の手番の操作（した順）。 */
   actions: PhysicalAction[];
+}
+
+interface UserReadBody {
+  /** クライアントが見ていた HeroView の log の最後の seq（応答が失われた記録の再送・古い画面の検出に使う）。 */
+  lastSeq: number;
+  /** 読みの対象の席（この Hand の playerId）。相手を特定しない読み・意図は null。 */
+  targetPlayerId: string | null;
+  text: string;
 }
 
 interface FastForwardBody {
@@ -167,6 +176,23 @@ const heroPhysicalActionBodySchema = {
   },
 } as const;
 
+// Hero の User Read（D112）。対象の席が卓にいるか・手番か・本文の空白だけでないかは Engine（recordUserRead）が判定する。
+const userReadBodySchema = {
+  type: "object",
+  required: ["lastSeq", "targetPlayerId", "text"],
+  additionalProperties: false,
+  properties: {
+    lastSeq: { type: "integer", minimum: 0 },
+    targetPlayerId: {
+      anyOf: [
+        { type: "string", minLength: 1, maxLength: 64 },
+        { type: "null" },
+      ],
+    },
+    text: { type: "string", minLength: 1, maxLength: USER_READ_TEXT_MAX },
+  },
+} as const;
+
 const fastForwardBodySchema = {
   type: "object",
   required: ["enabled"],
@@ -284,6 +310,24 @@ export function registerHandRoutes(
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
       });
+    },
+  );
+
+  // Hero の User Read（判断の前の読み・意図。D33・D112）。Hero の手番の間だけ記録でき、USER_READ_RECORDED（Hero だけの private）として
+  // Event Log に残す。卓の状態は変えないので CPU は進めず、更新した View を返す（SSE にも同じ View が届く）。
+  // 読みの当たり外れ（CPU の Persona・相手の札との照合）は Play 中に返さない（D105）。
+  app.post<{ Params: HandParams; Body: UserReadBody }>(
+    "/api/hands/:handId/reads",
+    { schema: { params: handParamsSchema, body: userReadBodySchema } },
+    (request, reply) => {
+      const { handId } = request.params;
+      const { lastSeq, targetPlayerId, text } = request.body;
+      const result = orchestrator.heroUserRead(handId, lastSeq, {
+        targetPlayerId,
+        text,
+      });
+      if (!result.ok) return sendError(reply, result.error);
+      return reply.send({ view: result.value });
     },
   );
 

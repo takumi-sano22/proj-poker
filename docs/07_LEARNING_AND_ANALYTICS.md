@@ -260,6 +260,13 @@ User Read / Note / Tag（D105）はPhase 6で実装します。
 - User ReadはprovenanceつきでReviewのEvidence（User Read / Intent。`docs/05` §6）に入れます。
 - Hidden Personaと照合して、読みの当たり外れをPlay中に見せません。Actual Revealとの比較はReview（Pass B）の別枠だけです。
 
+実装（#115・D112）:
+
+- **User Read**: Play中、Heroの手番の間だけ、画面下のHeroの欄の「読みを記録」から、対象（Foldしていない相手の席、または「相手なし（意図）」）と本文（1〜200字）を記録できます。記録は`USER_READ_RECORDED`（Heroだけのprivate。`docs/04` §3）としてEvent Logに残り、進行ログにHero自身の行として出ます。**User ReadはHandの途中でしか記録できません**: Event Storeは終わったHandへの追記を拒否し（`docs/04` §10）、手番でない間（CPUが判断している間・Fold後）も受け付けません（CPUの手番の判断を古い手番として捨てさせないため）。終わったHandについての振り返りの読みは、Review Interview（`docs/05` §12。未実装）の範囲です。
+- **判断時点**: 判断の`ACTION_TAKEN`より前に記録した読みだけが、その判断（とその後の判断）のReview Pass AのEvidence（User Read / Intent。`docs/05` §6）に、provenance（`read:<handId>/<seq>`・Street・対象の席）付きで入ります。判断より後に記録した読みは入りません。読みは判断時点の卓（`decisionPointSeq`・`KnowledgeState`）を変えません（`docs/04` §1）。
+- **Note / Tag**: 卓の画面の「CPU の Note / Tag」（既定は閉じた欄）で、CPUの席ごとにNote（1〜500字）とTag（1〜20字）を足し・消せます。保存はマイグレーションv5の追記型のテーブルで、対象は「そのSessionの中の参加者」です（`docs/04` §12。席の番号を永続の相手とみなさない）。HUD（統計）ではなくHero自身のメモなので、Play中も見られます（D32）。
+- **見せないもの**: 読みの当たり外れ（Hidden Persona・相手の札との照合）はPlay中にも記録の応答にも出しません。User Read / Note / TagはCPUの`KnowledgeState`・Prompt・CPU Memoryへ渡しません（テストで確かめる。`apps/server/src/routes/notes.test.ts`）。Learning-only Revealは読みの根拠に使いません（記録できるのはHandの途中だけで、RevealはHandの後だけ）。Note / TagはReviewのEvidenceに入れません。
+
 ## 9. HintとScore
 
 Hint利用量を保存します。

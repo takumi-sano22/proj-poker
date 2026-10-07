@@ -341,6 +341,51 @@ describe("Replay API（完了した Hand）", () => {
   });
 });
 
+describe("Replay API（Hero の User Read。D112）", () => {
+  it("Hero の読みは Hero 自身の記録として 1 step になり、判断の飛び先（判断時点）は読みの前の卓の step のまま", async () => {
+    const { app, events } = makeApp(42, sometimesInvalid);
+    const started = await start(app);
+    let view = started.view;
+    for (let guard = 0; view.status !== "complete"; guard++) {
+      expect(guard).toBeLessThan(100);
+      const read = await app.inject({
+        method: "POST",
+        url: `/api/hands/${started.handId}/reads`,
+        payload: {
+          lastSeq: lastSeq(view),
+          targetPlayerId: null,
+          text: `判断 ${guard} の前の読み`,
+        },
+      });
+      expect(read.statusCode).toBe(200);
+      view = read.json<{ view: HeroView }>().view;
+      const res = await app.inject({
+        method: "POST",
+        url: `/api/hands/${started.handId}/actions`,
+        payload: { lastSeq: lastSeq(view), action: passiveHero(view) },
+      });
+      expect(res.statusCode).toBe(200);
+      view = res.json<{ view: HeroView }>().view;
+    }
+    const log = events(started.handId);
+    const hand = await getHand(app, started.handId);
+    expectStepsArePrefixes(hand, log);
+    const reads = log.filter((e) => e.type === "USER_READ_RECORDED");
+    expect(reads.length).toBe(hand.decisions.length);
+    expect(
+      hand.steps.filter((s) => s.log.at(-1)?.type === "USER_READ_RECORDED"),
+    ).toHaveLength(reads.length);
+    for (const d of hand.decisions) {
+      const step = hand.steps[d.stepIndex];
+      expect(step?.log.at(-1)?.type).not.toBe("USER_READ_RECORDED");
+      // 判断時点の次の step が、その判断の前に記録した読み。
+      expect(hand.steps[d.stepIndex + 1]?.log.at(-1)?.type).toBe(
+        "USER_READ_RECORDED",
+      );
+    }
+  });
+});
+
 describe("Replay API（HAND_FINISHED の無い Hand。D95）", () => {
   it("進行中の Hand は未完了として一覧に出し、その時点までを再生する（収支は null）", async () => {
     const { app, events } = makeApp(42, sometimesInvalid);

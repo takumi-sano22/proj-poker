@@ -85,8 +85,10 @@ export {
   applyPhysicalActions,
   recordAiEvent,
   recordSessionEvent,
+  recordUserRead,
   resolvePendingOutOfTurn,
   startHand,
+  USER_READ_TEXT_MAX,
 } from "./hand-engine.js";
 export type {
   AiEventBody,
@@ -97,6 +99,7 @@ export type {
   PhysicalProgress,
   SessionEventBody,
   StartHandInput,
+  UserReadInput,
 } from "./hand-engine.js";
 
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
@@ -145,6 +148,7 @@ export type {
   ImportantSpotRules,
   PotResult,
   ShowdownRecord,
+  UserReadRecord,
 } from "./hand-summary.js";
 
 export { projectLearningReveal } from "./learning-reveal.js";

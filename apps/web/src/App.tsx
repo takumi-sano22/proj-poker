@@ -18,11 +18,13 @@ import { ChipControls } from "./components/ChipControls.js";
 import { HeroFeedback } from "./components/DealerFeedback.js";
 import { FastForward } from "./components/FastForward.js";
 import { HandLog } from "./components/HandLog.js";
+import { OpponentNotes } from "./components/OpponentNotes.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
 import { ReplayScreen } from "./components/ReplayScreen.js";
 import { ReviewScreen } from "./components/ReviewScreen.js";
 import { Table } from "./components/Table.js";
+import { UserReadToggle } from "./components/UserRead.js";
 import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
@@ -156,6 +158,12 @@ export function App() {
               </div>
               <aside className="app__side">
                 <HandLog view={view} nameOf={nameOf} />
+                {/* Hero の CPU ごとの Note / Tag（#115）。HUD（統計）ではなく Hero 自身のメモ（D32） */}
+                <OpponentNotes
+                  handId={view.handId}
+                  players={players}
+                  seatedIds={view.seats.map((s) => s.playerId)}
+                />
               </aside>
             </main>
             <HeroDock
@@ -377,9 +385,21 @@ function DockBody({
   return (
     <>
       <HeroFeedback view={view} />
-      <p className="dock__message">
-        {view.legalActions !== null ? "Hero の手番です。" : waiting}
-      </p>
+      {view.legalActions !== null ? (
+        // 手番の間だけ、判断の前の読み（User Read。D112）を記録できる。閉じている間は案内の右の Button 1 つ。
+        <div className="dock__turn">
+          <p className="dock__message">Hero の手番です。</p>
+          <UserReadToggle
+            key={view.handId}
+            view={view}
+            nameOf={nameOf}
+            disabled={session.pending}
+            onRecord={session.recordRead}
+          />
+        </div>
+      ) : (
+        <p className="dock__message">{waiting}</p>
+      )}
       {/* 手番でなくても操作できる（Out-of-Turn も裁定の対象。D91）。保留中は Hero の手番で裁定されるまで次の操作を送れない。
           操作の下書きは、裁定が 1 つ進む・Street が進むたびに捨てる（送った操作を持ち越さない）。 */}
       <ChipControls

@@ -63,7 +63,103 @@ describe("openDatabase（マイグレーション）", () => {
       "reviews_no_delete",
       "session_projections",
       "sessions",
+      "user_notes",
+      "user_notes_append_only",
+      "user_notes_no_delete",
+      "user_notes_revision_follows",
+      "user_tags",
+      "user_tags_append_only",
+      "user_tags_no_delete",
     ]);
+  });
+
+  it("版 4 の DB に版 5（user_notes・user_tags）を当てても、既存のテーブルの定義と行は変わらない（D76・D112）", () => {
+    const legacyPath = join(dir, "v4.sqlite");
+    const v4 = new DatabaseSync(legacyPath);
+    try {
+      for (const sql of MIGRATIONS.slice(0, 4)) v4.exec(sql);
+      v4.exec("PRAGMA user_version = 4");
+      v4.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 7, '2026-10-05T00:00:00.000Z', '{}');
+      `);
+    } finally {
+      v4.close();
+    }
+    const snapshot = (db: DatabaseSync) => ({
+      schema: db
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags') ORDER BY name",
+        )
+        .all(),
+      events: db.prepare("SELECT * FROM events").all(),
+      hands: db.prepare("SELECT * FROM hands").all(),
+    });
+    const before = new DatabaseSync(legacyPath);
+    const expected = snapshot(before);
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(snapshot(db)).toEqual(expected);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM user_notes").get()).toEqual({
+        n: 0,
+      });
+      expect(db.prepare("SELECT COUNT(*) AS n FROM user_tags").get()).toEqual({
+        n: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("user_notes は追記だけで、削除（tombstone）は同じ対象の消していない直前の revision にだけ続けられる（D112）", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const insert = db.prepare(
+        "INSERT INTO user_notes (note_id, revision, created_at, subject_key, subject, body) VALUES (?, ?, '2026-10-07T00:00:00.000Z', ?, '{}', ?)",
+      );
+      insert.run("n1", 1, "k1", "Value 寄り");
+      // 最初の revision は本文を持つ。本文の長さは 1〜500 字。
+      expect(() => insert.run("n2", 1, "k1", null)).toThrow(/CHECK/);
+      expect(() => insert.run("n3", 1, "k1", "あ".repeat(501))).toThrow(
+        /CHECK/,
+      );
+      // 同じ revision は一意。直前の revision が無い・別の対象の revision には続けられない。
+      expect(() => insert.run("n1", 1, "k1", "x")).toThrow(/UNIQUE/);
+      expect(() => insert.run("n1", 3, "k1", null)).toThrow(/revision/);
+      expect(() => insert.run("n1", 2, "k2", null)).toThrow(/revision/);
+      insert.run("n1", 2, "k1", null);
+      // 消した Note には続けられない（戻さない）。
+      expect(() => insert.run("n1", 3, "k1", "戻す")).toThrow(/revision/);
+      expect(() =>
+        db.exec("UPDATE user_notes SET body = 'x' WHERE note_id = 'n1'"),
+      ).toThrow(/append-only/);
+      expect(() => db.exec("DELETE FROM user_notes")).toThrow(/append-only/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("user_tags は追記だけで、op は add / remove、Tag は 1〜20 字", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const insert = db.prepare(
+        "INSERT INTO user_tags (created_at, subject_key, subject, tag, op) VALUES ('2026-10-07T00:00:00.000Z', 'k1', '{}', ?, ?)",
+      );
+      insert.run("Loose", "add");
+      insert.run("Loose", "remove");
+      expect(() => insert.run("Loose", "toggle")).toThrow(/CHECK/);
+      expect(() => insert.run("", "add")).toThrow(/CHECK/);
+      expect(() => insert.run("あ".repeat(21), "add")).toThrow(/CHECK/);
+      expect(() => db.exec("UPDATE user_tags SET op = 'add'")).toThrow(
+        /append-only/,
+      );
+      expect(() => db.exec("DELETE FROM user_tags")).toThrow(/append-only/);
+    } finally {
+      db.close();
+    }
   });
 
   it("版 2 の DB に版 3（reviews）を当てても、既存の行は変わらない（D95・D76）", () => {

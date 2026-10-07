@@ -86,6 +86,8 @@ export type ApiErrorKind =
   | "followup_in_progress"
   | "followup_limit"
   | "invalid_question"
+  // Note / Tag の API（#115）
+  | "not_found"
   | "network"
   | "unknown";
 
@@ -114,6 +116,7 @@ const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "followup_in_progress",
   "followup_limit",
   "invalid_question",
+  "not_found",
 ];
 
 export async function getJson<T>(path: string): Promise<T> {
@@ -128,11 +131,23 @@ export async function getJson<T>(path: string): Promise<T> {
   return payload as T;
 }
 
-export async function postJson<T>(path: string, body?: unknown): Promise<T> {
+export function postJson<T>(path: string, body?: unknown): Promise<T> {
+  return sendJson<T>("POST", path, body);
+}
+
+export function deleteJson<T>(path: string): Promise<T> {
+  return sendJson<T>("DELETE", path);
+}
+
+async function sendJson<T>(
+  method: "POST" | "DELETE",
+  path: string,
+  body?: unknown,
+): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
-      method: "POST",
+      method,
       headers:
         body === undefined ? undefined : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -207,6 +222,23 @@ export function chooseOutage(
   return postJson<HeroActionResponse>(
     `/api/hands/${encodeURIComponent(handId)}/outage`,
     { revision, choice },
+  );
+}
+
+/**
+ * Hero の User Read（判断の前の読み・意図。D112）を記録する。Hero の手番の間だけ受け付けられる（それ以外は not_actor）。
+ * targetPlayerId は読みの対象の席。相手を特定しない読み・意図は null。卓の状態は変わらず、読みは view.log に入る。
+ * lastSeq は最初に送ったときに見ていた View の値（応答だけが失われた記録の再送を、サーバーが stale_view で弾く）。
+ */
+export function recordUserRead(
+  handId: string,
+  lastSeq: number,
+  targetPlayerId: string | null,
+  text: string,
+): Promise<{ readonly view: HeroView }> {
+  return postJson<{ readonly view: HeroView }>(
+    `/api/hands/${encodeURIComponent(handId)}/reads`,
+    { lastSeq, targetPlayerId, text },
   );
 }
 
