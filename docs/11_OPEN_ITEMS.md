@@ -106,6 +106,8 @@ Playtest後に決定します。
 
 #113で `phase6_provisional_v1` に置いた暫定値（確定ではない。詳細は `docs/07` §2「実装（#113）」）: ConfidenceのWeightは high 1・medium 0.7・low 0.4。Decision → Abilityの割り当ては、Streetの Ability（Preflop / Postflop）を Weight 1、Bet Sizing・Pot / Equity Math・Range Reading・Positionを条件つきで Weight 0.5（Opponent Adaptationは割り当てなし）。Live Mechanicsは、理由のある裁定が入った判断を0点・入らなかった判断を100点とする別のScore（D48）。ScoreのConfidenceは件数で決め（0件 insufficient・1〜9 low・10〜29 medium・30以上 high）、Trendは直近10件とその前の10件の差（5点以上）で見る。同じ判断に複数のReviewのVersionがあれば最新を使い、standard / deepの優先は付けない。Hint-assisted補正はまだ入れていない。
 
+#114で置いた暫定値（確定ではない。詳細は `docs/07` §4・§5「実装（#114）」）: Player ProfileのRecentは直近100の有効Decision（Pass AのReviewがある判断。`ProfilePolicy phase6_profile_v1`）。Weakness Hypothesisの`HypothesisPolicy phase6_hypothesis_v1`は、typeを5つ（`preflop_unraised` / `preflop_facing_raise` / `postflop_facing_bet` / `postflop_unbet` / `bet_raise`）、Supportingを`improvement_suggested` / `major_leak`、Counterを`strong` / `reasonable`とし、状態のしきい値は 3件未満 insufficient_data・Supporting 4件以上かつ6割以上 strong・2件以上かつ4割以上 supported・直近5件の窓でSupporting 1件以下 improving / 0件 resolved。Playtest後にVersionを上げて見直す。
+
 ## OI-007 — Tournament Preset
 
 確定:
