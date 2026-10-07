@@ -265,6 +265,21 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'user_tags is append-only');
   END;
   `,
+  // v6: Weakness Hypothesis の Snapshot（D104・D113・#114）。reviews（Pass A）から決定論で作り直せる派生データで、正本にしない。
+  // 作り直すときは全行を消して入れ直す（learning/hypothesis-snapshot.ts）ので、追記専用の Trigger は付けない。既存のテーブル・列・行は変えない（D76）。
+  // hypothesis_id は `<policy_version>/<type>`。type の一覧は HypothesisPolicy の Version 付きの暫定値（OI-006）なので CHECK で固定しない。
+  // supporting_evidence_ids・counter_evidence_ids は Ability Evidence の ID（`<hand_id>/d<判断の番号>/v<Review の Version>`）の JSON 配列。
+  `
+  CREATE TABLE hypothesis_snapshots (
+    hypothesis_id           TEXT PRIMARY KEY,
+    policy_version          TEXT NOT NULL,
+    type                    TEXT NOT NULL,
+    status                  TEXT NOT NULL CHECK (status IN ('suspected', 'supported', 'strong', 'improving', 'resolved', 'insufficient_data')),
+    supporting_evidence_ids TEXT NOT NULL CHECK (json_valid(supporting_evidence_ids) AND json_type(supporting_evidence_ids) = 'array'),
+    counter_evidence_ids    TEXT NOT NULL CHECK (json_valid(counter_evidence_ids) AND json_type(counter_evidence_ids) = 'array'),
+    computed_at             TEXT NOT NULL
+  ) STRICT;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

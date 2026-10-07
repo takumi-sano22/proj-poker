@@ -168,6 +168,13 @@ Recent / Long-term（D104）:
 
 Structured Profileが正本で、自然言語のPlayer Profileはそこからの派生物です。古い自然言語Summaryを次の生成の正本にしません。
 
+実装（#114。`phase6_profile_v1` の値はOI-006の暫定値）: `apps/server/src/learning/profile.ts` の `computePlayerProfile` が、Scoreと同じAbility Evidence（Pass Aの`reviews`の判断ごとの最新のVersion。Pass Bは入れない）からStructured Profileを都度計算します（保存しない。D111）。
+
+- **有効Decision**: Pass AのReviewがある判断です（D115）。Recentは、判断の順で末尾の`recentDecisions`件（暫定値100。`ProfilePolicy`に置き、変えるときはVersionを足す）、Long-termは全件です。どちらも`scoreEvidence`（Scoreと同じ集計）でOverall / Abilityを出し、件数（`reviewed`・`scored`）を持ちます。Long-termの集計は`computeScoreReport`と同じ値になります。
+- **持つもの**: Policyの各Version（Profile・Hypothesis・Scoring）、対象の判断の数とReview済みの数（M件中N件。D115）、Recent・Long-term、Weakness Hypothesis（§5。Snapshotを読まず、同じEvidenceから同じ関数で作る）。Improvementは、各AbilityのTrend（§2）とHypothesisの`improving` / `resolved`で表します。
+- **自然言語のProfile**: `renderProfileText`が、Structured Profileだけを受け取る決定論のテンプレートで作ります（LLMを呼ばない。APIの課金経路を増やさない）。表示用の派生で、Structured Profileは文を持たず、過去の文を次の計算の入力にしません。
+- **Drillの除外**: `excludeHandIds`（D116。Scoreと同じ口）。Learning Resetの区切り（D114）は#118で足します。表示用のAPI・UIは#116です。
+
 ## 5. Hypothesis Lifecycle
 
 例:
@@ -182,6 +189,35 @@ Structured Profileが正本で、自然言語のPlayer Profileはそこからの
 Counter Evidenceによって弱くなる仕組みを持ちます。
 
 Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDsで構造化して保存し、状態遷移を決定論で行います。LLMを状態遷移の正本にしません（説明文を書かせるのは可）。形は`docs/04` §7です。保存はreviewsから作り直せるSnapshotのテーブルで、typeの一覧と遷移のしきい値はVersion付きの暫定Policy（OI-006）に置きます（D113）。
+
+実装（#114。`phase6_hypothesis_v1` の一覧と数値はすべてOI-006の暫定値）: `apps/server/src/learning/` の `hypothesis-policy.ts`（`HYPOTHESIS_POLICIES`にVersionごとに置く）・`hypothesis.ts`（`buildHypotheses`）・`hypothesis-snapshot.ts`（Snapshotの作り直しと読み出し）です。
+
+- **Evidence**: Ability Evidence（§2の実装。Pass Aの判断ごとの最新のReview）を使います。`improvement_suggested` / `major_leak`をSupporting、`strong` / `reasonable`をCounterとし、`mixed_marginal`と`insufficient_evidence`は数えません。ReviewのConfidenceは件数に影響させません（v1）。EvidenceのIDはAbility EvidenceのID（`<handId>/d<判断の番号>/v<ReviewのVersion>`）です。
+- **type（判断の分類）**: Reviewが持つ判断時点の特徴（§2の割り当てと同じ）だけから決めます。1つの判断は複数のtypeに入れます。
+
+  | type | 判断 |
+  |---|---|
+  | `preflop_unraised` | Preflopで誰もRaiseしていない（最高額がBBのまま） |
+  | `preflop_facing_raise` | PreflopでRaiseに直面した |
+  | `postflop_facing_bet` | Flop以降でBetに直面した（Call額 > 0） |
+  | `postflop_unbet` | Flop以降でBetに直面していない |
+  | `bet_raise` | 額を引き上げた（Bet / Raise / 額を上げるAll-in。上のどれかと重なる） |
+
+- **Hypothesisを作る条件**: Supportingが1件以上あるtypeだけです（弱点の疑いが無いtypeは作らない）。IDは`<PolicyのVersion>/<type>`です。
+- **状態遷移（暫定のしきい値）**: typeごとのSupporting / Counterを判断の順に並べ、n＝件数・s＝Supportingの数とします。
+
+  | 状態 | 条件（上から順に判定） |
+  |---|---|
+  | `insufficient_data` | n < 3 |
+  | `resolved` | n > 5（直近の窓5件より古いEvidenceがある）で、直近5件にSupportingが無い |
+  | `improving` | 下の`strong` / `supported`に当たり、n > 5で直近5件のSupportingが1件以下 |
+  | `strong` | s ≥ 4 かつ s / n ≥ 0.6 |
+  | `supported` | s ≥ 2 かつ s / n ≥ 0.4 |
+  | `suspected` | それ以外 |
+
+  Counter Evidenceが増えると、strong → supported → improving → resolvedと弱くなります。
+- **Snapshot（D113）**: `rebuildHypothesisSnapshot`が、reviewsから作り直した結果でマイグレーションv6の`hypothesis_snapshots`の全行を1トランザクションで入れ替えます（列は`docs/04` §7）。消して作り直しても同じ行になる派生データで、正本にしません。Player Profile（§4）はSnapshotを読まず、同じ関数で作ります。
+- **Drillの除外**: `excludeHandIds`（D116）。Learning Resetの区切り（D114）は#118で足します。
 
 ## 6. Session Review
 

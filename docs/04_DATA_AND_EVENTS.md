@@ -198,6 +198,20 @@ confidence: medium
 status: improving
 ```
 
+実装（#114・D113）: Weakness Hypothesisは、マイグレーションv6の`hypothesis_snapshots`にSnapshotとして保存します。Pass Aの`reviews`から決定論で作り直せる派生データで、正本にしません（作り直しは全行の入れ替え。追記専用のTriggerは付けない）。
+
+| 列 | 内容 |
+|---|---|
+| `hypothesis_id`（PK） | `<policy_version>/<type>` |
+| `policy_version` | 計算した`HypothesisPolicy`のVersion（最初は`phase6_hypothesis_v1`。Ability Evidenceを作る`ScoringPolicy`のVersionもこれで決まる） |
+| `type` | 判断の分類（Policyの中のVersion付きの一覧。OI-006の暫定値なのでCHECKで固定しない。一覧は`docs/07` §5） |
+| `status` | `suspected` / `supported` / `strong` / `improving` / `resolved` / `insufficient_data`（D104。CHECK） |
+| `supporting_evidence_ids` | Supporting EvidenceのID（Ability EvidenceのID `<hand_id>/d<判断の番号>/v<ReviewのVersion>`）のJSON配列（判断の順） |
+| `counter_evidence_ids` | Counter EvidenceのID（同上）のJSON配列 |
+| `computed_at` | 作り直した時刻（ISO 8601・UTC） |
+
+上の例の`sample_size`はSupporting / Counterの件数の和、`confidence`は`status`（`insufficient_data`を含む）で表すので、列に持ちません。
+
 自然言語Player ProfileはこのEvidence Layerから派生させます。
 
 `status`の遷移はSupporting / Counter Evidenceから決定論で決め（D104）、LLMを正本にしません。
@@ -363,11 +377,12 @@ Post-MVPのReset（D64。実装はP6-7・P7-8）: Learning ResetとOpponent Memo
 
 Phase 6以降で足すデータは、次の方針で置きます。具体的なテーブル・Eventの形は各子Issue（P6-1以降）で決め、その時点でこの文書を更新します。
 
-- **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Score / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。Weakness HypothesisはD104どおりSupporting / Counter Evidenceを構造化して保存し、保存の形はreviewsから作り直せるSnapshotのテーブル（マイグレーションv6。D113。列は#114で決めてこの文書に書く）です。
+- **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Score / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。Weakness HypothesisはD104どおりSupporting / Counter Evidenceを構造化して保存し、保存の形はreviewsから作り直せるSnapshotのテーブル（マイグレーションv6の`hypothesis_snapshots`。D113。列は§7）です。
 - **Versionを残す**: Score・Ability Evidence・HypothesisのProjectionには、計算したPolicy（`ScoringPolicy`等）のVersionを持たせます。Policyを変えたときは、正本から計算し直します（古い結果を書き換えて正本にしない）。
 - **数と分母を持つ**: StatsはPercentageだけでなくNumerator / Denominator / Opportunity Countを持ちます（`docs/07` §3）。
 - **Stats Projection（#112）**: Engineの `projectPlayerStats`（`packages/engine/src/stats.ts`）が、HandごとのEvent LogのpublicのEventだけ（`publicEvents`）から全PlayerのStatsを都度計算します。テーブル・列・Eventの形は足していません（D111）。集計に入れるのは `HAND_FINISHED` まで済んだHandで、除くHandのid（DrillのHand。D116）を引数で受け取ります。結果には指標の定義の版（`STATS_DEFINITION_VERSION`）を付けます。指標の一覧と数え方は `docs/07` §3。
 - **Ability Evidence / Score（#113）**: serverの `computeScoreReport`（`apps/server/src/learning/score.ts`）が、HandのEvent Log（Heroの判断の数）とPass Aの`reviews`（判断ごとの最新のVersion）からAbility Evidenceを作り、`ScoringPolicy`（`phase6_provisional_v1`）で都度計算します。テーブル・列・Eventの形は足していません（D111）。Pass Bの`reveal_reviews`は入力にしません。結果は計算したPolicyのVersionと、対象の判断の数・Review済みの数（D115）を持ちます。除くHandのid（DrillのHand。D116）を引数で受け取ります。式と暫定値は `docs/07` §2。
+- **Weakness Hypothesis / Player Profile（#114）**: serverの`buildHypotheses`（`apps/server/src/learning/hypothesis.ts`）が、Scoreと同じAbility Evidence（Pass Aの`reviews`の判断ごとの最新のVersion）から`HypothesisPolicy`（`phase6_hypothesis_v1`）でHypothesisを作り、`rebuildHypothesisSnapshot`が§7の`hypothesis_snapshots`の全行を入れ替えます（マイグレーションv6で足したのはこのテーブルだけで、既存のテーブル・列・Eventの形は変えていない。D76）。Player Profile（`computePlayerProfile`。Recent / Long-term・Hypothesis）は都度計算し、保存しません（D111）。自然言語のProfileはStructured Profileからの決定論のテンプレート文（LLMを呼ばない）です。除くHandのid（DrillのHand。D116）を引数で受け取ります。式と暫定値は`docs/07` §4・§5。
 - **人が入力したもの**: User Read・Note・Tagは、Heroが入力した記録で、Projectionではありません（D112。#115で実装）。
   - **User Read**: 判断時点の情報なので`USER_READ_RECORDED`（§3。Heroだけのprivate）としてEvent Logに残します（schema_version 8）。対象の席はそのHandの`playerId`（`ACTION_TAKEN`と同じHandの中だけの参照）で、永続の対象はHandが属するSession（`hands.session_id`）と席の組から引きます。判断時点の扱いは§1、Reviewへの入れ方は§8・`docs/05` §6です。
   - **Note / Tag**: Handに属さないので、マイグレーションv5で足した追記型の`user_notes` / `user_tags`に置きます（既存のテーブル・列は変えない。D76）。書き読みは`apps/server/src/notes/note-store.ts`（`SqliteNoteStore`。DBはEvent Storeと共有）。どちらも`UPDATE` / `DELETE`をTriggerで拒否し、今のNote / Tagは行の列から作る派生（保存しない）です。
