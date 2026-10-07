@@ -151,6 +151,15 @@ export type {
   UserReadRecord,
 } from "./hand-summary.js";
 
+export { buildDrillSpot, startDrillHand } from "./drill.js";
+export type {
+  DrillScriptAction,
+  DrillSpot,
+  DrillSpotChange,
+  DrillSpotDelta,
+  StartDrillHandInput,
+} from "./drill.js";
+
 export { projectLearningReveal } from "./learning-reveal.js";
 
 export {
