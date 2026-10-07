@@ -15,6 +15,8 @@ Opponent AIは**戦略を決めますが、ルールを決めません**。
 - 自分が観察可能な履歴
 - Persona / State
 - 必要な決定論的Math
+- 自分が過去に得たObservation / Hypothesis（Phase 7。§5。D106）
+- Public Tournament Context（Phase 8。`docs/02` §7。D109）
 
 渡してはいけないもの:
 
@@ -92,6 +94,15 @@ Discipline低下
 
 このような条件成立時のみ、Strategically PoorなActionへ低確率を割り当てられます。
 
+Phase 7のTilt（D107。#106 P7-5）:
+
+- Version付きの決定論State Machineです（同じHandの流れからは同じTiltになる）。
+- Hand間で増減・減衰し、Session終了でResetします。
+- Persona（固定の性格）・Long-term Memory（観察の記録）とは別の、transientな層として持ちます。
+- Personaの確率分布へ限定的に反映します。Illegal / RandomなActionを弱さとして混ぜません（§3）。
+- TiltのPrivate StateはHeroのEvidenceに使いません。
+- Trigger・しきい値・増減・減衰の値はVersion付きの暫定値です（OI-011）。
+
 ## 5. Opponent Modeling
 
 各CPUは以下を分離して保持します。
@@ -109,6 +120,19 @@ SkillはOpponent Modelの質にも影響します。
 - 少数Sampleから早合点する場合がある
 
 CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけません。
+
+### Phase 7のIdentityとMemory（D106。#106）
+
+- **Identity**: Fixed CPUは、席・player id（`cpu1`等）と別の永続`cpuProfileId`を持ちます。Fixed CPUのMemoryはSessionを跨いで持続し、Guestの一時IdentityとMemoryはSession終了時に破棄します（D11・D63）。DBのSchemaを固定人数にCoupleしません（OI-005）。
+- **Observation**: そのCPUが実際に観察できたPublic / Showdown Evidenceだけを、provenance付きでappend-onlyに記録します（`docs/02` INV-INFO-003・`docs/04` §6）。Learning-only Reveal・他者のHidden Cards・Future Cardsは入れません。
+- **Hypothesis**: Observer × Subject × Contextごとに、Raw Observationから再生成できるProjectionとして作り、集計にrecency decayをかけます（Raw Observationは消さない）。Sample不足の扱いと更新の速さ・早合点の傾向は、上のSkillの差としてPersona Policyで変えられます。decayの係数等はVersion付きの暫定値です（OI-011）。
+- **CPU-to-CPU Memory**: Observer CPUがSubject（Heroや他CPU）について持つPrivate Memoryです。他のCPUへ共有しません（CPU AのBへの仮説をCへ渡さない）。
+- **Context**: Raw ObservationはCash / Tournamentで共通に使えますが、Strategy Hypothesisはcontext（cash / tournament）を分けます。
+- **KnowledgeStateへの注入**: そのCPU自身が過去に得たObservation / Hypothesisだけを入れます（`docs/02` INV-INFO-001）。Promptへ渡す量を絞るときも、Evidence IDを失わない形にし、自然言語のMemoryを正本にしません。
+
+### Table Tendency（D106。#106 P7-6）
+
+卓全体の傾向（aggression・looseness等）は、Public / 観察可能なEvidenceだけから作るProjectionです。個々のCPUのPrivate Memoryを集約して作りません。CPUが使える情報と、HeroのReviewが使える情報の境界を分けます。D10の「ユーザーが選ぶ卓の傾向（卓の編成）」とは別のものです。
 
 ## 6. Review Evidence Model
 
@@ -139,10 +163,10 @@ Evidenceの組み立て（#82。`apps/server/src/review/evidence.ts`）: 判断�
 - Decision Context（`ctx:`）: Street・Blind・HeroのPositionと札・判断時点のBoard・Pot・各席の表示名（Heroの画面に出ている名前。CPU 3など。Personaは入れない。#96）/ Position / Stack / Commit / Fold / All-in（他者の札は持たない）・Public Actionの履歴・裁定の履歴・Legal Action・Heroが選んだAction・Important Spotの理由。
 - Math（`math:`）: `analyzeDecision`の値（Pot・Call額・Pot Odds・有効Stack・SPR・Equity・Alternative Action・前提）。Monte Carloのseedは入れません。
 - Range（`range:`）: 相手ごとのRangeのAssumption。Important Spotだけ、Rangeの想定（標準・狭い・広い）ごとのEquityの比較（`compareRangeProfiles`）。
-- Opponent Observation: 相手の過去の傾向の記録はまだ無いので`unavailable`（Exploitは根拠なしとして書かせる）。
+- Opponent Observation: 相手の過去の傾向の記録はまだ無いので`unavailable`（Exploitは根拠なしとして書かせる）。Phase 6以降でHeroが観察可能だった範囲のStats（`docs/07` §3・§8）を入れるときも、Hidden Persona・Learning-only Reveal・CPUのPrivate Memory / Tiltは入れません。
 - Solver（`solver:`）: Capability Gateを通って解けたときだけ`supported`（`docs/03` §7）。それ以外はUnsupported / 当てはまらないNode / 失敗の理由を前提として渡します。
 - Knowledge（`kb:<KB Version>:<id>@<version>`）: 判断時点のSpotの特徴（Street・HeroのPosition・Heads-Up / Multiway・Spotの種類・相手のPreflopのAction列）で`searchKb`した上位4項目。
-- User Read / Intent: まだ聞いていない（`not_collected`）。
+- User Read / Intent: まだ聞いていない（`not_collected`）。Phase 6でHeroのUser Readをprovenance付きで入れます（D105。`docs/07` §8）。
 
 **内部の識別子を文に出さない**（#96・D101）: Reviewは Hero が読む学習用の文なので、`cpu3` のようなplayerIdや`inAssumedRange=false`のようなEvidenceの項目名を、そのまま出しません（内部実装を前面に出さない方針。`docs/06` §11）。対策は3段で、①Evidenceの席に表示名を添える、②Promptで識別子を書かないよう指示し、「Evidenceの項目の説明」（項目名 → 自然な言葉。`apps/server/src/review/identifiers.ts`の`EVIDENCE_TERMS`が1か所の正本。Pass Aには判断時点の項目だけ、Pass Bにはreveal側の項目も出す）を添える、③出力の文を保存の前に機械的に置換する（playerId → 表示名、項目名 → 説明、`monte_carlo`のような値 → 書き方。根拠のidとenumは触らない）。識別子が見つかっても**Retryはしません**（言い直しを求めても残ることがあり、呼び出しと利用枠が増えるだけのため）。置換するのは対応表にある既知のものだけで、未知の識別子は残り、Review Evalの「識別子の残存率」で数えて対応表に足します（`docs/09` §6）。Pass B・Follow-upにも同じ置換を通します。
 
@@ -225,6 +249,14 @@ MVPから実Solverを組み込みます。
 - SolverはEvidenceの一つ
 
 Session Deep Analysisでは通常Reviewより重いSolveを使っても構いません。
+
+### TournamentでのSolverとReview（Phase 8。D109・#107）
+
+- Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外です。Tournamentでも、対応するSolverが無いSpotは正常な非対応として扱います。
+- Decision ContextにTournamentの公開情報（残人数・Blind Level・StackのBB換算・Payout・Placement）を足します。
+- ICMは決定論のICM Calculator（2〜8人）が計算し、Chip EVとは別のEvidenceとして渡します。Review AIはICMを説明しますが、数値の正本になりません（LLMにICMを計算させない）。
+- Pass A / Pass Bの情報境界は変えません（判断時点の情報だけでPass Aを作る）。
+- Important SpotにBubble / Pay Jump / Short Stack等を足せるようにします。
 
 ## 11. Web Fallback
 

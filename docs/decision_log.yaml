@@ -1,4 +1,4 @@
-# D01〜D100の採用済み人間判断。
+# D01〜D109の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -406,3 +406,35 @@
   choice: "Review の文の内部識別子は、Retry せず保存前の後処理で置換する（AskUserQuestion）"
   status: "採用済み"
   decision: "Review AI（Pass A・Pass B・Follow-up）の出力にplayerIdやEvidenceの項目名などの内部識別子が残ったとき、Retryはせず（追加の呼び出しを増やさない）、検証を通った出力を保存前に既知の対応表で機械的に置換する（playerId→Heroの画面に出ている表示名、項目名→自然な言葉）。未知の識別子は推測で置換しない。あわせてPromptで識別子を書かないよう指示し、Evidenceに表示名と項目の説明を添える。情報境界は変えない（Persona・Hidden Cardsは渡さない）。Review Evalに識別子の残存率を指標として足す（#96）。"
+- id: D102
+  choice: "Post-MVP は #104 → #105 / #106 / #107 の Parent 構造で、Phase 6 → 7 → 8 の順に Gate を守る（#104 の人間確定事項）"
+  status: "採用済み"
+  decision: "MVP後はPost-MVP Parent #104の下にPhase 6（#105）・Phase 7（#106）・Phase 8（#107）のParentを置き、その下に子Issueを作る（#2は再オープンしない）。実装は#105→#106→#107の順で、前Phaseの#104のPhase Gateを満たすまで次Phaseの機能実装に入らない（調査・設計メモは可）。MVPの不変条件（決定論のEngine・Event Log正本・CPUごとのKnowledgeState / Private Memoryの分離・Hidden / Future Cards・Learning-only Revealを漏らさない）はそのまま継承し、Stats / Profile / Memory Summary等は再生成できるProjectionとする。Full Multiway Solver・Push/Fold Nash Solver・MTT・Re-entry / Rebuy / Add-on・LLM Memoryを正本とする構成等でPost-MVPをBlockしない。"
+- id: D103
+  choice: "Phase 6 の Stats は全 Player 対応の Projection、Score は Versioned 暫定式 ScoringPolicy phase6_provisional_v1（#104・#105 の人間確定事項）"
+  status: "採用済み"
+  decision: "StatsはEvent Logから再計算する全Player対応の汎用Projectionとし、Numerator / Denominator / Opportunity Countを持つ。Phase 6のUIはHeroを主対象にし、Play中のHUDは足さない（D32）。ScoreはVersion付きの暫定式ScoringPolicy（最初はphase6_provisional_v1）で計算し、Pass AのAssessmentをstrong 100・reasonable 80・mixed_marginal 60・improvement_suggested 35・major_leak 0とし、insufficient_evidenceは集計から除く。1 Decisionは複数のAbilityに寄与でき、割り当てとWeightは決定論・Version付き。Confidenceは点数を変えず集計のWeightに使い、ScoreはConfidence / Sample Size / Evidence IDs / Trendと一緒に扱う。数値はOI-006の暫定値でPlaytest後に変えられ、永久仕様にしない。D05・D34の具体化。"
+- id: D104
+  choice: "Player Profile は Recent（直近 100 有効 Decision・暫定 Config）と Long-term に分け、Hypothesis は決定論で状態遷移する（#104・#105 の人間確定事項）"
+  status: "採用済み"
+  decision: "Player ProfileはRecent（直近100の有効Decision。OI-006の暫定値でConfigに置く）とLong-term（全有効Evidence）を分ける。Weakness HypothesisはSupporting / Counter Evidenceを構造化して保存し、状態遷移（Suspected / Supported / Strong / Improving / Resolved / Insufficient Data）は決定論で行う（LLMを正本にしない）。自然言語のPlayer Profileは構造化Evidenceからの派生物で正本にせず、過去の自然言語Summaryを次の正本にしない。D18の具体化。"
+- id: D105
+  choice: "User Read / Note / Tag は Phase 6 で先に実装し、Drill は過去 Hand 由来の決定論変形を基本に Engine Validation 必須・通常 Score と別系列（#104・#105 の人間確定事項）"
+  status: "採用済み"
+  decision: "User Read / Note / TagはPhase 6で実装し、対象はseat id（cpu1等）を永続Identityとみなさない参照にしてPhase 7のcpuProfileIdと接続できるようにする。Hidden PersonaやLearning-only RevealをHero向けのObservation Evidenceに使わず、Play中に読みの当たり外れを見せない。Drillは過去Handからの決定論的な変形（一要素だけ変える）を基本とし、元Hand / Decision / Evidenceのprovenanceを持つ。LLMでSpotを生成する場合もPoker EngineのValidationを必ず通す。Drillの結果は通常PlayのAbility / Overall Scoreへ直接混ぜない。D31・D33・D35・D36の具体化。"
+- id: D106
+  choice: "Fixed CPU は永続 cpuProfileId を持ち、Memory は append-only の Raw Evidence と再生成できる Projection に分ける（#104・#106 の人間確定事項）"
+  status: "採用済み"
+  decision: "Fixed CPUは席・player id（cpu1等）と別の永続cpuProfileIdを持ち、MemoryはSessionを跨いで持続する。GuestのMemoryはSession終了時に破棄する。CPUのObservationは観察できたPublic / Showdown Evidenceだけをprovenance（Observer / Subject / Source Hand or Event / Visibility / Timestamp or Hand Number）付きでappend-onlyに記録し、Hypothesis / TendencyはRaw Evidenceから再生成できるProjectionとして、集計にrecency decayをかける（Raw Evidenceは消さない）。CPU-to-CPU MemoryはObserver CPUがSubjectについて持つPrivate Memoryで、他CPUへ共有せずLearning-only Revealを入れない。Raw ObservationはCash / Tournamentで共通に使えるが、Strategy Hypothesisはcontextを分ける。Table TendencyはPublic / 観察可能なEvidenceだけから作り、個々のPrivate Memoryを集約しない。decayの係数等はVersion付きの暫定値とする。D11・D29・D30・D63の具体化。"
+- id: D107
+  choice: "Tilt は Versioned deterministic State Machine で、Session 終了で Reset する transient state（#104・#106 の人間確定事項）"
+  status: "採用済み"
+  decision: "TiltはVersion付きの決定論State Machineとし、Hand間で増減・減衰してSession終了でResetする。Persona / Long-term Memoryとは別のtransient stateとして持ち、Personaの確率分布へ限定的に反映する（Illegal / RandomなActionを混ぜない）。TiltのPrivate StateをHeroのEvidenceに使わない。Triggerやしきい値・減衰はVersion付きの暫定値とする。D27の具体化。"
+- id: D108
+  choice: "Tournament は既存 Hand Engine の上に TournamentSession 層を置き、最初の標準 Preset は 6-max STT（#104・#107 の人間確定事項）"
+  status: "採用済み"
+  decision: "Tournamentは既存の決定論Hand Engineを複製せず再利用し、その上にTournamentSession層を置く（初期ScopeはSingle Table・2〜8人）。最初の標準Presetは6-max STTとする。Blind StructureはCoreで時間base / Hand数baseの両方を扱い、標準PresetはHand数base。Anteはnone / per_player / big_blind_anteをProfileで扱い、標準STTはBig Blind Ante。初期6-max STTのPayoutの暫定Presetは50% / 30% / 20%で、Custom Payoutを後から足せる構造にする（OI-007の暫定値。永久仕様にしない）。Re-entry / Rebuy / Add-onは初期Scope外で、Bust = Elimination。D52〜D54の具体化。"
+- id: D109
+  choice: "CPU の KnowledgeState に Public Tournament Context を足し、2〜8 人の決定論 ICM を Chip EV と別 Evidence にする（#104・#107 の人間確定事項）"
+  status: "採用済み"
+  decision: "CPUのKnowledgeStateにPublic Tournament Context（残人数・Blind Level・StackのBB換算・Payout・ICM pressure等）を足す（Hidden Stack・Private Memoryの境界は変えない）。ICMは8人以下（2〜8人）向けの決定論のICM Calculatorで計算し、LLMをICMの数値の正本にしない。ICMはChip EVと別のEvidenceとしてReviewに渡し、混同しない。Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外。D53の具体化。"

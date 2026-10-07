@@ -43,6 +43,13 @@ global `GameState` をOpponent Modelへ直接渡してはいけません。
 - 他CPUのPrivate Memory
 - 他CPUのSecret Persona
 
+Post-MVPでも変えない境界（D102・D106・D109）:
+
+- CPU-to-CPU Memoryは、Observer CPUがSubjectについて持つPrivate Memoryです。CPU AのCPU Bについての記憶を、CPU Cへ渡しません。
+- Table TendencyはPublic / 観察可能なEvidenceだけから作り、個々のCPUのPrivate Memoryを集約しません。
+- Tournamentで足すPublic Tournament Context（§7）は、全員に見える公開情報だけです。
+- 自然言語のSummaryを、再帰的に「事実」として積み重ねません。
+
 ### INV-INFO-002
 
 Learning-only RevealはReview用Privilegeであり、ゲーム世界内のObservationではありません。
@@ -57,6 +64,8 @@ CPU ObservationはProvenanceを保持します。
 - Source Hand / Event
 - Visibility
 - Timestamp / Hand Number
+
+Phase 7では、ObserverとSubjectを席・player idではなく永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）で持ち、Observationはappend-onlyで記録します（D106。`docs/05` §5）。
 
 ## 3. Rule Profile
 
@@ -195,6 +204,32 @@ Solver / ReviewがRakeを無視する場合、その制約をReviewへ表示し�
 - Payout
 - Elimination
 - ICM Review
+
+### Phase 8の構造（D108・D109。#107）
+
+- **Hand Engineを複製しない**: 既存の決定論Hand Engine（Position・Pot・Side Pot・Showdown・Heads-Up）をそのまま使い、その上に`TournamentSession`層（とTournamentのProjection）を置きます。CashとTournamentでHandのRuleのInvariantを共有します。
+- **最初の標準Preset**: 6-max STT。
+- **Blind Structure**: Coreで時間base / Hand数baseの両方を扱います。標準PresetはHand数baseです。Handの開始時のBlind / AnteはEventに残し、Resume後も同じLevelを作り直せるようにします。
+- **Ante**: `none` / `per_player` / `big_blind_ante` をProfileで扱います。標準STTはBig Blind Anteです。
+- **Payout**: 初期6-max STTの暫定Presetは50% / 30% / 20%です（OI-007の暫定値。永久仕様にしない）。Custom Payoutを後から足せる構造にし、割合の合計と端数の扱いは決定論にします。
+- **Elimination**: Bust = Eliminationです。Re-entry / Rebuy / Add-onは初期Scope外です。
+- **Starting Stack・Blind Level**: Version付きConfigの暫定値です（OI-007）。
+
+Public Tournament Context（D109）:
+
+CPUの`KnowledgeState`に、全員に見える公開情報として足します（Hidden Stack・Private Memoryの境界は変えない）。
+
+- 残人数
+- Blind Level
+- StackのBB換算
+- Payout
+- ICM pressure等（決定論のICMから作る）
+
+ICM（D109）:
+
+- 2〜8人のICMは決定論のコード（ICM Calculator）で計算します。LLMをICMの数値の正本にしません。
+- ICM（Prize Equity）とChip EVを混同せず、Reviewへは別のEvidenceとして渡します（`docs/05` §10）。
+- Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外です。
 
 Heads-Up Invariant:
 - Button = SB

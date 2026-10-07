@@ -178,6 +178,8 @@ confidence: low
 
 AIが過去に書いた自然言語だけを正本にしないでください。
 
+Phase 7（D106）では、Observationは観察できたPublic / Showdown Evidenceだけを、provenance（Observer / Subject / Source Hand or Event / Visibility / Timestamp or Hand Number。`docs/02` INV-INFO-003）付きでappend-onlyに記録します。Learning-only Reveal・他者のHidden Cards・Future Cardsは入れません。Observer / Subjectは席・player idではなく永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）で持ちます。Hypothesis / TendencyはRaw Observationから再生成できるProjectionで、集計にrecency decayをかけます（Raw Observationは消さない）。Strategy HypothesisはCash / Tournamentのcontextごとに分けます。Guestの記録はSession終了時に破棄します。
+
 ## 7. User Learning Hypothesis
 
 例:
@@ -193,6 +195,8 @@ status: improving
 ```
 
 自然言語Player ProfileはこのEvidence Layerから派生させます。
+
+`status`の遷移はSupporting / Counter Evidenceから決定論で決め（D104）、LLMを正本にしません。
 
 ## 8. Review Record
 
@@ -346,3 +350,17 @@ Hand / Session Historyと派生Projectionを削除します（`session_projectio
 ### Factory Reset
 
 アプリ本体・Asset以外のLocal User Data / Configを初期化します。
+
+Post-MVPのReset（D64。実装はP6-7・P7-8）: Learning ResetとOpponent Memory ResetはEvent Log・Reviewの正本を壊さず、派生Projectionは正本から作り直せるようにします。Opponent Memory Resetで、HeroのUser Read / Note / Tag（Phase 6）を誤って消さないよう、カテゴリを分けます。
+
+## 12. Post-MVPのProjectionと永続化の方針（D102〜D106）
+
+Phase 6以降で足すデータは、次の方針で置きます。具体的なテーブル・Eventの形は各子Issue（P6-1以降）で決め、その時点でこの文書を更新します。
+
+- **正本は増やさない**: 正本はEvent Logと、Version付きで上書きしないReview（`reviews`・`reveal_reviews`。D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。
+- **Versionを残す**: Score・Ability Evidence・HypothesisのProjectionには、計算したPolicy（`ScoringPolicy`等）のVersionを持たせます。Policyを変えたときは、正本から計算し直します（古い結果を書き換えて正本にしない）。
+- **数と分母を持つ**: StatsはPercentageだけでなくNumerator / Denominator / Opportunity Countを持ちます（`docs/07` §3）。
+- **人が入力したもの**: User Read（Event `USER_READ_RECORDED`。§3）・Note・Tagは、Heroが入力した記録で、派生ではありません。対象はseat idでなく、Phase 7の`cpuProfileId`と接続できる参照で持ちます（D105）。
+- **Drill**: Drillは元のHand / Decision / Evidenceのprovenanceを持ち、結果は通常Playと別の系列に置きます（D105）。
+- **Phase 7のMemory**: CPUのObservationはappend-onlyのRaw Evidenceとして持ち、Hypothesis / TendencyはProjectionです（§6。D106）。TiltはSession終了でResetするtransientな状態で、Persona / Long-term Memoryと分けて持ちます（D107）。
+- **マイグレーション**: 既存のテーブル・列・保存済みのEventは書き換えず、足すだけにします（D76）。Eventの形を変えるときはschema_versionを上げてupcastを足します。
