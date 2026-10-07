@@ -90,7 +90,7 @@ export const PHASE6_HYPOTHESIS_V1: HypothesisPolicy = {
     return types;
   },
   // OI-006 の暫定値。改善を勧められた判断を弱点の支持、良い判断を反証とし、mixed_marginal はどちらにも数えない。
-  // insufficient_evidence は Ability Evidence の点が無い（集計から除く）ので、ここでも数えない。
+  // insufficient_evidence は Ability Evidence の点が無い（集計から除く）ので、ここでも数えない。Review の Confidence は件数に影響させない（v1）。
   supportingAssessments: ["improvement_suggested", "major_leak"],
   counterAssessments: ["strong", "reasonable"],
   // OI-006 の暫定値。件数が少ないうちは状態を決めず、Counter Evidence が増えると strong → supported → improving → resolved と弱くなる。

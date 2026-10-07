@@ -192,7 +192,7 @@ Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDs�
 
 実装（#114。`phase6_hypothesis_v1` の一覧と数値はすべてOI-006の暫定値）: `apps/server/src/learning/` の `hypothesis-policy.ts`（`HYPOTHESIS_POLICIES`にVersionごとに置く）・`hypothesis.ts`（`buildHypotheses`）・`hypothesis-snapshot.ts`（Snapshotの作り直しと読み出し）です。
 
-- **Evidence**: Ability Evidence（§2の実装。Pass Aの判断ごとの最新のReview）を使います。`improvement_suggested` / `major_leak`をSupporting、`strong` / `reasonable`をCounterとし、`mixed_marginal`と`insufficient_evidence`は数えません。EvidenceのIDはAbility EvidenceのID（`<handId>/d<判断の番号>/v<ReviewのVersion>`）です。
+- **Evidence**: Ability Evidence（§2の実装。Pass Aの判断ごとの最新のReview）を使います。`improvement_suggested` / `major_leak`をSupporting、`strong` / `reasonable`をCounterとし、`mixed_marginal`と`insufficient_evidence`は数えません。ReviewのConfidenceは件数に影響させません（v1）。EvidenceのIDはAbility EvidenceのID（`<handId>/d<判断の番号>/v<ReviewのVersion>`）です。
 - **type（判断の分類）**: Reviewが持つ判断時点の特徴（§2の割り当てと同じ）だけから決めます。1つの判断は複数のtypeに入れます。
 
   | type | 判断 |

@@ -79,8 +79,10 @@ export function computePlayerProfile(
   const hypothesisPolicy = policy.hypothesisPolicy;
   const scoringPolicy = hypothesisPolicy.scoringPolicy;
   const set = buildAbilityEvidence(source, scoringPolicy, options);
-  // Evidence は判断の順なので、末尾の window 件が直近の有効 Decision。
-  const recentEvidence = set.evidence.slice(-policy.recentDecisions);
+  // Evidence は判断の順なので、末尾の window 件が直近の有効 Decision（slice(-0) は全件になるので、始まりの位置で切る）。
+  const recentEvidence = set.evidence.slice(
+    Math.max(0, set.evidence.length - policy.recentDecisions),
+  );
 
   const window = (evidence: typeof set.evidence): ProfileWindow => {
     const scores = scoreEvidence(evidence, scoringPolicy);
