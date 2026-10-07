@@ -173,7 +173,7 @@ Structured Profileが正本で、自然言語のPlayer Profileはそこからの
 - **有効Decision**: Pass AのReviewがある判断です（D115）。Recentは、判断の順で末尾の`recentDecisions`件（暫定値100。`ProfilePolicy`に置き、変えるときはVersionを足す）、Long-termは全件です。どちらも`scoreEvidence`（Scoreと同じ集計）でOverall / Abilityを出し、件数（`reviewed`・`scored`）を持ちます。Long-termの集計は`computeScoreReport`と同じ値になります。
 - **持つもの**: Policyの各Version（Profile・Hypothesis・Scoring）、対象の判断の数とReview済みの数（M件中N件。D115）、Recent・Long-term、Weakness Hypothesis（§5。Snapshotを読まず、同じEvidenceから同じ関数で作る）。Improvementは、各AbilityのTrend（§2）とHypothesisの`improving` / `resolved`で表します。
 - **自然言語のProfile**: `renderProfileText`が、Structured Profileだけを受け取る決定論のテンプレートで作ります（LLMを呼ばない。APIの課金経路を増やさない）。表示用の派生で、Structured Profileは文を持たず、過去の文を次の計算の入力にしません。
-- **Drillの除外**: `excludeHandIds`（D116。Scoreと同じ口）。Learning Resetの区切り（D114）は#118で足します。表示用のAPI・UIは#116です。
+- **Drillの除外**: `excludeHandIds`（D116。Scoreと同じ口）。Learning Resetの区切り（D114）は#118で足します。表示用のAPI・UIは#116です（§6の実装）。
 
 ## 5. Hypothesis Lifecycle
 
@@ -216,7 +216,7 @@ Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDs�
   | `suspected` | それ以外 |
 
   Counter Evidenceが増えると、strong → supported → improving → resolvedと弱くなります。
-- **Snapshot（D113）**: `rebuildHypothesisSnapshot`が、reviewsから作り直した結果でマイグレーションv6の`hypothesis_snapshots`の全行を1トランザクションで入れ替えます（列は`docs/04` §7）。消して作り直しても同じ行になる派生データで、正本にしません。Player Profile（§4）はSnapshotを読まず、同じ関数で作ります。
+- **Snapshot（D113）**: `rebuildHypothesisSnapshot`が、reviewsから作り直した結果でマイグレーションv6の`hypothesis_snapshots`の全行を1トランザクションで入れ替えます（列は`docs/04` §7）。消して作り直しても同じ行になる派生データで、正本にしません。Player Profile（§4）はSnapshotを読まず、同じ関数で作ります。Profileの API（#116）は、読むたびに同じEvidenceのHypothesisでSnapshotを入れ替えます（`writeHypothesisSnapshot` / `readHypothesisSnapshot`。§6の実装）。
 - **Drillの除外**: `excludeHandIds`（D116）。Learning Resetの区切り（D114）は#118で足します。
 
 ## 6. Session Review
@@ -237,6 +237,17 @@ Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDs�
 「負けたから下手」「勝ったから上手」としません。
 
 Decision Quality SummaryとScoreは、Pass AのReviewがある判断だけで計算し、「M件中N件をReview済み」を必ず表示します。Reviewを自動・一括で作る経路は持ちません（D115）。
+
+実装（#116。`phase6_session_review_v1` の値はOI-006の暫定値）: `apps/server/src/learning/session-review.ts` の `computeSessionReview` が、1 Sessionの終わったHand（`HAND_FINISHED`か`HAND_ABORTED`）とPass Aの`reviews`から都度計算します（保存しない。D111）。API は `GET /api/learning/session-review/:handId`（そのHandが属するSession）と、Recent / Long-termの`GET /api/learning/profile`です（`docs/03` §1）。画面は`docs/06` §14。
+
+- **Hands / Duration / 収支**: Hands はSessionの終わったHandの数（打ち切ったHandを含む）、Durationは最初のHandの開始から最後のHandの終わりまでの記録時刻の差です。収支はHeroの実額（`HAND_FINISHED`のStack −`HAND_STARTED`のStackの和。打ち切ったHandはChipが動かないので0）で、BBは最後のHandのBBで割った補助です（D49）。収支はScore・Strength / Leak・Important Handsのどれにも使いません。
+- **Decision Quality Summary**: §2の`computeScoreReport`をSessionのHandだけで呼び、M・N・段階評価ごとの数・Overall（Confidence・件数・Trendつき）とAbilityごとのScoreを返します。
+- **Strength / Leak（暫定）**: Pass Aの段階評価が`strong`の判断をStrength、`major_leak` / `improvement_suggested`の判断をLeak（重い順）とします。`reasonable`・`mixed_marginal`はどちらにも入れません。
+- **Important Hands（暫定）**: Important Spot（`docs/05`。判断時点の情報だけで選ぶ）か、Strength / Leakの判断があるHandを、Leakの多い順 → Important Spotの多い順 → Handの順に並べ、5 Handまで出します。結果（収支）では選びません。行はHeroの札・Important Spotの理由・Review済みの数で、他者の札は出しません。
+- **Stats**: §3の`projectPlayerStats`をSessionのHand（Profileは全期間）で呼び、Heroの行だけを返します（他Playerの詳細HUDを出さない。D32）。
+- **Recommended Drill**: 入口だけです（D116）。候補はLeakの最初の判断で、Drillの生成・開始は#117です（`available: false`）。
+- **Drillの除外**: `excludeHandIds`（D116）。`drills`テーブルは#117で作るので、今は空集合を渡します。
+- **Weakness Hypothesis**: Profileの API を読むたびに、Profileと同じEvidenceから作ったHypothesisで§5のSnapshotを入れ替え、その行（作り直した時刻つき）を返します。
 
 ## 7. Targeted Drill
 

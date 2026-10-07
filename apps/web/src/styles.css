@@ -2848,3 +2848,176 @@ input {
   color: var(--color-on-surface-muted);
   font-size: 13px;
 }
+
+/* ───────── Session Review / Learning（#116・docs/06 §14・docs/07 §6） ───────── */
+
+/* 判断の質（主）と Drill の入口の面。Review の面と同じトークンで、主の面だけ縁を強める */
+.learning-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-rest);
+}
+
+.learning-card--primary {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-raise);
+}
+
+.learning-card p {
+  margin: 0;
+}
+
+/* 「M 件中 N 件を Review 済み」は Score と一緒に必ず見える位置に置く（D115） */
+.learning-count {
+  margin: 0;
+  font-weight: 600;
+}
+
+.learning-score {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+
+.learning-score__value {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.learning-score__meta {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.learning-dist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 段階評価は色だけでなく文字で示す（色は assessment--* の修飾子） */
+.learning-chip {
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Hands・Duration・収支は事実の欄（補助）。判断の質より小さく出す */
+.learning-facts {
+  display: grid;
+  gap: 4px;
+}
+
+.learning-facts__list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.learning-fact {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+}
+
+.learning-fact dt {
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.learning-fact dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Ability・Stats・Hypothesis の 1 行。名前を左、値と注記を右に置き、狭い画面でも横に溢れさせない */
+.learning-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.learning-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.learning-row:last-child {
+  border-bottom: 0;
+}
+
+.learning-row__name {
+  display: grid;
+  min-width: 0;
+}
+
+.learning-row__value {
+  display: grid;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.learning-row__meta {
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Strength / Leak は広い画面で 2 列 */
+.learning-split {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .learning-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.learning-text {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+  white-space: pre-line;
+}
+
+@media (max-width: 359px) {
+  .learning-facts__list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .learning-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .learning-row__value {
+    justify-items: start;
+    text-align: left;
+  }
+}

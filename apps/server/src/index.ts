@@ -17,6 +17,7 @@ import {
 } from "./config.js";
 import { openDatabase } from "./db/database.js";
 import { loadKb } from "./kb/index.js";
+import { SqliteHypothesisSnapshotStore } from "./learning/hypothesis-snapshot.js";
 import {
   buildClaudeEnv,
   createClaudeOpponentFactory,
@@ -76,6 +77,8 @@ const app = buildApp({
   store,
   // Hero の Note / Tag（#115）は同じ DB の user_notes / user_tags（v5）に追記する。
   noteStore: new SqliteNoteStore(db),
+  // Weakness Hypothesis の Snapshot（#114）は同じ DB の hypothesis_snapshots（v6）。Profile の API が読むたびに作り直す（#116）。
+  hypothesisSnapshot: new SqliteHypothesisSnapshotStore(db),
   createOpponent,
   opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),

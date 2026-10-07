@@ -17,6 +17,11 @@ import { HandOrchestrator } from "./hand-orchestrator.js";
 import type { OpponentFactory } from "./opponents/opponent-agent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
 import { loadKb, type LoadedKb } from "./kb/index.js";
+import {
+  InMemoryHypothesisSnapshotStore,
+  type HypothesisSnapshotStore,
+} from "./learning/hypothesis-snapshot.js";
+import { LearningService } from "./learning/learning-service.js";
 import { InMemoryNoteStore, type NoteStore } from "./notes/note-store.js";
 import { ReplayService } from "./replay.js";
 import {
@@ -31,6 +36,7 @@ import {
 } from "./review/review-store.js";
 import { ReviewService } from "./review/review-service.js";
 import { registerHandRoutes } from "./routes/hands.js";
+import { registerLearningRoutes } from "./routes/learning.js";
 import { registerNoteRoutes } from "./routes/notes.js";
 import { registerReplayRoutes } from "./routes/replay.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
@@ -73,6 +79,8 @@ export interface AppOptions {
   readonly review?: ReviewAppOptions;
   /** Hero の Note / Tag の Store（#115）。起動時は SQLite（v5）、省略時のメモリ内実装はテスト用。 */
   readonly noteStore?: NoteStore;
+  /** Weakness Hypothesis の Snapshot（#114・#116）。起動時は SQLite（v6）、省略時のメモリ内実装はテスト用。 */
+  readonly hypothesisSnapshot?: HypothesisSnapshotStore;
 }
 
 // listen と分けて組み立てだけを export する。テストから起動せずに叩けるようにするため。
@@ -121,9 +129,10 @@ export function buildApp(options: AppOptions = {}) {
 
   // Review は保存済みの Hand を読むので、Replay と同じ Store を使う。省略時は Solver を未導入・Claude を呼ばない形にする（テスト用）。
   const review = options.review ?? {};
+  const reviewStore = review.store ?? new InMemoryReviewStore();
   const reviews = new ReviewService({
     events: store,
-    reviews: review.store ?? new InMemoryReviewStore(),
+    reviews: reviewStore,
     reveals: review.revealStore ?? new InMemoryRevealReviewStore(),
     followUps: review.followUpStore ?? new InMemoryFollowUpStore(),
     heroId,
@@ -147,6 +156,19 @@ export function buildApp(options: AppOptions = {}) {
     done();
   });
   registerReviewRoutes(app, reviews);
+
+  // Session Review・Player Profile（#116）は、同じ Event Store と Pass A の reviews を読むだけ（Review を作らない。D115）。
+  // Pass B の Store は渡さない（Hindsight を Score・Profile に混ぜない）。
+  registerLearningRoutes(
+    app,
+    new LearningService({
+      events: store,
+      reviews: reviewStore,
+      heroId,
+      hypotheses:
+        options.hypothesisSnapshot ?? new InMemoryHypothesisSnapshotStore(),
+    }),
+  );
 
   return app;
 }

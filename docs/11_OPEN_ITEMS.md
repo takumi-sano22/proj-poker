@@ -108,6 +108,8 @@ Playtest後に決定します。
 
 #114で置いた暫定値（確定ではない。詳細は `docs/07` §4・§5「実装（#114）」）: Player ProfileのRecentは直近100の有効Decision（Pass AのReviewがある判断。`ProfilePolicy phase6_profile_v1`）。Weakness Hypothesisの`HypothesisPolicy phase6_hypothesis_v1`は、typeを5つ（`preflop_unraised` / `preflop_facing_raise` / `postflop_facing_bet` / `postflop_unbet` / `bet_raise`）、Supportingを`improvement_suggested` / `major_leak`、Counterを`strong` / `reasonable`とし、状態のしきい値は 3件未満 insufficient_data・Supporting 4件以上かつ6割以上 strong・2件以上かつ4割以上 supported・直近5件の窓でSupporting 1件以下 improving / 0件 resolved。Playtest後にVersionを上げて見直す。
 
+#116で置いた暫定値（確定ではない。詳細は `docs/07` §6「実装（#116）」）: Session Reviewの`SessionReviewPolicy phase6_session_review_v1`は、Strengthを`strong`、Leakを`major_leak` / `improvement_suggested`の判断とし（`reasonable`・`mixed_marginal`はどちらにも入れない）、Important HandsはImportant SpotかStrength / Leakの判断があるHandをLeakの多い順・Important Spotの多い順に5 Handまで出す。Recommended Drillの候補はLeakの最初の判断（Drillは#117）。Playtest後にVersionを上げて見直す。
+
 ## OI-007 — Tournament Preset
 
 確定:
