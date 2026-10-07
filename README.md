@@ -6,7 +6,7 @@
 
 **ライブ実戦を意識した No-Limit Texas Hold'em（NLHE）の練習・AIコーチング環境**です。
 
-> 現在の状態: Phase 5（MVP Review）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊び、終わった Hand を Review できます**。Bet は **実際の Chip の額面を Click / Drag で出す操作と宣言**で行い、Dealer が TDA 準拠で裁定します。終わった Hand は **Replay** で一手ずつ見返し、**Hand Review** で判断時点の情報だけを使った評価（Pass A）・Hand 後の全員の札での答え合わせ（Pass B）・追加質問（Follow-up）を受けられます。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられ、Review は Claude が書きます。サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます
+> 現在の状態: Phase 6（Session Learning）の到達点 / ブラウザで **2〜8 人（既定 6-max）の NLHE Cash を CPU 相手に Session として続けて遊び、終わった Hand を Review し、Session の終わりに学習の振り返りと練習ができます**。Bet は **実際の Chip の額面を Click / Drag で出す操作と宣言**で行い、Dealer が TDA 準拠で裁定します。終わった Hand は **Replay** で一手ずつ見返し、**Hand Review** で判断時点の情報だけを使った評価（Pass A）・Hand 後の全員の札での答え合わせ（Pass B）・追加質問（Follow-up）を受けられます。Session の終わりには **Session Review**（判断の質・Ability ごとの Score・Hero の Stats・Leak）と **Player Profile**（直近 / 全期間・弱点の仮説）を見て、Leak の判断から一要素だけ変えた **Targeted Drill** を遊べます。CPU は既定の RuleBot のほか、設定で **Claude（Claude Code のログイン経由）** に切り替えられ、Review は Claude が書きます。サーバーを再起動しても、Hand の合間で止まった Session と学習の記録はそのまま続きます
 
 ## このプロジェクトを作る理由
 
@@ -196,11 +196,13 @@ Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poke
 | `pnpm typecheck` | 全パッケージの `tsc --noEmit` |
 | `pnpm test` | Vitest（`packages/engine`・`apps/server`・`apps/web`） |
 | `pnpm format:check` | Prettier の整形チェック（適用は `pnpm format`） |
-| `pnpm e2e` | 6-max Session の E2E（Playwright。下の「E2E の実行」）。CI では別のジョブ `e2e` で動きます |
+| `pnpm e2e` | Critical E2E（Playwright。6-max Session と Phase 6 の学習の流れ。下の「E2E の実行」）。CI では別のジョブ `e2e` で動きます |
 
 ### E2E の実行
 
 `e2e/tests/session.spec.ts` が、6-max の Session を開始 → Chip 操作と宣言で Hand を Play → Hand 終了 → Review（判断時点の段階評価 → Hand 後の答え合わせ → Follow-up）→ Replay（Important Spot へのジャンプ）→ 次の Hand → server を再起動して Resume（同じ Session・Stack を持ち越す）までを 1 本で通します（`docs/09` §8・D98）。
+
+`e2e/tests/learning.spec.ts` が、Phase 6 の学習の流れを 1 本で通します（`docs/09` §8・#119）: 2 人卓で Session の終わりまで Play → Review（Pass A・Pass B）→ Session Review → Player Profile → Targeted Drill → 練習した判断の Review → Learning Reset（Hand の記録・Review・Drill の記録は残る）→ server を再起動しても学習の記録と Drill の provenance が同じ。
 
 ```bash
 # 初回だけ: Playwright の Chromium（headless shell）を取得する。OS の依存パッケージも入れるなら --with-deps（sudo が要る）
@@ -209,7 +211,7 @@ pnpm e2e
 ```
 
 - server（`127.0.0.1:3101`）と web（`127.0.0.1:5174`）を E2E が自分で起動・停止します。`pnpm dev`（3001 / 5173）と同時に動かせます。
-- 決定論にするため、server は `POKER_SEED`（山札の seed の固定）・CPU は RuleBot・`REVIEW_PROVIDER=fake`（Review AI を固定応答に差し替え）・空の一時 DB で動きます。Claude と Solver は呼びません。
+- 決定論にするため、server は `POKER_SEED`（山札の seed の固定）・CPU は RuleBot・`REVIEW_PROVIDER=fake`（Review AI を固定応答に差し替え）・空の一時 DB で動きます。Claude と Solver は呼びません。学習の流れの E2E は `TABLE_SIZE=2` と `FAKE_REVIEW_ASSESSMENT=improvement_suggested`（固定応答の Pass A の段階評価。既定は `reasonable`）で動きます。
 - 失敗したら `e2e/test-results/` に Trace・スクリーンショット・server のログが残ります（`pnpm --filter @proj-poker/e2e exec playwright show-trace <trace.zip>` で開けます）。
 - 実際の Claude（OAuth）での通しは手動で行います（結果の例は [`docs/taskLog/issue-85-e2e-readme.md`](./docs/taskLog/issue-85-e2e-readme.md)）。
 
@@ -276,7 +278,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 5 — MVP Review** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3。「ここでMVP完成」の Phase）。MVP の完成条件 1〜8（Session を遊べる・2D UI と Chip 操作・Event Log の保存・Replay・判断時点の情報だけの Review・全 Hole Cards の学習用の確認・数学 / AI / 対応可能な Solver による解析・追加質問）の機能がそろい、6-max Session の E2E で通しています。Definition of Done の確認は [親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2) で行います。
+**Phase 6 — Session Learning** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3。MVP の後の最初の Phase）。MVP（Phase 0〜5。完成条件 1〜8 の機能と 6-max Session の E2E。[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2)）の上に、Event Log と Review から再計算する Stats・Score・Player Profile・Weakness Hypothesis、User Read / Note / Tag、Session Review、Targeted Drill、Learning Reset がそろい、Phase 6 の学習の流れを Critical E2E で通しています。Phase 6 の Definition of Done の確認は [親 Issue #105](https://github.com/takumi-sano22/proj-poker/issues/105)、Phase 6 → 7 の Gate の確認は [#104](https://github.com/takumi-sano22/proj-poker/issues/104) で人間が行います（`docs/08` §3.2）。
 
 できていること:
 
@@ -307,6 +309,15 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - Review の画面と Jump to Important Spot（#84）: Important Spot を先に並べた Review の一覧・Pass A / Pass B のタブ・Evidence・Version の選択・Follow-up と、Replay の Important Spot へのジャンプ
   - 6-max Session の E2E（#85・D98）: Playwright で Play → Review → Replay → 次の Hand → 再起動して Resume までを CI で通します（CPU は RuleBot、Review AI は固定応答）
   - Hand ごとの Metadata（#97・D100）: Hand の開始時に App Version・Rule Profile・Persona の Preset 一式の版と、席ごとの CPU の実装（RuleBot / Claude とモデル / Emergency Bot）を system の Event に残します（`schema_version` 7。Hero の画面・CPU・Replay には出ません）。AI の Request / Response の本文は保存しません
+- **Session Learning（Phase 6）**: Stats・Score・Profile・Hypothesis は Event Log（正本）と Pass A の Review から読むたびに作り直す Projection です（D37・D111・D113）
+  - Detailed Stats（#112）: Event Log から全 Player の Stats（VPIP・PFR・3-bet・Fold to 3-bet・Flop の Continuation Bet と Fold to Continuation Bet・Aggression）を、割合だけでなく分子 / 分母 / 機会の数で再計算します。画面に出すのは Hero 自身の行だけで、Play 中の HUD は出しません（D32）
+  - Ability Evidence と Score（#113）: Pass A の段階評価から、1 つの判断を複数の Ability（Preflop・Postflop・Bet Sizing・Pot / Equity Math・Range Reading・Opponent Adaptation・Position）に決定論で割り当て、版付きの `ScoringPolicy phase6_provisional_v1` で Score・Confidence・件数・Evidence IDs・Trend を計算します（「根拠が足りない」は点数に入れない。Live Mechanics は別の Score）
+  - User Read / Note / Tag（#115・D112）: Hero の手番に読み（User Read）を Hero だけの Event（`schema_version` 8）として残し、判断の前の読みを Review の Evidence に provenance 付きで入れます。CPU ごとの Note / Tag は追記型のテーブル（マイグレーション v5）に残します。どちらも CPU の入力・Hidden Persona と混ざりません
+  - Weakness Hypothesis と Player Profile（#114）: Supporting / Counter Evidence から決定論で状態が変わる弱点の仮説（Snapshot はマイグレーション v6）と、直近 100 件（Recent）/ 全期間（Long-term）の Profile。まとめの文は Structured Profile からのテンプレート文で、LLM も過去の文も入力にしません
+  - Session Review（#116・D115）: Session の終わりに、判断の質（M 件中 N 件を Review 済み）・Ability ごとの Score・Strength / Leak・Important Hands・Hero の Stats・おすすめの Drill を出します。収支（実額が正本・BB は補助）は判断の質と別に小さく出します
+  - Targeted Drill（#117・D116）: Leak の判断から、Effective Stack・Bet の額・相手の傾向のどれか一つだけを決定論で変えた類題を作り（Engine の Validation を通るものだけ）、1 Hand 遊んで練習した判断を Review します。元の Hand・判断・Review の provenance を追記型の `drills`（マイグレーション v7）に残し、結果は通常の Score と別に数えます（D105）
+  - Learning Reset（#118・D114）: Score・弱点の仮説・まとめの文をカテゴリごとに、Reset より後に終わった Hand だけで数え直します。区切りの行を追記するだけ（マイグレーション v8）で、Hand の記録・Review・Note / Tag・Stats は消えません（取り消しはできません）
+  - Phase 6 の Critical E2E（#119）: Session の終わりまで Play → Review → Session Review → Profile → Drill → 練習した判断の Review → Learning Reset → 再起動しても学習の記録と provenance が同じ、を CI で通します（CPU は RuleBot、Review AI は固定応答）
 
 制約・未実装:
 
@@ -316,9 +327,13 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - Persona の数値（OI-005）・モデル名（`claude-haiku-4-5` / `claude-sonnet-5-5` / `claude-opus-5-5`）と判断待ち・Review・Solver の上限（OI-001）・Primary Solver（OI-002）・Eval の合格ライン（`docs/09` §5・§6）は暫定値です（永久仕様ではありません）。Tilt（一時的な状態）・CPU の観察記憶は Phase 7 です
 - **Solver は Heads-Up の Turn / River だけ**です。Preflop・Flop・Multiway（3 人以上）・Side Pot あり・Rake ありの Spot は Unsupported で、Math・Range・KB で Review します（Multiway の Deep Solver は OI-009）。Solver の結果は Street の最初の判断（OOP）の頻度だけで、Action EV は出しません
 - **Web Fallback（根拠が足りないときの Web 検索）はありません**（D94・OI-010）。根拠が足りない判断は Review AI を呼ばずに「根拠が足りない」として評価しません
-- Review は Claude（サブスク枠）を使い、1 回に十数秒〜数十秒かかります。相手の Observation（CPU ごとの傾向の記録）はまだ無いので、Exploit の観点は出ません
-- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Session の集計（Stats）はまだありません。Ante・Blind Level は Phase 8（Tournament）です
+- Review は Claude（サブスク枠）を使い、1 回に十数秒〜数十秒かかります。相手の Observation（CPU ごとの傾向の記録）はまだ無いので、Exploit の観点は出ません（Phase 7）
+- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Ante・Blind Level は Phase 8（Tournament）です
+- **Score・Hypothesis・Drill の式と値（`phase6_provisional_v1`・`phase6_hypothesis_v1`・`phase6_drill_v1`・Recent の 100 件）は OI-006 の暫定値**です（永久仕様ではありません）。Score は Review 済みの判断だけで数え、未 Review の判断をまとめて Review する機能はありません（D115。判断を 1 つずつ Review します）
+- Session Review の画面は、Session が終わった（Hero の Bust・Hero だけが残った・AI 障害で終えた）後の「この Session を振り返る」から開きます。Player Profile・Drill の結果・Learning Reset はその画面の下にあります
+- Targeted Drill は決定論の変形だけで、LLM で Spot を作る経路は Phase 6 の範囲外です。Drill の相手の傾向は Drill の設定の RuleBot で、元の Hand の CPU の性格ではありません
+- Learning Reset は取り消せません（Hand の記録・Review は残るので、Replay と Review はそのまま開けます）。Session Review と Stats は Reset の対象ではありません
 - サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます（Stack・Button・Emergency Bot を持ち越す。#77）。Hand の途中で止めた場合は、その Hand は消え、最後に終わった Hand から続きます
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
 
-次は **Phase 6 — Session Learning** です（MVP の後の Phase。`docs/08` §3）。
+次は **Phase 7 — Rich Opponent Simulation** です（`docs/08` §3。Phase 6 → 7 の Gate を人間が確認してから着手します）。

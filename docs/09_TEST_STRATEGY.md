@@ -221,6 +221,22 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - 再起動は、2 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直して「Handを始める」で3 Hand目を始めます。3 Hand目の開始時のStackが2 Hand目の終わりのStackと同じ（新しいSessionの均等Stackに戻っていない）・Chipの総量が変わらないことを、Replay APIの値で確かめます。
 - 実際のClaude（OAuth）での通しは手動で1回行い、結果は作業ログ（`docs/taskLog/issue-85-e2e-readme.md`）に残します（D98）。
 
+### Phase 6のCritical E2E（Issue #119）
+
+Phase 6（Session Learning）の通しは、上の1〜10と重ならないよう、Sessionの終わりからの学習の流れだけを別の1本（`e2e/tests/learning.spec.ts`）で通します。
+
+1. 2人卓で、HeroがAll-inできる手番はAll-in（それ以外はCall / Check）してSessionが終わるまでPlayする（Session Reviewの入口はSessionの終わりに出る）
+2. 最後のHandのReviewを開き、Pass A（段階評価）とPass B（Learning-only Reveal）を作る
+3. Session Review: 判断の質（M件中N件）・Leak・HeroのStats・おすすめのDrillの候補が出る。Pass Bの文は出ない
+4. Player Profile: Review済みの判断からScoreと弱点の仮説（Weakness Hypothesis）が作られ、直近 / 全期間を切り替えられる。Profile・Session Reviewの応答にPass Bの文・Personaが入らない
+5. おすすめのDrillを始め、Drillの卓でHandを最後まで遊び、練習した判断のReviewを作る
+6. Drillの結果は別の欄（練習した判断のM件中N件）に数え、Session Review・Profileの件数は変わらない（D105）
+7. Learning Reset（全カテゴリ）: Profileは「Reset後」の0件から数え直し、Session Reviewは変わらない。Replayの一覧・元の判断と練習した判断のPass A・Drillの一覧（provenance）は変わらない（D114）
+8. serverを再起動しても、Session Review・Profile・Drillの一覧・Replayの一覧・Pass Aの応答が同じ（Hypothesisの`computedAt`は読むたびに作り直す時刻なので除く）。画面のReplayの一覧から保存済みのHandを開ける
+
+- serverの設定は1本目と同じ（`e2e/support/server.ts`）に、`TABLE_SIZE=2`と`FAKE_REVIEW_ASSESSMENT=improvement_suggested`（固定応答のPass Aの段階評価を「改善の余地あり」にする。Leakが無いとDrillの候補が出ないため。既定は`reasonable`）を足します。
+- EventからStats / Scoreを作り直せること・Hidden Persona / Learning-only Revealが漏れないことの単体・統合テストは§10に置きます。
+
 ## 9. Property / Fuzz
 
 有効な用途:
@@ -234,3 +250,20 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 Fuzz Testだけで明示的Rule Scenarioを置き換えないでください。
 
 再現できるようにするため、Property Test（fast-check）は共通のパラメータ（`packages/engine/src/testing/property.ts`の`propertyParams`）でseedを1つに決めて流します。失敗したときはfast-checkの出力（`{ seed: …, path: … }`と縮小済みのCounterexample）がCIのログに出るので、`POKER_PROPERTY_SEED=<seed> pnpm --filter @proj-poker/engine test`で同じ入力を再現し、縮小した反例をScenarioへ昇格させます。`POKER_PROPERTY_RUNS_FACTOR=<整数>`でケース数を倍にでき（時間切れも同じ倍率で延びます）、数万ケースの繰り返しに使います。1テストの時間切れは30秒です（既定の5秒だと、負荷の高いCIで時間切れになり、seedも反例も残らないまま落ちるため。#95）。
+
+## 10. Session Learning（Phase 6）のテスト
+
+Phase 6 → 7のGate（`docs/08` §3.2）の項目と、それを確かめるテストの対応です。Stats・Score・Profile・Hypothesisはどれも、Event Logと`reviews`（Pass A）から読むたびに作り直すProjectionです（D37・D113）。
+
+| Gateの項目 | テスト |
+|---|---|
+| StatsをEventから再計算できる | `packages/engine/src/stats.test.ts`（固定Scenarioの手計算の期待値・全Player・6人卓のPosition・Drill / 進行中のHandを除く・Hole CardsとDeckを差し替えても結果が同じ） |
+| ScoreがPolicy Version付きで再計算できる | `apps/server/src/learning/score.test.ts`（「Policy の Version を変えると、同じ Evidence から計算し直せる」等）・`learning-reset.test.ts`（「Policy の Version を変えても、正本から Reset 後の Evidence だけで計算し直せる」） |
+| Confidence / Sample Size / Evidence IDsが保持される | `score.test.ts`（M件中N件・insufficient_evidenceを0点にしない・ConfidenceはWeightだけ・Trend・Confidenceの段階） |
+| HypothesisがSupporting / Counter Evidenceから決定論的に更新される | `apps/server/src/learning/hypothesis.test.ts`・`hypothesis-snapshot.test.ts`（Snapshotを消して作り直しても同じ行） |
+| Recent / Long-term Profileが自然言語Summaryに依存せず再生成できる | `apps/server/src/learning/profile.test.ts`・`learning-reset.test.ts`（「過去の Snapshot・自然言語の Profile を入力にしない」） |
+| User Read / Note / TagがHidden Personaと混ざらない | `apps/server/src/routes/notes.test.ts`（CPUの入力に入らない）・`apps/server/src/review/evidence.test.ts`（判断より前の読みだけをprovenance付きでEvidenceへ）・`apps/server/src/routes/learning-leakage.test.ts` |
+| Drillが元Handとprovenanceを持ち、Engine Validationを通る | `apps/server/src/drill/drill-plan.test.ts`（Validationを通る候補が無ければDrillを出さない）・`apps/server/src/routes/drills.test.ts`（provenance・決定論・集計から除く） |
+| Phase 6のCritical E2Eが通る | `e2e/tests/learning.spec.ts`（§8） |
+
+Hidden Persona / Learning-only RevealのLeakage 0は、経路ごとのテスト（`learning.test.ts`・`session-review.test.ts`・`drills.test.ts`・`evidence.test.ts`の`forbiddenKeys`・`collectCards`）に加え、`apps/server/src/routes/learning-leakage.test.ts`がHand API・User Read・Note / Tag・Pass A / Pass B・Drillを1本の流れで通してから、Heroに返すLearningの応答（Session Review・Profile・Drillの一覧・Note / Tag・読みの後のHeroView・Pass AのEvidenceの読み）にPersonaの語・Pass Bの文・Heroが知り得ない札が無いことを確かめます（#119）。Drillの一覧の`variant` / `change`（`opponent_tendency`のPreset）はDrill自身の設定で、元のCPUのHidden Personaではないので除きます（`docs/07` §7）。
