@@ -63,6 +63,33 @@ Scoreは、Version付きの暫定式 `ScoringPolicy` で計算します。最初
 
 ScoreはConfidence / Sample Size / Evidence IDs / Trendと必ず一緒に扱い、点数だけを見せません。Live MechanicsはPoker Decisionと別のScoreです（D48）。Drillの結果は通常PlayのAbility / Overall Scoreへ直接混ぜません（§7。D105）。
 
+### 実装（#113。`phase6_provisional_v1` の値はすべてOI-006の暫定値）
+
+`apps/server/src/learning/` にあります。Policyは`scoring-policy.ts`（`SCORING_POLICIES`にVersionごとに置き、値を変えるときは既存のPolicyを書き換えずVersionを足す）、Ability Evidenceは`ability-evidence.ts`、集計は`score.ts`の`computeScoreReport`です。Scoreは都度計算し、保存しません（D111）。
+
+- **入力**: Hand（古い順のEvent Log）とPass Aの`reviews`だけです。Pass B（`reveal_reviews`）のStoreは型の上でも渡せません。Reviewを作る経路は持ちません（D115）。
+- **M件中N件**: M＝終わったHand（`HAND_FINISHED`か`HAND_ABORTED`。Reviewを作れるHandと同じ条件）のHeroの判断の数（Engineの`heroDecisions`）。N＝Pass AのReviewがある判断の数。結果は`decisions: { total: M, reviewed: N, scored, insufficientEvidence }`を必ず持ちます。
+- **Reviewの選び方**: 同じ判断に複数のVersionがあれば、最大のVersion（最新）を使います。standardとdeepの優先は付けません（暫定）。
+- **Ability Evidence**: 判断1つにつき、使うReview 1つから作ります。IDは`<handId>/d<判断の番号>/v<ReviewのVersion>`で、Assessment・Confidence・点・Weight・Abilityへの割り当て・Live Mechanicsの点・ReviewのEvidence IDs（provenance）を持ちます。割り当ては、Reviewが持つ判断時点のEvidence（Street・Action・Call額・判断時点の最高額・裁定の理由）だけから決めます。
+- **Decision → Abilityの割り当て（暫定）**:
+
+  | 条件 | Ability | Weight |
+  |---|---|---|
+  | Preflopの判断 / Flop以降の判断 | Preflop / Postflop | 1 |
+  | 額を引き上げた（Bet / Raise / 額を上げるAll-in） | Bet Sizing | 0.5 |
+  | Betに直面していた（Call額 > 0） | Pot / Equity Math | 0.5 |
+  | Flop以降でBetに直面していた | Range Reading | 0.5 |
+  | Preflopで誰もRaiseしていない（最高額がBBのまま） | Position | 0.5 |
+  | （割り当てなし。Heroが観察した相手のEvidenceがまだ無い。#115・Phase 7で見直す） | Opponent Adaptation | — |
+
+- **ConfidenceのWeight（暫定）**: high 1・medium 0.7・low 0.4。AbilityのScoreは「点 × ConfidenceのWeight × 割り当てのWeight」の加重平均、Overall（Poker Decisionだけ）は「点 × ConfidenceのWeight」の加重平均です（判断1つを1回数える）。小数第1位で丸めます。
+- **Live Mechanics（D48。暫定式）**: その判断のHeroの操作に理由のある裁定（Oversized Chip等。`docs/02`）が入れば0点、入らなければ100点。Assessmentを使わないのでinsufficient_evidenceの判断も数え、裁定は決定論なのでWeightは1です。Overallには入れません。
+- **ScoreのConfidence（暫定）**: 集計に入ったEvidenceの数で決めます。0件はinsufficient（Scoreはnull）、1〜9件はlow、10〜29件はmedium、30件以上はhigh。
+- **Trend（暫定）**: 直近10件とその前の10件の加重平均を比べ、5点以上上がればimproving、下がればdeclining、それ以外はstable。20件に満たなければinsufficient。
+- **Drillの除外**: `excludeHandIds`で除くHandのidを受け取り、M・N・Scoreのどれにも入れません（D116。`drills`テーブルは#117）。
+- **Versionを変えた計算し直し**: `computeScoreReport`に別のPolicyを渡せば、同じEvent Logと`reviews`から計算し直せます。結果には計算したPolicyのVersion（`policyVersion`）を必ず残します。
+- 表示用のAPI・UIは#116、Learning Resetの区切り（D114）は#118で足します。
+
 ## 3. Detailed Statistics
 
 Eventを十分細かく保存し、後から多くのStatを再計算可能にします。
