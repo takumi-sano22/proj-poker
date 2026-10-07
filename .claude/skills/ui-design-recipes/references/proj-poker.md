@@ -1,0 +1,107 @@
+# ui-design-recipes: proj-poker 固有の補強
+
+## 位置づけと優先順位
+
+- 実装（`apps/web/src/styles.css` のトークン・`apps/web/src/components/` の共通部品）＞ 本 md ＞ 汎用の reference。
+- 画面要件・表示ルールの正本は `docs/06_UI_UX.md`、実額常時表示は D49。本 md はそれを実装の値と部品へ落とす導線で、要件を上書きしない。
+- 汎用の reference と違うところは、下の「固有の規律・例外」に書く（reference は書き換えない）。
+
+## CSS 方式とトークン
+
+- **Tailwind は使っていない。素の CSS 1 枚**（`apps/web/src/styles.css`）。reference の Tailwind クラスは素の CSS 値で読み替える。クラス名は BEM 風（`.seat__plate`・`.btn--primary`・`.feedback__item--ruling`）。
+- トークンは `styles.css` 冒頭の `:root` の custom property。部品では色・影・角丸・所要時間を直書きしない。テーマは**ダークのみ**（`color-scheme: dark`）。`prefers-reduced-motion` で `--duration-*` を 0 にする。
+- 主なトークン（実際の値は `styles.css` を読む。ここへ写さない）:
+
+| 役割 | トークン |
+| --- | --- |
+| 地と面 | `--color-bg` / `--color-surface` / `--color-surface-raised` / `--color-surface-sunken` / `--color-border`（`-strong` / `-interactive`） |
+| 文字 | `--color-on-surface` / `--color-on-surface-muted` |
+| 主操作・手番（金） | `--color-brand-400/500/600` / `--color-on-brand` |
+| 取り消しにくい操作（All-in） | `--color-danger-600/700` / `--color-on-danger` |
+| 卓 | `--color-felt-center` / `--color-felt-edge` / `--color-rail` / `--color-on-felt` / `--color-on-felt-muted` |
+| Card | `--color-card-face` / `-edge` / `-back` / `-back-mark` / `--color-suit-red` / `-black` |
+| Chip | `--color-chip-<white\|red\|green\|black\|purple>` と `-edge`（Table Config の `ChipColor`〔D92〕と 1 対 1。テストが定義の有無を検査）・`--color-dealer-button` |
+| Dealer Feedback | `--color-feedback-ruling`（金）/ `-etiquette` / `-coaching` |
+| Review | `--color-assess-good\|neutral\|caution\|bad\|unknown`・Pass B の面 `--color-reveal`（`-surface` / `-border`） |
+| フォーカス | `--color-focus`（`:focus-visible` の 2px リング） |
+| 影 | `--shadow-rest` / `--shadow-raise` / `--shadow-overlay` / `--shadow-raise-up`（下に固定する Hero 欄）/ `--shadow-turn`（手番の発光） |
+| 角丸 | `--radius-control` 10px / `--radius-aside` 12px / `--radius-panel` 16px / `--radius-layer` 20px |
+| 動き | `--duration-fast` 120ms / `--duration-base` 200ms / `--ease-out` |
+| 卓の寸法 | `--seat-rx` / `--seat-ry` / `--bet-rx` / `--bet-ry` / `--chip-d` / `--chip-step` / `--card-sm-w` / `--card-md-w` / `--card-lg-w`（狭い画面で上書き） |
+
+- フォントは `"Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif`・15px・行間 1.6（Web フォントなし）。
+
+## 既存部品の対応表（新しく作らない）
+
+パスは `apps/web/src/` 起点。
+
+| 作るもの | 使う実装 |
+| --- | --- |
+| ボタン | `.btn`（`min-height: 44px`）+ `--primary`（金）/ `--secondary` / `--ghost` / `--danger`、`--sm` / `--md` / `--lg`。切り替えは `.toggle`（`aria-pressed`） |
+| 卓・座席 | `components/Table.tsx`（`Table` / `Seat` / `BetPill`）。席の向きは `lib/view-model.ts` の `seatDirections`（Hero は真下・時計回り）が `--dir-x` / `--dir-y` で渡し、位置は CSS の半径（`--seat-rx` / `--seat-ry`）を掛けて決める |
+| 実額・BB | `components/Amount.tsx` / `BbDisplay.tsx`（`.amount__real` が正本、`.amount__bb` が補助。BB の ON/OFF は `lib/display-settings.ts`） |
+| Card | `components/PlayingCard.tsx`（SVG の構造描画・D60。`sm` / `md` / `lg`、`null` は裏向き、`muted` は Fold 済み） |
+| チップスタック | `components/ChipStack.tsx`（`ChipStack` は額から Engine の `composeChips` で組む、`ChipPile` は出した枚数のまま。5 枚超は ×N） |
+| Pot | `Table.tsx` の `.pot`（`Term` +`Amount`） |
+| 宣言 Button・Chip 操作 | `components/ChipControls.tsx` + `hooks/useChipDrag.ts` + `lib/chip-ops.ts`（Click 回数 = 枚数、Click か Drag で Betting Area へ。宣言は全種を常に出し All-in だけ `btn--danger`。数値の Bet Box・Slider は作らない） |
+| Dealer Feedback / Ruling | `components/DealerFeedback.tsx` + `lib/dealer-feedback.ts`（RULING / ETIQUETTE / COACHING を札と左の縁の色で分ける。Hero 欄は RULING を常に出し、他は札の button で開く） |
+| Poker Vocabulary | `components/Vocabulary.tsx` + `lib/vocabulary.ts`（`Term` と `.vocab` の詳細） |
+| 進行ログ | `components/HandLog.tsx` |
+| CPU 障害のダイアログ | `components/OutageDialog.tsx`（`role="alertdialog"`、狭い画面は `.outage--docked`） |
+| Hand の結果・Session 終了 | `App.tsx` の `HandResult` / `SessionEnded`（狭い画面は `.result--docked`） |
+| Hero 欄 | `App.tsx` の `HeroDock`（`.dock`・画面下に sticky） |
+| Replay | `components/ReplayScreen.tsx` + `hooks/useReplay.ts` + `lib/replay.ts`（卓・進行ログ・Hero 欄は卓の画面と同じ部品） |
+| Review | `components/ReviewScreen.tsx` / `ReviewPass.tsx` / `ReviewEvidence.tsx` / `FollowUp.tsx` |
+| 狭い画面の判定（JS） | `hooks/useNarrowScreen.ts`（`NARROW_SCREEN_QUERY`。テストが CSS の `@media` と同じ値かを検査） |
+
+## 画面幅と卓の配置規則
+
+- **境界は 719px / 720px の 1 本**（`max-width: 719px` が狭い画面）。ほかに `min-width: 1024px`（進行ログを右に出す 2 列）、`max-width: 359px`（320px 級の詰め）、`hover: hover`（hover の演出）。**同じ閾値を CSS と JS で別々に書かない**。JS で要るときは `useNarrowScreen` を使う。
+- **席と重なる欄は卓の中央に重ねない**。狭い画面では、Hand の結果・Session 終了の案内・CPU 障害のダイアログを Hero 欄に置く。広い画面では卓の中央に置く。同じ内容を 2 か所に描かないので、CSS で隠し分けず、`useNarrowScreen` で描く場所を 1 か所に決める。
+- **Bet の札**: 広い画面では卓の上、席の前に置く（`--bet-rx` / `--bet-ry`）。狭い画面では席の面の中、Stack の Chip の下に置く（`BetPill` を `Seat` の `betInside` で切り替える。`.bet--inside`）。卓の上に置くと、席数によっては中央や隣の席と重なる。
+- **卓の中央**: 狭い画面の 2・3・6 人卓は、1 行目を Board、2 行目を Street と Pot にする。中央の高さに席の面が来る 4・5・7・8 人卓は、Street・Board・Pot を縦に積む（`data-center-stacked`。`CENTER_STACKED_SEAT_COUNTS` の 1 か所で決める）。
+- **卓の縦横比**: 広い画面は 16:10。狭い画面は縦長で、値は `styles.css` と `docs/06` §1 にある。席の面に要素を足すと、`.seat` は面ごと中心に合わせている（`translate(-50%, -50%)`）ため、中央の側にも同じだけ伸びる。足したときは縦横比・`--seat-ry`・面の幅を一緒に見直す。
+- **Hero 欄は低く保つ**: 手番などの 1 行の案内は札の右に並べる。RULING は省かず、全体の高さで吸収する。
+- **flex の行がはみ出す中身を持つなら `flex: none` にする**。縮めると、隣の Button と重なる。
+
+## このプロジェクト固有の規律・例外
+
+- **実額は常時表示する（D49）**。狭い画面で省いてよいのは補助の BB 換算だけ（宣言 Button の `.declaration__bb`、Bet の札の `.amount__bb`）。
+- Card と Chip は画像ではなく構造で描く（Card は SVG、Chip は CSS の丸）。Chip の色は額面の構造の一部なので、トークン名を `ChipColor` と 1 対 1 に保つ。
+- Dealer Feedback の 3 分類は、色だけでなく分類名の札でも区別する。Review の段階評価も、色だけでなく文字で示す。
+- reference のうち「グラデーション・発光の演出」は控えめに使う。手番の発光（`--shadow-turn`）以外の装飾は、卓の情報量を増やさない範囲にとどめる。
+- 3D・Voice は作らない（非目標。`docs/00` §6）。
+
+## 重なりの測り方（UI を変えたら）
+
+- Playwright で 1280×900・375×760・375×667・320×568 を測る。**席数（2〜8 人）× 画面幅 × 何 Hand も**測る（1 点だけでは、席数と額によって外れる）。
+- 測る項目:
+  - 席の面・札・Bet・Board・Pot・Street・結果・進行ログ・見出しの矩形が交差しないか
+  - 操作 Button の中心で `elementFromPoint` を取り、他の要素に覆われていないか
+  - `scrollWidth − innerWidth` が 0 か（横スクロールの有無）
+  - Hero 欄の高さ
+- 絶対配置がはみ出す要素は、卓の外の隣接要素（見出し・進行ログ）まで含めて測る。
+- E2E（`e2e/tests/session.spec.ts`）の 375px のテストは、Playwright の `click()` が覆われた Button で失敗するので、そのまま重なりの検査になる。
+- 手順と過去の数値は作業ログにある: `docs/taskLog/issue-5-table-ui-narrow-overlap.md`、`docs/taskLog/issue-5-bet-placement-seat-count.md`。
+
+## 関連 skill への導線
+
+- 実装前の判定基準 → `implementation-guidance` の `references/ui.md`
+- 表示経路への配線漏れなど、レビュー時の欠陥クラス → `code-review` の台帳（LC-040 ほか）
+
+## 出典の対応表
+
+| reference | proj-poker での出典 |
+| --- | --- |
+| `foundations/color-usage.md` | `styles.css` の `:root`（卓・Chip・Feedback の専用色を含む） |
+| `foundations/surface-and-depth.md` | 影 `--shadow-*`・角丸 `--radius-*` |
+| `components/button.md` | `.btn` と宣言 Button（`ChipControls.tsx`） |
+| `components/modal.md` | `OutageDialog.tsx`、Vocabulary の詳細 |
+| `layout/app-shell-responsive.md` | `App.tsx`（卓 + 進行ログ + 下に固定の Hero 欄）・`useNarrowScreen.ts` |
+| `effects/glow-and-decor.md` | 手番の発光 `--shadow-turn` |
+
+## 既知のずれ
+
+- 狭い画面で裁定（RULING）があると、Hero 欄が約 106px 高くなる。用語 Button の出し方を変える必要があり、未対応。
+- 320×568 では Hero 欄が画面の 7〜9 割を占め、狭い画面の 7・8 人卓は縦にスクロールが要る。
+- ライトテーマは無い（ダークのみ）。

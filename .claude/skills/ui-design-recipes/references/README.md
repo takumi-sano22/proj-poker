@@ -21,6 +21,7 @@ ui-design-recipes/
 ├── SKILL.md                      Claude 向けの導線（作るもの → 読む reference の対応表・鉄則）
 └── references/
     ├── README.md                 このファイル（人間向け）
+    ├── proj-poker.md             proj-poker の卓 UI の固有補強（最初に読む）
     ├── foundations/              土台。新しいプロジェクトではここから入れる
     │   ├── color-usage.md        役割の体系・段の使い分け・ベースライン色から段を作る手順・グラデーションのかけ方・色の散らし方
     │   ├── surface-and-depth.md  影 3 段・内側ハイライト・面を区別する 3 軸・面のレシピ 4 層（L1〜L4）
@@ -38,17 +39,13 @@ ui-design-recipes/
     │   ├── banner-and-toast.md   トーストの位置と自動消去・通常フローのバナー・自動フォーカス・選択待ちの面
     │   └── scrollbar.md          半透明スクロールバー（Chromium と Firefox の分岐・ポインタの有無で濃さを変える）
     ├── layout/                   配置と複数の画面幅への対応
-    │   ├── app-shell-responsive.md  h-dvh の骨組み・幅帯ごとの列・対称な中央寄せ・開閉で動かさない・z-index の段
-    │   ├── chat-thread.md        会話列 720px・吹き出しの幅・スクロールの 3 層と追従・入力ブロック
-    │   └── admin-dashboard.md    業務用の管理画面（別体系・色の役割 4 系統・シェル・KPI・テーブル・フィルタ・空状態・バッジ・グラフ）
+    │   └── app-shell-responsive.md  h-dvh の骨組み・幅帯ごとの列・対称な中央寄せ・開閉で動かさない・z-index の段
     ├── effects/                  演出
     │   ├── hover-and-press.md    影の段上げ・持ち上げ幅・押下・色差が小さい面での示し方・hover で出す操作・clip-path の面
     │   ├── glow-and-decor.md     発光オーバーレイ・雲形の吹き出しとしっぽ・主役の気分の keyframes と止め方
     │   └── glass-surface.md      背景を透かす面の値・アルファの実測・クリック透過・端のフェード・直近順のフェード・全体不透明度
     └── content/                  表現
-        ├── emoji-and-icons.md    使う場所・1 概念 1 絵文字・絵文字だけのラベルの禁止・サイズの段・インライン SVG
-        ├── screen-mimic.md       画面の見本（層の外）・DOM で描く理由・注釈の枠とタグと凡例・デスクトップとモバイルの出し分け
-        └── code-block.md         暗く沈めた面・独立した構文色・コメントの透明度・折りたたみ・横スクロール
+        └── emoji-and-icons.md    使う場所・1 概念 1 絵文字・絵文字だけのラベルの禁止・サイズの段・インライン SVG
 ```
 
 ## Claude Code での使われ方
