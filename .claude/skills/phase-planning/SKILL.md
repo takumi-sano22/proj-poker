@@ -20,7 +20,7 @@ Post-MVP の親の親は #104（Post-MVP Parent。D102）。以下で「親」�
 
 - **実装開始ゲート（MVP）**（`CLAUDE.md`「自走ルール」・`docs/00` §7・`docs/08` §5）: 親 #2 の Gate「追加された Skills / Harness をこの PJ の開発規約として確認する」に人間がチェックを入れるまで、Phase 0 / 1 のプロダクト実装は始めない。`gh issue view 2` でチェック状態を確認する。
 - **未解除の場合**: **Phase 0 のうち実装を伴う項目（TypeScript Project Skeleton / Lint / Typecheck / Test 等）と Phase 1 以降**は「**起票まで可・着手不可**」。子 Issue は作ってよいが、worktree 作成・実装・PR 作成には進まない。Issue 本文にも「実装開始ゲート未解除のため着手不可」と明記する。ゲートが解除されたら、着手時にこの注記を本文から消し、解除を確認した旨をコメントする。**AI がゲートを自己判断で解除しない。**
-- **実装開始ゲート（Post-MVP）**（`docs/08` §3.2・D102）: Phase 6 は #104 の「⛔ 実装開始 Gate」、Phase 7 / 8 は前 Phase の親の DoD と #104 の前 Phase の Phase Gate がすべて満たされる（チェックの規律は下の「Phase 完了判定」）まで機能実装を始めない。`gh issue view 104` と前 Phase の親で確認する。未解除の扱い（起票まで可・着手不可）は上と同じ。
+- **実装開始ゲート（Post-MVP）**（`docs/08` §3.2・D102）: Phase 6 は #104 の「⛔ 実装開始 Gate」、Phase 7 / 8 は前 Phase の親の DoD が満たされ、#104 の前 Phase の Phase Gate に人間がチェックを入れるまで機能実装を始めない。`gh issue view 104` と前 Phase の親で確認する。未解除の扱い（起票まで可・着手不可）は上と同じ。
 - harness・docs の整備（Phase 0 のうち実装を伴わない部分）はゲート対象外。
 
 ## 手順
@@ -55,11 +55,11 @@ Post-MVP の親の親は #104（Post-MVP Parent。D102）。以下で「親」�
 
 ## Phase 完了判定
 
-1. 親の DoD チェックボックス（Post-MVP は #104 の Phase Gate も）を更新してよいのは、**対応する PR がマージされた後だけ**。マージ前・レビュー中にチェックを入れない。
+1. 親の DoD チェックボックスを更新してよいのは、**対応する PR がマージされた後だけ**。マージ前・レビュー中にチェックを入れない。
 2. チェック更新の前に、実出力を引用して根拠を示す（例: `gh pr view <n> --json state,mergedAt,url` の出力、Phase 完了時の `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check` の実出力）。引用できなければ完了と言わない。
 3. DoD の項目が Phase の途中で部分的にしか満たされていない場合はチェックしない。
 4. 子 Issue がすべてクローズされ、対応する DoD 項目が更新されたら Phase 完了。その時点で **`release-readme-sync` skill** に進み、README 等との同期を行う。
-5. 実装開始ゲートの Gate 項目（親 #2 の「開始条件」、#104 の「⛔ 実装開始 Gate」）のチェックは**人間だけ**が行う。AI は更新しない。
+5. 実装開始ゲートの Gate 項目（親 #2 の「開始条件」、#104 の「⛔ 実装開始 Gate」と Phase 間の Phase Gate）のチェックは**人間だけ**が行う。AI は更新しない（Phase の完了時は、Gate の各項目を満たした根拠を親 Issue のコメントに残して人間に返す）。
 
 ## やってはいけないこと
 
