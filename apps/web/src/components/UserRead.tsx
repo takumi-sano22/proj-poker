@@ -32,7 +32,8 @@ export function UserReadToggle({
   // 同じ読みの再送は、最初に送ったときの lastSeq のまま送る（応答だけが失われていたら、サーバーが stale_view で弾いて
   // 同じ読みを 2 回残さない）。対象・本文を変えたら新しい読みとして送り直す。
   const sentAt = useRef<number | null>(null);
-  // 対象にできるのは、Fold していない相手の席だけ。
+  // 対象にできるのは、Fold していない相手の席だけ。送信中（disabled）は対象と本文を固定する（成功で入力を消すため、
+  // 送信中に書き換えた内容を消さない）。
   const opponents = view.seats.filter(
     (s) => s.playerId !== view.viewerId && !s.folded,
   );
@@ -76,6 +77,7 @@ export function UserReadToggle({
         <span className="user-read__label">対象</span>
         <select
           className="user-read__select"
+          disabled={disabled}
           value={target}
           onChange={(e) => {
             sentAt.current = null;
@@ -92,6 +94,7 @@ export function UserReadToggle({
       </label>
       <input
         className="user-read__input"
+        disabled={disabled}
         type="text"
         aria-label="読み"
         placeholder="例: River の大きい Bet は Value が多そう"

@@ -109,7 +109,10 @@ export function OpponentNotes({
     current !== null ? "まだありません。" : error === null ? "読み込み中…" : "";
   const locked = busy || current === null;
 
-  /** 追加・削除を送り、応答（今の Note / Tag）で置き換える。送信中は次の送信を止める。 */
+  /**
+   * 追加・削除を送り、応答（今の Note / Tag）で置き換える。送信中は次の送信を止め、CPU の選択と入力欄も固定する
+   * （前の対象への応答の成功で、切り替えた後の対象の書きかけを消さないため）。
+   */
   const run = async (request: () => Promise<SubjectNotes>) => {
     if (inFlight.current) return false;
     inFlight.current = true;
@@ -164,6 +167,7 @@ export function OpponentNotes({
           <span className="opponent-notes__label">CPU</span>
           <select
             className="opponent-notes__select"
+            disabled={busy}
             value={playerId}
             onChange={(e) => {
               // 席を変えたら、書きかけの Note は別の席の Note として送る（noteId を作り直す）。
@@ -213,6 +217,7 @@ export function OpponentNotes({
         >
           <input
             className="opponent-notes__input"
+            disabled={busy}
             type="text"
             aria-label="Tag"
             placeholder="例: Loose"
@@ -258,6 +263,7 @@ export function OpponentNotes({
         >
           <textarea
             className="opponent-notes__input opponent-notes__input--multiline"
+            disabled={busy}
             aria-label="Note"
             placeholder="例: River の大きい Bet は Value 寄り"
             maxLength={NOTE_BODY_MAX}
