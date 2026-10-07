@@ -21,7 +21,7 @@ when_to_use: 実装が一段落しコミット/PR前の動作確認をする時�
 7. 未確認の範囲があれば明記する。
 8. 最終報告では、変更内容・作業ログ・テスト結果・残課題を伝える。
 
-自動テストは `pnpm test`（Vitest。`packages/engine`・`apps/server`・`apps/web` がそれぞれ vitest と `test` script を持つ。新しいパッケージにテストを足すときは、そのパッケージに vitest と `test` script を足す）。docs のみの変更では、`docs/` 内の相互参照・Decision ID（D01〜D112）・Open Item ID の整合を確認し、`git diff` で意図しない変更が無いことを確認する。動作確認が必要な場合は、確認した範囲と未確認の範囲を作業ログに明記する。
+自動テストは `pnpm test`（Vitest。`packages/engine`・`apps/server`・`apps/web` がそれぞれ vitest と `test` script を持つ。新しいパッケージにテストを足すときは、そのパッケージに vitest と `test` script を足す）。docs のみの変更では、`docs/` 内の相互参照・Decision ID（D01〜D116）・Open Item ID の整合を確認し、`git diff` で意図しない変更が無いことを確認する。動作確認が必要な場合は、確認した範囲と未確認の範囲を作業ログに明記する。
 
 ## Lintチェック（コミット前必須）
 

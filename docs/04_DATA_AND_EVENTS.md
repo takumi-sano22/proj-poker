@@ -351,16 +351,18 @@ Hand / Session Historyと派生Projectionを削除します（`session_projectio
 
 アプリ本体・Asset以外のLocal User Data / Configを初期化します。
 
+Phase 6のLearning Reset（D114。実装は#118）: Stats / Score / Profileは保存しない（D111）ので、Learning Resetは削除ではなく、追記型のテーブルに区切りの行（Resetの時刻・対象カテゴリ）を足します。Score / Profile / Hypothesisは最後のLearning Resetより後のEvidenceだけで計算し、HypothesisのSnapshot（D113）はその条件で作り直します。Event Log・`reviews`等の正本は消さず、削除拒否のTriggerも外しません。User Read / Note / TagはLearning ResetでもOpponent Memory Resetでも消しません。Hand History Delete / Factory ResetはPhase 6の範囲外です。
+
 Post-MVPのReset（D64。実装はP6-7・P7-8）: Learning ResetとOpponent Memory ResetはEvent Log・Reviewの正本を壊さず、派生Projectionは正本から作り直せるようにします。Opponent Memory Resetで、HeroのUser Read / Note / Tag（Phase 6）を誤って消さないよう、カテゴリを分けます。
 
 ## 12. Post-MVPのProjectionと永続化の方針（D102〜D106）
 
 Phase 6以降で足すデータは、次の方針で置きます。具体的なテーブル・Eventの形は各子Issue（P6-1以降）で決め、その時点でこの文書を更新します。
 
-- **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Score / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。Weakness HypothesisはD104どおりSupporting / Counter Evidenceを構造化して保存し、保存の形は#114で決めます。
+- **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Score / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。Weakness HypothesisはD104どおりSupporting / Counter Evidenceを構造化して保存し、保存の形はreviewsから作り直せるSnapshotのテーブル（マイグレーションv6。D113。列は#114で決めてこの文書に書く）です。
 - **Versionを残す**: Score・Ability Evidence・HypothesisのProjectionには、計算したPolicy（`ScoringPolicy`等）のVersionを持たせます。Policyを変えたときは、正本から計算し直します（古い結果を書き換えて正本にしない）。
 - **数と分母を持つ**: StatsはPercentageだけでなくNumerator / Denominator / Opportunity Countを持ちます（`docs/07` §3）。
 - **人が入力したもの**: User Read（§3の`USER_READ_RECORDED`と同等の情報）・Note・Tagは、Heroが入力した記録で、Projectionではありません。User Readは判断時点の情報なので`USER_READ_RECORDED`としてEvent Logに残し（schema_versionを8に上げる）、Note / TagはHandに属さないのでマイグレーションv5で足す追記型のテーブルに置きます（D112。実装は#115）。対象はseat idでなく、Phase 7の`cpuProfileId`と接続できる参照で持ちます（D105）。
-- **Drill**: Drillは元のHand / Decision / Evidenceのprovenanceを持ち、結果は通常Playと別の系列に置きます（D105）。
+- **Drill**: Drillは元のHand / Decision / Evidenceのprovenanceを持ち、結果は通常Playと別の系列に置きます（D105）。DrillのHandは専用のSessionの通常のHandとしてEvent Logに残し（Eventの形は変えない）、元のHand / Decision / Reviewのid・変形の種類・seed・DrillのHandのidを持つ追記型の`drills`テーブルで区別します。Stats・Score・Profile・Hypothesis・Resume・Replayの通常の集計は`drills`にあるHandを除きます（D116。実装は#117）。
 - **Phase 7のMemory**: CPUのObservationはappend-onlyのRaw Evidenceとして持ち、Hypothesis / TendencyはProjectionです（§6。D106）。TiltはSession終了でResetするtransientな状態で、Persona / Long-term Memoryと分けて持ちます（D107）。
 - **マイグレーション**: 既存のテーブル・列・保存済みのEventは書き換えず、足すだけにします（D76）。Eventの形を変えるときはschema_versionを上げてupcastを足します。
