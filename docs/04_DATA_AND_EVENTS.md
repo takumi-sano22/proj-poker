@@ -357,7 +357,7 @@ Post-MVPのReset（D64。実装はP6-7・P7-8）: Learning ResetとOpponent Memo
 
 Phase 6以降で足すデータは、次の方針で置きます。具体的なテーブル・Eventの形は各子Issue（P6-1以降）で決め、その時点でこの文書を更新します。
 
-- **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Ability Evidence / Score / Hypothesis / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。
+- **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Score / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。Weakness HypothesisはD104どおりSupporting / Counter Evidenceを構造化して保存し、保存の形は#114で決めます。
 - **Versionを残す**: Score・Ability Evidence・HypothesisのProjectionには、計算したPolicy（`ScoringPolicy`等）のVersionを持たせます。Policyを変えたときは、正本から計算し直します（古い結果を書き換えて正本にしない）。
 - **数と分母を持つ**: StatsはPercentageだけでなくNumerator / Denominator / Opportunity Countを持ちます（`docs/07` §3）。
 - **人が入力したもの**: User Read（§3の`USER_READ_RECORDED`と同等の情報）・Note・Tagは、Heroが入力した記録で、Projectionではありません。User Readは判断時点の情報なので`USER_READ_RECORDED`としてEvent Logに残し（schema_versionを8に上げる）、Note / TagはHandに属さないのでマイグレーションv5で足す追記型のテーブルに置きます（D112。実装は#115）。対象はseat idでなく、Phase 7の`cpuProfileId`と接続できる参照で持ちます（D105）。

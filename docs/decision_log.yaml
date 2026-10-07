@@ -445,7 +445,7 @@
 - id: D111
   choice: "Phase 6 の Projection は都度計算・保存しない（推奨案、AskUserQuestion）"
   status: "採用済み"
-  decision: "Phase 6のStats / Ability Evidence / Score / Hypothesis / Profileは、Event Logとreviewsから都度計算し、保存しない（Projectionのためのマイグレーションを足さない）。表示が遅くなった時点でCacheのテーブルを別Issueで足す。D37・D103・D104の具体化。"
+  decision: "Phase 6のStats / Score / Profileは、Event Logとreviewsから都度計算し、保存しない（これらのProjectionのためのマイグレーションを足さない）。表示が遅くなった時点でCacheのテーブルを別Issueで足す。Weakness HypothesisはこのD111の対象外で、D104どおりSupporting / Counter Evidenceを構造化して保存する（保存の形は#114で決める）。D37・D103の具体化。"
 - id: D112
   choice: "User Read は Event・Note / Tag は追記型テーブル（推奨案、AskUserQuestion）"
   status: "採用済み"

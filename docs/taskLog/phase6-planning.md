@@ -20,7 +20,7 @@
 ## 人間判断（AskUserQuestion の回答。すべて推奨案）
 
 - 分解は #105 の推奨どおり 8 Issue（D110）
-- Phase 6 の Projection は都度計算・保存しない（D111）
+- Phase 6 の Stats / Score / Profile は都度計算・保存しない（D111）。Codex の [P1] を受け、Hypothesis は D104 どおり構造化保存（形は #114）と範囲を明記した
 - User Read は `USER_READ_RECORDED`（schema_version 8）、Note / Tag はマイグレーション v5 の追記型テーブル（D112）
 - Drill は決定論の変形だけ。LLM での Spot 生成は Phase 6 の範囲外（D110）
 
