@@ -147,15 +147,15 @@ MVP Parent #2はPhase 5の完了でCloseしました（再オープンしない�
 - User Read / Note / Tag
 - Targeted Drill
 
-子Issueの分解（D110。#105の推奨どおり、この順に進める）:
+子Issueの分解（D110。#105の推奨どおり、表の上から順に進める。D113により、P6-4（#115）をP6-3（#114）より先に実装する）:
 
 | ID | 内容 |
 |---|---|
 | P6-0 | Post-MVP Decision / Docs Sync（#108。この文書の同期） |
 | P6-1 | Analytics Projection / Detailed Stats（#112） |
 | P6-2 | Ability Evidence / ScoringPolicy（#113） |
+| P6-4 | User Read / Note / Tag（#115。D113によりP6-3より先） |
 | P6-3 | Hypothesis Lifecycle / Player Profile（#114） |
-| P6-4 | User Read / Note / Tag（#115） |
 | P6-5 | Session Review / Learning UI（#116） |
 | P6-6 | Targeted Drill（#117。決定論の変形だけ。LLMでのSpot生成はPhase 6の範囲外） |
 | P6-7 | Reset / Persistence / Rebuild（#118） |

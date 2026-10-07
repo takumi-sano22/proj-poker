@@ -136,7 +136,7 @@ Structured Profileが正本で、自然言語のPlayer Profileはそこからの
 
 Counter Evidenceによって弱くなる仕組みを持ちます。
 
-Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDsで構造化して保存し、状態遷移を決定論で行います。LLMを状態遷移の正本にしません（説明文を書かせるのは可）。形は`docs/04` §7です。
+Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDsで構造化して保存し、状態遷移を決定論で行います。LLMを状態遷移の正本にしません（説明文を書かせるのは可）。形は`docs/04` §7です。保存はreviewsから作り直せるSnapshotのテーブルで、typeの一覧と遷移のしきい値はVersion付きの暫定Policy（OI-006）に置きます（D113）。
 
 ## 6. Session Review
 
@@ -154,6 +154,8 @@ Weakness Hypothesis（D104）は、Supporting / Counter EvidenceをEvidence IDs�
 - Recommended Drill
 
 「負けたから下手」「勝ったから上手」としません。
+
+Decision Quality SummaryとScoreは、Pass AのReviewがある判断だけで計算し、「M件中N件をReview済み」を必ず表示します。Reviewを自動・一括で作る経路は持ちません（D115）。
 
 ## 7. Targeted Drill
 
@@ -179,6 +181,7 @@ Phase 6のDrill（D105）:
 - 基本の経路は、過去Handからの決定論的な変形（一要素だけ変える）です。
 - Phase 6で実装するのは決定論の変形だけです（D110）。LLMでSpotを生成する経路はPhase 6の範囲外で、将来入れる場合もPoker EngineのValidation（合法なState・Action・Chipの保存）を必ず通します。
 - Drillの判断もReviewしますが、結果は通常PlayのAbility / Overall Scoreと別の系列に持ち、直接混ぜません。
+- Drillは専用のSessionの通常のHandとしてEngineで終局まで進め、追記型の`drills`テーブルで通常Playと区別します。Stats・Score・Profile・Hypothesis・Resume・Replayの通常の集計はDrillのHandを除きます（D116。形は`docs/04` §12）。
 
 例:
 - River Bluff Catch

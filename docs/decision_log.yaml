@@ -1,4 +1,4 @@
-# D01〜D112の採用済み人間判断。
+# D01〜D116の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -440,7 +440,7 @@
   decision: "CPUのKnowledgeStateにPublic Tournament Context（残人数・Blind Level・StackのBB換算・Payout・ICM pressure等）を足す（Hidden Stack・Private Memoryの境界は変えない）。ICMは8人以下（2〜8人）向けの決定論のICM Calculatorで計算し、LLMをICMの数値の正本にしない。ICMはChip EVと別のEvidenceとしてReviewに渡し、混同しない。Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外。D53の具体化。"
 - id: D110
   choice: "Phase 6 を #105 の推奨どおり 8 つの子 Issue に分解（推奨案、AskUserQuestion）"
-  status: "採用済み"
+  status: "採用済み（実装順のP6-3とP6-4はD113で入れ替え）"
   decision: "Phase 6（Session Learning）を#112〜#119の8つの子Issueに分解し、この順に進める（1 Analytics Projection / Detailed Stats / 2 Ability EvidenceとScoringPolicy / 3 Hypothesisの状態遷移とRecent・Long-term Profile / 4 User Read・Note・Tag / 5 Session Review・Learning UI / 6 Targeted Drill / 7 Learning系のResetとProjectionの作り直し / 8 Eval・Critical E2E・README）。P6-0は#108で済んだ。Phase 6のDrillは決定論の変形だけを実装し、LLMでSpotを生成する経路はPhase 6の範囲外とする（必要になったら別Issue。その場合もEngine Validation必須。D105）。"
 - id: D111
   choice: "Phase 6 の Projection は都度計算・保存しない（推奨案、AskUserQuestion）"
@@ -450,3 +450,19 @@
   choice: "User Read は Event・Note / Tag は追記型テーブル（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "User Readは判断時点の情報なのでUSER_READ_RECORDEDとしてEvent Logに残し、Eventのschema_versionを8に上げる（版1〜7は読めるまま、保存済みの行は書き換えない。D76）。Note / TagはHandに属さないので、マイグレーションv5で足す追記型のテーブルに置く（既存のテーブル・列は変えない）。対象はseat idを永続Identityとみなさない参照で持つ（D105）。実装は#115。"
+- id: D113
+  choice: "Weakness Hypothesis は作り直せる Snapshot 表に保存し、#115 を #114 より先に実装する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Weakness Hypothesisの構造化保存（D104・D111）は、hypothesis_id・type・status・Supporting / Counter EvidenceのID・計算したPolicyのVersion・計算時刻を持つSnapshotのテーブルとし、reviewsから決定論で作り直せる派生データとして扱う（消して作り直してよい。正本にしない）。Hypothesisのtypeの一覧と状態遷移のしきい値はVersion付きの暫定Policy（OI-006の暫定値）に置く。D112のマイグレーションv5（Note / Tag）を守るため、#115（P6-4）を#114（P6-3）より先に実装し、Hypothesisのテーブルはマイグレーションv6で足す（D110の実装順のうちこの2つだけを入れ替える）。D104・D111の具体化。"
+- id: D114
+  choice: "Learning Reset は区切りの行を追記し、正本を消さない（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Learning Resetは追記型のテーブル（Resetの時刻・対象カテゴリ）に区切りの行を足し、Score / Profile / Hypothesisはそれぞれ、そのカテゴリを対象に含む最後のLearning Resetより後のEvidenceだけで計算する。Event Log・reviews等の正本は消さず、削除拒否のTriggerも外さない。User Read / Note / TagはLearning ResetでもOpponent Memory Resetでも消さない（消えるのはHand History Delete / Factory Resetだけで、この2つはPhase 6の範囲外のまま）。D64・D37の具体化。実装は#118。"
+- id: D115
+  choice: "Score と Decision Quality Summary は Review 済みの判断だけを数える（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Ability / Overall ScoreとSession ReviewのDecision Quality Summaryは、Pass AのReviewがある判断だけで計算し、対象の判断の数とReview済みの数（M件中N件）を必ず表示する。Reviewを自動・一括で生成する経路は足さない（API課金を増やさない）。同じ判断に複数のVersionがあれば最新を使う。D103・D111の具体化。"
+- id: D116
+  choice: "Drill は専用 Session の通常 Hand として保存し、追記型の drills 表で区別する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Drillは専用のSessionの通常のHandとしてPoker Engineで終局まで進め（相手のActionは元HandのScriptかRuleBotの決定論）、Event Logに保存する（Eventの形は変えない）。元のHand / Decision / Reviewのid・変形の種類・seed・DrillのHandのidを持つ追記型のdrillsテーブルで通常Playと区別し、Stats・Score・Profile・Hypothesis・Resume・Replayの通常の集計はdrillsにあるHandを除く。DrillのReviewは既存のPass Aの経路をそのまま使う。D105・D110の具体化。実装は#117。"
