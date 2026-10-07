@@ -104,6 +104,8 @@ Playtest後に決定します。
 
 暫定値は D103・D104（確定ではない。永久仕様にしない）: Scoreは Version付きの暫定式 `ScoringPolicy phase6_provisional_v1` で計算する。Pass A Assessmentの点は strong 100・reasonable 80・mixed_marginal 60・improvement_suggested 35・major_leak 0、insufficient_evidence は集計から除外。Confidenceは点数を変えず集計のWeightに使う（Weightの値と集計式は暫定値）。Player ProfileのRecentは直近100の有効Decision（Config）。Decision → Abilityの割り当てとWeightは決定論・Version付き。Drillの結果は通常Scoreに混ぜない（D105）。上の「未確定」（Weight・Hint-assisted補正・Confidence Aggregation）は、Playtest後にPolicyのVersionを上げて見直す（`docs/07` §2）。
 
+#113で `phase6_provisional_v1` に置いた暫定値（確定ではない。詳細は `docs/07` §2「実装（#113）」）: ConfidenceのWeightは high 1・medium 0.7・low 0.4。Decision → Abilityの割り当ては、Streetの Ability（Preflop / Postflop）を Weight 1、Bet Sizing・Pot / Equity Math・Range Reading・Positionを条件つきで Weight 0.5（Opponent Adaptationは割り当てなし）。Live Mechanicsは、理由のある裁定が入った判断を0点・入らなかった判断を100点とする別のScore（D48）。ScoreのConfidenceは件数で決め（0件 insufficient・1〜9 low・10〜29 medium・30以上 high）、Trendは直近10件とその前の10件の差（5点以上）で見る。同じ判断に複数のReviewのVersionがあれば最新を使い、standard / deepの優先は付けない。Hint-assisted補正はまだ入れていない。
+
 ## OI-007 — Tournament Preset
 
 確定:
