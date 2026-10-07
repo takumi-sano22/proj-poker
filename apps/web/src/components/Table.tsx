@@ -8,12 +8,19 @@ import {
   seatDirections,
   type SeatDirection,
 } from "../lib/view-model.js";
+import { useNarrowScreen } from "../hooks/useNarrowScreen.js";
 import { Amount } from "./Amount.js";
 import { ChipStack } from "./ChipStack.js";
 import { CardSlot, PlayingCard } from "./PlayingCard.js";
 import { Term } from "./Vocabulary.js";
 
 const BOARD_SIZE = 5;
+
+/**
+ * 卓の中央の高さに席の面が来る席数（真横の席がある 4・8 人、斜めの席が中央に近い 5・7 人）。
+ * 狭い画面では中央の使える幅が狭いので、Street / Board / Pot を縦に積む（styles.css の data-center-stacked）。
+ */
+const CENTER_STACKED_SEAT_COUNTS: ReadonlySet<number> = new Set([4, 5, 7, 8]);
 
 interface TableProps {
   readonly view: HeroView;
@@ -29,12 +36,16 @@ export function Table({ view, nameOf, center }: TableProps) {
   );
   const directions = seatDirections(view.seats.length, heroIndex);
   const blinds = blindsOf(view);
+  const narrow = useNarrowScreen();
 
   return (
     <section
       className="table"
       aria-label="卓"
       data-seat-count={view.seats.length}
+      data-center-stacked={
+        CENTER_STACKED_SEAT_COUNTS.has(view.seats.length) ? "" : undefined
+      }
     >
       <div className="table__felt">
         <div className="table__center">
@@ -87,6 +98,7 @@ export function Table({ view, nameOf, center }: TableProps) {
             bigBlind={view.bigBlind}
             // Hand の終了後は Pot を配り終えているので、この Street の Bet を卓に残さない
             showBet={view.status === "in_progress"}
+            betInside={narrow}
           />
         );
       })}
@@ -103,6 +115,8 @@ interface SeatProps {
   readonly isActor: boolean;
   readonly bigBlind: number;
   readonly showBet: boolean;
+  /** Bet の札を席の面の中に置くか（狭い画面。席と中央の間に Bet が収まらないので、席に付けて動かす）。 */
+  readonly betInside?: boolean;
 }
 
 export function Seat({
@@ -114,6 +128,7 @@ export function Seat({
   isActor,
   bigBlind,
   showBet,
+  betInside = false,
 }: SeatProps) {
   const classes = [
     "seat",
@@ -163,20 +178,47 @@ export function Seat({
             <Amount value={seat.stack} bigBlind={bigBlind} inline />
           </div>
           <ChipStack amount={seat.stack} />
+          {showBet && betInside && seat.streetCommitted > 0 && (
+            <BetPill name={name} seat={seat} bigBlind={bigBlind} inside />
+          )}
           <SeatStatus seat={seat} isActor={isActor} />
         </div>
       </div>
-      {showBet && seat.streetCommitted > 0 && (
-        <div
-          className="bet"
-          style={placement}
-          aria-label={`${name} のベット ${formatChips(seat.streetCommitted)}`}
-        >
-          <ChipStack amount={seat.streetCommitted} />
-          <Amount value={seat.streetCommitted} bigBlind={bigBlind} inline />
-        </div>
+      {showBet && !betInside && seat.streetCommitted > 0 && (
+        <BetPill
+          name={name}
+          seat={seat}
+          bigBlind={bigBlind}
+          placement={placement}
+        />
       )}
     </>
+  );
+}
+
+/** この Street の Bet の札（Chip の積み + 実額）。席の前（卓の上）か、席の面の中（inside）に置く。 */
+function BetPill({
+  name,
+  seat,
+  bigBlind,
+  placement,
+  inside = false,
+}: {
+  readonly name: string;
+  readonly seat: SeatView;
+  readonly bigBlind: number;
+  readonly placement?: CSSProperties;
+  readonly inside?: boolean;
+}) {
+  return (
+    <div
+      className={inside ? "bet bet--inside" : "bet"}
+      style={placement}
+      aria-label={`${name} のベット ${formatChips(seat.streetCommitted)}`}
+    >
+      <ChipStack amount={seat.streetCommitted} />
+      <Amount value={seat.streetCommitted} bigBlind={bigBlind} inline />
+    </div>
   );
 }
 

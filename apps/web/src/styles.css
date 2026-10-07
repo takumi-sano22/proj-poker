@@ -392,7 +392,7 @@ input {
   position: relative;
   width: 100%;
   /* 縦長の狭い画面。席・Bet・中央（Board / Street / Pot）が重ならない高さを取る（#5） */
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 5 / 7;
   max-height: 70vh;
   margin: 0 auto;
 }
@@ -578,6 +578,16 @@ input {
   transform: translate(-50%, -50%);
 }
 
+/* 狭い画面では Bet の札を席の面の中（Stack の Chip の下）に置く。卓の上に置くと、席数によって中央や隣の席と重なる（#5） */
+.bet--inside {
+  position: static;
+  justify-self: center;
+  margin-top: 3px;
+  transform: none;
+  border: 1px solid var(--color-border-interactive);
+  background: var(--color-surface-sunken);
+}
+
 /* Chip の積み（Stack Composition）。1 本の積みは額面ごと。Chip は下から --i 番目に、--chip-step ずつずらして重ねる */
 .chip-stack {
   display: flex;
@@ -733,10 +743,7 @@ input {
   :root {
     /* 縦長の卓では左右の席が画面外へ出ないよう横の半径を詰め、縦に広げる */
     --seat-rx: calc(50% - 46px);
-    --seat-ry: 45%;
-    /* Bet は席の面と重ならないよう、卓の中心寄り（左右の席の面の内側）に置く */
-    --bet-rx: 11.5%;
-    --bet-ry: 29%;
+    --seat-ry: 49%;
     --chip-d: 11px;
     --chip-step: 2px;
     --card-sm-w: 24px;
@@ -758,9 +765,32 @@ input {
     padding: 1px 6px 1px 3px;
     font-size: 11px;
   }
-  /* 下の席（Hero）の面は卓の枠から少しはみ出すので、下の進行ログと重ならないよう余白を足す */
+  /* 下の席（Hero）の面は卓の枠から少しはみ出すので、下の進行ログと重ならないよう余白を足す。
+     Bet の札を席の面の中に置く分、席の面が高くなるので、卓を縦に伸ばして席と中央の間を空ける（70vh の上限は外す） */
   .table {
-    margin-bottom: 16px;
+    max-height: none;
+    /* 上の席の面も卓の枠から上にはみ出し、見出しの Button と重なるので、上にも余白を足す */
+    margin-top: 40px;
+    margin-bottom: 44px;
+  }
+  /* 席の名前の行（D・SB / BB の札）を詰めて、席の面の幅を抑える */
+  .seat__name-row {
+    gap: 3px;
+  }
+  .dealer-button {
+    width: 16px;
+    height: 16px;
+    font-size: 10px;
+  }
+  .badge {
+    padding: 0 4px;
+    font-size: 10px;
+  }
+  /* Bet の札が席の面を広げないよう、幅を抑えて Chip と額を折り返す */
+  .bet--inside {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 76px;
   }
   /* 中央は Board を 1 行目、Street と Pot を 2 行目に並べて低くする（席と Bet が通る帯と重ねない。#5） */
   .table__center {
@@ -768,9 +798,9 @@ input {
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 4px 8px;
+    gap: 2px 8px;
     /* 上を少し空けて、上段の席の面から離す（下は下段の席の札までの余白に収める） */
-    padding: 8px 4px 4px;
+    padding: 6px 4px 2px;
   }
   .board {
     order: 0;
@@ -800,31 +830,34 @@ input {
   .bet .amount__bb {
     display: none;
   }
-  /* 4・8 人卓は真横（高さの中央）に席が来て、中央の使える幅が狭い。Street / Board / Pot を縦に積み、Pot は額を 2 段にする */
-  .table[data-seat-count="4"] .table__center,
-  .table[data-seat-count="8"] .table__center {
+  /* 中央の高さに席の面が来る席数（4・5・7・8 人。Table.tsx の data-center-stacked）は中央の使える幅が狭い。
+     Street / Board / Pot を縦に積み、Pot は額を 2 段にする（2・3・6 人卓は Street と Pot を 1 行に並べる） */
+  .table[data-center-stacked] .table__center {
     flex-direction: column;
     flex-wrap: nowrap;
     padding: 4px;
   }
-  .table[data-seat-count="4"] .table__street,
-  .table[data-seat-count="8"] .table__street {
+  /* 7・8 人卓は席が多いので、縦にもう少し伸ばす */
+  .table[data-seat-count="7"],
+  .table[data-seat-count="8"] {
+    aspect-ratio: 1 / 2;
+    --seat-rx: calc(50% - 34px);
+  }
+  .table[data-center-stacked] .table__street {
     order: 0;
   }
-  .table[data-seat-count="4"] .board,
-  .table[data-seat-count="8"] .board {
+  .table[data-center-stacked] .board {
     order: 1;
     flex: none;
+    --card-md-w: 24px;
   }
-  .table[data-seat-count="4"] .pot,
-  .table[data-seat-count="8"] .pot {
+  .table[data-center-stacked] .pot {
     order: 2;
     grid-auto-flow: row;
     justify-items: center;
     padding: 2px 10px;
   }
-  .table[data-seat-count="4"] .pot .amount,
-  .table[data-seat-count="8"] .pot .amount {
+  .table[data-center-stacked] .pot .amount {
     flex-direction: column;
     align-items: center;
     gap: 0;
@@ -836,18 +869,23 @@ input {
   }
   .table[data-seat-count="7"] .seat__plate,
   .table[data-seat-count="8"] .seat__plate {
-    min-width: 64px;
-    padding: 2px 4px 3px;
+    min-width: 56px;
+    padding: 2px 3px 3px;
   }
-  .table[data-seat-count="7"] .seat__name,
-  .table[data-seat-count="8"] .seat__name,
   .table[data-seat-count="7"] .seat__stack,
   .table[data-seat-count="8"] .seat__stack {
     font-size: 11px;
   }
+  .table[data-seat-count="7"] .seat__name,
+  .table[data-seat-count="8"] .seat__name,
   .table[data-seat-count="7"] .seat__status,
   .table[data-seat-count="8"] .seat__status {
     font-size: 10px;
+  }
+  .table[data-seat-count="7"] .badge,
+  .table[data-seat-count="8"] .badge {
+    padding: 0 3px;
+    font-size: 9px;
   }
 }
 
@@ -857,11 +895,22 @@ input {
     --card-sm-w: 18px;
     /* 席の面を小さくした分、左右の席をさらに外へ寄せて、中央の Board と離す */
     --seat-rx: calc(50% - 38px);
-    --seat-ry: 47%;
-    margin-bottom: 28px;
+    --seat-ry: 49%;
     /* 幅が狭い分、縦に伸ばして上下の席と中央の間を空ける（70vh の上限は外す。ページは縦にスクロールする） */
-    aspect-ratio: 5 / 7;
-    max-height: none;
+    aspect-ratio: 2 / 3;
+  }
+  /* 7・8 人卓は Hero の隣の席の面が Hero の面に近いので、左右の席をさらに外へ寄せる（面は画面の端に収まる） */
+  .table[data-seat-count="7"],
+  .table[data-seat-count="8"] {
+    --seat-rx: calc(50% - 30px);
+    aspect-ratio: 1 / 2;
+  }
+  /* 「フォールド（Fold）」などの状態の文字は 2 行に折り返し、席の面の幅を抑える */
+  .table[data-seat-count="7"] .seat__status,
+  .table[data-seat-count="8"] .seat__status {
+    max-width: 56px;
+    text-align: center;
+    white-space: normal;
   }
   .table .seat__plate {
     min-width: 64px;
@@ -874,15 +923,11 @@ input {
   .table .seat__status {
     font-size: 10px;
   }
-  .table .dealer-button {
-    width: 16px;
-    height: 16px;
-    font-size: 10px;
-  }
   .table .seat__plate .chip-stack {
     margin-top: 2px;
   }
-  .table .board {
+  .table .board,
+  .table[data-center-stacked] .board {
     --card-md-w: 20px;
     gap: 2px;
   }
