@@ -258,10 +258,10 @@ Phase 6 → 7のGate（`docs/08` §3.2）の項目と、それを確かめるテ
 | Gateの項目 | テスト |
 |---|---|
 | StatsをEventから再計算できる | `packages/engine/src/stats.test.ts`（固定Scenarioの手計算の期待値・全Player・6人卓のPosition・Drill / 進行中のHandを除く・Hole CardsとDeckを差し替えても結果が同じ） |
-| ScoreがPolicy Version付きで再計算できる | `apps/server/src/learning/score.test.ts`（「Policy の Version を変えると、同じ Evidence から計算し直せる」等）・`learning-reset.test.ts`（「Policy の Version を変えても、正本から Reset 後の Evidence だけで計算し直せる」） |
+| ScoreがPolicy Version付きで再計算できる | `apps/server/src/learning/score.test.ts`（「Policy の Version を変えると、同じ Evidence から計算し直せる」等）・`learning-reset.test.ts`（「Policy の Version を変えても、正本（Event Log・reviews）から Reset 後の Evidence だけで計算し直せる」） |
 | Confidence / Sample Size / Evidence IDsが保持される | `score.test.ts`（M件中N件・insufficient_evidenceを0点にしない・ConfidenceはWeightだけ・Trend・Confidenceの段階） |
 | HypothesisがSupporting / Counter Evidenceから決定論的に更新される | `apps/server/src/learning/hypothesis.test.ts`・`hypothesis-snapshot.test.ts`（Snapshotを消して作り直しても同じ行） |
-| Recent / Long-term Profileが自然言語Summaryに依存せず再生成できる | `apps/server/src/learning/profile.test.ts`・`learning-reset.test.ts`（「過去の Snapshot・自然言語の Profile を入力にしない」） |
+| Recent / Long-term Profileが自然言語Summaryに依存せず再生成できる | `apps/server/src/learning/profile.test.ts`・`learning-reset.test.ts`（「過去の Snapshot・自然言語の Profile を入力にしない（作り直しの結果は前の状態によらない）」） |
 | User Read / Note / TagがHidden Personaと混ざらない | `apps/server/src/routes/notes.test.ts`（CPUの入力に入らない）・`apps/server/src/review/evidence.test.ts`（判断より前の読みだけをprovenance付きでEvidenceへ）・`apps/server/src/routes/learning-leakage.test.ts` |
 | Drillが元Handとprovenanceを持ち、Engine Validationを通る | `apps/server/src/drill/drill-plan.test.ts`（Validationを通る候補が無ければDrillを出さない）・`apps/server/src/routes/drills.test.ts`（provenance・決定論・集計から除く） |
 | Phase 6のCritical E2Eが通る | `e2e/tests/learning.spec.ts`（§8） |
