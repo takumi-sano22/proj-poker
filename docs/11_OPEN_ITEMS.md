@@ -82,6 +82,8 @@ Multiway Supportを推測で決めないでください。
 
 DB Schemaを固定人数へCoupleしないでください。
 
+D106で確定（Identityと寿命。人数等は未確定のまま）: Fixed CPUは席・player idと別の永続`cpuProfileId`を持ちMemoryはSessionを跨いで持続する。GuestのMemoryはSession終了時に破棄する。上の「未確定」（人数・Name・Avatar・Persona Distribution）はこの判断では決めていない。
+
 暫定値は D85（確定ではない）: Persona は TAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreational の 6 Preset。各 Preset の 11 軸の数値・RuleBot への反映の係数・卓への既定の割り当て順（TAG Regular・LAG・Nit・Calling Station・Weak-tight Recreational・Maniac を席順に）も暫定値で、`apps/server/src/opponents/persona.ts`・`rule-bot.ts`・`config.ts` に置く（#51。環境変数 `CPU_PERSONAS` で割り当て順を変えられる）。Playtest で見直す。
 
 ## OI-006 — Session Score Formula
@@ -100,6 +102,8 @@ DB Schemaを固定人数へCoupleしないでください。
 
 Playtest後に決定します。
 
+暫定値は D103・D104（確定ではない。永久仕様にしない）: Scoreは Version付きの暫定式 `ScoringPolicy phase6_provisional_v1` で計算する。Pass A Assessmentの点は strong 100・reasonable 80・mixed_marginal 60・improvement_suggested 35・major_leak 0、insufficient_evidence は集計から除外。Confidenceは点数を変えず集計のWeightに使う（Weightの値と集計式は暫定値）。Player ProfileのRecentは直近100の有効Decision（Config）。Decision → Abilityの割り当てとWeightは決定論・Version付き。Drillの結果は通常Scoreに混ぜない（D105）。上の「未確定」（Weight・Hint-assisted補正・Confidence Aggregation）は、Playtest後にPolicyのVersionを上げて見直す（`docs/07` §2）。
+
 ## OI-007 — Tournament Preset
 
 確定:
@@ -110,6 +114,8 @@ Playtest後に決定します。
 - Starting Stack
 - Blind Level
 - Payout Default
+
+暫定値は D108（確定ではない。永久仕様にしない）: 最初の標準Presetは6-max STT。Blind StructureはCoreで時間base / Hand数baseの両方を扱い、標準PresetはHand数base。標準STTのAnteはBig Blind Ante。初期6-max STTのPayoutは50% / 30% / 20%（Custom Payoutを後から足せる構造）。Starting Stack・Blind Levelの値は、P8-1でVersion付きConfigに暫定値を置く（`docs/02` §7）。
 
 ## OI-008 — Live Ruling完全範囲
 
@@ -141,6 +147,20 @@ HU ApproximationをExact Multiway GTOとして表示してはいけません。
 Evidence Gateの振る舞いは確定。
 
 具体的Provider / Integrationは未確定です。
+
+## OI-011 — Opponent MemoryとTiltのParameter
+
+確定（D106・D107）:
+- Hypothesis / Tendencyの集計にrecency decayをかける（Raw Evidenceは消さない）
+- Tiltは Version付きの決定論State Machineで、Hand間で増減・減衰し、Session終了でReset
+
+未確定:
+- recency decayの係数・形
+- 十分なSampleの基準
+- PersonaごとのHypothesisの更新の速さ・早合点の傾向
+- TiltのTrigger・しきい値・増減・減衰の値と、Personaへの反映の大きさ
+
+Phase 7でVersion付きのConfig / Policyに暫定値を置き、Eval / Playtestで見直します。
 
 ## すでに確定しており、Routine Implementationで再検討しない項目
 

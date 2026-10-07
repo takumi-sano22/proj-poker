@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D101の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D109の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -28,6 +28,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D99 | Reveal Review（Pass B）とFollow-upの履歴は、マイグレーションv4で足す追記だけのreveal_reviews（Assessmentを持たない）とreview_followupsに保存し、Pass Aのreviewsは変えない（#83の途中の人間判断） |
 | D100 | HandごとのBest-effort Metadata（App Version・CPUのprovider / Model・Persona Profile Version）をHAND_METADATA_RECORDED（system）としてEventに残しschema_versionを7に上げる。AIの生データは保存しない（#97） |
 | D101 | Review の文の内部識別子（playerId・Evidence の項目名）は Retry せず、保存前に既知の対応表で表示名・自然な言葉へ置換する。Prompt でも禁止し、Eval に残存率を足す（#96） |
+| D102〜D109 | Post-MVP（#104〜#107）の人間確定方針。Parent構造と Phase 6→7→8 の順序・Gate・不変条件の継承（D102）、Phase 6 の全Player対応 Stats Projection と `ScoringPolicy phase6_provisional_v1`（OI-006の暫定値。D103）、Recent / Long-term Profile と決定論の Hypothesis 遷移（D104）、User Read / Note / Tag と Engine Validation 必須・通常Scoreと別系列の Drill（D105）、Fixed CPU の `cpuProfileId`・Guest の寿命・append-only の Observation と recency decay・observer private の CPU-to-CPU Memory・Table Tendency（D106）、Tilt の版付き決定論 State Machine（D107）、`TournamentSession` 層と 6-max STT・Hand数base・BBA・Payout 50/30/20（OI-007の暫定値。D108）、Public Tournament Context と決定論 ICM（Chip EV と別 Evidence。D109） |
 
 ## 特に重要なClosed Decision
 
