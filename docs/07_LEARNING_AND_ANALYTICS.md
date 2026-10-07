@@ -59,7 +59,7 @@ Scoreは、Version付きの暫定式 `ScoringPolicy` で計算します。最初
   | `insufficient_evidence` | 集計から除外（0点として数えない） |
 
 - Decision → Abilityの割り当てとWeight: 1つのDecisionは複数のAbilityに寄与できます。割り当てとWeightは決定論でVersion付き（LLMに決めさせない）。
-- Confidenceの扱い: Pass Aの`confidence`は点数そのものを変えず、集計のWeightに使います（Weightの値は暫定値）。
+- Confidenceの扱い: Confidenceは点数そのものを変えず、集計のWeightに使います（Weightの値は暫定値）。
 
 ScoreはConfidence / Sample Size / Evidence IDs / Trendと必ず一緒に扱い、点数だけを見せません。Live MechanicsはPoker Decisionと別のScoreです（D48）。Drillの結果は通常PlayのAbility / Overall Scoreへ直接混ぜません（§7。D105）。
 
