@@ -5,10 +5,12 @@
 // 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
 // Hand が終わったら、Hero の欄と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
 // Session が終わったら、終了の案内から Session Review（#116）を開ける。Session Review から各 Hand の Review へ移れる。
+// Session Review の Recommended Drill から Targeted Drill（#117）を始められる。Drill の Hand は別の画面（同じ卓の部品）で 1 Hand だけ遊び、
+// 終わったら練習した判断の Review を開ける。Drill の間も通常の卓の Session（SSE）はそのまま残り、「卓に戻る」で続きに戻る。
 // 狭い画面（スマホ幅）では、卓の中央に重ねていた欄（Hand の結果・CPU 障害のダイアログ・Session 終了の案内）が席と重なるので、
 // 画面下に固定した Hero の欄へ置く（#5。広い画面は従来どおり卓の中央）。
 import type { HeroView } from "@proj-poker/engine";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Amount } from "./components/Amount.js";
 import {
   BbDisplayProvider,
@@ -16,6 +18,7 @@ import {
   useBbSetting,
 } from "./components/BbDisplay.js";
 import { ChipControls } from "./components/ChipControls.js";
+import { DrillBanner } from "./components/DrillBanner.js";
 import { HeroFeedback } from "./components/DealerFeedback.js";
 import { FastForward } from "./components/FastForward.js";
 import { HandLog } from "./components/HandLog.js";
@@ -32,7 +35,8 @@ import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import { useNarrowScreen } from "./hooks/useNarrowScreen.js";
 import type { ReplayStart } from "./hooks/useReplay.js";
-import type { SessionStatus } from "./lib/api.js";
+import { ApiError, type SessionStatus } from "./lib/api.js";
+import { startDrill, type DrillView } from "./lib/drill-api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
 import {
@@ -55,12 +59,46 @@ type Screen =
       readonly handId: string;
       readonly decisionIndex: number | null;
     }
-  | { readonly kind: "session_review"; readonly handId: string };
+  | { readonly kind: "session_review"; readonly handId: string }
+  | { readonly kind: "drill" };
+
+/** Drill の卓（#117）で、通常の卓と違う操作（練習した判断の Review・卓に戻る）。 */
+interface DrillMode {
+  readonly decisionIndex: number;
+  readonly onExit: () => void;
+}
 
 export function App() {
   const session = useHandSession();
   const narrow = useNarrowScreen();
   const [screen, setScreen] = useState<Screen>({ kind: "table" });
+  // Drill（#117）: 元の判断は ref に置き、開始の要求（再送を含む）はその値で送る。応答の Drill の説明は state に置く。
+  const drillSource = useRef<{
+    readonly handId: string;
+    readonly decisionIndex: number;
+  } | null>(null);
+  const [drill, setDrill] = useState<DrillView | null>(null);
+  const requestDrill = useCallback(async () => {
+    const source = drillSource.current;
+    if (source === null) {
+      throw new ApiError("invalid_input", "Drill の元の判断が選ばれていない");
+    }
+    const res = await startDrill(source.handId, source.decisionIndex);
+    setDrill(res.drill);
+    return res;
+  }, []);
+  const drillSession = useHandSession({ start: requestDrill });
+  const startDrillHand = drillSession.start;
+  const openDrill = useCallback(
+    (handId: string, decisionIndex: number) => {
+      drillSource.current = { handId, decisionIndex };
+      setDrill(null);
+      setScreen({ kind: "drill" });
+      startDrillHand();
+    },
+    [startDrillHand],
+  );
+  const backToTable = useCallback(() => setScreen({ kind: "table" }), []);
   const openReview = useCallback(
     (handId: string, decisionIndex: number | null) =>
       setScreen({ kind: "review", handId, decisionIndex }),
@@ -75,14 +113,9 @@ export function App() {
     (handId: string) => setScreen({ kind: "session_review", handId }),
     [],
   );
-  const { view, players } = session;
+  const { view } = session;
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
   const [showBB, setShowBB] = useBbSetting();
-  const nameOf = useCallback(
-    (playerId: string) =>
-      players.find((p) => p.playerId === playerId)?.displayName ?? playerId,
-    [players],
-  );
 
   return (
     <BbDisplayProvider value={showBB}>
@@ -130,7 +163,36 @@ export function App() {
             key={screen.handId}
             handId={screen.handId}
             onOpenReview={openReview}
+            onStartDrill={openDrill}
           />
+        ) : screen.kind === "drill" ? (
+          // Drill の Hand（開始の応答が届くまでは準備中。前の Drill の卓は出さない）。
+          drill === null ||
+          drillSession.view === null ||
+          drillSession.handId !== drill.drillHandId ? (
+            <main className="app__empty">
+              <p>Drill を準備しています…</p>
+              <Notice session={drillSession} />
+            </main>
+          ) : (
+            <TableScreen
+              session={drillSession}
+              narrow={narrow}
+              onOpenReview={openReview}
+              onOpenSessionReview={openSessionReview}
+              drill={{
+                decisionIndex: drill.decisionIndex,
+                onExit: backToTable,
+              }}
+              banner={
+                <DrillBanner
+                  drill={drill}
+                  bigBlind={drillSession.view.bigBlind}
+                  players={drillSession.players}
+                />
+              }
+            />
+          )
         ) : screen.kind === "review" ? (
           <ReviewScreen
             key={`${screen.handId}:${screen.decisionIndex ?? "list"}`}
@@ -152,48 +214,104 @@ export function App() {
             <Notice session={session} />
           </main>
         ) : (
-          // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
-          <VocabularyProvider view={view} nameOf={nameOf}>
-            <main className="app__main">
-              <div className="app__table">
-                <Table
-                  view={view}
-                  nameOf={nameOf}
-                  // 狭い画面では卓の中央に何も重ねない（結果などは Hero の欄に出す）
-                  center={
-                    narrow ? null : (
-                      <TableCenter
-                        view={view}
-                        nameOf={nameOf}
-                        session={session}
-                        onOpenSessionReview={openSessionReview}
-                      />
-                    )
-                  }
-                />
-              </div>
-              <aside className="app__side">
-                <HandLog view={view} nameOf={nameOf} />
-                {/* Hero の CPU ごとの Note / Tag（#115）。HUD（統計）ではなく Hero 自身のメモ（D32） */}
-                <OpponentNotes
-                  handId={view.handId}
-                  players={players}
-                  seatedIds={view.seats.map((s) => s.playerId)}
-                />
-              </aside>
-            </main>
-            <HeroDock
-              view={view}
-              nameOf={nameOf}
-              session={session}
-              narrow={narrow}
-              onOpenReview={openReview}
-              onOpenSessionReview={openSessionReview}
-            />
-          </VocabularyProvider>
+          <TableScreen
+            session={session}
+            narrow={narrow}
+            onOpenReview={openReview}
+            onOpenSessionReview={openSessionReview}
+          />
         )}
       </div>
     </BbDisplayProvider>
+  );
+}
+
+/**
+ * 卓の画面（卓・進行ログ・Hero の欄）。通常の卓と Drill の卓（#117）で同じ部品を使う。
+ * Drill の卓は、上に Drill の説明（banner）を置き、CPU の Note / Tag の欄を出さない（Drill の相手は Drill の設定の RuleBot）。
+ */
+function TableScreen({
+  session,
+  narrow,
+  onOpenReview,
+  onOpenSessionReview,
+  drill = null,
+  banner = null,
+}: {
+  readonly session: HandSession;
+  readonly narrow: boolean;
+  readonly onOpenReview: OpenReview;
+  readonly onOpenSessionReview: OpenSessionReview;
+  readonly drill?: DrillMode | null;
+  readonly banner?: ReactNode;
+}) {
+  const { view, players } = session;
+  const nameOf = useCallback(
+    (playerId: string) =>
+      players.find((p) => p.playerId === playerId)?.displayName ?? playerId,
+    [players],
+  );
+  if (view === null) {
+    return (
+      <main className="app__empty">
+        <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
+        <button
+          type="button"
+          className="btn btn--primary btn--lg"
+          disabled={session.pending}
+          onClick={session.start}
+        >
+          Hand を始める
+        </button>
+        <Notice session={session} />
+      </main>
+    );
+  }
+  return (
+    // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
+    <VocabularyProvider view={view} nameOf={nameOf}>
+      {banner}
+      <main className="app__main">
+        <div className="app__table">
+          <Table
+            view={view}
+            nameOf={nameOf}
+            // 狭い画面では卓の中央に何も重ねない（結果などは Hero の欄に出す）
+            center={
+              narrow ? null : (
+                <TableCenter
+                  view={view}
+                  nameOf={nameOf}
+                  session={session}
+                  onOpenSessionReview={onOpenSessionReview}
+                  drill={drill}
+                />
+              )
+            }
+          />
+        </div>
+        <aside className="app__side">
+          <HandLog view={view} nameOf={nameOf} />
+          {/* Hero の CPU ごとの Note / Tag（#115）。HUD（統計）ではなく Hero 自身のメモ（D32）。Drill の卓には出さない */}
+          {drill === null && (
+            <OpponentNotes
+              handId={view.handId}
+              players={players}
+              seatedIds={view.seats.map((s) => s.playerId)}
+            />
+          )}
+        </aside>
+      </main>
+      <HeroDock
+        view={view}
+        nameOf={nameOf}
+        session={session}
+        narrow={narrow}
+        onOpenReview={onOpenReview}
+        onOpenSessionReview={onOpenSessionReview}
+        drill={drill}
+      />
+    </VocabularyProvider>
   );
 }
 
@@ -214,7 +332,11 @@ function TableCenter({
   nameOf,
   session,
   onOpenSessionReview,
-}: ViewProps & { readonly onOpenSessionReview: OpenSessionReview }) {
+  drill,
+}: ViewProps & {
+  readonly onOpenSessionReview: OpenSessionReview;
+  readonly drill: DrillMode | null;
+}) {
   if (view.status === "complete") {
     return (
       <HandResult
@@ -222,6 +344,7 @@ function TableCenter({
         nameOf={nameOf}
         session={session}
         onOpenSessionReview={onOpenSessionReview}
+        drill={drill}
       />
     );
   }
@@ -260,10 +383,12 @@ function HeroDock({
   narrow,
   onOpenReview,
   onOpenSessionReview,
+  drill,
 }: ViewProps & {
   readonly narrow: boolean;
   readonly onOpenReview: OpenReview;
   readonly onOpenSessionReview: OpenSessionReview;
+  readonly drill: DrillMode | null;
 }) {
   const hero = heroSeatOf(view);
   const cards = hero?.holeCards ?? [];
@@ -295,6 +420,7 @@ function HeroDock({
           narrow={narrow}
           onOpenReview={onOpenReview}
           onOpenSessionReview={onOpenSessionReview}
+          drill={drill}
         />
       </div>
     </section>
@@ -308,10 +434,12 @@ function DockBody({
   narrow,
   onOpenReview,
   onOpenSessionReview,
+  drill,
 }: ViewProps & {
   readonly narrow: boolean;
   readonly onOpenReview: OpenReview;
   readonly onOpenSessionReview: OpenSessionReview;
+  readonly drill: DrillMode | null;
 }) {
   const outage = session.outage;
   // CPU の手番を待っている間だけ数える（手番・障害の状態が変われば数え直す）。障害で止まっている間・Session 終了後は数えない。
@@ -329,22 +457,27 @@ function DockBody({
   );
   if (view.status === "complete") {
     // 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く）。
+    // Drill の Hand は、練習した判断の Review を開く（既存の Pass A の経路。D116）。
     // 狭い画面では、卓の中央の結果の欄が席と重なるので、結果（獲得額・次の Hand へ）もここに置き、Review の Button と並べる。
     const review = (
       <button
         type="button"
         className="btn btn--secondary btn--sm"
-        onClick={() => onOpenReview(view.handId, null)}
+        onClick={() =>
+          onOpenReview(view.handId, drill === null ? null : drill.decisionIndex)
+        }
       >
-        この Hand の Review
+        {drill === null ? "この Hand の Review" : "練習した判断の Review"}
       </button>
     );
     return (
       <div className="dock__done">
         <p className="dock__message">
-          {session.sessionStatus?.state === "ended"
-            ? "Session が終了しました。"
-            : "Hand が終了しました。"}
+          {drill !== null
+            ? "Drill の Hand が終了しました。"
+            : session.sessionStatus?.state === "ended"
+              ? "Session が終了しました。"
+              : "Hand が終了しました。"}
         </p>
         {narrow ? (
           <HandResult
@@ -352,6 +485,7 @@ function DockBody({
             nameOf={nameOf}
             session={session}
             onOpenSessionReview={onOpenSessionReview}
+            drill={drill}
             docked
             actions={review}
           />
@@ -532,14 +666,43 @@ function HandResult({
   nameOf,
   session,
   onOpenSessionReview,
+  drill = null,
   docked = false,
   actions = null,
 }: ViewProps & {
   readonly onOpenSessionReview: OpenSessionReview;
+  /** Drill の Hand（#117）は 1 Hand だけなので、次の Hand・Session の案内の代わりに「卓に戻る」を出す。 */
+  readonly drill?: DrillMode | null;
   readonly docked?: boolean;
   readonly actions?: ReactNode;
 }) {
   const status = session.sessionStatus;
+  if (drill !== null) {
+    return (
+      <div className={resultClass(docked)} role="status">
+        <ul className="result__list">
+          {view.awards.map((a) => (
+            <li key={a.playerId}>
+              {nameOf(a.playerId)} が {termLabel(TERMS.pot)}{" "}
+              <Amount value={a.amount} bigBlind={view.bigBlind} inline /> を獲得
+            </li>
+          ))}
+        </ul>
+        <p className="result__session">
+          結果は運を含みます。練習した判断は Review で見直せます（通常の Score
+          とは別に数えます）。
+        </p>
+        <button
+          type="button"
+          className="btn btn--primary btn--md"
+          onClick={drill.onExit}
+        >
+          卓に戻る
+        </button>
+        {actions}
+      </div>
+    );
+  }
   return (
     <div className={resultClass(docked)} role="status">
       <ul className="result__list">

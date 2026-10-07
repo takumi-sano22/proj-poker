@@ -3021,3 +3021,46 @@ input {
     text-align: left;
   }
 }
+
+/* ───────── Targeted Drill（#117・docs/06 §14・docs/07 §7） ───────── */
+
+/* Drill の卓の上の説明。Learning の面と同じトークンで、卓の情報量を増やさないよう 1 枚の面にまとめる。
+   上の席の札は卓の枠より上へはみ出す（通常の卓では見出しの余白に重なる）ので、広い画面はその分だけ下を空ける */
+.drill-banner {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 32px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-rest);
+}
+
+@media (max-width: 719px) {
+  .drill-banner {
+    margin-bottom: 20px;
+  }
+}
+
+.drill-banner__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.drill-banner__change,
+.drill-banner__note {
+  margin: 0;
+}
+
+.drill-banner__details summary {
+  cursor: pointer;
+  color: var(--color-on-surface-muted);
+  font-size: 0.875rem;
+}
+
+.drill-banner__note {
+  margin-top: 4px;
+  color: var(--color-on-surface-muted);
+  font-size: 0.875rem;
+}

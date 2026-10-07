@@ -14,6 +14,7 @@ import {
   setFastForward as requestFastForward,
   startHand,
   type HeroActionResponse,
+  type StartHandResponse,
   type OutageChoice,
   type OutageStatus,
   type SessionStatus,
@@ -136,6 +137,18 @@ function noticeOf(error: unknown): SessionNotice {
       };
     case "hand_complete":
       return { message: "この Hand は終了しています。", retryable: false };
+    case "review_required":
+      return {
+        message:
+          "この判断はまだ Review されていません。先に Review を作ってから Drill を始めてください。",
+        retryable: false,
+      };
+    case "drill_unavailable":
+      return {
+        message:
+          "この判断からは、ルール上成り立つ Drill を作れませんでした。別の判断で試してください。",
+        retryable: false,
+      };
     case "hand_not_found":
       return {
         message:
@@ -155,7 +168,16 @@ function noticeOf(error: unknown): SessionNotice {
   }
 }
 
-export function useHandSession(): HandSession {
+export interface HandSessionOptions {
+  /**
+   * Hand の開始の要求（既定は POST /api/hands）。Drill（#117）は POST /api/drills を渡す。描画ごとに作り直さない関数を渡す
+   * （変わると開始の手順を作り直す）。
+   */
+  readonly start?: (afterHandId: string | null) => Promise<StartHandResponse>;
+}
+
+export function useHandSession(options: HandSessionOptions = {}): HandSession {
+  const startRequest = options.start ?? startHand;
   const [handId, setHandId] = useState<string | null>(null);
   const [players, setPlayers] = useState<readonly TablePlayer[]>([]);
   const [view, setView] = useState<HeroView | null>(null);
@@ -239,7 +261,7 @@ export function useHandSession(): HandSession {
       setPending(true);
       setNotice(null);
       lastFailed.current = null;
-      startHand(afterHandId)
+      startRequest(afterHandId)
         .then((res) => {
           // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
           // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
@@ -266,7 +288,7 @@ export function useHandSession(): HandSession {
           setPending(false);
         });
     },
-    [accept, acceptOutage, acceptSession],
+    [accept, acceptOutage, acceptSession, startRequest],
   );
 
   const start = useCallback(
