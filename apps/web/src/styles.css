@@ -776,6 +776,9 @@ input {
     order: 0;
     flex: 1 0 100%;
     justify-content: center;
+    gap: 3px;
+    /* Board の札は 5 枚で左右の席の面の間（約 140px）に収まる大きさにする */
+    --card-md-w: 28px;
   }
   .table__street {
     order: 1;
@@ -792,10 +795,6 @@ input {
     flex-direction: row;
     align-items: baseline;
     gap: 6px;
-  }
-  .board {
-    --card-md-w: 28px;
-    gap: 3px;
   }
   /* Bet の札は実額だけにして幅を詰める（BB 換算は補助なので、狭い画面の Bet では省く） */
   .bet .amount__bb {
