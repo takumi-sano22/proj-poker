@@ -127,3 +127,88 @@ describe("GET /api/learning/profile", () => {
     expect(body.profile.hypotheses).toEqual([]);
   });
 });
+
+describe("POST /api/learning/resets", () => {
+  it("区切りを足し（201）、Profile の Score・Hypothesis・文は Reset 後の Hand だけ、Stats・Session Review・Replay は変えない（D114）", async () => {
+    const { app, btn } = setup();
+    const before = (
+      await app.inject({ method: "GET", url: "/api/learning/profile" })
+    ).json<ProfileResponse>();
+    const sessionBefore = (
+      await app.inject({
+        method: "GET",
+        url: `/api/learning/session-review/${btn.handId}`,
+      })
+    ).json<SessionReview>();
+    expect(before.resets).toEqual({
+      score: null,
+      hypothesis: null,
+      profile: null,
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/learning/resets",
+      payload: { categories: ["profile", "score", "hypothesis"] },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{
+      reset: { createdAt: string; categories: string[] };
+      resets: ProfileResponse["resets"];
+    }>();
+    expect(body.reset.categories).toEqual(["score", "hypothesis", "profile"]);
+    expect(body.resets.score).toBe(body.reset.createdAt);
+
+    const after = (
+      await app.inject({ method: "GET", url: "/api/learning/profile" })
+    ).json<ProfileResponse>();
+    expect(after.resets).toEqual(body.resets);
+    expect(after.profile.decisions).toEqual({ total: 0, reviewed: 0 });
+    expect(after.profile.hypotheses).toEqual([]);
+    expect(after.text).toContain("Review 済みの判断 0 件（対象の判断 0 件中）");
+    expect(after.heroStats).toEqual(before.heroStats);
+    const sessionAfter = (
+      await app.inject({
+        method: "GET",
+        url: `/api/learning/session-review/${btn.handId}`,
+      })
+    ).json<SessionReview>();
+    expect(sessionAfter).toEqual(sessionBefore);
+    // Hand の記録は残り、Replay の一覧・Review もそのまま開ける。
+    const replay = await app.inject({
+      method: "GET",
+      url: "/api/replay/hands",
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(JSON.stringify(replay.json())).toContain(btn.handId);
+    const review = await app.inject({
+      method: "GET",
+      url: `/api/reviews/hands/${btn.handId}/decisions/0`,
+    });
+    expect(review.statusCode).toBe(200);
+    expect(JSON.stringify(review.json())).toContain('"strong"');
+  });
+
+  it("カテゴリが空・重複・未知・余分な項目は 400 で、区切りを足さない", async () => {
+    const { app } = setup();
+    for (const payload of [
+      {},
+      { categories: [] },
+      { categories: ["score", "score"] },
+      { categories: ["opponent_memory"] },
+      { categories: ["score"], extra: true },
+    ]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/learning/resets",
+        payload,
+      });
+      expect(res.statusCode).toBe(400);
+    }
+    const profile = (
+      await app.inject({ method: "GET", url: "/api/learning/profile" })
+    ).json<ProfileResponse>();
+    expect(profile.resets.score).toBeNull();
+    expect(profile.profile.decisions).toEqual({ total: 13, reviewed: 3 });
+  });
+});

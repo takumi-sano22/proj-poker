@@ -284,4 +284,35 @@ describe("GET /api/drills", () => {
     ).json<ProfileResponse>();
     expect(profile.profile.longTerm.overall.score).toBe(0);
   });
+
+  it("score の Learning Reset より前に終わった Drill の Hand は Drill の系列の Score に数えず、一覧は残す（D114。暫定）", async () => {
+    const { app, btn, reviews } = setup();
+    const drill = (await startDrill(app, btn.handId, 1)).json<DrillStartBody>();
+    const lastSeq = drill.view.log.at(-1)?.seq ?? 0;
+    await app.inject({
+      method: "POST",
+      url: `/api/hands/${drill.handId}/actions`,
+      payload: { lastSeq, action: { type: "fold" } },
+    });
+    reviews.append({
+      ...fixtures.review(btn, 1, "strong"),
+      handId: drill.handId,
+    });
+    const reset = await app.inject({
+      method: "POST",
+      url: "/api/learning/resets",
+      payload: { categories: ["score"] },
+    });
+    expect(reset.statusCode).toBe(201);
+    const results = (
+      await app.inject({ method: "GET", url: "/api/drills" })
+    ).json<DrillResults>();
+    expect(results.drills).toHaveLength(1);
+    expect(results.drills[0]?.assessment).toBe("strong");
+    expect(results.score.since).toBe(
+      reset.json<{ reset: { createdAt: string } }>().reset.createdAt,
+    );
+    expect(results.score.decisions).toMatchObject({ total: 0, reviewed: 0 });
+    expect(results.score.overall.score).toBeNull();
+  });
 });

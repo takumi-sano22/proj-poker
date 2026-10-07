@@ -2,7 +2,9 @@
 // - 開始: 元の Hand の Hero の判断 1 つ（Pass A の Review があるもの）から、一要素だけ変えた Drill を決定論で選び（drill-plan.ts）、
 //   drills テーブルに provenance・変形・seed を残してから、Drill の Hand を専用の Session の通常の Hand として始める（hand-orchestrator.ts）
 // - 結果: Drill の Hand の判断の Review は既存の Pass A の経路（/api/reviews）でそのまま作る。集計は通常の Score と別の系列で、
-//   Drill の Hand（Script が再現した元の判断を除く、練習した判断から）だけを数える（D105）。通常の集計は Drill の Hand を除く（D116）
+//   Drill の Hand（Script が再現した元の判断を除く、練習した判断から）だけを数える（D105）。通常の集計は Drill の Hand を除く（D116）。
+//   Drill の系列の Score は、通常の Score と同じ Learning Reset のカテゴリ（score）の区切りより後に終わった Drill の Hand だけで数える
+//   （D114。暫定）。Drill の一覧は Reset で変えない
 // Drill の題材の選択に使うのは Hero 自身の判断と Review（Hero 側の処理）だけで、ユーザーの弱点（Profile・Hypothesis・Score）を
 // CPU の入力（RuleBot の Persona・KnowledgeState）へ渡さない（不変条件 2）。Drill の Spot は判断時点の Hero Information Set だけから作る。
 import { randomUUID } from "node:crypto";
@@ -13,6 +15,7 @@ import {
 } from "@proj-poker/engine";
 import type { EventStore } from "../event-store.js";
 import { isHandEnd } from "../event-store.js";
+import { endedAfter } from "../learning/learning-reset.js";
 import type {
   DrillHandStart,
   OrchestratorError,
@@ -99,6 +102,8 @@ export interface DrillResults {
   readonly drills: readonly DrillSummary[];
   readonly score: {
     readonly policyVersion: string;
+    /** score の Learning Reset の時刻（D114。無ければ null）。これより後に終わった Drill の Hand だけを数える。 */
+    readonly since: string | null;
     readonly decisions: ScoreReport["decisions"];
     readonly overall: ScoreReport["overall"];
     readonly abilities: ScoreReport["abilities"];
@@ -124,6 +129,8 @@ export interface DrillServiceOptions {
   readonly nextHandId: () => string;
   readonly nextSessionId?: () => string;
   readonly policy?: DrillPolicy;
+  /** score の Learning Reset の時刻（D114。v8 の learning_resets）。省略時は区切りなし。 */
+  readonly scoreSince?: () => string | null;
 }
 
 export class DrillService {
@@ -266,18 +273,23 @@ export class DrillService {
       };
     });
     // 終わった Drill の Hand だけを、練習した判断から数える（Script が再現した元の判断は数えない）。
-    const finished = records.filter((_, i) => summaries[i]?.finished === true);
+    // score の Learning Reset より前に終わった Drill の Hand は数えない（D114。通常の Score と同じカテゴリに従わせる暫定）。
+    const since = this.options.scoreSince?.() ?? null;
+    const counted = records
+      .map((r) => ({ record: r, stored: events.read(r.drillHandId) }))
+      .filter(({ stored }) => endedAfter(stored, since));
     const report = computeScoreReport(
       {
-        hands: finished.map((r) =>
-          events.read(r.drillHandId).map((s) => s.event),
-        ),
+        hands: counted.map(({ stored }) => stored.map((s) => s.event)),
         reviews,
         heroId,
       },
       {
         firstDecisionIndex: new Map(
-          finished.map((r) => [r.drillHandId, r.sourceDecisionIndex]),
+          counted.map(({ record }) => [
+            record.drillHandId,
+            record.sourceDecisionIndex,
+          ]),
         ),
       },
     );
@@ -286,6 +298,7 @@ export class DrillService {
       drills: summaries,
       score: {
         policyVersion: report.policyVersion,
+        since,
         decisions: report.decisions,
         overall: report.overall,
         abilities: report.abilities,

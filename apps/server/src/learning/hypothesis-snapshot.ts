@@ -1,7 +1,7 @@
 // Weakness Hypothesis の Snapshot（D104・D113・マイグレーション v6 の hypothesis_snapshots）。
 // reviews（Pass A）から buildHypotheses で決定論で作り直せる派生データで、正本にしない。作り直しは全行を消して入れ直す
 // （1 トランザクション。途中まで書いた状態を残さない）。Player Profile の API（#116。learning-service.ts）が読むたびに作り直す。
-// Learning Reset の区切り（D114）は #118 で足す。
+// Learning Reset（D114・#118）の後は、LearningService が hypothesis の区切りより後に終わった Hand の Evidence で作り直す。
 import type { DatabaseSync } from "node:sqlite";
 import { inTransaction } from "../db/database.js";
 import type { ScoreSource } from "./ability-evidence.js";
