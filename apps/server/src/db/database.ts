@@ -197,6 +197,74 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'reviews is append-only');
   END;
   `,
+  // v5: Hero の Note / Tag（D31・D112・#115）。Hand に属さない Hero の入力なので、Event Log ではなく追記型のテーブルに置く。
+  // 既存のテーブル・列・行は変えない（D76）。どちらも UPDATE / DELETE を Trigger で拒否し、seq（追記の順）で今の状態を決める。
+  // 対象（Subject）は席の playerId を永続の Identity とみなさない参照で、subject は JSON（kind ごとの形。notes/subject.ts）、
+  // subject_key はその検索の鍵。Session の行は最初の Hand が終わるまで無いので、sessions は参照しない。
+  // user_notes: Note の 1 つの revision。削除は同じ note_id の次の revision の、本文の無い行（tombstone）。最初の revision は本文を持ち、
+  // 次の revision は同じ対象の、まだ消していない直前の revision にだけ続けられる（消した Note は戻さない）。
+  // user_tags: Tag の付け外し（add / remove）。対象と Tag ごとに最後の行が今の状態。
+  `
+  CREATE TABLE user_notes (
+    seq         INTEGER PRIMARY KEY,
+    note_id     TEXT NOT NULL,
+    revision    INTEGER NOT NULL CHECK (revision >= 1),
+    created_at  TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    subject     TEXT NOT NULL CHECK (json_valid(subject)),
+    body        TEXT CHECK (body IS NULL OR length(body) BETWEEN 1 AND 500),
+    CHECK (revision > 1 OR body IS NOT NULL),
+    UNIQUE (note_id, revision)
+  ) STRICT;
+
+  CREATE INDEX user_notes_by_subject ON user_notes (subject_key, seq);
+
+  CREATE TRIGGER user_notes_revision_follows
+  BEFORE INSERT ON user_notes
+  WHEN NEW.revision > 1 AND NOT EXISTS (
+    SELECT 1 FROM user_notes
+    WHERE note_id = NEW.note_id AND revision = NEW.revision - 1
+      AND subject_key = NEW.subject_key AND body IS NOT NULL
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'user_notes revision must follow a live revision of the same note');
+  END;
+
+  CREATE TRIGGER user_notes_append_only
+  BEFORE UPDATE ON user_notes
+  BEGIN
+    SELECT RAISE(ABORT, 'user_notes is append-only');
+  END;
+
+  CREATE TRIGGER user_notes_no_delete
+  BEFORE DELETE ON user_notes
+  BEGIN
+    SELECT RAISE(ABORT, 'user_notes is append-only');
+  END;
+
+  CREATE TABLE user_tags (
+    seq         INTEGER PRIMARY KEY,
+    created_at  TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    subject     TEXT NOT NULL CHECK (json_valid(subject)),
+    tag         TEXT NOT NULL CHECK (length(tag) BETWEEN 1 AND 20),
+    op          TEXT NOT NULL CHECK (op IN ('add', 'remove'))
+  ) STRICT;
+
+  CREATE INDEX user_tags_by_subject ON user_tags (subject_key, seq);
+
+  CREATE TRIGGER user_tags_append_only
+  BEFORE UPDATE ON user_tags
+  BEGIN
+    SELECT RAISE(ABORT, 'user_tags is append-only');
+  END;
+
+  CREATE TRIGGER user_tags_no_delete
+  BEFORE DELETE ON user_tags
+  BEGIN
+    SELECT RAISE(ABORT, 'user_tags is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

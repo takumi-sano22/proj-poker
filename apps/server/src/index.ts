@@ -21,6 +21,7 @@ import {
   buildClaudeEnv,
   createClaudeOpponentFactory,
 } from "./opponents/claude-opponent.js";
+import { SqliteNoteStore } from "./notes/note-store.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
 import {
   SqliteFollowUpStore,
@@ -73,6 +74,8 @@ const app = buildApp({
     parsePersonaRotation(process.env["CPU_PERSONAS"]),
   ),
   store,
+  // Hero の Note / Tag（#115）は同じ DB の user_notes / user_tags（v5）に追記する。
+  noteStore: new SqliteNoteStore(db),
   createOpponent,
   opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),

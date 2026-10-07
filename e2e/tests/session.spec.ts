@@ -309,3 +309,75 @@ test.describe("狭い画面（375px）での卓の配置（#5）", () => {
     await expect(page.getByRole("region", { name: "卓" })).toBeVisible();
   });
 });
+
+/**
+ * Hero の手番に読み（User Read）を記録し、CPU の Note / Tag を残してから、その Hand を最後まで進める（#115・D112）。
+ * 読みは Hero 自身の行として進行ログに出て、読みの後の操作も通る（読みで Log が進んだ後の lastSeq で送る）。
+ * Playwright の click は覆われた Button で失敗するので、狭い画面でも入力が席・Hero 欄の操作と重ならないことの検査になる。
+ */
+async function recordReadAndNotes(page: Page): Promise<void> {
+  const dock = page.getByRole("region", { name: "Hero" });
+  const log = page.getByRole("region", { name: "Hand の進行" });
+  await expect(dock.getByText("Hero の手番です。")).toBeVisible({
+    timeout: 30_000,
+  });
+  await dock.getByRole("button", { name: "読みを記録" }).click();
+  await dock.getByRole("combobox").selectOption({ label: "CPU 1" });
+  await dock.getByRole("textbox", { name: "読み" }).fill("Value が多そう");
+  await dock.getByRole("button", { name: "記録する" }).click();
+  await expect(
+    log.getByText("Hero の読み（CPU 1）: Value が多そう"),
+  ).toBeVisible();
+  await expect(
+    dock.getByRole("button", { name: "読みを記録" }),
+  ).toBeVisible();
+
+  const notes = page.locator(".opponent-notes");
+  await notes.getByText("CPU の Note / Tag").click();
+  await notes.getByRole("combobox").selectOption({ label: "CPU 2" });
+  await notes.getByRole("textbox", { name: "Tag" }).fill("Loose");
+  await notes.getByRole("button", { name: "Tag を付ける" }).click();
+  await expect(notes.locator(".opponent-notes__tag")).toHaveText(["Loose"]);
+  await notes
+    .getByRole("textbox", { name: "Note" })
+    .fill("River は Value 寄り");
+  await notes.getByRole("button", { name: "Note を残す" }).click();
+  await expect(notes.getByText("River は Value 寄り")).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    ),
+  ).toBe(0);
+
+  // 読みの後の操作も通り、Hand を最後まで進められる。
+  await playHand(page, false);
+}
+
+test.describe("User Read と Note / Tag（#115）", () => {
+  test("広い画面: 手番に読みを記録し、CPU の Note / Tag を残して Hand を進める", async ({
+    page,
+  }) => {
+    server = await startServer(join(dir, "poker.sqlite"));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await recordReadAndNotes(page);
+  });
+
+  test.describe("狭い画面（375px）", () => {
+    test.use({
+      viewport: { width: 375, height: 667 },
+      hasTouch: true,
+      isMobile: true,
+    });
+
+    test("手番に読みを記録し、CPU の Note / Tag を残して Hand を進める。横スクロールは出ない", async ({
+      page,
+    }) => {
+      server = await startServer(join(dir, "poker.sqlite"));
+      await page.goto("/");
+      await page.getByRole("button", { name: "Hand を始める" }).click();
+      await recordReadAndNotes(page);
+    });
+  });
+});

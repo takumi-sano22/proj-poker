@@ -8,6 +8,7 @@ import {
   foldHandEvents,
   getLegalActions,
   PHASE1_CASH_PRESET,
+  recordUserRead,
   startHand,
   type HandEvent,
   type HeroView,
@@ -616,6 +617,61 @@ describe("SqliteEventStore（保存の経路）", () => {
       db.close();
     }
   });
+
+  it("版 7 の行（User Read の無い Hand）は変換せずに読む。行は書き換えない（D76・D112）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const v7 = [...started, ...rest];
+    expect(v7.some((e) => e.type === "USER_READ_RECORDED")).toBe(false);
+    insertRows("h1", 7, v7);
+    expect(
+      open()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(v7);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 7 }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("User Read（USER_READ_RECORDED）を含む Hand を版 8 で保存し、開き直しても同じ Event を読む（D112）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const state = foldHandEvents(started);
+    const hero = getLegalActions(state)?.playerId;
+    if (hero === undefined) throw new Error("手番が無い");
+    const read = recordUserRead(state, {
+      playerId: hero,
+      targetPlayerId: null,
+      text: "Pot Odds で Call する",
+    });
+    if (!read.ok) throw new Error(read.error.message);
+    // 読みの分だけ後ろの Event の seq をずらす（読みは卓の State を変えないので、続きの Event はそのまま置ける）。
+    const shifted = rest.map((e) => ({ ...e, seq: e.seq + 1 }));
+    const all = [...started, ...read.value.events, ...shifted];
+    const store = open();
+    store.append("h1", all);
+    expect(
+      reopen()
+        .read("h1")
+        .map((s) => s.event),
+    ).toEqual(all);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT DISTINCT schema_version FROM events WHERE type = 'USER_READ_RECORDED'",
+          )
+          .all(),
+      ).toEqual([{ schema_version: 8 }]);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("SqliteEventStore（Session の永続化と Resume。#77・D95）", () => {
@@ -839,7 +895,7 @@ describe("SqliteEventStore（Session の永続化と Resume。#77・D95）", () 
   });
 });
 
-/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4〜7 で足した種類は版 2 に無いので渡さない。 */
+/** 現在の Event を版 2 の形（HAND_STARTED に reopenRule が無い）に戻す。版 4〜8 で足した種類は版 2 に無いので渡さない。 */
 function toV2(events: readonly HandEvent[]): HandEventV2[] {
   return events.map((e): HandEventV2 => {
     if (
@@ -852,7 +908,8 @@ function toV2(events: readonly HandEvent[]): HandEventV2[] {
       e.type === "SESSION_ENDED" ||
       e.type === "HAND_ABORTED" ||
       e.type === "EMERGENCY_BOT_ENGAGED" ||
-      e.type === "HAND_METADATA_RECORDED"
+      e.type === "HAND_METADATA_RECORDED" ||
+      e.type === "USER_READ_RECORDED"
     ) {
       throw new Error(`版 2 に無い Event: ${e.type}`);
     }

@@ -55,8 +55,22 @@ export interface HeroInformationSet {
    * Legal Action・Math）。CPU へ渡すものと同じ whitelist で組む（projectKnowledgeState）。
    */
   readonly knowledge: KnowledgeState;
-  /** 判断時点までに Hero に見えた Event（public と Hero 宛ての private。時系列）。 */
+  /** 判断時点までに Hero に見えた Event（public と Hero 宛ての private。時系列）。Hero の User Read は userReads に分けて入れない。 */
   readonly events: readonly HandEvent[];
+  /**
+   * 判断の前（この判断の ACTION_TAKEN より前）に Hero が記録した User Read（記録の順。D112）。判断の直前の手番の間に記録した読みも
+   * 判断時点の情報として入り、判断より後に記録した読みは入らない。前の判断の前に記録した読みも入る（その Hand のそれまでの読み）。
+   */
+  readonly userReads: readonly UserReadRecord[];
+}
+
+/** Hero が記録した User Read 1 つ（USER_READ_RECORDED の写し。seq が provenance）。 */
+export interface UserReadRecord {
+  readonly seq: number;
+  readonly street: Street;
+  /** 読みの対象の席（この Hand の playerId）。相手を特定しない読み・意図は null。 */
+  readonly targetPlayerId: string | null;
+  readonly text: string;
 }
 
 /** Important Spot として選んだ理由。 */
@@ -146,12 +160,18 @@ export interface HandSummary {
   readonly importantSpots: readonly ImportantSpot[];
 }
 
-/** Hero の操作の Event（宣言・Chip の操作・裁定）か。判断そのものに属し、判断時点の情報には入れない。 */
-function isHeroOperation(event: HandEvent, heroId: string): boolean {
+/**
+ * 判断時点を探すときに飛ばす、Hero 自身の入力の Event か。
+ * - 操作（宣言・Chip の操作・裁定）は判断そのものに属し、判断時点の情報には入れない
+ * - User Read（D112）は手番の間に記録する Hero 自身の記録で、卓の状態を変えない。判断時点（卓の状態）を動かさないよう飛ばし、
+ *   判断時点の情報としては HeroInformationSet の userReads に入れる
+ */
+function isHeroInput(event: HandEvent, heroId: string): boolean {
   return (
     (event.type === "PLAYER_DECLARED" ||
       event.type === "PHYSICAL_CHIP_ACTION" ||
-      event.type === "DEALER_RULING") &&
+      event.type === "DEALER_RULING" ||
+      event.type === "USER_READ_RECORDED") &&
     event.playerId === heroId
   );
 }
@@ -159,7 +179,7 @@ function isHeroOperation(event: HandEvent, heroId: string): boolean {
 /**
  * Hero の判断の一覧（Hero の ACTION_TAKEN ごと。時系列）。Hero に見える Event だけを読む。
  * 判断時点は、その ACTION_TAKEN の直前に続く Hero 自身の操作（宣言・Chip の操作・裁定。Action の決まらない裁定の後の
- * 選び直しを含む）を除いた、その前の Event。Out-of-Turn で保留した操作は手番より前の出来事なので判断時点の情報に残り、
+ * 選び直しを含む）と User Read を除いた、その前の Event。Out-of-Turn で保留した操作は手番より前の出来事なので判断時点の情報に残り、
  * 手番で拘束した裁定（basis: pending_out_of_turn）だけが判断に属する。
  */
 export function heroDecisions(
@@ -171,13 +191,10 @@ export function heroDecisions(
   visible.forEach((e, i) => {
     if (e.type !== "ACTION_TAKEN" || e.playerId !== heroId) return;
     let start = i;
-    while (
-      start > 0 &&
-      isHeroOperation(visible[start - 1] as HandEvent, heroId)
-    ) {
+    while (start > 0 && isHeroInput(visible[start - 1] as HandEvent, heroId)) {
       start--;
     }
-    // 先頭は HAND_STARTED（Hero の操作ではない）なので、判断時点の Event は必ずある。
+    // 先頭は HAND_STARTED（Hero の入力ではない）なので、判断時点の Event は必ずある。
     const point = visible[start - 1] as HandEvent;
     const rulingNotes = visible
       .slice(start, i)
@@ -201,6 +218,7 @@ export function heroDecisions(
  * Hero の判断ごとの、判断時点の Hero Information Set。
  * 判断時点（decisionPointSeq）までの Event を先に切り出してから Hero に見える Event だけを畳み込むので、
  * 判断より後の Event（その後の Board・Showdown・Pot の配分・結果）と、Hero に見えない Event は入らない。
+ * Hero の User Read は、判断の ACTION_TAKEN より前に記録したものだけを userReads に入れる（判断より後の読みは入らない）。
  */
 export function heroInformationSets(
   events: readonly HandEvent[],
@@ -208,15 +226,34 @@ export function heroInformationSets(
 ): HeroInformationSet[] {
   return heroDecisions(events, heroId).map((decision) => {
     const known = events.filter(
-      (e) => e.seq <= decision.decisionPointSeq && isVisibleTo(e, heroId),
+      (e) =>
+        e.seq <= decision.decisionPointSeq &&
+        isVisibleTo(e, heroId) &&
+        e.type !== "USER_READ_RECORDED",
     );
     const knowledge = projectKnowledgeState(known, heroId);
+    const userReads: UserReadRecord[] = [];
+    for (const e of events) {
+      if (
+        e.type === "USER_READ_RECORDED" &&
+        e.playerId === heroId &&
+        e.seq < decision.actionSeq
+      ) {
+        userReads.push({
+          seq: e.seq,
+          street: e.street,
+          targetPlayerId: e.targetPlayerId,
+          text: e.text,
+        });
+      }
+    }
     return {
       handId: knowledge.handId,
       heroId,
       decision,
       knowledge,
       events: known,
+      userReads,
     };
   });
 }

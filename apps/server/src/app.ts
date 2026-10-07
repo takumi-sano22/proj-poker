@@ -17,6 +17,7 @@ import { HandOrchestrator } from "./hand-orchestrator.js";
 import type { OpponentFactory } from "./opponents/opponent-agent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
 import { loadKb, type LoadedKb } from "./kb/index.js";
+import { InMemoryNoteStore, type NoteStore } from "./notes/note-store.js";
 import { ReplayService } from "./replay.js";
 import {
   InMemoryFollowUpStore,
@@ -30,6 +31,7 @@ import {
 } from "./review/review-store.js";
 import { ReviewService } from "./review/review-service.js";
 import { registerHandRoutes } from "./routes/hands.js";
+import { registerNoteRoutes } from "./routes/notes.js";
 import { registerReplayRoutes } from "./routes/replay.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
 import { createAmaster97Adapter } from "./solver/amaster97-adapter.js";
@@ -69,6 +71,8 @@ export interface AppOptions {
   readonly nextSeed?: () => number;
   readonly nextHandId?: () => string;
   readonly review?: ReviewAppOptions;
+  /** Hero の Note / Tag の Store（#115）。起動時は SQLite（v5）、省略時のメモリ内実装はテスト用。 */
+  readonly noteStore?: NoteStore;
 }
 
 // listen と分けて組み立てだけを export する。テストから起動せずに叩けるようにするため。
@@ -105,6 +109,12 @@ export function buildApp(options: AppOptions = {}) {
   });
 
   registerHandRoutes(app, orchestrator);
+  // Note / Tag は Hero だけの記録で、Orchestrator（CPU の入力）・Review へは渡さない（不変条件 2）。
+  registerNoteRoutes(
+    app,
+    orchestrator,
+    options.noteStore ?? new InMemoryNoteStore(),
+  );
   // Hero はちょうど 1 人（Orchestrator の生成で検証済み）。
   const heroId = setup.players.find((p) => p.kind === "hero")?.playerId ?? "";
   registerReplayRoutes(app, new ReplayService(store, heroId, setup.players));

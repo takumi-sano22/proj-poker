@@ -350,6 +350,82 @@ export function recordSessionEvent(
   return emit({ state, events: [] }, body);
 }
 
+/** User Read の本文の上限（字）。1 つの判断の前に書く短い読みとして十分な長さの暫定値。 */
+export const USER_READ_TEXT_MAX = 200;
+
+/** Hero が記録する User Read の入力（D112）。Street は Engine が State から写す。 */
+export interface UserReadInput {
+  /** 記録する Player（Hero）。 */
+  readonly playerId: string;
+  /** 読みの対象の席（この Hand の playerId）。相手を特定しない読み・意図は null。 */
+  readonly targetPlayerId: string | null;
+  readonly text: string;
+}
+
+/**
+ * Hero の User Read を、Log の次の seq の USER_READ_RECORDED（記録した本人だけの private）にする（D33・D105・D112）。卓の State は変えない。
+ * 記録できるのは Hand の途中の、記録する Player の手番の間だけ。判断の前に記録した読みだけが、その判断の判断時点の情報になる
+ * （hand-summary.ts）。手番でない間（CPU が判断している間）に Log を進めると、その CPU の手番が古い手番として捨てられるので受け付けない。
+ * 終わった Hand には追記できない（Event Store が拒否する。docs/04 §10）。
+ */
+export function recordUserRead(
+  state: HandState,
+  input: UserReadInput,
+): EngineResult<HandProgress> {
+  if (state.status !== "in_progress") {
+    return reject(
+      "hand_complete",
+      "終わった Hand には User Read を記録できない",
+    );
+  }
+  const actor =
+    state.actorIndex === null ? null : playerAt(state, state.actorIndex);
+  if (actor?.playerId !== input.playerId) {
+    return reject(
+      "not_actor",
+      `User Read は自分の手番の間だけ記録できる: ${input.playerId}`,
+    );
+  }
+  const target = input.targetPlayerId;
+  if (
+    target !== null &&
+    (target === input.playerId ||
+      !state.players.some((p) => p.playerId === target))
+  ) {
+    return reject(
+      "invalid_input",
+      `読みの対象はこの Hand の自分以外の席: ${target}`,
+    );
+  }
+  const text = input.text.trim();
+  if (text.length === 0 || text.length > USER_READ_TEXT_MAX) {
+    return reject(
+      "invalid_input",
+      `User Read の本文は空白を除いて 1〜${USER_READ_TEXT_MAX} 字`,
+    );
+  }
+  return {
+    ok: true,
+    value: emit(
+      { state, events: [] },
+      {
+        type: "USER_READ_RECORDED",
+        playerId: input.playerId,
+        street: state.street,
+        targetPlayerId: target,
+        text,
+      },
+    ),
+  };
+}
+
+function reject(
+  kind: "hand_complete" | "not_actor" | "invalid_input",
+  message: string,
+): { readonly ok: false; readonly error: EngineError } {
+  return { ok: false, error: { kind, message } };
+}
+
 /** Event を 1 つ発行し、State に畳み込む。seq と Visibility はここでだけ付ける。 */
 function emit(acc: HandProgress, body: HandEventBody): HandProgress {
   const event: HandEvent = {

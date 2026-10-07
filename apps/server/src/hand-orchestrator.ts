@@ -31,6 +31,7 @@ import {
   projectKnowledgeState,
   recordAiEvent,
   recordSessionEvent,
+  recordUserRead,
   resolvePendingOutOfTurn,
   startHand,
   type CpuSeatMetadata,
@@ -54,6 +55,7 @@ import {
   type TableSetup,
 } from "./config.js";
 import type { EventStore } from "./event-store.js";
+import type { SessionPlayerSubject } from "./notes/subject.js";
 import {
   OpponentOutageError,
   type OpponentAgent,
@@ -490,6 +492,58 @@ export class HandOrchestrator {
     this.commit(rt, result.value.events);
     await this.proceed(rt);
     return { ok: true, value: this.heroViewOf(handId) };
+  }
+
+  /**
+   * Hero の User Read（判断の前の読み・意図）を USER_READ_RECORDED として Event Log へ追記し、Hero の View を配る（D33・D112）。
+   * 記録できるのは Hand の途中の Hero の手番の間だけ（Engine の recordUserRead が判定する）。手番の間は CPU を動かしていないので、
+   * 追記が CPU の手番の判断（isCurrent）を古くすることはない。Event は Hero だけの private で、CPU の KnowledgeState には入らない。
+   * 卓の状態は変えないので、CPU は進めない（次に CPU が動くのは Hero の Action の後）。
+   */
+  heroUserRead(
+    handId: string,
+    read: { readonly targetPlayerId: string | null; readonly text: string },
+  ): OrchestratorResult<HeroView> {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return notFound(handId);
+    const result = recordUserRead(foldHandEvents(this.events(handId)), {
+      playerId: this.heroId,
+      targetPlayerId: read.targetPlayerId,
+      text: read.text,
+    });
+    if (!result.ok) return result;
+    this.commit(rt, result.value.events);
+    return { ok: true, value: this.heroViewOf(handId) };
+  }
+
+  /**
+   * Note / Tag の対象（Subject）を、Hand と席から決める（D105・#115）。席の playerId（cpu1 等）は永続の Identity ではないので、
+   * その Hand が属する Session の中の参加者として持つ（Phase 7 で Session の席と cpuProfileId の対応から永続の CPU へ引ける）。
+   * 対象にできるのは、このプロセスで進めた Hand の Hero 以外の席だけ。
+   */
+  subjectOf(
+    handId: string,
+    playerId: string,
+  ): OrchestratorResult<SessionPlayerSubject> {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return notFound(handId);
+    const started = this.events(handId).find((e) => e.type === "HAND_STARTED");
+    const seated =
+      started?.type === "HAND_STARTED" &&
+      started.seats.some((s) => s.playerId === playerId);
+    if (!seated || playerId === this.heroId) {
+      return {
+        ok: false,
+        error: {
+          kind: "invalid_input",
+          message: `Note / Tag の対象はこの Hand の Hero 以外の席: ${playerId}`,
+        },
+      };
+    }
+    return {
+      ok: true,
+      value: { kind: "session_player", sessionId: rt.sessionId, playerId },
+    };
   }
 
   /**

@@ -2,8 +2,8 @@
 // Event 種別は docs/04 §3 のうち Phase 1 で必要なものと、CPU の判断の経緯（AI_ACTION_INVALID / AI_FALLBACK_USED。D83）と、
 // Hero の宣言・物理的な Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING。D90）と、
 // Session の開始・終了、Hand の打ち切り、Emergency Bot への切り替え（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED /
-// EMERGENCY_BOT_ENGAGED。D95）と、Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）を持つ
-// （統合した種別は docs/04 §3 の構成表を参照）。
+// EMERGENCY_BOT_ENGAGED。D95）と、Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）と、
+// Hero が判断の前に記録した読み（USER_READ_RECORDED。D112・#115）を持つ（統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
 import type { CanonicalAction } from "./legal-actions.js";
 import type { Declaration, RulingCode } from "./ruling.js";
@@ -12,7 +12,7 @@ import type { OddChipRule, ReopenRule } from "./table-config.js";
 /**
  * 誰がその Event を読めるか（docs/04 §4）。
  * - public: 卓の全員
- * - private: 指定 Player だけ（自分の Hole Cards）
+ * - private: 指定 Player だけ（自分の Hole Cards・自分が記録した User Read）
  * - engine: Engine 内部専用。どの Player の Projection にも入れない（Deck の順序＝未来の Card）
  * - system: 卓の外の運用記録（CPU の不正な出力・Fallback の利用。D83。Session の開始・終了・Hand の打ち切り・
  *   Emergency Bot への切り替え。D95。Hand ごとの Best-effort Metadata。#97）。CPU の出力の値を含みうるので、Hero・CPU（本人を含む）のどの Projection にも入れない。
@@ -273,6 +273,23 @@ export type HandEventBody =
       readonly cpuProfileVersion: string;
       /** この Hand に座った CPU の実装（席順）。Hero は入れない。 */
       readonly cpuSeats: readonly CpuSeatMetadata[];
+    }
+  | {
+      // Hero が自分の手番の間に記録した読み・意図（User Read。D33・D105・D112）。卓の State は変えない。
+      // 記録した本人だけが読める（private）。CPU の KnowledgeState・他者の Projection・Stats（publicEvents）には入らない。
+      // 判断時点の情報として、直後の Hero の判断（とそれより後の判断）の Review の Evidence に入る（hand-summary.ts）。
+      readonly type: "USER_READ_RECORDED";
+      /** 記録した Player（Hero）。 */
+      readonly playerId: string;
+      /** 記録した時点の Street。 */
+      readonly street: Street;
+      /**
+       * 読みの対象の席（この Hand の playerId。ACTION_TAKEN の playerId と同じ Hand の中だけの参照で、永続の Identity ではない）。
+       * 相手を特定しない読み・Hero 自身の意図（Pot Odds で Call する等）は null。
+       */
+      readonly targetPlayerId: string | null;
+      /** 読みの本文（前後の空白を除いた 1〜USER_READ_TEXT_MAX 字）。 */
+      readonly text: string;
     };
 
 export type HandEventType = HandEventBody["type"];
@@ -289,7 +306,9 @@ export type HandEvent = HandEventBody & {
  */
 export function visibilityOf(body: HandEventBody): Visibility {
   switch (body.type) {
+    // 自分の札と、Hero の読み（本人の記録で、卓の誰も見聞きしていない。CPU の KnowledgeState・Stats に入れない。D105）。
     case "HOLE_CARD_DEALT":
+    case "USER_READ_RECORDED":
       return { type: "private", playerId: body.playerId };
     case "DECK_SHUFFLED":
       return { type: "engine" };

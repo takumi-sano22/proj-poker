@@ -238,7 +238,8 @@ function applyBody(state: HandState, event: HandEvent): HandState {
     case "SESSION_STARTED":
     case "SESSION_ENDED":
     case "EMERGENCY_BOT_ENGAGED":
-      // 判断の経緯・Session の運用の記録・Hand の Metadata で、卓の State（Chip・手番）は変えない（seq だけが進む）。
+    case "USER_READ_RECORDED":
+      // 判断の経緯・Session の運用の記録・Hand の Metadata・Hero の読みで、卓の State（Chip・手番）は変えない（seq だけが進む）。
       return state;
 
     // Hero の操作と Dealer の裁定（D90）。Chip・手番は変えず、裁定を待つ操作と保留中の Out-of-Turn だけを持つ。

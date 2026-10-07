@@ -428,6 +428,24 @@ describe("describeEvent", () => {
     ).toBe("CPU 1: コール（Call） 40（All-in）");
   });
 
+  it("Hero 自身の読み（User Read。#115）は対象の席の名前と本文で書く（当たり外れは書かない）", () => {
+    const read = (targetPlayerId: string | null): HandEvent => ({
+      seq: 10,
+      visibility: { type: "private", playerId: "hero" },
+      type: "USER_READ_RECORDED",
+      playerId: "hero",
+      street: "river",
+      targetPlayerId,
+      text: "Value が多そう",
+    });
+    expect(describeEvent(read("cpu1"), nameOf)).toBe(
+      "hero の読み（CPU 1）: Value が多そう",
+    );
+    expect(describeEvent(read(null), nameOf)).toBe(
+      "hero の読み（相手を特定しない）: Value が多そう",
+    );
+  });
+
   it("Showdown で公開された札と獲得額を書く", () => {
     expect(
       describeEvent(

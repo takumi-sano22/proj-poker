@@ -9,6 +9,7 @@ import {
   ApiError,
   chooseOutage,
   handStreamUrl,
+  recordUserRead,
   sendHeroPhysicalActions,
   setFastForward as requestFastForward,
   startHand,
@@ -61,6 +62,26 @@ export interface HandSession {
   readonly fastForwardPending: boolean;
   /** Fast Forward を入れる・切る。入れられるのは Hero が Fold した後だけ（サーバーが判定する）。 */
   readonly setFastForward: (enabled: boolean) => void;
+  /**
+   * Hero の User Read（判断の前の読み・意図。D112）を記録する。Hero の手番の間だけ受け付けられる。記録できたら true。
+   * 操作の送信と同じ二重送信の止め方（pending）を使う（読みで Log が進むので、読みの応答の前に操作を送ると stale_view になる）。
+   */
+  readonly recordRead: (
+    targetPlayerId: string | null,
+    text: string,
+  ) => Promise<boolean>;
+}
+
+/** User Read の記録の失敗の案内。手番が過ぎた・Hand が終わったときは、読みを残せる時点を伝える。 */
+function readNoticeOf(error: unknown): SessionNotice {
+  const kind = error instanceof ApiError ? error.kind : "unknown";
+  if (kind === "not_actor" || kind === "hand_complete") {
+    return {
+      message: "読みは Hero の手番の間だけ記録できます。",
+      retryable: false,
+    };
+  }
+  return noticeOf(error);
 }
 
 /** サーバーの失敗を、驚かせない案内文にする（ui.md: 一時的な失敗は再送へ誘導する）。 */
@@ -343,6 +364,32 @@ export function useHandSession(): HandSession {
     [handId],
   );
 
+  const recordRead = useCallback(
+    async (targetPlayerId: string | null, text: string): Promise<boolean> => {
+      if (handId === null || inFlight.current) return false;
+      const sentFor = handId;
+      inFlight.current = true;
+      setPending(true);
+      setNotice(null);
+      lastFailed.current = null;
+      try {
+        const res = await recordUserRead(sentFor, targetPlayerId, text);
+        accept(res.view);
+        return true;
+      } catch (error: unknown) {
+        // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。再送ボタンは出さない（入力はフォームに残る）。
+        if (activeHandId.current === sentFor) {
+          setNotice({ ...readNoticeOf(error), retryable: false });
+        }
+        return false;
+      } finally {
+        inFlight.current = false;
+        setPending(false);
+      }
+    },
+    [accept, handId],
+  );
+
   const retry = useCallback(() => {
     const failed = lastFailed.current;
     if (failed?.kind === "start") requestStart(failed.afterHandId);
@@ -409,5 +456,6 @@ export function useHandSession(): HandSession {
       view?.status === "in_progress",
     fastForwardPending,
     setFastForward,
+    recordRead,
   };
 }

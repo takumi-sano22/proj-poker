@@ -5,8 +5,10 @@ import {
   cardToString,
   createDeck,
   extractImportantSpots,
+  foldHandEvents,
   heroInformationSets,
   isVisibleTo,
+  recordUserRead,
   type HandEvent,
   type HeroInformationSet,
   type HeroView,
@@ -32,8 +34,17 @@ import {
   SB_VS_BTN,
   playScriptedHand,
 } from "../testing/review-eval/hands.js";
-import { buildReviewEvidence, evidenceIdsOf, kbSpotOf } from "./evidence.js";
-import { buildReviewPrompt } from "./review-ai.js";
+import {
+  allEvidenceIds,
+  buildReviewEvidence,
+  evidenceIdsOf,
+  kbSpotOf,
+} from "./evidence.js";
+import {
+  USER_READ_GUIDE,
+  buildReviewPrompt,
+  reviewOutputSchema,
+} from "./review-ai.js";
 import type { ReviewEvidence } from "./types.js";
 
 const HERO = "hero";
@@ -326,5 +337,124 @@ describe("kbSpotOf: KB の検索に使う Spot の特徴（判断時点の情報
       position: "SB",
       spotKind: "postflop_checked_to",
     });
+  });
+});
+
+/**
+ * 固定 Hand の Event Log の、Hero の判断（ACTION_TAKEN）の直前に User Read を差し込む（D112）。
+ * 読みは卓の State を変えないので、差し込んだ後ろの Event の seq を 1 つずつずらせば、Hero の手番の間に記録した Log と同じ形になる。
+ * reads は Hero の判断の番号 → 読み。
+ */
+function withReads(
+  events: readonly HandEvent[],
+  reads: Readonly<Record<number, { target: string | null; text: string }>>,
+): HandEvent[] {
+  const out: HandEvent[] = [];
+  let decision = 0;
+  let shift = 0;
+  for (const e of events) {
+    const shifted = { ...e, seq: e.seq + shift };
+    if (e.type === "ACTION_TAKEN" && e.playerId === HERO) {
+      const read = reads[decision++];
+      if (read !== undefined) {
+        const result = recordUserRead(foldHandEvents(out), {
+          playerId: HERO,
+          targetPlayerId: read.target,
+          text: read.text,
+        });
+        if (!result.ok) throw new Error(result.error.message);
+        out.push(...result.value.events);
+        shift++;
+        out.push({ ...e, seq: e.seq + shift });
+        continue;
+      }
+    }
+    out.push(shifted);
+  }
+  return out;
+}
+
+describe("buildReviewEvidence: User Read / Intent（D112・不変条件 3）", () => {
+  const plain = playScriptedHand(BTN_VS_UTG);
+  const events = withReads(plain, {
+    1: { target: "cpu3", text: "UTG の Flop の小さい Bet は Draw も多い" },
+    3: { target: null, text: "Pot Odds で Call する" },
+  });
+
+  it("判断の前に記録した読みだけを provenance（id・Street・対象の席と表示名）付きで入れ、判断より後の読みは入れない", async () => {
+    const sets = heroInformationSets(events, HERO);
+    const at = (index: number) => {
+      const set = sets[index] as HeroInformationSet;
+      return buildReviewEvidence(set, [], {
+        kb,
+        solver: notInstalled,
+        playerNames: { hero: "Hero", cpu3: "CPU 3" },
+      });
+    };
+    const reads = events.filter((e) => e.type === "USER_READ_RECORDED");
+    expect(reads).toHaveLength(2);
+    // 判断 0 の後に記録した読みは、判断 0 に入らない。
+    expect((await at(0)).userRead).toEqual({ status: "not_collected" });
+    expect((await at(1)).userRead).toEqual({
+      status: "collected",
+      items: [
+        {
+          id: `read:review-btn_vs_utg/${reads[0]?.seq}`,
+          street: "flop",
+          playerId: "cpu3",
+          displayName: "CPU 3",
+          text: "UTG の Flop の小さい Bet は Draw も多い",
+        },
+      ],
+    });
+    const river = await at(3);
+    expect(river.userRead).toEqual({
+      status: "collected",
+      items: [
+        expect.objectContaining({ street: "flop", playerId: "cpu3" }),
+        {
+          id: `read:review-btn_vs_utg/${reads[1]?.seq}`,
+          street: "river",
+          text: "Pot Odds で Call する",
+        },
+      ],
+    });
+    // Review Record の Evidence IDs（userRead）と、Review AI が挙げてよい id にも入る。
+    const ids = evidenceIdsOf(river).userRead;
+    expect(ids).toEqual(
+      river.userRead.status === "collected"
+        ? river.userRead.items.map((i) => i.id)
+        : [],
+    );
+    for (const id of ids) expect(allEvidenceIds(river).has(id)).toBe(true);
+  });
+
+  it("読みは判断時点の卓（Math・Range・Context）を変えない。読みの無い判断の Evidence・Prompt・Schema は読みの無い Hand と同じ", async () => {
+    const plainSets = heroInformationSets(plain, HERO);
+    const sets = heroInformationSets(events, HERO);
+    for (const [i, set] of sets.entries()) {
+      const deps = { kb, solver: notInstalled };
+      const withRead = await buildReviewEvidence(set, [], deps);
+      const without = await buildReviewEvidence(
+        plainSets[i] as HeroInformationSet,
+        [],
+        deps,
+      );
+      expect({ ...withRead, userRead: null }).toEqual({
+        ...without,
+        userRead: null,
+      });
+      if (withRead.userRead.status === "not_collected") {
+        // 読みの無い判断は、Prompt・Schema が従来と同じ文字列（Review Eval の録画の指紋を保つ）。
+        expect(buildReviewPrompt(withRead)).toBe(buildReviewPrompt(without));
+        expect(reviewOutputSchema(withRead)).toEqual(
+          reviewOutputSchema(without),
+        );
+        expect(buildReviewPrompt(withRead)).not.toContain(USER_READ_GUIDE);
+      } else {
+        // 読みがあるときだけ扱い方を添える。
+        expect(buildReviewPrompt(withRead)).toContain(USER_READ_GUIDE);
+      }
+    }
   });
 });

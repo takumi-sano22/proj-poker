@@ -350,6 +350,9 @@ export function describeEvent(
     case "EMERGENCY_BOT_ENGAGED":
       // engine / system Visibility の Event。Hero の View には入らない（届いても表示しない）。
       return null;
+    case "USER_READ_RECORDED":
+      // Hero 自身が記録した読み（D112）。Hero にだけ届く（CPU には見えない）。当たり外れは出さない（D105）。
+      return `${nameOf(event.playerId)} の読み（${event.targetPlayerId === null ? "相手を特定しない" : nameOf(event.targetPlayerId)}）: ${event.text}`;
     case "PLAYER_DECLARED":
     case "PHYSICAL_CHIP_ACTION":
     case "DEALER_RULING":

@@ -209,6 +209,28 @@ export interface KnowledgeEvidence {
   }[];
 }
 
+/** Hero が判断の前に記録した読み 1 つ（USER_READ_RECORDED。D112）。provenance は id（Hand と Event の seq）と Street。 */
+export interface UserReadItem {
+  /** `read:<handId>/<seq>`（Event Log の USER_READ_RECORDED を指す）。 */
+  readonly id: string;
+  /** 記録した時点の Street。 */
+  readonly street: Street;
+  /** 読みの対象の席。相手を特定しない読み・意図には無い。 */
+  readonly playerId?: string;
+  /** 対象の席の表示名（Hero の画面に出ている名前。#96）。 */
+  readonly displayName?: string;
+  readonly text: string;
+}
+
+/**
+ * User Read / Intent（docs/05 §6・§12・D112）。その判断の前に Hero が記録した読みだけを入れる（判断より後の読みは入れない）。
+ * Hero の主張で、相手の観察の記録（Observation）ではない。読みが 1 つも無い判断は not_collected のまま
+ * （読みの無い Hand の Prompt を変えない。Review Eval の録画の指紋を保つ）。
+ */
+export type UserReadEvidence =
+  | { readonly status: "not_collected" }
+  | { readonly status: "collected"; readonly items: readonly UserReadItem[] };
+
 /** Review AI へ渡す Evidence の全体（docs/05 §6）。これ以外は渡さない。 */
 export interface ReviewEvidence {
   readonly pass: "decision";
@@ -220,8 +242,7 @@ export interface ReviewEvidence {
   readonly opponentObservation: OpponentObservationEvidence;
   readonly solver: SolverEvidenceItem;
   readonly knowledge: KnowledgeEvidence;
-  /** User Read / Intent（Review Interview。docs/05 §12）はまだ聞いていない。 */
-  readonly userRead: { readonly status: "not_collected" };
+  readonly userRead: UserReadEvidence;
 }
 
 /** Evidence の ID（docs/04 §8 の Math / Solver / User Read Evidence IDs）。provided は渡した ID、cited は Review AI が根拠に挙げた ID。 */
