@@ -15,7 +15,12 @@ import { generateRevealReview } from "./generate-reveal.js";
 import { buildRevealEvidence } from "./reveal-evidence.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
 import { BTN_VS_UTG, playScriptedHand } from "../testing/review-eval/hands.js";
-import { FAKE_REVIEW_MARK, fakeReviewQuery } from "./fake-review-query.js";
+import {
+  FAKE_REVIEW_MARK,
+  createFakeReviewQuery,
+  fakeReviewQuery,
+  parseFakeReviewAssessment,
+} from "./fake-review-query.js";
 
 const kb = loadKb();
 const notInstalled = createAmaster97Adapter({
@@ -48,6 +53,31 @@ describe("E2E 用の Review AI（固定応答）", () => {
       failure: null,
     });
     expect(draft.explanation.practical).toContain(FAKE_REVIEW_MARK);
+  });
+
+  it("Pass A の段階評価を FAKE_REVIEW_ASSESSMENT で変えられ、検証を通る（Leak から Drill へ進む E2E 用。#119）", async () => {
+    const evidence = await buildReviewEvidence(set, reasons, {
+      kb,
+      solver: notInstalled,
+    });
+    const draft = await generateReview(evidence, {
+      ...options,
+      query: createFakeReviewQuery(
+        parseFakeReviewAssessment("improvement_suggested"),
+      ),
+      actionSeq: set.decision.actionSeq,
+    });
+    expect(draft).toMatchObject({
+      generatedBy: "review_ai",
+      assessment: "improvement_suggested",
+      failure: null,
+    });
+    // 未設定・空は既定の reasonable。知らない値は起動時に誤りにする（黙って既定に戻さない）。
+    expect(parseFakeReviewAssessment(undefined)).toBe("reasonable");
+    expect(parseFakeReviewAssessment(" ")).toBe("reasonable");
+    expect(() => parseFakeReviewAssessment("bad")).toThrow(
+      "FAKE_REVIEW_ASSESSMENT は",
+    );
   });
 
   it("Pass B と Follow-up も検証を通る（evidenceIds は Schema の候補から選ぶ）", async () => {

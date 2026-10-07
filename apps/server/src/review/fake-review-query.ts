@@ -4,9 +4,11 @@
 // - evidenceIds は Schema の enum（その Evidence が持つ id）から選ぶので、どの Hand でも検証（grounding）を通る
 // - 検証・保存・画面は本番と同じ経路を通る（runStructuredQuery が result の structured_output を読む）
 // 文はどの Hand にも当てはまる一般的な内容にし、固定応答であることを先頭に明記する（実際の Review と取り違えないため）。
+// - Pass A の段階評価は既定 reasonable。FAKE_REVIEW_ASSESSMENT で変えられる（Leak から Drill へ進む E2E の流れを通すため。#119）
 // 起動（index.ts）から選べるので、build（dist）に入る src/review に置く（src/testing は build から外す）。
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ClaudeQuery } from "../claude/structured-query.js";
+import { ASSESSMENTS, type Assessment } from "./types.js";
 
 /** 応答の文の先頭に付ける印。画面で固定応答と分かるようにし、E2E はこの印で応答が届いたことを確かめる。 */
 export const FAKE_REVIEW_MARK = "（E2E 用の固定応答）";
@@ -40,13 +42,33 @@ function enumOf(schema: Record<string, unknown>, key: string): string[] {
     : [];
 }
 
+/**
+ * 環境変数 FAKE_REVIEW_ASSESSMENT の値を、固定応答の Pass A の段階評価として読む。未設定・空なら reasonable。
+ * 知らない値は起動時に誤りとして止める（黙って既定に戻すと E2E が気付かず別の流れを通る）。
+ */
+export function parseFakeReviewAssessment(raw: string | undefined): Assessment {
+  if (raw === undefined || raw.trim() === "") return "reasonable";
+  const value = raw.trim();
+  const found = ASSESSMENTS.find((a) => a === value);
+  if (found === undefined) {
+    throw new RangeError(
+      `FAKE_REVIEW_ASSESSMENT は ${ASSESSMENTS.join(" / ")} のどれか: ${JSON.stringify(raw)}`,
+    );
+  }
+  return found;
+}
+
 /** 種類ごとの固定の応答。evidenceIds は Schema の候補の先頭 2 つ（候補が無ければ空）。 */
-function fakeOutput(kind: CallKind, schema: Record<string, unknown>): unknown {
+function fakeOutput(
+  kind: CallKind,
+  schema: Record<string, unknown>,
+  assessment: Assessment,
+): unknown {
   const evidenceIds = enumOf(schema, "evidenceIds").slice(0, 2);
   switch (kind) {
     case "decision":
       return {
-        assessment: "reasonable",
+        assessment,
         confidence: "medium",
         practical: `${FAKE_REVIEW_MARK}Pot Odds と仮定した Range に対する Equity から見て、この判断は実戦的に妥当な範囲です。`,
         // Solver の結果の有無に関わらず選べる general_theory にする（Schema の enum に必ずある）。
@@ -81,8 +103,20 @@ function fakeOutput(kind: CallKind, schema: Record<string, unknown>): unknown {
   }
 }
 
-/** E2E 用の query()。SDK の result（success・structured_output）の形で 1 つだけ流す。 */
-export const fakeReviewQuery: ClaudeQuery = ({ options }) => {
+/** E2E 用の query()（Pass A の段階評価を assessment にする）。SDK の result（success・structured_output）の形で 1 つだけ流す。 */
+export function createFakeReviewQuery(
+  assessment: Assessment = "reasonable",
+): ClaudeQuery {
+  return ({ options }) => fakeResult(options, assessment);
+}
+
+/** 既定（Pass A は reasonable）の E2E 用の query()。 */
+export const fakeReviewQuery: ClaudeQuery = createFakeReviewQuery();
+
+function fakeResult(
+  options: Parameters<ClaudeQuery>[0]["options"],
+  assessment: Assessment,
+): ReturnType<ClaudeQuery> {
   const format = options.outputFormat;
   const schema = format?.type === "json_schema" ? format.schema : {};
   const kind = callKindOf(schema);
@@ -94,7 +128,7 @@ export const fakeReviewQuery: ClaudeQuery = ({ options }) => {
     subtype: "success",
     is_error: false,
     result: "",
-    structured_output: fakeOutput(kind, schema),
+    structured_output: fakeOutput(kind, schema, assessment),
   } as unknown as SDKMessage;
   const signal = options.abortController?.signal;
   return (async function* () {
@@ -112,4 +146,4 @@ export const fakeReviewQuery: ClaudeQuery = ({ options }) => {
     });
     yield message;
   })();
-};
+}

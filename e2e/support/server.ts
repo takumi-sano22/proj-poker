@@ -15,8 +15,12 @@ export const E2E_WEB_PORT = 5174;
 /**
  * 決定論にするための設定（D98）: 山札の seed を固定し、CPU は RuleBot、Review AI は固定応答（Claude を呼ばない）。
  * CPU の思考の演出の待ちは 0 にする。Solver は導入先を渡さない（Unsupported として Fallback する）。
+ * overrides はテストごとの差分（卓の人数・固定応答の段階評価など。#119）で、既定の値より優先する。
  */
-export function e2eServerEnv(dbPath: string): Record<string, string> {
+export function e2eServerEnv(
+  dbPath: string,
+  overrides: Readonly<Record<string, string>> = {},
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) env[key] = value;
@@ -27,6 +31,7 @@ export function e2eServerEnv(dbPath: string): Record<string, string> {
     "CPU_PERSONAS",
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
+    "FAKE_REVIEW_ASSESSMENT",
   ]) {
     delete env[key];
   }
@@ -39,6 +44,7 @@ export function e2eServerEnv(dbPath: string): Record<string, string> {
     OPPONENT_PROVIDER: "rulebot",
     REVIEW_PROVIDER: "fake",
     BOT_THINK_DELAY_MS: "0",
+    ...overrides,
   };
 }
 
@@ -57,8 +63,11 @@ async function healthy(): Promise<boolean> {
   }
 }
 
-/** server を起動し、/api/health が応答するまで待つ。 */
-export async function startServer(dbPath: string): Promise<RunningServer> {
+/** server を起動し、/api/health が応答するまで待つ。overrides は e2eServerEnv の既定の値への差分。 */
+export async function startServer(
+  dbPath: string,
+  overrides: Readonly<Record<string, string>> = {},
+): Promise<RunningServer> {
   // 別の server がポートを使っていると、その応答を起動の完了と取り違える（違う DB・設定で通ってしまう）ので、先に止める。
   if (await healthy()) {
     throw new Error(
@@ -69,7 +78,7 @@ export async function startServer(dbPath: string): Promise<RunningServer> {
   const child = spawn(
     process.execPath,
     ["--conditions=@proj-poker/source", "--import", "tsx", "src/index.ts"],
-    { cwd: SERVER_DIR, env: e2eServerEnv(dbPath), stdio: "pipe" },
+    { cwd: SERVER_DIR, env: e2eServerEnv(dbPath, overrides), stdio: "pipe" },
   );
   let output = "";
   child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
