@@ -177,7 +177,7 @@ Phase 6のDrill（D105）:
 
 - 元のHand / Decision / Evidenceのprovenanceを持ちます。
 - 基本の経路は、過去Handからの決定論的な変形（一要素だけ変える）です。
-- LLMでSpotを生成する場合も、Poker EngineのValidation（合法なState・Action・Chipの保存）を必ず通します。
+- Phase 6で実装するのは決定論の変形だけです（D110）。LLMでSpotを生成する経路はPhase 6の範囲外で、将来入れる場合もPoker EngineのValidation（合法なState・Action・Chipの保存）を必ず通します。
 - Drillの判断もReviewしますが、結果は通常PlayのAbility / Overall Scoreと別の系列に持ち、直接混ぜません。
 
 例:

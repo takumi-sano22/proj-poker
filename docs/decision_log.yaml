@@ -1,4 +1,4 @@
-# D01〜D109の採用済み人間判断。
+# D01〜D112の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -438,3 +438,15 @@
   choice: "CPU の KnowledgeState に Public Tournament Context を足し、2〜8 人の決定論 ICM を Chip EV と別 Evidence にする（#104・#107 の人間確定事項）"
   status: "採用済み"
   decision: "CPUのKnowledgeStateにPublic Tournament Context（残人数・Blind Level・StackのBB換算・Payout・ICM pressure等）を足す（Hidden Stack・Private Memoryの境界は変えない）。ICMは8人以下（2〜8人）向けの決定論のICM Calculatorで計算し、LLMをICMの数値の正本にしない。ICMはChip EVと別のEvidenceとしてReviewに渡し、混同しない。Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外。D53の具体化。"
+- id: D110
+  choice: "Phase 6 を #105 の推奨どおり 8 つの子 Issue に分解（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 6（Session Learning）を#112〜#119の8つの子Issueに分解し、この順に進める（1 Analytics Projection / Detailed Stats / 2 Ability EvidenceとScoringPolicy / 3 Hypothesisの状態遷移とRecent・Long-term Profile / 4 User Read・Note・Tag / 5 Session Review・Learning UI / 6 Targeted Drill / 7 Learning系のResetとProjectionの作り直し / 8 Eval・Critical E2E・README）。P6-0は#108で済んだ。Phase 6のDrillは決定論の変形だけを実装し、LLMでSpotを生成する経路はPhase 6の範囲外とする（必要になったら別Issue。その場合もEngine Validation必須。D105）。"
+- id: D111
+  choice: "Phase 6 の Projection は都度計算・保存しない（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 6のStats / Score / Profileは、Event Logとreviewsから都度計算し、保存しない（これらのProjectionのためのマイグレーションを足さない）。表示が遅くなった時点でCacheのテーブルを別Issueで足す。Weakness HypothesisはこのD111の対象外で、D104どおりSupporting / Counter Evidenceを構造化して保存する（保存の形は#114で決める）。D37・D103の具体化。"
+- id: D112
+  choice: "User Read は Event・Note / Tag は追記型テーブル（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "User Readは判断時点の情報なのでUSER_READ_RECORDEDとしてEvent Logに残し、Eventのschema_versionを8に上げる（版1〜7は読めるまま、保存済みの行は書き換えない。D76）。Note / TagはHandに属さないので、マイグレーションv5で足す追記型のテーブルに置く（既存のテーブル・列は変えない）。対象はseat idを永続Identityとみなさない参照で持つ（D105）。実装は#115。"
