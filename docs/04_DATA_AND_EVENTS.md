@@ -178,7 +178,7 @@ confidence: low
 
 AIが過去に書いた自然言語だけを正本にしないでください。
 
-Phase 7（D106）では、Observationは観察できたPublic / Showdown Evidenceだけを、provenance（Observer / Subject / Source Hand or Event / Visibility / Timestamp or Hand Number。`docs/02` INV-INFO-003）付きでappend-onlyに記録します。Learning-only Reveal・他者のHidden Cards・Future Cardsは入れません。Observer / Subjectは席・player idではなく永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）で持ちます。Hypothesis / TendencyはRaw Observationから再生成できるProjectionで、集計にrecency decayをかけます（Raw Observationは消さない）。Strategy HypothesisはCash / Tournamentのcontextごとに分けます。Guestの記録はSession終了時に破棄します。
+Phase 7（D106）では、Observationは観察できたPublic / Showdown Evidenceだけを、provenance（Observer / Subject / Source Hand or Event / Visibility / Timestamp or Hand Number。`docs/02` INV-INFO-003）付きでappend-onlyに記録します。Learning-only Reveal・他者のHidden Cards・Future Cardsは入れません。Observerは永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）で持ち、SubjectはHero・Fixed CPU・Guestのどれも表せる、席・player idに依存しない安定した参加者の参照で持ちます（形はP7-1・P7-2で決め、Phase 6のUser Note / TagのSubjectの参照と接続する）。Hypothesis / TendencyはRaw Observationから再生成できるProjectionで、集計にrecency decayをかけます（Raw Observationは消さない）。Strategy HypothesisはCash / Tournamentのcontextごとに分けます。Guestの記録はSession終了時に破棄します。
 
 ## 7. User Learning Hypothesis
 

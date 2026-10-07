@@ -65,7 +65,7 @@ CPU ObservationはProvenanceを保持します。
 - Visibility
 - Timestamp / Hand Number
 
-Phase 7では、ObserverとSubjectを席・player idではなく永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）で持ち、Observationはappend-onlyで記録します（D106。`docs/05` §5）。
+Phase 7では、Observationをappend-onlyで記録し、Observerを永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）、SubjectをHero・Fixed CPU・Guestのどれも表せる、席・player idに依存しない参加者の参照で持ちます（D106。`docs/04` §6・`docs/05` §5）。
 
 ## 3. Rule Profile
 

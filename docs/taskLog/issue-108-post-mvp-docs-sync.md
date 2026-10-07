@@ -45,4 +45,11 @@
 ## 残課題
 
 - #104 の Gate のチェックと、Documentation PR のマージは人間の確認で行う（AI は Gate を解除しない）。
-- `CLAUDE.md`・`create-issue`・`phase-planning` などの harness は、進捗管理の親を「#2」としている。Post-MVP では #104 / #105〜#107 になるため、harness の更新を別 Issue で行うかは人間の判断。
+- `CLAUDE.md`・`create-issue`・`phase-planning` などの harness は、進捗管理の親を「#2」としている。Codex の [P1] を受けて差分内の `sync-check` は直し、残りは #110 に分離した。
+
+## レビュー
+
+- 自己レビュー: 2 件（docs/04 §12 の正本の範囲・docs/07 の Confidence の限定）を 5643309 で修正。
+- Codex 1 回目（`findings`）: [P1] 2 件。どちらも CONFIRMED。
+  - Observation の Subject を `cpuProfileId` としていたため Hero を表せない → Observer は `cpuProfileId`、Subject は Hero・Fixed CPU・Guest を表せる参加者の参照にした（docs/04 §6・同じ原因の docs/02 INV-INFO-003）。
+  - `sync-check` が Issue の正本を #2 としていた → MVP は #2、Post-MVP は #104・#105〜#107 に直した。差分外の同じ原因（CLAUDE.md・create-issue 等）は #110 に分離。
