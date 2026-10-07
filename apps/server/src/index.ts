@@ -19,6 +19,7 @@ import { openDatabase } from "./db/database.js";
 import { SqliteDrillStore } from "./drill/drill-store.js";
 import { loadKb } from "./kb/index.js";
 import { SqliteHypothesisSnapshotStore } from "./learning/hypothesis-snapshot.js";
+import { SqliteLearningResetStore } from "./learning/learning-reset.js";
 import {
   buildClaudeEnv,
   createClaudeOpponentFactory,
@@ -82,6 +83,8 @@ const app = buildApp({
   hypothesisSnapshot: new SqliteHypothesisSnapshotStore(db),
   // Targeted Drill の記録（#117）は同じ DB の drills（v7）に追記する。Drill の Hand は通常の集計・Resume・Replay の一覧から除く。
   drillStore: new SqliteDrillStore(db),
+  // Learning Reset（#118）は同じ DB の learning_resets（v8）に区切りの行を足す（正本は消さない。D114）。
+  learningResetStore: new SqliteLearningResetStore(db),
   createOpponent,
   opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),

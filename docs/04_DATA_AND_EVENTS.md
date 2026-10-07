@@ -371,6 +371,21 @@ Hand / Session Historyと派生Projectionを削除します（`session_projectio
 
 Phase 6のLearning Reset（D114。実装は#118）: Stats / Score / Profileは保存しない（D111）ので、上のLearning Resetの「削除」は行の削除ではなく、追記型のテーブルに区切りの行（Resetの時刻・対象カテゴリ）を足します。Score / Profile / Hypothesisはそれぞれ、そのカテゴリを対象に含む最後のLearning Resetより後のEvidenceだけで計算し、HypothesisのSnapshot（D113）はその条件で作り直します。Event Log・`reviews`等の正本は消さず、削除拒否のTriggerも外しません。User Read / Note / TagはLearning ResetでもOpponent Memory Resetでも消しません。Hand History Delete / Factory ResetはPhase 6の範囲外です。
 
+実装（#118。`apps/server/src/learning/learning-reset.ts`・`POST /api/learning/resets`）:
+
+| カテゴリ | 上の「削除」の項目 | Resetより後のEvidenceだけで計算するもの |
+|---|---|---|
+| `score` | Ability Score | Player ProfileのRecent / Long-termのScore（Overall・Ability）と「M件中N件」、Drillの系列のScore（`docs/07` §7。暫定） |
+| `hypothesis` | User Hypothesis | Weakness Hypothesis（Profileの`hypotheses`）と、その`hypothesis_snapshots`（v6）の全行 |
+| `profile` | Generated Player Profile | 自然言語のPlayer Profile（決定論のテンプレート文。`renderProfileText`） |
+
+- **区切りの判定（決定論）**: Handの終わりのEvent（`HAND_FINISHED` / `HAND_ABORTED`）の記録時刻（`events.recorded_at`。`hands.finished_at`と同じ値）が、そのカテゴリのResetの時刻（`learning_resets.created_at`。同じカテゴリに複数あれば最も遅いもの）より**後**のHandだけを、そのカテゴリのEvidenceにします。同じ時刻のHandは入れません（Resetより前として扱う）。Reviewの作成時刻では切りません。Reset前に終わったHandをReset後にReviewしても、そのReviewはReset後のEvidenceに入りません（「M件中N件」のMとNを同じHandで数えるため）。Reset前に始まりReset後に終わったHandは入ります。
+- カテゴリは独立です（Hypothesisだけを Resetすれば、ScoreとProfileの文は前のまま）。1回のResetで複数のカテゴリを選べます。
+- **変えないもの**: Event Log・`reviews`・`reveal_reviews`・`review_followups`・`drills`・User Read（Event）・Note / Tag（`user_notes` / `user_tags`）・`session_projections`の行。Stats（D114の対象に無い）とSession Review（1 Sessionの振り返りで、HandのReviewと同じく過去の記録の見方。暫定）はResetで変えません。Replay・Hand Review・Drillの一覧もそのまま開けます。
+- **Snapshotの作り直し**: `hypothesis`を含むResetの時点と、Profileを読むたびに、Resetより後のEvidenceから作ったHypothesisで`hypothesis_snapshots`の全行を入れ替えます（D113）。前のSnapshot・前の自然言語のProfileは次の計算の入力にしません。
+- **Policy Version**: Score・Hypothesis・Profileはどれも、計算するときのPolicy（`ScoringPolicy`・`HypothesisPolicy`・`ProfilePolicy`）で正本（Event Logと`reviews`）からResetより後のHandだけを計算し直します。Policyを変えても、保存済みの結果を読み替えません。
+- **Opponent Memory Reset**（Phase 7・P7-8）は`learning_resets`に入れず、カテゴリの名前も分けます。
+
 Post-MVPのReset（D64。実装はP6-7・P7-8）: Learning ResetとOpponent Memory ResetはEvent Log・Reviewの正本を壊さず、派生Projectionは正本から作り直せるようにします。Opponent Memory Resetで、HeroのUser Read / Note / Tag（Phase 6）を誤って消さないよう、カテゴリを分けます。
 
 ## 12. Post-MVPのProjectionと永続化の方針（D102〜D106）
@@ -380,9 +395,9 @@ Phase 6以降で足すデータは、次の方針で置きます。具体的な�
 - **Projectionを正本にしない**: Handの事実の正本はEvent Log、ReviewはVersion付きで上書きしない`reviews`・`reveal_reviews`（D39・D99）のままです。Stats / Ability Evidence / Score / Hypothesis / Profile / Table Tendency / CPUのHypothesisは、そこから再計算できるProjectionとします。Projectionを保存するのは速さのためのCacheで、消しても正本から作り直せることを条件にします。Phase 6のStats / Score / Profileは都度計算し、保存しません（D111。遅くなった時点でCacheを別Issueで足す）。Weakness HypothesisはD104どおりSupporting / Counter Evidenceを構造化して保存し、保存の形はreviewsから作り直せるSnapshotのテーブル（マイグレーションv6の`hypothesis_snapshots`。D113。列は§7）です。
 - **Versionを残す**: Score・Ability Evidence・HypothesisのProjectionには、計算したPolicy（`ScoringPolicy`等）のVersionを持たせます。Policyを変えたときは、正本から計算し直します（古い結果を書き換えて正本にしない）。
 - **数と分母を持つ**: StatsはPercentageだけでなくNumerator / Denominator / Opportunity Countを持ちます（`docs/07` §3）。
-- **Stats Projection（#112）**: Engineの `projectPlayerStats`（`packages/engine/src/stats.ts`）が、HandごとのEvent LogのpublicのEventだけ（`publicEvents`）から全PlayerのStatsを都度計算します。テーブル・列・Eventの形は足していません（D111）。集計に入れるのは `HAND_FINISHED` まで済んだHandで、除くHandのid（DrillのHand。D116）を引数で受け取ります。結果には指標の定義の版（`STATS_DEFINITION_VERSION`）を付けます。指標の一覧と数え方は `docs/07` §3。
-- **Ability Evidence / Score（#113）**: serverの `computeScoreReport`（`apps/server/src/learning/score.ts`）が、HandのEvent Log（Heroの判断の数）とPass Aの`reviews`（判断ごとの最新のVersion）からAbility Evidenceを作り、`ScoringPolicy`（`phase6_provisional_v1`）で都度計算します。テーブル・列・Eventの形は足していません（D111）。Pass Bの`reveal_reviews`は入力にしません。結果は計算したPolicyのVersionと、対象の判断の数・Review済みの数（D115）を持ちます。除くHandのid（DrillのHand。D116）を引数で受け取ります。式と暫定値は `docs/07` §2。
-- **Weakness Hypothesis / Player Profile（#114）**: serverの`buildHypotheses`（`apps/server/src/learning/hypothesis.ts`）が、Scoreと同じAbility Evidence（Pass Aの`reviews`の判断ごとの最新のVersion）から`HypothesisPolicy`（`phase6_hypothesis_v1`）でHypothesisを作り、`rebuildHypothesisSnapshot`が§7の`hypothesis_snapshots`の全行を入れ替えます（マイグレーションv6で足したのはこのテーブルだけで、既存のテーブル・列・Eventの形は変えていない。D76）。Player Profile（`computePlayerProfile`。Recent / Long-term・Hypothesis）は都度計算し、保存しません（D111）。自然言語のProfileはStructured Profileからの決定論のテンプレート文（LLMを呼ばない）です。除くHandのid（DrillのHand。D116）を引数で受け取ります。式と暫定値は`docs/07` §4・§5。
+- **Stats Projection（#112）**: Engineの `projectPlayerStats`（`packages/engine/src/stats.ts`）が、HandごとのEvent LogのpublicのEventだけ（`publicEvents`）から全PlayerのStatsを都度計算します。テーブル・列・Eventの形は足していません（D111）。集計に入れるのは `HAND_FINISHED` まで済んだHandで、除くHandのid（DrillのHand。D116）を引数で受け取ります。結果には指標の定義の版（`STATS_DEFINITION_VERSION`）を付けます。Learning Reset（§11）の対象ではないので、Resetの後も全期間で数えます。指標の一覧と数え方は `docs/07` §3。
+- **Ability Evidence / Score（#113）**: serverの `computeScoreReport`（`apps/server/src/learning/score.ts`）が、HandのEvent Log（Heroの判断の数）とPass Aの`reviews`（判断ごとの最新のVersion）からAbility Evidenceを作り、`ScoringPolicy`（`phase6_provisional_v1`）で都度計算します。テーブル・列・Eventの形は足していません（D111）。Pass Bの`reveal_reviews`は入力にしません。結果は計算したPolicyのVersionと、対象の判断の数・Review済みの数（D115）を持ちます。除くHandのid（DrillのHand。D116）を引数で受け取ります。Learning Reset（§11）の区切りは呼び出し側（`LearningService`・`DrillService`）が、区切りより後に終わったHandだけを渡して当てます。式と暫定値は `docs/07` §2。
+- **Weakness Hypothesis / Player Profile（#114）**: serverの`buildHypotheses`（`apps/server/src/learning/hypothesis.ts`）が、Scoreと同じAbility Evidence（Pass Aの`reviews`の判断ごとの最新のVersion）から`HypothesisPolicy`（`phase6_hypothesis_v1`）でHypothesisを作り、`rebuildHypothesisSnapshot`が§7の`hypothesis_snapshots`の全行を入れ替えます（マイグレーションv6で足したのはこのテーブルだけで、既存のテーブル・列・Eventの形は変えていない。D76）。Player Profile（`computePlayerProfile`。Recent / Long-term・Hypothesis）は都度計算し、保存しません（D111）。自然言語のProfileはStructured Profileからの決定論のテンプレート文（LLMを呼ばない）です。除くHandのid（DrillのHand。D116）を引数で受け取ります。Learning Reset（§11）の後は、Hypothesis・Profileの文・ScoreをそれぞれのカテゴリのResetより後に終わったHandだけで作ります。式と暫定値は`docs/07` §4・§5。
 - **人が入力したもの**: User Read・Note・Tagは、Heroが入力した記録で、Projectionではありません（D112。#115で実装）。
   - **User Read**: 判断時点の情報なので`USER_READ_RECORDED`（§3。Heroだけのprivate）としてEvent Logに残します（schema_version 8）。対象の席はそのHandの`playerId`（`ACTION_TAKEN`と同じHandの中だけの参照）で、永続の対象はHandが属するSession（`hands.session_id`）と席の組から引きます。判断時点の扱いは§1、Reviewへの入れ方は§8・`docs/05` §6です。
   - **Note / Tag**: Handに属さないので、マイグレーションv5で足した追記型の`user_notes` / `user_tags`に置きます（既存のテーブル・列は変えない。D76）。書き読みは`apps/server/src/notes/note-store.ts`（`SqliteNoteStore`。DBはEvent Storeと共有）。どちらも`UPDATE` / `DELETE`をTriggerで拒否し、今のNote / Tagは行の列から作る派生（保存しない）です。
@@ -394,5 +409,8 @@ Phase 6以降で足すデータは、次の方針で置きます。具体的な�
   - `drills`: `drill_id`（PK）・`created_at`・`source_hand_id`（`hands`を参照）・`source_decision_index`・`source_review_id`（`reviews`を参照。挿入のTrigger `drills_source_review`で、その元のHand・判断のPass AのReviewであることを確かめる）・`variant_kind`（変形の種類。`effective_stack` / `bet_size` / `opponent_tendency`。Policyの Version付きの暫定値なのでCHECKで固定しない）・`variant`（変形の値のJSON object）・`policy_version`（`phase6_drill_v1`）・`seed`（0以上の整数）・`drill_hand_id`（一意。元のHandと違う）。`UPDATE` / `DELETE`はTriggerで拒否します。
   - 行はDrillのHandを始める前に足します（Handが保存されるより先に、通常の集計・Resumeから除く対象に入れる）。そのため`drill_hand_id`は`hands`を参照しません（途中で止まったDrillのHandは保存されず、行だけが残る）。同じ元の判断・`variant`・`seed`・`policy_version`から、同じSpotを作り直せます。
   - Event Storeの`listHands(limit, exclude)`（Replayの一覧）と`latestSessionProjection(exclude)`（Resume）は、`drills`のHandと、最後のHandがそのHandのSession（Drillの専用のSession）を除きます（SQLiteは`json_each`で除く。`session_projections`の行・列は変えない）。
+- **Learning Reset（#118）**: マイグレーションv8で足した追記型の`learning_resets`に、Resetの区切りの行を足します（既存のテーブル・列・行は変えない。D76。マイグレーションv8はD114の人間判断の範囲）。意味と区切りの判定は§11です。
+  - `learning_resets`: `seq`（追記の順。INTEGER PRIMARY KEY）・`reset_id`（1回のReset。カテゴリごとの行が同じ値）・`created_at`（Resetの時刻。ISO 8601・UTC。1回のResetの行は同じ値）・`category`（`score` / `hypothesis` / `profile`。CHECK）。`(reset_id, category)`は一意で、1回のResetの行は1トランザクションで足します。`UPDATE` / `DELETE`はTriggerで拒否します。
+  - API（`docs/03` §1）: `POST /api/learning/resets`（`{ categories }`）が区切りを足し、`GET /api/learning/profile`の応答の`resets`（カテゴリごとの最後のResetの時刻）と`GET /api/drills`の`score.since`で区切りを返します。
 - **Phase 7のMemory**: CPUのObservationはappend-onlyのRaw Evidenceとして持ち、Hypothesis / TendencyはProjectionです（§6。D106）。TiltはSession終了でResetするtransientな状態で、Persona / Long-term Memoryと分けて持ちます（D107）。
 - **マイグレーション**: 既存のテーブル・列・保存済みのEventは書き換えず、足すだけにします（D76）。Eventの形を変えるときはschema_versionを上げてupcastを足します。

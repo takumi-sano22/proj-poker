@@ -325,6 +325,32 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'drills is append-only');
   END;
   `,
+  // v8: Learning Reset の区切り（D64・D114・#118）。Reset は行の削除ではなく、ここへ区切りの行を足す（Event Log・reviews 等の正本は消さず、
+  // 削除拒否の Trigger も外さない）。Score / Profile / Hypothesis は、そのカテゴリの最後の行の created_at より後に終わった Hand の
+  // Evidence だけで計算する（learning/learning-reset.ts）。1 回の Reset はカテゴリごとに 1 行で、同じ reset_id・同じ created_at を持つ。
+  // カテゴリは D114 の 3 つ（Opponent Memory Reset〔P7-8〕はこのテーブルに入れない）。既存のテーブル・列・行は変えない（D76）。
+  // 追記だけで、UPDATE / DELETE は Trigger で拒否する。マイグレーション v8 は D114 の人間判断の範囲。
+  `
+  CREATE TABLE learning_resets (
+    seq        INTEGER PRIMARY KEY,
+    reset_id   TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    category   TEXT NOT NULL CHECK (category IN ('score', 'profile', 'hypothesis')),
+    UNIQUE (reset_id, category)
+  ) STRICT;
+
+  CREATE TRIGGER learning_resets_append_only
+  BEFORE UPDATE ON learning_resets
+  BEGIN
+    SELECT RAISE(ABORT, 'learning_resets is append-only');
+  END;
+
+  CREATE TRIGGER learning_resets_no_delete
+  BEFORE DELETE ON learning_resets
+  BEGIN
+    SELECT RAISE(ABORT, 'learning_resets is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

@@ -22,6 +22,7 @@ import {
 } from "../lib/learning.js";
 import { BbDisplayProvider } from "./BbDisplay.js";
 import type { DrillResults } from "../lib/drill-api.js";
+import { LearningReset } from "./LearningReset.js";
 import {
   DrillResultsBody,
   ProfileBody,
@@ -265,6 +266,7 @@ const PROFILE: ProfileResponse = {
     ],
   },
   text: "Review 済みの判断 12 件（対象の判断 40 件中）から作った Profile です。",
+  resets: { score: null, hypothesis: null, profile: null },
   heroStats: { version: "phase6_stats_v1", hands: 20, overall: STATS },
 };
 
@@ -288,6 +290,52 @@ describe("ProfileBody", () => {
     expect(html).toContain("裏付けあり");
     expect(html).toContain("支持 2 件・反証 1 件");
     expect(html).toContain("Review 済みの判断 12 件");
+  });
+
+  it("Learning Reset の後は、Reset したカテゴリにだけ区切りの時刻を添える（Stats は全期間のまま）", () => {
+    const html = renderToStaticMarkup(
+      <ProfileBody
+        response={{
+          ...PROFILE,
+          resets: {
+            score: "2026-10-07T03:00:00.000Z",
+            hypothesis: null,
+            profile: "2026-10-07T03:00:00.000Z",
+          },
+        }}
+      />,
+    );
+    expect(html).toContain("Reset 後の判断 40 件中 12 件を Review 済み");
+    expect(html).toContain("Reset 後（Long-term）");
+    expect(html).toContain("Weakness Hypothesis・全期間");
+    expect(
+      html.match(/の Learning Reset より後に終わった Hand から数えています/g),
+    ).toHaveLength(2);
+    expect(html).toContain("Hero の Stats（全期間）");
+  });
+});
+
+describe("LearningReset", () => {
+  it("項目を選んで数え直す入口と、記録が消えないこと・最後の Reset の時刻を出す（確認は押すまで出さない）", () => {
+    const html = renderToStaticMarkup(
+      <LearningReset
+        resets={{
+          score: "2026-10-07T03:00:00.000Z",
+          hypothesis: null,
+          profile: null,
+        }}
+        onDone={noop}
+      />,
+    );
+    expect(html).toContain("Learning Reset");
+    expect(html).toContain(
+      "Hand の記録・Review・Note / Tag・User Read・Stats は消えず",
+    );
+    expect(html.match(/type="checkbox" checked=""/g)).toHaveLength(3);
+    expect(html).toContain("Score: ");
+    expect(html).not.toContain("弱点の仮説（Weakness Hypothesis）: ");
+    expect(html).toContain("数え直す…");
+    expect(html).not.toContain("取り消せません");
   });
 });
 
@@ -326,6 +374,7 @@ describe("DrillResultsBody", () => {
     ],
     score: {
       policyVersion: "phase6_provisional_v1",
+      since: null,
       decisions: { total: 1, reviewed: 1 },
       overall: score(100, 1),
       abilities: [],
@@ -352,5 +401,21 @@ describe("DrillResultsBody", () => {
     );
     expect(html).toContain("終わった Drill はまだありません");
     expect(html).not.toContain("点");
+  });
+
+  it("score の Learning Reset の後は、区切りの時刻を添える", () => {
+    const base = results();
+    const html = renderToStaticMarkup(
+      <DrillResultsBody
+        results={{
+          ...base,
+          score: { ...base.score, since: "2026-10-07T03:00:00.000Z" },
+        }}
+        onOpenReview={noop}
+      />,
+    );
+    expect(html).toContain(
+      "の Learning Reset より後に終わった Hand から数えています",
+    );
   });
 });

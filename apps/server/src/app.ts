@@ -23,6 +23,10 @@ import {
   InMemoryHypothesisSnapshotStore,
   type HypothesisSnapshotStore,
 } from "./learning/hypothesis-snapshot.js";
+import {
+  InMemoryLearningResetStore,
+  type LearningResetStore,
+} from "./learning/learning-reset.js";
 import { LearningService } from "./learning/learning-service.js";
 import { InMemoryNoteStore, type NoteStore } from "./notes/note-store.js";
 import { ReplayService } from "./replay.js";
@@ -86,6 +90,8 @@ export interface AppOptions {
   readonly hypothesisSnapshot?: HypothesisSnapshotStore;
   /** Targeted Drill の記録（#117）。起動時は SQLite（v7）、省略時のメモリ内実装はテスト用。 */
   readonly drillStore?: DrillStore;
+  /** Learning Reset の区切り（#118・D114）。起動時は SQLite（v8）、省略時のメモリ内実装はテスト用。 */
+  readonly learningResetStore?: LearningResetStore;
 }
 
 // listen と分けて組み立てだけを export する。テストから起動せずに叩けるようにするため。
@@ -173,6 +179,9 @@ export function buildApp(options: AppOptions = {}) {
 
   // Session Review・Player Profile（#116）は、同じ Event Store と Pass A の reviews を読むだけ（Review を作らない。D115）。
   // Pass B の Store は渡さない（Hindsight を Score・Profile に混ぜない）。
+  // Learning Reset（#118・D114）は区切りの行を足すだけで、正本（Event Log・reviews・Note / Tag）を消さない。
+  const learningResets =
+    options.learningResetStore ?? new InMemoryLearningResetStore();
   registerLearningRoutes(
     app,
     new LearningService({
@@ -181,6 +190,7 @@ export function buildApp(options: AppOptions = {}) {
       heroId,
       hypotheses:
         options.hypothesisSnapshot ?? new InMemoryHypothesisSnapshotStore(),
+      resets: learningResets,
       excludeHandIds: drillHandIds,
     }),
   );
@@ -198,6 +208,8 @@ export function buildApp(options: AppOptions = {}) {
       table: setup.table,
       nextSeed,
       nextHandId,
+      // Drill の系列の Score も、通常の Score と同じ Learning Reset のカテゴリ（score）で区切る（D114。暫定）。
+      scoreSince: () => learningResets.boundaries().score,
     }),
     orchestrator,
   );

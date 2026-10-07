@@ -3009,6 +3009,70 @@ input {
   white-space: pre-line;
 }
 
+/* Learning Reset の入口（#118）。取り消せない操作なので、確認の面だけ危険色の縁で区切る（確定 Button は .btn--danger） */
+.learning-reset__last {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.learning-reset__options {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.learning-reset__options:disabled {
+  opacity: 0.6;
+}
+
+.learning-reset__legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.learning-reset__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 13px;
+}
+
+.learning-reset__option > span {
+  display: grid;
+  min-width: 0;
+}
+
+.learning-reset__confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-danger-600);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  font-size: 13px;
+}
+
+.learning-reset__confirm p {
+  margin: 0;
+}
+
+.learning-reset__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 359px) {
   .learning-facts__list {
     grid-template-columns: repeat(2, minmax(0, 1fr));

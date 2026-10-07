@@ -11,6 +11,7 @@ import type {
   AbilityDimension,
   HypothesisStatus,
   HypothesisType,
+  LearningResetCategory,
   ScoreConfidence,
   ScoreValue,
   TrendDirection,
@@ -115,6 +116,48 @@ export function sampleCaveat(
     case "high":
       return "数えた判断が多く、Score は比較的安定しています。";
   }
+}
+
+/** Learning Reset のカテゴリの表記（D114）。何が数え直しになるかを書く。 */
+export const RESET_CATEGORY_LABELS: Readonly<
+  Record<
+    LearningResetCategory,
+    { readonly label: string; readonly detail: string }
+  >
+> = {
+  score: {
+    label: "Score",
+    detail: "Player Profile の直近・全期間の Score と、Drill の結果の Score",
+  },
+  hypothesis: {
+    label: "弱点の仮説（Weakness Hypothesis）",
+    detail: "Review から作る弱点の仮説",
+  },
+  profile: {
+    label: "まとめ（Player Profile の文）",
+    detail: "Player Profile の「まとめ」の文",
+  },
+};
+
+const resetAtFormat = new Intl.DateTimeFormat("ja-JP", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** Learning Reset の時刻（この端末の時刻帯の 年/月/日 時:分）。読めない値はそのまま返す。 */
+export function resetAtText(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : resetAtFormat.format(date);
+}
+
+/** Learning Reset の区切りの注記。Reset していなければ null（全期間）。 */
+export function resetSinceNote(since: string | null): string | null {
+  return since === null
+    ? null
+    : `${resetAtText(since)} の Learning Reset より後に終わった Hand から数えています。`;
 }
 
 /** Session の長さ（分。1 分未満は「1 分未満」）。 */

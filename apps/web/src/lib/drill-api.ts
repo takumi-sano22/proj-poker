@@ -54,6 +54,8 @@ export interface DrillResults {
   /** 通常の Score と別の系列（練習した判断だけ）。 */
   readonly score: {
     readonly policyVersion: string;
+    /** score の Learning Reset の時刻（無ければ null）。これより後に終わった Drill の Hand だけを数える。 */
+    readonly since: string | null;
     readonly decisions: { readonly total: number; readonly reviewed: number };
     readonly overall: ScoreValue;
     readonly abilities: readonly AbilityScore[];
