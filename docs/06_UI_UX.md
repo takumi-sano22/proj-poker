@@ -245,3 +245,16 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 - Rake Profile
 - Model Role Mapping
 - Learning / Real-Play Mode
+
+## 14. Session Review / Learning
+
+実装（#116・D16・D32・D34・D49・D115・`docs/07` §2〜§6）: Sessionが終わったとき（HeroのBust・CPUが全員Bust・AI障害でSession終了）の案内に「この Session を振り返る」を置き、Session Review（`components/SessionReviewScreen.tsx`）を開きます。広い画面は卓の中央、狭い画面は画面下のHeroの欄（§1）で、「新しい Session を始める」と並べます。戻るのはヘッダーの「卓に戻る」です。Play中のHUDは出しません（D32）。
+
+- **判断の質を主に置く**: 先頭は「判断の質（Decision Quality）」の面で、「この Session の判断 M 件中 N 件を Review 済み」を必ず出し、Overallの点数は確度と件数を添えて出します（数えられる判断が無ければ点数を出さない）。段階評価の内訳は色と文字で、件数の注意（Confidence / Sample Caveat）を件数に応じた文で出します。未Reviewの判断をまとめてReviewするButtonは置かず、Strength / Leak・Important Handsの行からそのHand（判断）のReviewを開いて1つずつ作ります（D115）。
+- **収支は事実の欄（補助）**: Hand数・時間・収支を判断の質の下に小さく並べます。収支は実額が正本で符号つき、BBはBB補助表示の設定で消せる補助です（D49）。「収支は短期の結果で運を含み、上手・下手は判断の質で見る」と添えます。
+- **Ability**: Abilityごとに点数・確度・件数・傾向を1行で出し、Live MechanicsはPokerの判断と別のScoreだと示します。
+- **Strength / Leak・Important Hands**: Hand の番号・Street・Action・段階評価（Important HandsはHeroの札・Important Spotの理由・Review済みの数）を出します。勝ち負けでは選ばず、結果は出しません。
+- **Stats**: Hero自身の代表Stats（VPIP・PFR・3-bet等）を、割合と分子 / 分母で出します（機会が無ければ割合を出さない）。他Playerの統計は出しません。
+- **Recommended Drill**: 候補（Leakの最初の判断）と、押せない「Drill を始める」と「準備中」を出します（Drillは#117）。
+- **Player Profile**: 「直近 N 件（Recent）」「全期間（Long-term）」のタブで、Review済みの数・Overall・Abilityを出し分け、全期間のWeakness Hypothesis（状態の文字と支持 / 反証の件数）・決定論の文のまとめ・全期間のHeroのStatsを続けます。
+- Hidden Persona・CPUのPrivateな状態・他者の札・Learning-only Revealは画面に届きません（APIが返さない）。値はすべて`ui-design-recipes`の既存トークン（Reviewの面・段階評価の色・`.spot-row`・`.pass-tab`）で描き、横スクロールが出ないこと・Buttonが覆われないことを1280×900・375×667・320×568で確かめました。
