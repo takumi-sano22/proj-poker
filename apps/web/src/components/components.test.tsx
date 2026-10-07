@@ -16,7 +16,7 @@ import { DealerFeedback } from "./DealerFeedback.js";
 import { FastForward } from "./FastForward.js";
 import { HandLog } from "./HandLog.js";
 import { OutageDialog } from "./OutageDialog.js";
-import { Table } from "./Table.js";
+import { Seat, Table } from "./Table.js";
 import { Term, VocabBody } from "./Vocabulary.js";
 
 const noop = () => {};
@@ -307,6 +307,64 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     expect(buttons.length).toBeGreaterThan(0);
     expect(buttons.every((b) => b.includes("disabled"))).toBe(true);
+  });
+});
+
+describe("Table の Bet の札と中央の並べ方（狭い画面の配置。#5）", () => {
+  const dir = { x: 0, y: -1 };
+  const renderSeat = (betInside: boolean) =>
+    renderToStaticMarkup(
+      <Seat
+        seat={seat("cpu1", { streetCommitted: 30 })}
+        direction={dir}
+        name="CPU 1"
+        blind={undefined}
+        isHero={false}
+        isActor={false}
+        bigBlind={2}
+        showBet
+        betInside={betInside}
+      />,
+    );
+
+  it("Bet の札は、卓の上（既定）か席の面の中（狭い画面）のどちらか 1 か所にだけ描き、実額は同じように出す", () => {
+    const onTable = renderSeat(false);
+    expect(onTable.match(/class="bet"/g)).toHaveLength(1);
+    expect(onTable).toContain("--dir-x");
+    expect(onTable).not.toContain("bet--inside");
+    expect(onTable).toContain('aria-label="CPU 1 のベット 30"');
+    const inside = renderSeat(true);
+    expect(inside.match(/bet bet--inside/g)).toHaveLength(1);
+    expect(inside).toContain('aria-label="CPU 1 のベット 30"');
+    // 席の面（.seat__plate）の中にあり、卓の上の Bet は無い
+    expect(inside.indexOf("bet--inside")).toBeGreaterThan(
+      inside.indexOf("seat__plate"),
+    );
+    expect(inside).not.toContain('class="bet"');
+    expect(inside).toContain('amount__real">30<');
+  });
+
+  it("中央の高さに席の面が来る席数（4・5・7・8 人）だけ、中央を縦に積む印（data-center-stacked）を付ける", () => {
+    const view = preflopHeroToAct();
+    const withSeats = (n: number) =>
+      renderToStaticMarkup(
+        <Table
+          view={{
+            ...view,
+            seats: [
+              view.seats[0]!,
+              ...Array.from({ length: n - 1 }, (_, i) => seat(`cpu${i + 1}`)),
+            ],
+          }}
+          nameOf={nameOf}
+        />,
+      );
+    for (const n of [4, 5, 7, 8]) {
+      expect(withSeats(n), `${n} 人`).toContain("data-center-stacked");
+    }
+    for (const n of [2, 3, 6]) {
+      expect(withSeats(n), `${n} 人`).not.toContain("data-center-stacked");
+    }
   });
 });
 
