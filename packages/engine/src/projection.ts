@@ -136,6 +136,14 @@ export function visibleEvents(
   return events.filter((e) => isVisibleTo(e, viewerId));
 }
 
+/**
+ * public の Event だけを返す（卓に座った全員が見聞きする事実）。全 Player の Stats（stats.ts）の入力に使う。
+ * visibleEvents と同じ whitelist の考え方で、どの viewer 宛ての private も、engine / system の Event も含めない。
+ */
+export function publicEvents(events: readonly HandEvent[]): HandEvent[] {
+  return events.filter((e) => e.visibility.type === "public");
+}
+
 export function projectHeroView(
   events: readonly HandEvent[],
   heroId: string,
