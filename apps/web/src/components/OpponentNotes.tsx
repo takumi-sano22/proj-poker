@@ -71,6 +71,8 @@ export function OpponentNotes({
   const isLatest = (requested: string, n: number): boolean =>
     issued.current.get(requested) === n;
   const [noteText, setNoteText] = useState("");
+  // 送った Note の noteId。失敗した追加の再送は同じ noteId で送り、応答だけが失われていても Note を増やさない。
+  const noteDraftId = useRef<string | null>(null);
   const [tagText, setTagText] = useState("");
   const key = keyOf(handId, playerId);
 
@@ -130,7 +132,9 @@ export function OpponentNotes({
   const submitNote = async (e: FormEvent) => {
     e.preventDefault();
     if (noteText.trim() === "") return;
-    if (await run(() => addNote(handId, playerId, noteText.trim()))) {
+    const noteId = (noteDraftId.current ??= crypto.randomUUID());
+    if (await run(() => addNote(handId, playerId, noteId, noteText.trim()))) {
+      noteDraftId.current = null;
       setNoteText("");
     }
   };
@@ -161,7 +165,11 @@ export function OpponentNotes({
           <select
             className="opponent-notes__select"
             value={playerId}
-            onChange={(e) => setChosen(e.target.value)}
+            onChange={(e) => {
+              // 席を変えたら、書きかけの Note は別の席の Note として送る（noteId を作り直す）。
+              noteDraftId.current = null;
+              setChosen(e.target.value);
+            }}
           >
             {cpus.map((p) => (
               <option key={p.playerId} value={p.playerId}>
@@ -254,7 +262,11 @@ export function OpponentNotes({
             placeholder="例: River の大きい Bet は Value 寄り"
             maxLength={NOTE_BODY_MAX}
             value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
+            onChange={(e) => {
+              // 本文を変えたら別の Note として送る。
+              noteDraftId.current = null;
+              setNoteText(e.target.value);
+            }}
           />
           <button
             type="submit"

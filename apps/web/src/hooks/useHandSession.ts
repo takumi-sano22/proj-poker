@@ -67,6 +67,7 @@ export interface HandSession {
    * 操作の送信と同じ二重送信の止め方（pending）を使う（読みで Log が進むので、読みの応答の前に操作を送ると stale_view になる）。
    */
   readonly recordRead: (
+    lastSeq: number,
     targetPlayerId: string | null,
     text: string,
   ) => Promise<boolean>;
@@ -78,6 +79,14 @@ function readNoticeOf(error: unknown): SessionNotice {
   if (kind === "not_actor" || kind === "hand_complete") {
     return {
       message: "読みは Hero の手番の間だけ記録できます。",
+      retryable: false,
+    };
+  }
+  if (kind === "stale_view") {
+    // 同じ読みの再送は最初の lastSeq で送るので、前の送信が届いて記録済みならここに来る。
+    return {
+      message:
+        "読みはすでに記録されているかもしれません。進行ログを確かめてください。",
       retryable: false,
     };
   }
@@ -365,7 +374,11 @@ export function useHandSession(): HandSession {
   );
 
   const recordRead = useCallback(
-    async (targetPlayerId: string | null, text: string): Promise<boolean> => {
+    async (
+      lastSeq: number,
+      targetPlayerId: string | null,
+      text: string,
+    ): Promise<boolean> => {
       if (handId === null || inFlight.current) return false;
       const sentFor = handId;
       inFlight.current = true;
@@ -373,7 +386,12 @@ export function useHandSession(): HandSession {
       setNotice(null);
       lastFailed.current = null;
       try {
-        const res = await recordUserRead(sentFor, targetPlayerId, text);
+        const res = await recordUserRead(
+          sentFor,
+          lastSeq,
+          targetPlayerId,
+          text,
+        );
         accept(res.view);
         return true;
       } catch (error: unknown) {

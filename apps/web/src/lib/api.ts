@@ -228,15 +228,17 @@ export function chooseOutage(
 /**
  * Hero の User Read（判断の前の読み・意図。D112）を記録する。Hero の手番の間だけ受け付けられる（それ以外は not_actor）。
  * targetPlayerId は読みの対象の席。相手を特定しない読み・意図は null。卓の状態は変わらず、読みは view.log に入る。
+ * lastSeq は最初に送ったときに見ていた View の値（応答だけが失われた記録の再送を、サーバーが stale_view で弾く）。
  */
 export function recordUserRead(
   handId: string,
+  lastSeq: number,
   targetPlayerId: string | null,
   text: string,
 ): Promise<{ readonly view: HeroView }> {
   return postJson<{ readonly view: HeroView }>(
     `/api/hands/${encodeURIComponent(handId)}/reads`,
-    { targetPlayerId, text },
+    { lastSeq, targetPlayerId, text },
   );
 }
 

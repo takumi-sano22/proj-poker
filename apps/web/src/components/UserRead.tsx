@@ -2,14 +2,16 @@
 // 閉じている間は Button 1 つにして、Hero 欄を低く保つ。読みの当たり外れ（相手の札・CPU の Persona との照合）は Play 中に出さない（D105）。
 // 記録した読みは進行ログに Hero 自身の行として出て、Review（Pass A）の根拠に入る。CPU には伝わらない。
 import { USER_READ_TEXT_MAX, type HeroView } from "@proj-poker/engine";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { lastSeqOf } from "../lib/view-model.js";
 
 interface UserReadProps {
   readonly view: HeroView;
   readonly nameOf: (playerId: string) => string;
   readonly disabled: boolean;
-  /** 記録できたら true（フォームを閉じる）。 */
+  /** 記録できたら true（フォームを閉じる）。lastSeq は最初に送ったときに見ていた View の値。 */
   readonly onRecord: (
+    lastSeq: number,
     targetPlayerId: string | null,
     text: string,
   ) => Promise<boolean>;
@@ -27,6 +29,9 @@ export function UserReadToggle({
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState(NO_TARGET);
   const [text, setText] = useState("");
+  // 同じ読みの再送は、最初に送ったときの lastSeq のまま送る（応答だけが失われていたら、サーバーが stale_view で弾いて
+  // 同じ読みを 2 回残さない）。対象・本文を変えたら新しい読みとして送り直す。
+  const sentAt = useRef<number | null>(null);
   // 対象にできるのは、Fold していない相手の席だけ。
   const opponents = view.seats.filter(
     (s) => s.playerId !== view.viewerId && !s.folded,
@@ -48,11 +53,14 @@ export function UserReadToggle({
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (text.trim() === "") return;
+    sentAt.current ??= lastSeqOf(view);
     const recorded = await onRecord(
+      sentAt.current,
       target === NO_TARGET ? null : target,
       text.trim(),
     );
     if (!recorded) return;
+    sentAt.current = null;
     setText("");
     setTarget(NO_TARGET);
     setOpen(false);
@@ -69,7 +77,10 @@ export function UserReadToggle({
         <select
           className="user-read__select"
           value={target}
-          onChange={(e) => setTarget(e.target.value)}
+          onChange={(e) => {
+            sentAt.current = null;
+            setTarget(e.target.value);
+          }}
         >
           <option value={NO_TARGET}>相手なし（意図）</option>
           {opponents.map((s) => (
@@ -86,7 +97,10 @@ export function UserReadToggle({
         placeholder="例: River の大きい Bet は Value が多そう"
         maxLength={USER_READ_TEXT_MAX}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          sentAt.current = null;
+          setText(e.target.value);
+        }}
       />
       <div className="user-read__actions">
         <button

@@ -40,11 +40,16 @@ const tagParamsSchema = {
   },
 } as const;
 
+// noteId はクライアントが作る UUID（応答が失われた追加の再送を冪等にする。同じ noteId の 2 回目は行を足さない）。
 const noteBodySchema = {
   type: "object",
-  required: ["body"],
+  required: ["noteId", "body"],
   additionalProperties: false,
   properties: {
+    noteId: {
+      type: "string",
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    },
     body: { type: "string", minLength: 1, maxLength: NOTE_BODY_MAX },
   },
 } as const;
@@ -56,12 +61,14 @@ const tagBodySchema = {
   properties: { tag: { type: "string", minLength: 1, maxLength: TAG_MAX } },
 } as const;
 
-type NoteErrorKind = "hand_not_found" | "invalid_input" | "not_found";
+type NoteErrorKind =
+  "hand_not_found" | "invalid_input" | "not_found" | "conflict";
 
 const STATUS_BY_ERROR: Record<NoteErrorKind, number> = {
   hand_not_found: 404,
   invalid_input: 422,
   not_found: 404,
+  conflict: 409,
 };
 
 function sendError(reply: FastifyReply, kind: NoteErrorKind, message: string) {
@@ -97,7 +104,7 @@ export function registerNoteRoutes(
   );
 
   // Note を足す（追記）。
-  app.post<{ Params: SubjectParams; Body: { body: string } }>(
+  app.post<{ Params: SubjectParams; Body: { noteId: string; body: string } }>(
     "/api/hands/:handId/players/:playerId/notes",
     { schema: { params: subjectParamsSchema, body: noteBodySchema } },
     (request, reply) => {
@@ -107,7 +114,9 @@ export function registerNoteRoutes(
       if (body === null) {
         return sendError(reply, "invalid_input", "Note の本文が空白だけ");
       }
-      store.addNote(subject, body);
+      if (store.addNote(subject, body, request.body.noteId) === null) {
+        return sendError(reply, "conflict", "その noteId は別の席の Note");
+      }
       return reply.code(201).send(store.notesOf(subject));
     },
   );

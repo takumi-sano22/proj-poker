@@ -351,7 +351,11 @@ describe("Replay API（Hero の User Read。D112）", () => {
       const read = await app.inject({
         method: "POST",
         url: `/api/hands/${started.handId}/reads`,
-        payload: { targetPlayerId: null, text: `判断 ${guard} の前の読み` },
+        payload: {
+          lastSeq: lastSeq(view),
+          targetPlayerId: null,
+          text: `判断 ${guard} の前の読み`,
+        },
       });
       expect(read.statusCode).toBe(200);
       view = read.json<{ view: HeroView }>().view;

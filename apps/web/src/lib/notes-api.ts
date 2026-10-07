@@ -29,12 +29,17 @@ export function fetchSubjectNotes(
   return getJson<SubjectNotes>(`${base(handId, playerId)}/notes`);
 }
 
+/** noteId はクライアントが作る UUID。同じ Note の再送は同じ noteId で送る（サーバーが 2 回目を足さない）。 */
 export function addNote(
   handId: string,
   playerId: string,
+  noteId: string,
   body: string,
 ): Promise<SubjectNotes> {
-  return postJson<SubjectNotes>(`${base(handId, playerId)}/notes`, { body });
+  return postJson<SubjectNotes>(`${base(handId, playerId)}/notes`, {
+    noteId,
+    body,
+  });
 }
 
 export function deleteNote(

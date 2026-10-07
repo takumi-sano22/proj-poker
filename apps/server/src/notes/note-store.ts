@@ -30,7 +30,15 @@ export interface SubjectNotes {
 }
 
 export interface NoteStore {
-  addNote(subject: SubjectRef, body: string): SubjectNote;
+  /**
+   * Note を足す。noteId を渡すと、その ID の Note がすでにあれば行を足さない（応答が失われた追加の再送を冪等にする）。
+   * 同じ対象の Note ならその最初の revision を返し、別の対象の Note の ID なら null（何も足さない）。
+   */
+  addNote(
+    subject: SubjectRef,
+    body: string,
+    noteId?: string,
+  ): SubjectNote | null;
   /** Note を消す（tombstone の行を足す）。その対象の今ある Note でなければ false（行を足さない）。 */
   deleteNote(subject: SubjectRef, noteId: string): boolean;
   /** Tag を付ける。もう付いていれば行を足さない。 */
@@ -125,20 +133,29 @@ export class InMemoryNoteStore implements NoteStore {
     this.newNoteId = options.newNoteId ?? randomUUID;
   }
 
-  addNote(subject: SubjectRef, body: string): SubjectNote {
+  addNote(
+    subject: SubjectRef,
+    body: string,
+    noteId?: string,
+  ): SubjectNote | null {
+    const normalized = requireBody(body);
+    if (noteId !== undefined) {
+      const key = subjectKey(subject);
+      for (const [k, rows] of this.noteRows) {
+        const first = rows.find((r) => r.noteId === noteId);
+        if (first === undefined) continue;
+        return k === key ? firstRevisionOf(first) : null;
+      }
+    }
     const row: NoteRow = {
       seq: ++this.seq,
-      noteId: this.newNoteId(),
+      noteId: noteId ?? this.newNoteId(),
       revision: 1,
       createdAt: this.now().toISOString(),
-      body: requireBody(body),
+      body: normalized,
     };
     rowsOf(this.noteRows, subjectKey(subject)).push(row);
-    return {
-      noteId: row.noteId,
-      body: row.body ?? "",
-      createdAt: row.createdAt,
-    };
+    return firstRevisionOf(row);
   }
 
   deleteNote(subject: SubjectRef, noteId: string): boolean {
@@ -219,6 +236,21 @@ interface NoteRowSql {
   body: string | null;
 }
 
+function toNoteRow(r: NoteRowSql): NoteRow {
+  return {
+    seq: r.seq,
+    noteId: r.note_id,
+    revision: r.revision,
+    createdAt: r.created_at,
+    body: r.body,
+  };
+}
+
+/** 最初の revision の行を、返す Note の形にする（最初の revision は必ず本文を持つ）。 */
+function firstRevisionOf(row: NoteRow): SubjectNote {
+  return { noteId: row.noteId, body: row.body ?? "", createdAt: row.createdAt };
+}
+
 interface TagRowSql {
   seq: number;
   tag: string;
@@ -231,6 +263,7 @@ export class SqliteNoteStore implements NoteStore {
   private readonly insertTag: StatementSync;
   private readonly selectNotes: StatementSync;
   private readonly selectTags: StatementSync;
+  private readonly selectFirstRevision: StatementSync;
   private readonly now: () => Date;
   private readonly newNoteId: () => string;
 
@@ -252,21 +285,41 @@ export class SqliteNoteStore implements NoteStore {
     this.selectTags = db.prepare(
       "SELECT seq, tag, op FROM user_tags WHERE subject_key = ? ORDER BY seq",
     );
+    this.selectFirstRevision = db.prepare(
+      "SELECT seq, note_id, revision, created_at, body, subject_key FROM user_notes WHERE note_id = ? AND revision = 1",
+    );
   }
 
-  addNote(subject: SubjectRef, body: string): SubjectNote {
+  addNote(
+    subject: SubjectRef,
+    body: string,
+    noteId?: string,
+  ): SubjectNote | null {
     const normalized = requireBody(body);
-    const noteId = this.newNoteId();
-    const createdAt = this.now().toISOString();
-    this.insertNote.run(
-      noteId,
-      1,
-      createdAt,
-      subjectKey(subject),
-      JSON.stringify(subject),
-      normalized,
-    );
-    return { noteId, body: normalized, createdAt };
+    const key = subjectKey(subject);
+    // 同じ noteId の有無の確認と追記を 1 つの書き込みトランザクションにする（UNIQUE (note_id, revision) でも守る）。
+    return inTransaction(this.db, () => {
+      if (noteId !== undefined) {
+        const first = this.selectFirstRevision.get(noteId) as
+          (NoteRowSql & { subject_key: string }) | undefined;
+        if (first !== undefined) {
+          return first.subject_key === key
+            ? firstRevisionOf(toNoteRow(first))
+            : null;
+        }
+      }
+      const id = noteId ?? this.newNoteId();
+      const createdAt = this.now().toISOString();
+      this.insertNote.run(
+        id,
+        1,
+        createdAt,
+        key,
+        JSON.stringify(subject),
+        normalized,
+      );
+      return { noteId: id, body: normalized, createdAt };
+    });
   }
 
   deleteNote(subject: SubjectRef, noteId: string): boolean {
@@ -315,13 +368,7 @@ export class SqliteNoteStore implements NoteStore {
   private noteRowsOf(subject: SubjectRef): NoteRow[] {
     return (
       this.selectNotes.all(subjectKey(subject)) as unknown as NoteRowSql[]
-    ).map((r): NoteRow => ({
-      seq: r.seq,
-      noteId: r.note_id,
-      revision: r.revision,
-      createdAt: r.created_at,
-      body: r.body,
-    }));
+    ).map(toNoteRow);
   }
 
   private insertTagRow(

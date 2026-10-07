@@ -2,6 +2,7 @@
 // User Read が Hero の手番の間だけ記録でき、Hero だけの private の Event として残ること、Note / Tag が Session の参加者ごとに
 // 追記で保存されること、どちらも CPU の入力（OpponentInput）に入らないこと（不変条件 2・D105）を確かめる。
 import type { HandEvent, HeroView, PlayerAction } from "@proj-poker/engine";
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
 import { PHASE1_TABLE_SETUP } from "../config.js";
@@ -14,6 +15,7 @@ const CPU = PHASE1_TABLE_SETUP.players.find((p) => p.kind === "cpu")
   ?.playerId as string;
 const READ_TEXT = "読みのテキスト-7f3a";
 const NOTE_TEXT = "ノートのテキスト-91c2";
+const NOTE_ID = "0b7c2a5e-6f1d-4c3b-9a8e-2d4f6b8a0c1e";
 
 let apps: ReturnType<typeof buildApp>[] = [];
 
@@ -92,7 +94,7 @@ async function act(
 function read(
   app: ReturnType<typeof buildApp>,
   handId: string,
-  payload: { targetPlayerId: string | null; text: string },
+  payload: { lastSeq: number; targetPlayerId: string | null; text: string },
 ) {
   return app.inject({
     method: "POST",
@@ -108,6 +110,7 @@ describe("POST /api/hands/:handId/reads（User Read。D112）", () => {
     expect(view.actorId).toBe(HERO);
 
     const res = await read(app, handId, {
+      lastSeq: lastSeq(view),
       targetPlayerId: CPU,
       text: READ_TEXT,
     });
@@ -124,8 +127,20 @@ describe("POST /api/hands/:handId/reads（User Read。D112）", () => {
     expect(after.actorId).toBe(HERO);
     expect(after.pot).toBe(view.pot);
 
+    // 応答だけが失われた記録の再送（古い lastSeq）は stale_view で弾き、同じ読みを 2 回追記しない。
+    const resent = await read(app, handId, {
+      lastSeq: lastSeq(view),
+      targetPlayerId: CPU,
+      text: READ_TEXT,
+    });
+    expect(resent.statusCode).toBe(409);
+    expect(resent.json<{ error: { kind: string } }>().error.kind).toBe(
+      "stale_view",
+    );
+
     // 相手を特定しない読み（意図）も残せる。
     const intent = await read(app, handId, {
+      lastSeq: lastSeq(after),
       targetPlayerId: null,
       text: "Pot Odds で Call する",
     });
@@ -147,22 +162,34 @@ describe("POST /api/hands/:handId/reads（User Read。D112）", () => {
     const { app, events } = makeApp();
     const { handId, view } = await start(app, null);
     const before = events(handId).length;
+    const seq = lastSeq(view);
 
     const invalidTarget = await read(app, handId, {
+      lastSeq: seq,
       targetPlayerId: "nobody",
       text: "x",
     });
     expect(invalidTarget.statusCode).toBe(422);
-    const self = await read(app, handId, { targetPlayerId: HERO, text: "x" });
+    const self = await read(app, handId, {
+      lastSeq: seq,
+      targetPlayerId: HERO,
+      text: "x",
+    });
     expect(self.statusCode).toBe(422);
-    const blank = await read(app, handId, { targetPlayerId: null, text: "  " });
+    const blank = await read(app, handId, {
+      lastSeq: seq,
+      targetPlayerId: null,
+      text: "  ",
+    });
     expect(blank.statusCode).toBe(422);
     const tooLong = await read(app, handId, {
+      lastSeq: seq,
       targetPlayerId: null,
       text: "あ".repeat(201),
     });
     expect(tooLong.statusCode).toBe(400);
     const unknown = await read(app, "nope", {
+      lastSeq: seq,
       targetPlayerId: null,
       text: "x",
     });
@@ -171,7 +198,11 @@ describe("POST /api/hands/:handId/reads（User Read。D112）", () => {
 
     // Hero が Fold した後（Hand から外れた）は手番が来ないので記録できない。Hand が終われば hand_complete。
     const folded = await act(app, handId, view, { type: "fold" });
-    const res = await read(app, handId, { targetPlayerId: null, text: "x" });
+    const res = await read(app, handId, {
+      lastSeq: lastSeq(folded),
+      targetPlayerId: null,
+      text: "x",
+    });
     expect(res.statusCode).toBe(409);
     expect(res.json<{ error: { kind: string } }>().error.kind).toBe(
       folded.status === "complete" ? "hand_complete" : "not_actor",
@@ -196,16 +227,31 @@ describe("Note / Tag の API（D31・D112）", () => {
     const added = await app.inject({
       method: "POST",
       url: `${base(first.handId)}/notes`,
-      payload: { body: NOTE_TEXT },
+      payload: { noteId: NOTE_ID, body: NOTE_TEXT },
     });
     expect(added.statusCode).toBe(201);
     const [note] = added.json<{ notes: { noteId: string; body: string }[] }>()
       .notes;
     expect(note?.body).toBe(NOTE_TEXT);
+    // 応答だけが失われた追加の再送（同じ noteId）は、Note を増やさない。
+    const resent = await app.inject({
+      method: "POST",
+      url: `${base(first.handId)}/notes`,
+      payload: { noteId: NOTE_ID, body: NOTE_TEXT },
+    });
+    expect(resent.statusCode).toBe(201);
+    expect(resent.json<{ notes: unknown[] }>().notes).toHaveLength(1);
+    // 別の席の noteId は使えない。
+    const conflict = await app.inject({
+      method: "POST",
+      url: `${base(first.handId, "cpu2")}/notes`,
+      payload: { noteId: NOTE_ID, body: "別の席" },
+    });
+    expect(conflict.statusCode).toBe(409);
     await app.inject({
       method: "POST",
       url: `${base(first.handId)}/notes`,
-      payload: { body: "2 つ目" },
+      payload: { noteId: randomUUID(), body: "2 つ目" },
     });
     const tagged = await app.inject({
       method: "POST",
@@ -277,7 +323,7 @@ describe("Note / Tag の API（D31・D112）", () => {
     const blank = await app.inject({
       method: "POST",
       url: `${base(handId)}/notes`,
-      payload: { body: "   " },
+      payload: { noteId: randomUUID(), body: "   " },
     });
     expect(blank.statusCode).toBe(422);
     const newline = await app.inject({

@@ -43,6 +43,8 @@ interface HeroPhysicalActionBody {
 }
 
 interface UserReadBody {
+  /** クライアントが見ていた HeroView の log の最後の seq（応答が失われた記録の再送・古い画面の検出に使う）。 */
+  lastSeq: number;
   /** 読みの対象の席（この Hand の playerId）。相手を特定しない読み・意図は null。 */
   targetPlayerId: string | null;
   text: string;
@@ -177,9 +179,10 @@ const heroPhysicalActionBodySchema = {
 // Hero の User Read（D112）。対象の席が卓にいるか・手番か・本文の空白だけでないかは Engine（recordUserRead）が判定する。
 const userReadBodySchema = {
   type: "object",
-  required: ["targetPlayerId", "text"],
+  required: ["lastSeq", "targetPlayerId", "text"],
   additionalProperties: false,
   properties: {
+    lastSeq: { type: "integer", minimum: 0 },
     targetPlayerId: {
       anyOf: [
         { type: "string", minLength: 1, maxLength: 64 },
@@ -318,7 +321,11 @@ export function registerHandRoutes(
     { schema: { params: handParamsSchema, body: userReadBodySchema } },
     (request, reply) => {
       const { handId } = request.params;
-      const result = orchestrator.heroUserRead(handId, request.body);
+      const { lastSeq, targetPlayerId, text } = request.body;
+      const result = orchestrator.heroUserRead(handId, lastSeq, {
+        targetPlayerId,
+        text,
+      });
       if (!result.ok) return sendError(reply, result.error);
       return reply.send({ view: result.value });
     },

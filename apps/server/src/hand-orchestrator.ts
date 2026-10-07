@@ -499,14 +499,19 @@ export class HandOrchestrator {
    * 記録できるのは Hand の途中の Hero の手番の間だけ（Engine の recordUserRead が判定する）。手番の間は CPU を動かしていないので、
    * 追記が CPU の手番の判断（isCurrent）を古くすることはない。Event は Hero だけの private で、CPU の KnowledgeState には入らない。
    * 卓の状態は変えないので、CPU は進めない（次に CPU が動くのは Hero の Action の後）。
+   * lastSeq の扱いは heroAction と同じ（応答だけが失われた記録の再送を stale_view で弾き、同じ読みを 2 回追記しない）。
    */
   heroUserRead(
     handId: string,
+    lastSeq: number,
     read: { readonly targetPlayerId: string | null; readonly text: string },
   ): OrchestratorResult<HeroView> {
     const rt = this.hands.get(handId);
     if (rt === undefined) return notFound(handId);
-    const result = recordUserRead(foldHandEvents(this.events(handId)), {
+    const events = this.events(handId);
+    const stale = this.staleView(events, lastSeq);
+    if (stale !== null) return stale;
+    const result = recordUserRead(foldHandEvents(events), {
       playerId: this.heroId,
       targetPlayerId: read.targetPlayerId,
       text: read.text,

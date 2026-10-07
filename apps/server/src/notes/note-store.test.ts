@@ -66,10 +66,25 @@ describe.each(implementations)("NoteStore（%s）", (_name, create) => {
     expect(store.notesOf(CPU1_NEXT_SESSION)).toEqual({ notes: [], tags: [] });
   });
 
+  it("noteId を渡した追加は冪等: 同じ noteId の再送は行を足さず最初の Note を返し、別の対象の noteId なら null", () => {
+    const { store, db } = create();
+    const first = added(store.addNote(CPU1, "Value 寄り", "id-1"));
+    expect(first.noteId).toBe("id-1");
+    expect(store.addNote(CPU1, "Value 寄り", "id-1")).toEqual(first);
+    expect(store.addNote(CPU2, "別の席", "id-1")).toBeNull();
+    expect(store.notesOf(CPU1).notes).toEqual([first]);
+    expect(store.notesOf(CPU2).notes).toEqual([]);
+    if (db !== undefined) {
+      expect(db.prepare("SELECT COUNT(*) AS n FROM user_notes").get()).toEqual({
+        n: 1,
+      });
+    }
+  });
+
   it("Note の削除は tombstone の行を足して表し、消した Note は返さない。別の対象・消した Note は消せない", () => {
     const { store, db } = create();
-    const kept = store.addNote(CPU1, "残す");
-    const removed = store.addNote(CPU1, "消す");
+    const kept = added(store.addNote(CPU1, "残す"));
+    const removed = added(store.addNote(CPU1, "消す"));
     expect(store.deleteNote(CPU2, removed.noteId)).toBe(false);
     expect(store.deleteNote(CPU1, removed.noteId)).toBe(true);
     expect(store.deleteNote(CPU1, removed.noteId)).toBe(false);
@@ -146,3 +161,9 @@ describe("normalizeNoteBody / normalizeTag", () => {
     expect(normalizeTag("あ".repeat(TAG_MAX + 1))).toBeNull();
   });
 });
+
+/** 追加できた Note（null なら失敗にする）。 */
+function added<T>(note: T | null): T {
+  if (note === null) throw new Error("Note を追加できなかった");
+  return note;
+}
