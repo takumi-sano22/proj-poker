@@ -108,6 +108,9 @@ export class SqliteEventStore implements EventStore {
   private readonly selectEvents: StatementSync;
   private readonly selectHand: StatementSync;
   private readonly selectRecentHands: StatementSync;
+  private readonly selectSessionOfHand: StatementSync;
+  private readonly selectSessionHands: StatementSync;
+  private readonly selectFinishedHands: StatementSync;
   private readonly selectProjection: StatementSync;
   private readonly selectLatestProjection: StatementSync;
   private readonly upsertProjection: StatementSync;
@@ -148,6 +151,17 @@ export class SqliteEventStore implements EventStore {
       `SELECT h.hand_id, h.started_at, h.finished_at,
          EXISTS (SELECT 1 FROM events e WHERE e.hand_id = h.hand_id AND e.type = 'HAND_ABORTED') AS aborted
        FROM hands h ORDER BY h.started_at DESC, h.rowid DESC LIMIT ?`,
+    );
+    // Session Review（#116）と Player Profile（#116）の読み出し。hands にあるのは終わった Hand だけ（D62）。
+    // 開始の古い順で、同じ時刻なら保存した順（rowid）。
+    this.selectSessionOfHand = db.prepare(
+      "SELECT session_id FROM hands WHERE hand_id = ?",
+    );
+    this.selectSessionHands = db.prepare(
+      "SELECT hand_id FROM hands WHERE session_id = ? ORDER BY started_at, rowid",
+    );
+    this.selectFinishedHands = db.prepare(
+      "SELECT hand_id FROM hands ORDER BY started_at, rowid",
     );
     const projectionColumns =
       "session_id, last_hand_id, state, end_reason, stacks, personas, emergency_bots, updated_at";
@@ -244,6 +258,26 @@ export class SqliteEventStore implements EventStore {
     const row = this.selectLatestProjection.get() as unknown as
       SessionProjectionRow | undefined;
     return row === undefined ? null : toProjection(row);
+  }
+
+  sessionHandIds(handId: string): readonly string[] {
+    // 進行中の Hand（メモリだけ）は、最初の追記で決まった Session を使う。終わった Hand は hands の行から引く。
+    const sessionId =
+      this.pending.get(handId)?.sessionId ??
+      (
+        this.selectSessionOfHand.get(handId) as
+          { session_id: string } | undefined
+      )?.session_id;
+    if (sessionId === undefined) return [];
+    return (
+      this.selectSessionHands.all(sessionId) as unknown as { hand_id: string }[]
+    ).map((row) => row.hand_id);
+  }
+
+  finishedHandIds(): readonly string[] {
+    return (
+      this.selectFinishedHands.all() as unknown as { hand_id: string }[]
+    ).map((row) => row.hand_id);
   }
 
   /** DB を閉じる。以降は使えない。途中の Hand（メモリ側）は保存されずに消える（D62）。 */

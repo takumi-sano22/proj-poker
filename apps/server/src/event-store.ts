@@ -57,6 +57,13 @@ export interface EventStore {
   listHands(limit: number): readonly StoredHandSummary[];
   /** 最後に Hand が終わった Session の Session Projection（D95。再起動後の Resume に使う）。まだ無ければ null。 */
   latestSessionProjection(): SessionProjection | null;
+  /**
+   * handId と同じ Session の、終わった（HAND_FINISHED か HAND_ABORTED まで済んだ）Hand の handId を開始の古い順に返す
+   * （Session Review。#116）。handId が進行中の Hand でも、その Session の終わった Hand を返す。未知の Hand なら空配列。
+   */
+  sessionHandIds(handId: string): readonly string[];
+  /** 終わった Hand の handId を、開始の古い順にすべて返す（Recent / Long-term の Player Profile。#116）。 */
+  finishedHandIds(): readonly string[];
 }
 
 export class EventSeqConflictError extends Error {
@@ -145,6 +152,21 @@ export class InMemoryEventStore implements EventStore {
     return this.latest === null
       ? null
       : (this.projections.get(this.latest) ?? null);
+  }
+
+  sessionHandIds(handId: string): readonly string[] {
+    const sessionId = this.sessions.get(handId)?.sessionId;
+    if (sessionId === undefined) return [];
+    // Map は追記した順（Hand を始めた順）を保つので、そのままが開始の古い順。
+    return this.finishedHandIds().filter(
+      (id) => this.sessions.get(id)?.sessionId === sessionId,
+    );
+  }
+
+  finishedHandIds(): readonly string[] {
+    return [...this.logs.entries()]
+      .filter(([, log]) => log.some((s) => isHandEnd(s.event)))
+      .map(([handId]) => handId);
   }
 }
 

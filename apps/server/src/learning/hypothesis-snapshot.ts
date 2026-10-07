@@ -1,6 +1,7 @@
 // Weakness Hypothesis の Snapshot（D104・D113・マイグレーション v6 の hypothesis_snapshots）。
 // reviews（Pass A）から buildHypotheses で決定論で作り直せる派生データで、正本にしない。作り直しは全行を消して入れ直す
-// （1 トランザクション。途中まで書いた状態を残さない）。表示用の API は #116、Learning Reset の区切り（D114）は #118 で足す。
+// （1 トランザクション。途中まで書いた状態を残さない）。Player Profile の API（#116。learning-service.ts）が読むたびに作り直す。
+// Learning Reset の区切り（D114）は #118 で足す。
 import type { DatabaseSync } from "node:sqlite";
 import { inTransaction } from "../db/database.js";
 import type { ScoreSource } from "./ability-evidence.js";
@@ -89,4 +90,39 @@ export function readHypothesisSnapshot(
     policyVersion: r.policy_version,
     computedAt: r.computed_at,
   }));
+}
+
+/** Snapshot の入れ替え口（#116: Player Profile の API が使う）。起動時は SQLite、テストはメモリ内の実装を渡す。 */
+export interface HypothesisSnapshotStore {
+  /** Hypothesis で Snapshot を全行入れ替え、入れた行（Policy の type の順）を返す。 */
+  replace(
+    hypotheses: readonly Hypothesis[],
+    computedAt: string,
+  ): readonly HypothesisSnapshot[];
+}
+
+/** SQLite（マイグレーション v6 の hypothesis_snapshots）の Snapshot。 */
+export class SqliteHypothesisSnapshotStore implements HypothesisSnapshotStore {
+  constructor(private readonly db: DatabaseSync) {}
+
+  replace(
+    hypotheses: readonly Hypothesis[],
+    computedAt: string,
+  ): readonly HypothesisSnapshot[] {
+    writeHypothesisSnapshot(this.db, hypotheses, computedAt);
+    return readHypothesisSnapshot(this.db);
+  }
+}
+
+/** プロセス内のメモリだけに持つ Snapshot（テスト用）。 */
+export class InMemoryHypothesisSnapshotStore implements HypothesisSnapshotStore {
+  private rows: readonly HypothesisSnapshot[] = [];
+
+  replace(
+    hypotheses: readonly Hypothesis[],
+    computedAt: string,
+  ): readonly HypothesisSnapshot[] {
+    this.rows = hypotheses.map((h) => ({ ...h, computedAt }));
+    return this.rows;
+  }
 }

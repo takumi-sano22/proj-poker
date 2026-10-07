@@ -215,6 +215,31 @@ describe.each(implementations)("%s", (_name, createStore) => {
     expect(store.listHands(1).map((h) => h.handId)).toEqual(["h2"]);
   });
 
+  it("sessionHandIds は同じ Session の終わった Hand を、finishedHandIds は終わった Hand すべてを開始の古い順に返す（#116）", () => {
+    let minute = 0;
+    const store = createStore({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    const started = sampleEvents();
+    // s1: h1・h3（終わった）と h4（途中）。s2: h2（終わった）。
+    for (const [handId, sessionId] of [
+      ["h1", "s1"],
+      ["h2", "s2"],
+      ["h3", "s1"],
+    ] as const) {
+      store.append(handId, started, { sessionId });
+      store.append(handId, finishingEvents(started));
+    }
+    store.append("h4", started, { sessionId: "s1" });
+
+    expect(store.sessionHandIds("h3")).toEqual(["h1", "h3"]);
+    expect(store.sessionHandIds("h2")).toEqual(["h2"]);
+    // 途中の Hand からも、その Session の終わった Hand を引ける。
+    expect(store.sessionHandIds("h4")).toEqual(["h1", "h3"]);
+    expect(store.sessionHandIds("unknown")).toEqual([]);
+    expect(store.finishedHandIds()).toEqual(["h1", "h2", "h3"]);
+  });
+
   it("Hand の終わりの後ろには、同じ追記の SESSION_ENDED 1 つだけを置ける（D95）", () => {
     const started = sampleEvents();
     const rest = finishingEvents(started);

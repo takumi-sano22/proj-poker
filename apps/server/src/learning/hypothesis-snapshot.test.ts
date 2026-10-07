@@ -12,8 +12,10 @@ import {
 } from "../testing/learning-fixtures.js";
 import { buildHypotheses } from "./hypothesis.js";
 import {
+  InMemoryHypothesisSnapshotStore,
   readHypothesisSnapshot,
   rebuildHypothesisSnapshot,
+  SqliteHypothesisSnapshotStore,
 } from "./hypothesis-snapshot.js";
 
 const fx = await loadLearningFixtures();
@@ -116,6 +118,29 @@ describe("Hypothesis の Snapshot（v6）", () => {
       expect(() => insert.run("h2", "strong", '{"a":1}')).toThrow(/CHECK/);
       expect(() => insert.run("h3", "strong", "not json")).toThrow();
       insert.run("h4", "strong", '["x/d0/v1"]');
+    } finally {
+      db.close();
+    }
+  });
+
+  it("Snapshot の Store（#116）は全行を入れ替えて入れた行を返す。SQLite とメモリ内で同じ結果", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const first = buildHypotheses(
+        source(["major_leak", "major_leak", "reasonable"], "major_leak"),
+      );
+      const second = buildHypotheses(source(["major_leak"], "strong"));
+      for (const store of [
+        new SqliteHypothesisSnapshotStore(db),
+        new InMemoryHypothesisSnapshotStore(),
+      ]) {
+        store.replace(first, "2026-10-07T00:00:00.000Z");
+        const rows = store.replace(second, "2026-10-07T00:01:00.000Z");
+        expect(rows).toEqual(
+          second.map((h) => ({ ...h, computedAt: "2026-10-07T00:01:00.000Z" })),
+        );
+      }
+      expect(readHypothesisSnapshot(db)).toHaveLength(second.length);
     } finally {
       db.close();
     }
