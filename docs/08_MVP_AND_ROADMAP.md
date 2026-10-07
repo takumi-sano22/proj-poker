@@ -147,19 +147,19 @@ MVP Parent #2はPhase 5の完了でCloseしました（再オープンしない�
 - User Read / Note / Tag
 - Targeted Drill
 
-子Issueの分解（#105の推奨。着手時に`phase-planning`で確定する）:
+子Issueの分解（D110。#105の推奨どおり、この順に進める）:
 
 | ID | 内容 |
 |---|---|
 | P6-0 | Post-MVP Decision / Docs Sync（#108。この文書の同期） |
-| P6-1 | Analytics Projection / Detailed Stats |
-| P6-2 | Ability Evidence / ScoringPolicy |
-| P6-3 | Hypothesis Lifecycle / Player Profile |
-| P6-4 | User Read / Note / Tag |
-| P6-5 | Session Review / Learning UI |
-| P6-6 | Targeted Drill |
-| P6-7 | Reset / Persistence / Rebuild |
-| P6-8 | Eval / Critical E2E / README |
+| P6-1 | Analytics Projection / Detailed Stats（#112） |
+| P6-2 | Ability Evidence / ScoringPolicy（#113） |
+| P6-3 | Hypothesis Lifecycle / Player Profile（#114） |
+| P6-4 | User Read / Note / Tag（#115） |
+| P6-5 | Session Review / Learning UI（#116） |
+| P6-6 | Targeted Drill（#117。決定論の変形だけ。LLMでのSpot生成はPhase 6の範囲外） |
+| P6-7 | Reset / Persistence / Rebuild（#118） |
+| P6-8 | Eval / Critical E2E / README（#119） |
 
 ### Phase 7 — Rich Opponent Simulation（#106。D106・D107）
 
