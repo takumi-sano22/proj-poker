@@ -129,7 +129,7 @@ async function playHand(page: Page, useChips: boolean): Promise<boolean> {
   throw new Error("Hand が 30 手番で終わらなかった");
 }
 
-/** 保存済みの Hand（新しい順）。 */
+/** Replay の一覧の Hand（進行中の Hand と保存済みの Hand）。並びには頼らず、前の段階で取った handId との差分で対象を特定する。 */
 async function replayHands(page: Page): Promise<{ handId: string }[]> {
   const res = await page.request.get("/api/replay/hands");
   expect(res.ok()).toBe(true);
@@ -145,6 +145,16 @@ async function replayHand(
   return (await res.json()) as ReplayHandResponse;
 }
 
+/** 一覧のうち、known に無い Hand（新しく増えた Hand）がちょうど 1 つであることを確かめて返す。 */
+function newHandId(
+  hands: readonly { handId: string }[],
+  known: ReadonlySet<string>,
+): string {
+  const added = hands.map((h) => h.handId).filter((id) => !known.has(id));
+  expect(added, "新しく増えた Hand").toHaveLength(1);
+  return added[0] ?? "";
+}
+
 function stackOf(step: ReplayStep | undefined, playerId: string): number {
   const seat = step?.seats.find((s) => s.playerId === playerId);
   if (seat === undefined) throw new Error(`席が無い: ${playerId}`);
@@ -157,6 +167,8 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
   const dbPath = join(dir, "poker.sqlite");
   server = await startServer(dbPath);
 
+  // 一覧の並び（hands[0] 等）には頼らず、前の段階で取った handId の集合との差分で 2・3 Hand 目を特定する（#129・D117）。
+  let firstHandId = "";
   await test.step("6-max の Session を始め、Chip 操作と宣言で Hand を最後まで Play する", async () => {
     await page.goto("/");
     await page.getByRole("button", { name: "Hand を始める" }).click();
@@ -171,6 +183,9 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
         .getByRole("region", { name: "Hero" })
         .getByText("Hand が終了しました。"),
     ).toBeVisible();
+    const hands = await replayHands(page);
+    expect(hands).toHaveLength(1);
+    firstHandId = hands[0]?.handId ?? "";
   });
 
   await test.step("Review を開き、判断時点の Review（Pass A）の段階評価を出す", async () => {
@@ -239,7 +254,7 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
     ).toBeVisible();
     const hands = await replayHands(page);
     expect(hands).toHaveLength(2);
-    secondHandId = hands[0]?.handId ?? "";
+    secondHandId = newHandId(hands, new Set([firstHandId]));
   });
 
   await test.step("server を再起動し、同じ Session を Stack を持ち越して続ける（Resume）", async () => {
@@ -258,7 +273,10 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
 
     const hands = await replayHands(page);
     expect(hands).toHaveLength(3);
-    const third = await replayHand(page, hands[0]?.handId ?? "");
+    const third = await replayHand(
+      page,
+      newHandId(hands, new Set([firstHandId, secondHandId])),
+    );
     // 3 Hand 目の開始時の Stack は、2 Hand 目の終わりの Stack と同じ（新しい Session なら全員 200 の均等 Stack に戻る）。
     const startStep = third.steps.find((s) => s.seats.length > 0);
     for (const seat of endStacks) {

@@ -171,7 +171,7 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
   server = await startServer(dbPath, LEARNING_ENV);
   const dock = page.getByRole("region", { name: "Hero" });
 
-  // Session Review の API に渡す、この Session の Hand（Session のどの Hand でもよい）。
+  // Session Review の API に渡す、この Session の Hand（Session のどの Hand でもよい。一覧の並びには頼らない。#129・D117）。
   let sessionHandId = "";
   await test.step("2 人卓で、Session が終わる（どちらかの Stack がなくなる）まで Play する", async () => {
     await page.goto("/");
@@ -190,8 +190,16 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
       page,
       "/api/replay/hands",
     );
-    sessionHandId = hands.hands[0]?.handId ?? "";
+    // この時点の Hand はどれもこの Session の Hand（Drill はまだ無い）。並びに依らないよう、handId の辞書順で 1 つ選ぶ。
+    const ids = hands.hands.map((h) => h.handId).sort();
+    sessionHandId = ids[0] ?? "";
     expect(sessionHandId).not.toBe("");
+    // 選んだ Hand の Session Review が、一覧のすべての Hand を数えている（同じ Session の Hand を選んだ）。
+    const review = await getJson<{ hands: number }>(
+      page,
+      `/api/learning/session-review/${sessionHandId}`,
+    );
+    expect(review.hands).toBe(ids.length);
   });
 
   await test.step("最後の Hand の Review を開き、判断時点の Review（Pass A）と Hand 後の答え合わせ（Pass B）を作る", async () => {
@@ -347,9 +355,9 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
     const results = await getJson<DrillResults>(page, "/api/drills");
     expect(results.drills).toEqual(drillsBefore.drills);
     expect(results.score.since).not.toBeNull();
-    // Drill の Hand は Reset の 2〜3 秒前に終わる。区切りは Hand の終わりと Reset の壁時計の時刻で比べるので、
-    // 手元（WSL）の時刻の巻き戻り（数秒）で Drill の Hand が Reset の後に数えられることがある（#119 で実測）。
-    // 区切りより前の Drill の Hand を数えないことは、時刻を注入する apps/server/src/routes/drills.test.ts で確かめる。
+    // Reset より前に終わった Drill の Hand は、Drill の系列の Score に数えない。前後は保存の論理順序で決めるので、
+    // 手元（WSL）の壁時計の巻き戻り（#119 で実測）があっても 0 件になる（#130・D117）。
+    expect(results.score.decisions).toMatchObject({ total: 0, reviewed: 0 });
   });
 
   await test.step("server を再起動しても、Learning data・Drill の provenance・Reset の区切りが同じ", async () => {
