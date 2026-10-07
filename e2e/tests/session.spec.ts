@@ -272,3 +272,40 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
     await playHand(page, false);
   });
 });
+
+test.describe("狭い画面（375px）での卓の配置（#5）", () => {
+  test.use({
+    viewport: { width: 375, height: 667 },
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test("Hand の結果は Hero の欄に出て、席と重ならずに次の Hand へ・Review を押せる。横スクロールは出ない", async ({
+    page,
+  }) => {
+    server = await startServer(join(dir, "poker.sqlite"));
+    await page.goto("/");
+    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await playHand(page, false);
+
+    const dock = page.getByRole("region", { name: "Hero" });
+    // 結果（獲得額・次の Hand へ）は、席と重なる卓の中央ではなく Hero の欄に出す。
+    await expect(page.locator(".table .result")).toHaveCount(0);
+    await expect(dock.locator(".result")).toContainText("獲得");
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth,
+      ),
+    ).toBe(0);
+
+    // Playwright の click は、押す位置に別の要素（席など）があると待ち続けて失敗する。重なっていれば通らない。
+    await dock.getByRole("button", { name: "この Hand の Review" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Hand Review" }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "卓に戻る" }).click();
+    await dock.getByRole("button", { name: "次の Hand へ" }).click();
+    await expect(dock.getByText("Hand が終了しました。")).toBeHidden();
+    await expect(page.getByRole("region", { name: "卓" })).toBeVisible();
+  });
+});

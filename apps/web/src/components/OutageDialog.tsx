@@ -1,4 +1,5 @@
-// CPU の障害のダイアログ（D86・docs/06 §12）。卓の中央に出し、Hero が選ぶまで Hand は止まったまま（Pause）。
+// CPU の障害のダイアログ（D86・docs/06 §12）。卓の中央に出し（狭い画面では席と重ならないよう Hero の欄に出し）、
+// Hero が選ぶまで Hand は止まったまま（Pause）。
 // 出すのは「どの CPU の手番か・障害の種類」だけで、内部のエラー本文・使っている API の名前は出さない（docs/06 §11）。
 import type { OutageChoice, OutageKind } from "../lib/api.js";
 import { outageReasonText } from "../lib/view-model.js";
@@ -9,6 +10,8 @@ interface OutageDialogProps {
   readonly kind: OutageKind;
   /** 送信中は選べない。 */
   readonly disabled: boolean;
+  /** 狭い画面で Hero の欄に出すとき（卓に重ねず、流れの中に置く）。 */
+  readonly docked?: boolean;
   readonly onChoose: (choice: OutageChoice) => void;
 }
 
@@ -16,11 +19,12 @@ export function OutageDialog({
   actorName,
   kind,
   disabled,
+  docked = false,
   onChoose,
 }: OutageDialogProps) {
   return (
     <section
-      className="outage"
+      className={docked ? "outage outage--docked" : "outage"}
       role="alertdialog"
       aria-labelledby="outage-title"
       aria-describedby="outage-desc"

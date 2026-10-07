@@ -3,6 +3,10 @@ import { DEFAULT_CHIP_DENOMINATIONS } from "@proj-poker/engine";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import {
+  NARROW_SCREEN_QUERY,
+  useNarrowScreen,
+} from "../hooks/useNarrowScreen.js";
 import { preflopHeroToAct, seat } from "../testing/fixtures.js";
 import { Amount } from "./Amount.js";
 import { BbDisplayProvider, BbDisplayToggle } from "./BbDisplay.js";
@@ -420,6 +424,40 @@ describe("OutageDialog（CPU の障害の続け方。D86）", () => {
       <OutageDialog actorName="CPU 3" kind="error" disabled onChoose={noop} />,
     );
     expect(html.match(/disabled=""/g)).toHaveLength(3);
+  });
+
+  it("狭い画面で Hero の欄に出すときは、卓に重ねる位置指定を外す class を付ける", () => {
+    const render = (docked: boolean) =>
+      renderToStaticMarkup(
+        <OutageDialog
+          actorName="CPU 3"
+          kind="error"
+          disabled={false}
+          docked={docked}
+          onChoose={noop}
+        />,
+      );
+    expect(render(false)).toContain('class="outage"');
+    expect(render(true)).toContain('class="outage outage--docked"');
+  });
+});
+
+describe("狭い画面の判定（卓の席と重なる欄を Hero の欄へ置く境界。#5）", () => {
+  function Probe() {
+    return <p>{useNarrowScreen() ? "narrow" : "wide"}</p>;
+  }
+
+  it("matchMedia が無い環境（サーバー描画・テスト）では広い画面として扱う", () => {
+    expect(renderToStaticMarkup(<Probe />)).toContain("wide");
+  });
+
+  it("判定の境界は styles.css の狭い画面の @media と同じ値（片方だけ変えない）", () => {
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    const max = /\(max-width: (\d+)px\)/.exec(NARROW_SCREEN_QUERY)?.[1];
+    expect(max).toBeDefined();
+    // 席・卓の中央・Hero の欄の狭い画面向けの規則は、すべてこの境界の @media に置く
+    expect(css).toContain(`@media (max-width: ${max}px) {`);
+    expect(css).toContain(`@media (min-width: ${Number(max) + 1}px) {`);
   });
 });
 
