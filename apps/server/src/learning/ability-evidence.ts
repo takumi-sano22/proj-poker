@@ -58,6 +58,11 @@ export interface ScoreSource {
 export interface AbilityEvidenceOptions {
   /** 集計から除く Hand の handId（D116: Drill の Hand。drills テーブルは #117 で作るので、呼び出し側が渡す）。 */
   readonly excludeHandIds?: ReadonlySet<string>;
+  /**
+   * Hand ごとに、この番号より前の Hero の判断を数えない（M にも N にも入れない）。Drill の系列（#117）で、Drill の Hand の Script が
+   * 再現した元の Hand の判断を除き、練習した判断から数えるために使う。無い Hand は 0 から数える。
+   */
+  readonly firstDecisionIndex?: ReadonlyMap<string, number>;
 }
 
 export interface AbilityEvidenceSet {
@@ -87,8 +92,10 @@ export function buildAbilityEvidence(
       throw new RangeError("HAND_STARTED の無い Hand の Event Log は読めない");
     }
     if (exclude.has(started.handId)) continue;
+    const first = options.firstDecisionIndex?.get(started.handId) ?? 0;
 
     for (const decision of heroDecisions(events, source.heroId)) {
+      if (decision.index < first) continue;
       decisionCount++;
       const review = policy.selectReview(
         source.reviews.list(started.handId, decision.index, "decision"),

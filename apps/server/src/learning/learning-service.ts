@@ -28,18 +28,14 @@ import {
   type SessionReview,
 } from "./session-review.js";
 
-/**
- * 通常の集計から除く Hand（D116: Drill の Hand）。drills テーブルは #117 で作るので、今は空集合を渡す
- * （除外の口だけを通しておく。#117 で drills から作る）。
- */
-const NO_EXCLUDED_HANDS: ReadonlySet<string> = new Set();
-
 export interface LearningServiceOptions {
   readonly events: EventStore;
   /** Pass A の Review（reviews）。Pass B の Store は渡せない。 */
   readonly reviews: ScoreSource["reviews"];
   readonly heroId: string;
   readonly hypotheses: HypothesisSnapshotStore;
+  /** 通常の集計から除く Hand（D116: Drill の Hand。drills テーブルから作る）。省略時は空。 */
+  readonly excludeHandIds?: () => ReadonlySet<string>;
   readonly now?: () => Date;
 }
 
@@ -65,6 +61,11 @@ export class LearningService {
     this.now = options.now ?? (() => new Date());
   }
 
+  /** 通常の集計から除く Hand（Drill の Hand）。読むたびに drills から作る。 */
+  private excluded(): ReadonlySet<string> {
+    return this.options.excludeHandIds?.() ?? new Set();
+  }
+
   /** handId の Hand が属する Session の Session Review。未知の Hand なら null。 */
   sessionReview(handId: string): SessionReview | null {
     const { events, reviews, heroId } = this.options;
@@ -85,28 +86,27 @@ export class LearningService {
       })
       .filter((h): h is SessionHandRecord => h !== null);
     return computeSessionReview(hands, reviews, heroId, {
-      excludeHandIds: NO_EXCLUDED_HANDS,
+      excludeHandIds: this.excluded(),
     });
   }
 
   /** Recent / Long-term の Player Profile（全期間の終わった Hand から）。Hypothesis の Snapshot も作り直す。 */
   profile(): ProfileResponse {
     const { events, reviews, heroId, hypotheses } = this.options;
+    const excludeHandIds = this.excluded();
     const hands = events
       .finishedHandIds()
       .map((id): readonly HandEvent[] => events.read(id).map((s) => s.event));
     const profile = computePlayerProfile(
       { hands, reviews, heroId },
-      { excludeHandIds: NO_EXCLUDED_HANDS },
+      { excludeHandIds },
     );
     // Snapshot は Profile と同じ Evidence・同じ関数で作った Hypothesis で入れ替える（D113: 作り直せる派生データ）。
     const snapshot = hypotheses.replace(
       profile.hypotheses,
       this.now().toISOString(),
     );
-    const stats = projectPlayerStats(hands, {
-      excludeHandIds: NO_EXCLUDED_HANDS,
-    });
+    const stats = projectPlayerStats(hands, { excludeHandIds });
     const hero = stats.players.find((p) => p.playerId === heroId);
     return {
       profile: { ...profile, hypotheses: snapshot },

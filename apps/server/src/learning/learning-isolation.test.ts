@@ -1,5 +1,6 @@
 // 不変条件 2（情報境界・D28）: ユーザーの弱点（Hypothesis・Player Profile・Score）は、CPU の KnowledgeState・Prompt・CPU Memory に渡さない。
-// CPU の判断を組み立てるコード（opponents/ と、CPU の手番を進める hand-orchestrator.ts）から import をたどり、
+// CPU の判断を組み立てるコード（opponents/ と、CPU の手番を進める hand-orchestrator.ts と、Drill の相手の RuleBot の Persona と
+// Spot を決める drill/drill-plan.ts。#117）から import をたどり、
 // learning/ のモジュールに届かないことを確かめる（届かなければ、CPU の入力に弱点が入る経路が無い）。
 // KnowledgeState を作る Engine（packages/engine）は apps/server を import できない（パッケージの境界）。
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -18,6 +19,7 @@ function cpuEntryFiles(): string[] {
       .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
       .map((f) => join(opponents, f)),
     join(SRC, "hand-orchestrator.ts"),
+    join(SRC, "drill", "drill-plan.ts"),
   ];
 }
 

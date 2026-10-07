@@ -16,6 +16,7 @@ import {
   resolveDbPath,
 } from "./config.js";
 import { openDatabase } from "./db/database.js";
+import { SqliteDrillStore } from "./drill/drill-store.js";
 import { loadKb } from "./kb/index.js";
 import { SqliteHypothesisSnapshotStore } from "./learning/hypothesis-snapshot.js";
 import {
@@ -79,6 +80,8 @@ const app = buildApp({
   noteStore: new SqliteNoteStore(db),
   // Weakness Hypothesis の Snapshot（#114）は同じ DB の hypothesis_snapshots（v6）。Profile の API が読むたびに作り直す（#116）。
   hypothesisSnapshot: new SqliteHypothesisSnapshotStore(db),
+  // Targeted Drill の記録（#117）は同じ DB の drills（v7）に追記する。Drill の Hand は通常の集計・Resume・Replay の一覧から除く。
+  drillStore: new SqliteDrillStore(db),
   createOpponent,
   opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),

@@ -280,6 +280,51 @@ export const MIGRATIONS: readonly string[] = [
     computed_at             TEXT NOT NULL
   ) STRICT;
   `,
+  // v7: Targeted Drill（D105・D110・D116・#117）。Drill の Hand は専用の Session の通常の Hand として Event Log に残し（Event の形は変えない）、
+  // このテーブルで通常の Play と区別する（Stats・Score・Profile・Hypothesis・Resume・Replay の一覧は drill_hand_id の Hand を除く）。
+  // 既存のテーブル・列・行は変えない（D76）。追記だけで、UPDATE / DELETE は Trigger で拒否する。
+  // 行は Drill の Hand を始める前に足す（Hand の保存より先に除く対象に入れる）ので、drill_hand_id は hands を参照しない
+  // （途中で止まった Drill の Hand は保存されず、行だけが残る）。provenance は元の Hand・判断・Pass A の Review で、
+  // 挿入の Trigger で、Review の行がその Hand・判断のものであることを確かめる。variant は変形の値（JSON）、seed と policy_version で
+  // 同じ Drill を作り直せる（drill/drill-plan.ts）。
+  `
+  CREATE TABLE drills (
+    drill_id              TEXT PRIMARY KEY,
+    created_at            TEXT NOT NULL,
+    source_hand_id        TEXT NOT NULL REFERENCES hands (hand_id),
+    source_decision_index INTEGER NOT NULL CHECK (source_decision_index >= 0),
+    source_review_id      TEXT NOT NULL REFERENCES reviews (review_id),
+    variant_kind          TEXT NOT NULL,
+    variant               TEXT NOT NULL CHECK (json_valid(variant) AND json_type(variant) = 'object'),
+    policy_version        TEXT NOT NULL,
+    seed                  INTEGER NOT NULL CHECK (seed >= 0),
+    drill_hand_id         TEXT NOT NULL UNIQUE,
+    CHECK (drill_hand_id <> source_hand_id)
+  ) STRICT;
+
+  CREATE TRIGGER drills_source_review
+  BEFORE INSERT ON drills
+  WHEN NOT EXISTS (
+    SELECT 1 FROM reviews
+    WHERE review_id = NEW.source_review_id AND hand_id = NEW.source_hand_id
+      AND decision_index = NEW.source_decision_index
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'drills must point to a Pass A review of the source decision');
+  END;
+
+  CREATE TRIGGER drills_append_only
+  BEFORE UPDATE ON drills
+  BEGIN
+    SELECT RAISE(ABORT, 'drills is append-only');
+  END;
+
+  CREATE TRIGGER drills_no_delete
+  BEFORE DELETE ON drills
+  BEGIN
+    SELECT RAISE(ABORT, 'drills is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

@@ -53,10 +53,21 @@ export interface EventStore {
   ): readonly StoredHandEvent[];
   /** Hand の Event を seq 順で返す。未知の Hand なら空配列。 */
   read(handId: string): readonly StoredHandEvent[];
-  /** Event のある Hand を、開始の新しい順に最大 limit 件返す（HAND_FINISHED の無い Hand も含む）。 */
-  listHands(limit: number): readonly StoredHandSummary[];
-  /** 最後に Hand が終わった Session の Session Projection（D95。再起動後の Resume に使う）。まだ無ければ null。 */
-  latestSessionProjection(): SessionProjection | null;
+  /**
+   * Event のある Hand を、開始の新しい順に最大 limit 件返す（HAND_FINISHED の無い Hand も含む）。
+   * exclude の Hand（Drill の Hand。D116）は数えずに除く（除いた後で最大 limit 件）。
+   */
+  listHands(
+    limit: number,
+    exclude?: ReadonlySet<string>,
+  ): readonly StoredHandSummary[];
+  /**
+   * 最後に Hand が終わった Session の Session Projection（D95。再起動後の Resume に使う）。まだ無ければ null。
+   * 最後の Hand が exclude にある Session（Drill の専用の Session。D116）は選ばない。
+   */
+  latestSessionProjection(
+    exclude?: ReadonlySet<string>,
+  ): SessionProjection | null;
   /**
    * handId と同じ Session の、終わった（HAND_FINISHED か HAND_ABORTED まで済んだ）Hand の handId を開始の古い順に返す
    * （Session Review。#116）。handId が進行中の Hand でも、その Session の終わった Hand を返す。未知の Hand なら空配列。
@@ -85,9 +96,10 @@ interface HandSession {
 export class InMemoryEventStore implements EventStore {
   private readonly logs = new Map<string, StoredHandEvent[]>();
   private readonly sessions = new Map<string, HandSession>();
-  /** Session ID → Session Projection。Map は最初に入れた順を保つので、最後に更新した Session は latest で持つ。 */
+  /** Session ID → Session Projection。 */
   private readonly projections = new Map<string, SessionProjection>();
-  private latest: string | null = null;
+  /** Hand が終わった Session の ID（終わった順。同じ Session は最後に終わった位置へ移す）。 */
+  private readonly finishedOrder: string[] = [];
   private readonly now: () => Date;
   private readonly newEventId: () => string;
   private readonly defaultSessionId = randomUUID();
@@ -127,7 +139,9 @@ export class InMemoryEventStore implements EventStore {
         },
       );
       this.projections.set(session.sessionId, next);
-      this.latest = session.sessionId;
+      const at = this.finishedOrder.indexOf(session.sessionId);
+      if (at >= 0) this.finishedOrder.splice(at, 1);
+      this.finishedOrder.push(session.sessionId);
     }
     log.push(...stored);
     this.logs.set(handId, log);
@@ -140,18 +154,28 @@ export class InMemoryEventStore implements EventStore {
     return [...(this.logs.get(handId) ?? [])];
   }
 
-  listHands(limit: number): readonly StoredHandSummary[] {
+  listHands(
+    limit: number,
+    exclude: ReadonlySet<string> = new Set(),
+  ): readonly StoredHandSummary[] {
     // Map は追記した順（Hand を始めた順）を保つので、逆順が開始の新しい順。
     return [...this.logs.entries()]
       .reverse()
+      .filter(([handId]) => !exclude.has(handId))
       .slice(0, limit)
       .map(([handId, log]) => summarizeLog(handId, log));
   }
 
-  latestSessionProjection(): SessionProjection | null {
-    return this.latest === null
-      ? null
-      : (this.projections.get(this.latest) ?? null);
+  latestSessionProjection(
+    exclude: ReadonlySet<string> = new Set(),
+  ): SessionProjection | null {
+    for (const sessionId of [...this.finishedOrder].reverse()) {
+      const projection = this.projections.get(sessionId);
+      if (projection !== undefined && !exclude.has(projection.lastHandId)) {
+        return projection;
+      }
+    }
+    return null;
   }
 
   sessionHandIds(handId: string): readonly string[] {

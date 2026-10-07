@@ -147,10 +147,13 @@ export class SqliteEventStore implements EventStore {
     this.selectHand = db.prepare("SELECT 1 FROM hands WHERE hand_id = ?");
     // 同じ時刻に始まった Hand は、保存した順（rowid）の新しい方を先にする。
     // 打ち切った Hand（HAND_ABORTED を持つ）は Event の type で見分ける（hands の列は変えない。D95）。
+    // 除く Hand（Drill の Hand。D116）は JSON の配列で渡し、LIMIT の前に除く。
     this.selectRecentHands = db.prepare(
       `SELECT h.hand_id, h.started_at, h.finished_at,
          EXISTS (SELECT 1 FROM events e WHERE e.hand_id = h.hand_id AND e.type = 'HAND_ABORTED') AS aborted
-       FROM hands h ORDER BY h.started_at DESC, h.rowid DESC LIMIT ?`,
+       FROM hands h
+       WHERE h.hand_id NOT IN (SELECT value FROM json_each(?))
+       ORDER BY h.started_at DESC, h.rowid DESC LIMIT ?`,
     );
     // Session Review（#116）と Player Profile（#116）の読み出し。hands にあるのは終わった Hand だけ（D62）。
     // 開始の古い順で、同じ時刻なら保存した順（rowid）。
@@ -169,8 +172,11 @@ export class SqliteEventStore implements EventStore {
       `SELECT ${projectionColumns} FROM session_projections WHERE session_id = ?`,
     );
     // 最後に Hand が終わった Session。同じ時刻なら、先に作った行（rowid）より後の Session を選ぶ。
+    // 最後の Hand が除く Hand（Drill の専用の Session の Hand。D116）の Session は選ばない（JSON の配列で渡す）。
     this.selectLatestProjection = db.prepare(
-      `SELECT ${projectionColumns} FROM session_projections ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+      `SELECT ${projectionColumns} FROM session_projections
+       WHERE last_hand_id NOT IN (SELECT value FROM json_each(?))
+       ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
     );
     // Session Projection は Session ごとに 1 行で、Hand が終わるたびに書き替える（派生データ。正本は Event Log）。
     this.upsertProjection = db.prepare(
@@ -232,9 +238,15 @@ export class SqliteEventStore implements EventStore {
    * 保存済みの Hand（HAND_FINISHED か打ち切りの HAND_ABORTED まで済んだ Hand）と、メモリにだけある Hand（進行中・内部エラーで
    * 止まった Hand。D62）を合わせて、開始の新しい順に最大 limit 件返す。メモリの Hand は再起動で消えるので、一覧からも消える。
    */
-  listHands(limit: number): readonly StoredHandSummary[] {
+  listHands(
+    limit: number,
+    exclude: ReadonlySet<string> = new Set(),
+  ): readonly StoredHandSummary[] {
     const persisted = (
-      this.selectRecentHands.all(limit) as unknown as HandRow[]
+      this.selectRecentHands.all(
+        JSON.stringify([...exclude]),
+        limit,
+      ) as unknown as HandRow[]
     ).map((row): StoredHandSummary => {
       const aborted = row.aborted === 1;
       return {
@@ -248,15 +260,19 @@ export class SqliteEventStore implements EventStore {
     // メモリの Hand は追記した順なので、逆順が開始の新しい順。sort は安定なので同じ時刻ならこの順を保つ。
     const pending = [...this.pending.entries()]
       .reverse()
+      .filter(([handId]) => !exclude.has(handId))
       .map(([handId, p]) => summarizeLog(handId, p.log));
     return [...pending, ...persisted]
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
       .slice(0, limit);
   }
 
-  latestSessionProjection(): SessionProjection | null {
-    const row = this.selectLatestProjection.get() as unknown as
-      SessionProjectionRow | undefined;
+  latestSessionProjection(
+    exclude: ReadonlySet<string> = new Set(),
+  ): SessionProjection | null {
+    const row = this.selectLatestProjection.get(
+      JSON.stringify([...exclude]),
+    ) as unknown as SessionProjectionRow | undefined;
     return row === undefined ? null : toProjection(row);
   }
 
