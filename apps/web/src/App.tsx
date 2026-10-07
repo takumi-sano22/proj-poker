@@ -4,8 +4,10 @@
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
 // 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
 // Hand が終わったら、Hero の欄と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
+// 狭い画面（スマホ幅）では、卓の中央に重ねていた欄（Hand の結果・CPU 障害のダイアログ・Session 終了の案内）が席と重なるので、
+// 画面下に固定した Hero の欄へ置く（#5。広い画面は従来どおり卓の中央）。
 import type { HeroView } from "@proj-poker/engine";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Amount } from "./components/Amount.js";
 import {
   BbDisplayProvider,
@@ -24,6 +26,7 @@ import { Table } from "./components/Table.js";
 import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
+import { useNarrowScreen } from "./hooks/useNarrowScreen.js";
 import type { ReplayStart } from "./hooks/useReplay.js";
 import type { SessionStatus } from "./lib/api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
@@ -49,6 +52,7 @@ type Screen =
 
 export function App() {
   const session = useHandSession();
+  const narrow = useNarrowScreen();
   const [screen, setScreen] = useState<Screen>({ kind: "table" });
   const openReview = useCallback(
     (handId: string, decisionIndex: number | null) =>
@@ -138,12 +142,15 @@ export function App() {
                 <Table
                   view={view}
                   nameOf={nameOf}
+                  // 狭い画面では卓の中央に何も重ねない（結果などは Hero の欄に出す）
                   center={
-                    <TableCenter
-                      view={view}
-                      nameOf={nameOf}
-                      session={session}
-                    />
+                    narrow ? null : (
+                      <TableCenter
+                        view={view}
+                        nameOf={nameOf}
+                        session={session}
+                      />
+                    )
                   }
                 />
               </div>
@@ -155,6 +162,7 @@ export function App() {
               view={view}
               nameOf={nameOf}
               session={session}
+              narrow={narrow}
               onOpenReview={openReview}
             />
           </VocabularyProvider>
@@ -179,19 +187,7 @@ function TableCenter({ view, nameOf, session }: ViewProps) {
   }
   const status = session.sessionStatus;
   if (status?.state === "ended") {
-    return (
-      <div className="result" role="status">
-        <p className="result__session">{sessionEndMessage(status)}</p>
-        <button
-          type="button"
-          className="btn btn--primary btn--md"
-          disabled={session.pending}
-          onClick={session.start}
-        >
-          新しい Session を始める
-        </button>
-      </div>
-    );
+    return <SessionEnded status={status} session={session} />;
   }
   const outage = session.outage?.current;
   if (outage != null) {
@@ -207,16 +203,20 @@ function TableCenter({ view, nameOf, session }: ViewProps) {
   return null;
 }
 
-/** 画面下に固定する Hero の欄: Hole Cards と Chip・宣言の操作、裁定と待ち・観戦の案内。 */
 /** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
 type OpenReview = (handId: string, decisionIndex: number | null) => void;
 
+/** 画面下に固定する Hero の欄: Hole Cards と Chip・宣言の操作、裁定と待ち・観戦の案内（狭い画面では結果・障害の欄も）。 */
 function HeroDock({
   view,
   nameOf,
   session,
+  narrow,
   onOpenReview,
-}: ViewProps & { readonly onOpenReview: OpenReview }) {
+}: ViewProps & {
+  readonly narrow: boolean;
+  readonly onOpenReview: OpenReview;
+}) {
   const hero = heroSeatOf(view);
   const cards = hero?.holeCards ?? [];
   const folded = hero?.folded ?? false;
@@ -244,6 +244,7 @@ function HeroDock({
           view={view}
           nameOf={nameOf}
           session={session}
+          narrow={narrow}
           onOpenReview={onOpenReview}
         />
       </div>
@@ -255,8 +256,12 @@ function DockBody({
   view,
   nameOf,
   session,
+  narrow,
   onOpenReview,
-}: ViewProps & { readonly onOpenReview: OpenReview }) {
+}: ViewProps & {
+  readonly narrow: boolean;
+  readonly onOpenReview: OpenReview;
+}) {
   const outage = session.outage;
   // CPU の手番を待っている間だけ数える（手番・障害の状態が変われば数え直す）。障害で止まっている間・Session 終了後は数えない。
   const cpuWaiting =
@@ -273,7 +278,16 @@ function DockBody({
   );
   if (view.status === "complete") {
     // 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く）。
-    // 卓の中央の結果の欄は狭い画面で席と重なるので、常に見える Hero の欄に置く。
+    // 狭い画面では、卓の中央の結果の欄が席と重なるので、結果（獲得額・次の Hand へ）もここに置き、Review の Button と並べる。
+    const review = (
+      <button
+        type="button"
+        className="btn btn--secondary btn--sm"
+        onClick={() => onOpenReview(view.handId, null)}
+      >
+        この Hand の Review
+      </button>
+    );
     return (
       <div className="dock__done">
         <p className="dock__message">
@@ -281,21 +295,38 @@ function DockBody({
             ? "Session が終了しました。"
             : "Hand が終了しました。"}
         </p>
-        <button
-          type="button"
-          className="btn btn--secondary btn--sm"
-          onClick={() => onOpenReview(view.handId, null)}
-        >
-          この Hand の Review
-        </button>
+        {narrow ? (
+          <HandResult
+            view={view}
+            nameOf={nameOf}
+            session={session}
+            docked
+            actions={review}
+          />
+        ) : (
+          review
+        )}
       </div>
     );
   }
   if (session.sessionStatus?.state === "ended") {
-    return <p className="dock__message">Session が終了しました。</p>;
+    return narrow ? (
+      <SessionEnded status={session.sessionStatus} session={session} docked />
+    ) : (
+      <p className="dock__message">Session が終了しました。</p>
+    );
   }
   if (outage?.current != null) {
-    return (
+    // 狭い画面では、席と重ならないよう、ダイアログそのものをここに出す（広い画面は卓の中央）。
+    return narrow ? (
+      <OutageDialog
+        actorName={nameOf(outage.current.playerId)}
+        kind={outage.current.kind}
+        disabled={session.pending}
+        docked
+        onChoose={session.resolveOutage}
+      />
+    ) : (
       <p className="dock__message">
         {nameOf(outage.current.playerId)} の判断を待てず、Hand
         を一時停止しています。卓の中央で続け方を選んでください。
@@ -376,15 +407,54 @@ function sessionEndMessage(
   }
 }
 
+/** Session が終わった後の案内（理由と、新しい Session を始める Button）。 */
+function SessionEnded({
+  status,
+  session,
+  docked = false,
+}: {
+  readonly status: Extract<SessionStatus, { state: "ended" }>;
+  readonly session: HandSession;
+  readonly docked?: boolean;
+}) {
+  return (
+    <div className={resultClass(docked)} role="status">
+      <p className="result__session">{sessionEndMessage(status)}</p>
+      <button
+        type="button"
+        className="btn btn--primary btn--md"
+        disabled={session.pending}
+        onClick={session.start}
+      >
+        新しい Session を始める
+      </button>
+    </div>
+  );
+}
+
+function resultClass(docked: boolean): string {
+  return docked ? "result result--docked" : "result";
+}
+
 /**
- * Hand の結果（卓の中央）。獲得額は実額で出す。
+ * Hand の結果（広い画面は卓の中央、狭い画面は Hero の欄）。獲得額は実額で出す。
  * 次 Hand のボタンは Session が続くときだけ出し、Session が終わったら理由と、新しい Session を始めるボタンを出す。
  * Session の状態がまだ届いていなければ、どちらのボタンも出さない（終わった Session で次 Hand を押させない）。
+ * actions は Button の並びの末尾に足す（Hero の欄では Review の Button を同じ行に置く）。
  */
-function HandResult({ view, nameOf, session }: ViewProps) {
+function HandResult({
+  view,
+  nameOf,
+  session,
+  docked = false,
+  actions = null,
+}: ViewProps & {
+  readonly docked?: boolean;
+  readonly actions?: ReactNode;
+}) {
   const status = session.sessionStatus;
   return (
-    <div className="result" role="status">
+    <div className={resultClass(docked)} role="status">
       <ul className="result__list">
         {view.awards.map((a) => (
           <li key={a.playerId}>
@@ -416,6 +486,7 @@ function HandResult({ view, nameOf, session }: ViewProps) {
           新しい Session を始める
         </button>
       )}
+      {actions}
     </div>
   );
 }
