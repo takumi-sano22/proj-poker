@@ -59,7 +59,7 @@ export const PHASE6_SESSION_REVIEW_V1: SessionReviewPolicy = {
 
 export const DEFAULT_SESSION_REVIEW_POLICY = PHASE6_SESSION_REVIEW_V1;
 
-/** Session の 1 Hand（Event と記録時刻）。Hand は開始の古い順に渡す。 */
+/** Session の 1 Hand（Event と記録時刻）。Hand は保存の古い順（論理順序。D117）に渡す。時刻は表示用。 */
 export interface SessionHandRecord {
   readonly handId: string;
   readonly events: readonly HandEvent[];
@@ -160,7 +160,7 @@ const ASSESSMENTS: readonly Assessment[] = [
   "insufficient_evidence",
 ];
 
-/** 1 Session の Hand（開始の古い順）と Pass A の Review から Session Review を作る。同じ入力からは同じ結果。 */
+/** 1 Session の Hand（保存の古い順。D117）と Pass A の Review から Session Review を作る。同じ入力からは同じ結果。 */
 export function computeSessionReview(
   hands: readonly SessionHandRecord[],
   reviews: ScoreSource["reviews"],
@@ -199,6 +199,7 @@ export function computeSessionReview(
     hands: included.length,
     startedAt: first?.startedAt ?? null,
     endedAt: last?.endedAt ?? null,
+    // 表示だけの値で、順序の判定には使わない（D117）。壁時計が後ろへ戻って差が負になったときは 0 にする。
     durationMs:
       first === undefined || last === undefined
         ? null

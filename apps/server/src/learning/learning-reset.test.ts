@@ -4,6 +4,7 @@
 //   Evidence だけになる（Reset 前の Hand を Reset 後に Review しても入らない）
 // - Hypothesis の Snapshot（v6）は Reset の区切りで作り直す
 // - Policy の Version を変えても正本から計算し直せ、過去の Snapshot・自然言語の Profile を入力にしない
+// - 前後は保存の論理順序で決め、壁時計が後ろへ戻っても崩れない（D117・#130）
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../db/database.js";
@@ -27,8 +28,7 @@ import { PHASE6_HYPOTHESIS_V1 } from "./hypothesis-policy.js";
 import {
   InMemoryLearningResetStore,
   SqliteLearningResetStore,
-  endedAfter,
-  handEndedAt,
+  savedAfter,
   type LearningResetStore,
 } from "./learning-reset.js";
 import { LearningService } from "./learning-service.js";
@@ -41,13 +41,16 @@ import {
 
 const fixtures = await loadLearningFixtures();
 
-/** 1 分ずつ進める時計（Event の記録時刻と Reset の時刻を同じ時計で決める）。 */
+/** 1 分ずつ進める時計（Event の記録時刻と Reset の時刻を同じ時計で決める）。rewind で後ろへ戻せる（OS の時刻の巻き戻りの再現）。 */
 function testClock() {
   let t = Date.parse("2026-10-07T00:00:00.000Z");
   return {
     now: () => new Date(t),
     tick: () => {
       t += 60_000;
+    },
+    rewind: (minutes: number) => {
+      t -= minutes * 60_000;
     },
   };
 }
@@ -62,7 +65,7 @@ describe("LearningResetStore", () => {
   ];
 
   for (const [name, create] of stores) {
-    it(`${name}: カテゴリごとに最後の Reset の時刻を返す（Reset していないカテゴリは null）`, () => {
+    it(`${name}: カテゴリごとに最後の Reset（論理順序の番号と時刻）を返す（Reset していないカテゴリは null）`, () => {
       const clock = testClock();
       const store = create(clock.now);
       expect(store.boundaries()).toEqual({
@@ -73,13 +76,38 @@ describe("LearningResetStore", () => {
       const first = store.add(["profile", "score"]);
       // カテゴリは決まった順にそろえる。
       expect(first.categories).toEqual(["score", "profile"]);
+      const afterFirst = store.boundaries();
       clock.tick();
       const second = store.add(["hypothesis", "score"]);
-      expect(store.boundaries()).toEqual({
-        score: second.createdAt,
-        hypothesis: second.createdAt,
-        profile: first.createdAt,
+      const boundaries = store.boundaries();
+      expect(boundaries).toMatchObject({
+        score: { createdAt: second.createdAt },
+        hypothesis: { createdAt: second.createdAt },
+        profile: { createdAt: first.createdAt },
       });
+      // 1 回の Reset のカテゴリは同じ番号で、後の Reset ほど番号が大きい。
+      expect(boundaries.profile?.ord).toBe(afterFirst.score?.ord);
+      expect(boundaries.score?.ord).toBe(boundaries.hypothesis?.ord);
+      expect(boundaries.score?.ord ?? 0).toBeGreaterThan(
+        boundaries.profile?.ord ?? Infinity,
+      );
+    });
+
+    it(`${name}: 2 回目の Reset の時刻の方が古くても、追加の順で後の Reset を区切りにする（時計の巻き戻り。D117・#130）`, () => {
+      const clock = testClock();
+      const store = create(clock.now);
+      const first = store.add(["score"]);
+      const firstOrd = store.boundaries().score?.ord ?? Infinity;
+      // 時計が 5 分戻ってから 2 回目の Reset。
+      clock.rewind(5);
+      const second = store.add(["score"]);
+      expect(Date.parse(second.createdAt)).toBeLessThan(
+        Date.parse(first.createdAt),
+      );
+      const boundary = store.boundaries().score;
+      // 時刻を clamp せず、2 回目の Reset の時刻をそのまま返す。番号は 1 回目より後。
+      expect(boundary?.createdAt).toBe(second.createdAt);
+      expect(boundary?.ord ?? 0).toBeGreaterThan(firstOrd);
     });
 
     it(`${name}: 空・重複・未知のカテゴリは受け付けず、何も足さない`, () => {
@@ -94,21 +122,33 @@ describe("LearningResetStore", () => {
   }
 });
 
-describe("endedAfter（区切りの判定）", () => {
-  it("Hand の終わりの Event の記録時刻が区切りより後の Hand だけを入れる（同じ時刻は入れない）", () => {
+describe("savedAfter（区切りの判定。D117）", () => {
+  it("Hand の保存の番号が区切りの Reset の番号より大きい Hand だけを入れ、終わっていない Hand は入れない", () => {
+    const boundary = { ord: 5, createdAt: "2026-10-07T00:00:00.000Z" };
+    expect(savedAfter(6, boundary)).toBe(true);
+    expect(savedAfter(4, boundary)).toBe(false);
+    expect(savedAfter(4, null)).toBe(true);
+    expect(savedAfter(null, null)).toBe(false);
+    expect(savedAfter(null, boundary)).toBe(false);
+  });
+
+  it("メモリ内の Event Store と Reset Store は同じカウンタで番号を振り、壁時計が戻っても保存と Reset の前後を保つ", () => {
     const clock = testClock();
-    const store = new InMemoryEventStore({ now: clock.now });
-    const hand = fixtures.play(LEARNING_HANDS.btn);
-    store.append(hand.handId, hand.events);
-    const stored = store.read(hand.handId);
-    const ended = handEndedAt(stored);
-    expect(ended).toBe(clock.now().toISOString());
-    expect(endedAfter(stored, null)).toBe(true);
-    expect(endedAfter(stored, ended)).toBe(false);
-    expect(endedAfter(stored, "2026-10-06T23:59:59.999Z")).toBe(true);
-    // 終わっていない Hand はどの区切りでも入らない。
-    const open = stored.filter((s) => s.event.type === "HAND_STARTED");
-    expect(endedAfter(open, null)).toBe(false);
+    const events = new InMemoryEventStore({ now: clock.now });
+    const resets = new InMemoryLearningResetStore({ now: clock.now });
+    const btn = fixtures.play(LEARNING_HANDS.btn);
+    const sb = fixtures.play(LEARNING_HANDS.sb);
+    events.append(btn.handId, btn.events);
+    // Reset は btn の保存の後だが、時計が戻って時刻は btn の終わりより前。
+    clock.rewind(3);
+    resets.add(["score"]);
+    // sb は Reset の後に保存したが、時計がさらに戻って時刻は Reset より前。
+    clock.rewind(3);
+    events.append(sb.handId, sb.events);
+    const boundary = resets.boundaries().score;
+    expect(savedAfter(events.savedOrder(btn.handId), boundary)).toBe(false);
+    expect(savedAfter(events.savedOrder(sb.handId), boundary)).toBe(true);
+    expect(events.savedOrder("unknown")).toBeNull();
   });
 });
 
@@ -131,8 +171,8 @@ function sqliteLearning() {
       now: clock.now,
       ...(policy === undefined ? {} : { policy }),
     });
-  const save = (hand: PlayedHand, sessionId: string) => {
-    clock.tick();
+  const save = (hand: PlayedHand, sessionId: string, advance = true) => {
+    if (advance) clock.tick();
     events.append(hand.handId, hand.events, { sessionId });
   };
   return { clock, db, events, reviews, resets, notes, service, save };
@@ -360,5 +400,52 @@ describe("LearningService の Learning Reset（SQLite）", () => {
       now: ctx.clock.now,
     }).profile();
     expect(fresh).toEqual(second);
+  });
+});
+
+describe("Learning Reset の前後は壁時計の巻き戻りに影響されない（SQLite。D117・#130）", () => {
+  it("Hand の終わりの時刻が Reset より後でも保存が Reset より前なら除き、時刻が前でも保存が後なら入れる（Score・Hypothesis・Profile）", () => {
+    const ctx = sqliteLearning();
+    try {
+      const btn = fixtures.play(LEARNING_HANDS.btn);
+      const multi = fixtures.play(LEARNING_HANDS.multi);
+      ctx.save(btn, "s1");
+      ctx.reviews.append(fixtures.review(btn, 0, "major_leak"));
+      // 時計が 10 分戻ってから Reset（Reset の時刻は btn の終わりより前）。
+      ctx.clock.rewind(10);
+      const { reset } = ctx.service().reset(["score", "hypothesis", "profile"]);
+      // さらに 10 分戻ってから multi を保存（multi の終わりの時刻は Reset より前）。
+      ctx.clock.rewind(10);
+      ctx.save(multi, "s2", false);
+      ctx.reviews.append(fixtures.review(multi, 0, "major_leak"));
+      const endedAt = (handId: string) =>
+        Date.parse(ctx.events.read(handId).at(-1)?.recordedAt ?? "");
+      expect(endedAt(btn.handId)).toBeGreaterThan(Date.parse(reset.createdAt));
+      expect(endedAt(multi.handId)).toBeLessThan(Date.parse(reset.createdAt));
+
+      const res = ctx.service().profile();
+      // Reset の後に保存した multi（判断 4）だけ。Reset の前に保存した btn は、終わりの時刻が後でも入らない。
+      expect(res.profile.decisions).toEqual({ total: 4, reviewed: 1 });
+      expect(res.profile.hypotheses.length).toBeGreaterThan(0);
+      for (const h of res.profile.hypotheses) {
+        for (const id of [
+          ...h.supportingEvidenceIds,
+          ...h.counterEvidenceIds,
+        ]) {
+          expect(id.startsWith(`${multi.handId}/`)).toBe(true);
+        }
+      }
+      expect(res.text).toContain("Review 済みの判断 1 件（対象の判断 4 件中）");
+      // 応答の時刻は表示用で、clamp しない（Reset の記録時刻のまま）。
+      expect(res.resets).toEqual({
+        score: reset.createdAt,
+        hypothesis: reset.createdAt,
+        profile: reset.createdAt,
+      });
+      // Stats は Reset の対象ではないので全期間。
+      expect(res.heroStats.hands).toBe(2);
+    } finally {
+      ctx.db.close();
+    }
   });
 });

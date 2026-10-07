@@ -235,7 +235,7 @@ describe("SqliteEventStore（保存の経路）", () => {
     expect(reopen().read("h1")).toEqual([]);
   });
 
-  it("listHands は保存済みの Hand とメモリの途中の Hand を開始の新しい順に返し、開き直すと途中の Hand は一覧から消える", () => {
+  it("listHands はメモリの途中の Hand を先に、保存済みの Hand を保存の新しい順に返し、開き直すと途中の Hand は一覧から消える（D117）", () => {
     let minute = 0;
     const store = open({
       now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
@@ -249,18 +249,18 @@ describe("SqliteEventStore（保存の経路）", () => {
     store.append("h3", h3.started);
     store.append("h3", h3.rest);
 
-    // h2 は途中（メモリだけ）で、保存済みの h1 と h3 の間に始まった。
+    // h2 は途中（メモリだけ）で、保存済みの h1 と h3 の間に始まった。並びは開始の時刻ではなく、途中の Hand → 保存の新しい順。
     expect(store.listHands(10)).toEqual([
-      {
-        handId: "h3",
-        startedAt: "2026-10-05T00:03:00.000Z",
-        finishedAt: "2026-10-05T00:04:00.000Z",
-        aborted: false,
-      },
       {
         handId: "h2",
         startedAt: "2026-10-05T00:02:00.000Z",
         finishedAt: null,
+        aborted: false,
+      },
+      {
+        handId: "h3",
+        startedAt: "2026-10-05T00:03:00.000Z",
+        finishedAt: "2026-10-05T00:04:00.000Z",
         aborted: false,
       },
       {
@@ -270,12 +270,51 @@ describe("SqliteEventStore（保存の経路）", () => {
         aborted: false,
       },
     ]);
-    expect(store.listHands(2).map((h) => h.handId)).toEqual(["h3", "h2"]);
+    expect(store.listHands(2).map((h) => h.handId)).toEqual(["h2", "h3"]);
     expect(
       reopen()
         .listHands(10)
         .map((h) => h.handId),
     ).toEqual(["h3", "h1"]);
+  });
+
+  it("再起動後のメモリの Hand の開始時刻が保存済みの Hand より前に記録されても、listHands の先頭はメモリの Hand（#129 の再現・D117）", () => {
+    // 1 回目の起動: h1・h2 を 00:30・00:32 ごろに保存する。
+    let minute = 30;
+    const first = open({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    for (const handId of ["h1", "h2"]) {
+      const { started, rest } = finishedHandEvents(handId);
+      first.append(handId, started);
+      first.append(handId, rest);
+    }
+    // 再起動。時計が戻り、h3 の開始の時刻は保存済みの h2 より前に記録される。
+    opened.splice(0).forEach((store) => store.close());
+    minute = 20;
+    const second = open({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute++)),
+    });
+    const h3 = finishedHandEvents("h3");
+    second.append("h3", h3.started);
+    const hands = second.listHands(10);
+    expect(hands.map((h) => h.handId)).toEqual(["h3", "h2", "h1"]);
+    expect(Date.parse(hands[0]?.startedAt ?? "")).toBeLessThan(
+      Date.parse(hands[1]?.startedAt ?? ""),
+    );
+    // h3 を終えると、保存の順で最も新しい Hand になる（開始の時刻は最も古いまま）。
+    second.append("h3", h3.rest);
+    expect(second.listHands(10).map((h) => h.handId)).toEqual([
+      "h3",
+      "h2",
+      "h1",
+    ]);
+    expect(second.finishedHandIds()).toEqual(["h1", "h2", "h3"]);
+    expect(
+      reopen()
+        .listHands(10)
+        .map((h) => h.handId),
+    ).toEqual(["h3", "h2", "h1"]);
   });
 
   it("開き直した後も、保存済み（終了済み）の Hand へは追記できない", () => {

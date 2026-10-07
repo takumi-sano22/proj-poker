@@ -351,6 +351,73 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'learning_resets is append-only');
   END;
   `,
+  // v9: 意味上の順序（D117・#132）。壁時計（started_at・recorded_at・created_at 等）は後ろへ戻ることがあるので、「どちらが先か」は
+  // 記録の順に振る番号 ord で決める（logical-order.ts）。Hand の保存（kind = hand_saved・ref_id = hand_id）と Learning Reset の追加
+  // （kind = learning_reset・ref_id = reset_id。1 回の Reset に 1 行）の同じトランザクションで 1 行足す。壁時計の列は消さない。
+  // 既存のテーブル・列・行は変えない（D76）。追記だけで、UPDATE / DELETE は Trigger で拒否し、挿入は参照先が実在する行だけを受け付ける。
+  // マイグレーション v9 は D117 の人間判断の範囲（追加のみ）。
+  // backfill（INSERT のみ。既存の行は書き換えない。best-effort）: Hand どうしは hands の挿入の順（rowid）、Reset どうしは learning_resets.seq の
+  // 順を保ち、両方の先頭を記録時刻（hands.finished_at と learning_resets.created_at）で比べて早い方を先に並べる（同じ時刻なら Hand を先に。
+  // v8 までの判定〔同じ時刻の Hand は Reset 前〕と同じ）。番号は併合の手順の番号 n を明示して入れ、挿入の順に頼らない。
+  `
+  CREATE TABLE ordinals (
+    ord    INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind   TEXT NOT NULL CHECK (kind IN ('hand_saved', 'learning_reset')),
+    ref_id TEXT NOT NULL,
+    UNIQUE (kind, ref_id)
+  ) STRICT;
+
+  CREATE TRIGGER ordinals_target
+  BEFORE INSERT ON ordinals
+  WHEN NOT EXISTS (
+    SELECT 1 FROM hands WHERE NEW.kind = 'hand_saved' AND hand_id = NEW.ref_id
+  ) AND NOT EXISTS (
+    SELECT 1 FROM learning_resets WHERE NEW.kind = 'learning_reset' AND reset_id = NEW.ref_id
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'ordinals must point to an existing hand or learning reset');
+  END;
+
+  CREATE TRIGGER ordinals_append_only
+  BEFORE UPDATE ON ordinals
+  BEGIN
+    SELECT RAISE(ABORT, 'ordinals is append-only');
+  END;
+
+  CREATE TRIGGER ordinals_no_delete
+  BEFORE DELETE ON ordinals
+  BEGIN
+    SELECT RAISE(ABORT, 'ordinals is append-only');
+  END;
+
+  WITH RECURSIVE
+    h (i, ref_id, t) AS MATERIALIZED (
+      SELECT ROW_NUMBER() OVER (ORDER BY rowid), hand_id, julianday(finished_at) FROM hands
+    ),
+    r (j, ref_id, t) AS MATERIALIZED (
+      SELECT ROW_NUMBER() OVER (ORDER BY first_seq), reset_id, julianday(created_at)
+      FROM (SELECT reset_id, MIN(seq) AS first_seq, MIN(created_at) AS created_at FROM learning_resets GROUP BY reset_id)
+    ),
+    -- 併合の 1 手ごとの状態: n 手目に kind の ref_id を取り、i 件の Hand・j 件の Reset を並べ終えた。
+    -- 次の Hand があり、次の Reset が無いか Hand の時刻が Reset の時刻以下なら Hand を取る（CASE は NULL を偽として扱うので、
+    -- 時刻が読めない〔julianday が NULL〕ときは Reset を先に取る。4 つの CASE は同じ条件）。
+    merged (n, i, j, kind, ref_id) AS (
+      SELECT 0, 0, 0, NULL, NULL
+      UNION ALL
+      SELECT
+        m.n + 1,
+        m.i + (CASE WHEN nh.i IS NOT NULL AND (nr.j IS NULL OR nh.t <= nr.t) THEN 1 ELSE 0 END),
+        m.j + (CASE WHEN nh.i IS NOT NULL AND (nr.j IS NULL OR nh.t <= nr.t) THEN 0 ELSE 1 END),
+        CASE WHEN nh.i IS NOT NULL AND (nr.j IS NULL OR nh.t <= nr.t) THEN 'hand_saved' ELSE 'learning_reset' END,
+        CASE WHEN nh.i IS NOT NULL AND (nr.j IS NULL OR nh.t <= nr.t) THEN nh.ref_id ELSE nr.ref_id END
+      FROM merged m
+      LEFT JOIN h nh ON nh.i = m.i + 1
+      LEFT JOIN r nr ON nr.j = m.j + 1
+      WHERE nh.i IS NOT NULL OR nr.j IS NOT NULL
+    )
+  INSERT INTO ordinals (ord, kind, ref_id)
+  SELECT n, kind, ref_id FROM merged WHERE n > 0 ORDER BY n;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

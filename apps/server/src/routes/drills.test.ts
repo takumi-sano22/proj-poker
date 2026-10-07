@@ -10,6 +10,7 @@ import { buildApp } from "../app.js";
 import type { DrillResults, DrillView } from "../drill/drill-service.js";
 import { InMemoryDrillStore } from "../drill/drill-store.js";
 import { InMemoryEventStore } from "../event-store.js";
+import { InMemoryLearningResetStore } from "../learning/learning-reset.js";
 import type { ProfileResponse } from "../learning/learning-service.js";
 import type { ReplayHandSummary } from "../replay.js";
 import { InMemoryReviewStore } from "../review/review-store.js";
@@ -42,6 +43,7 @@ function setup(
     store?: InMemoryEventStore;
     drillStore?: InMemoryDrillStore;
     reviews?: InMemoryReviewStore;
+    learningResetStore?: InMemoryLearningResetStore;
     btn?: PlayedHand;
     seed?: number;
   } = {},
@@ -63,6 +65,9 @@ function setup(
     botDelayMs: 0,
     review: { store: reviews },
     drillStore,
+    ...(options.learningResetStore === undefined
+      ? {}
+      : { learningResetStore: options.learningResetStore }),
     nextSeed: () => options.seed ?? 42,
     nextHandId: () => `generated-${apps.length}-${n++}`,
   });
@@ -314,5 +319,58 @@ describe("GET /api/drills", () => {
     );
     expect(results.score.decisions).toMatchObject({ total: 0, reviewed: 0 });
     expect(results.score.overall.score).toBeNull();
+  });
+
+  it("Drill の系列の Score の Reset の前後は保存の順で決め、壁時計が戻っても崩れない（D117・#130）", async () => {
+    let minute = 50;
+    const now = () => new Date(Date.UTC(2026, 9, 7, 0, minute));
+    const { app, btn, reviews } = setup({
+      store: new InMemoryEventStore({ now }),
+      learningResetStore: new InMemoryLearningResetStore({ now }),
+    });
+    /** btn の判断 d1 から Drill を始めて Fold で終え、練習した判断に strong の Review を入れる。 */
+    const finishDrill = async () => {
+      const drill = (
+        await startDrill(app, btn.handId, 1)
+      ).json<DrillStartBody>();
+      const lastSeq = drill.view.log.at(-1)?.seq ?? 0;
+      await app.inject({
+        method: "POST",
+        url: `/api/hands/${drill.handId}/actions`,
+        payload: { lastSeq, action: { type: "fold" } },
+      });
+      reviews.append({
+        ...fixtures.review(btn, 1, "strong"),
+        handId: drill.handId,
+      });
+    };
+    const score = async () =>
+      (
+        await app.inject({ method: "GET", url: "/api/drills" })
+      ).json<DrillResults>().score;
+
+    // 1 つ目の Drill を 00:50 に終える。
+    await finishDrill();
+    // 時計が戻り、00:40 に Reset（1 つ目の Drill の終わりの時刻より前だが、保存より後）。
+    minute = 40;
+    const reset = await app.inject({
+      method: "POST",
+      url: "/api/learning/resets",
+      payload: { categories: ["score"] },
+    });
+    const createdAt = reset.json<{ reset: { createdAt: string } }>().reset
+      .createdAt;
+    expect(createdAt).toBe("2026-10-07T00:40:00.000Z");
+    expect(await score()).toMatchObject({
+      since: createdAt,
+      decisions: { total: 0, reviewed: 0 },
+    });
+    // さらに戻り、00:30 に 2 つ目の Drill を終える（終わりの時刻は Reset より前だが、保存は後）。
+    minute = 30;
+    await finishDrill();
+    expect(await score()).toMatchObject({
+      since: createdAt,
+      decisions: { total: 1, reviewed: 1 },
+    });
   });
 });

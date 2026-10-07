@@ -180,6 +180,7 @@ export function buildApp(options: AppOptions = {}) {
   // Session Review・Player Profile（#116）は、同じ Event Store と Pass A の reviews を読むだけ（Review を作らない。D115）。
   // Pass B の Store は渡さない（Hindsight を Score・Profile に混ぜない）。
   // Learning Reset（#118・D114）は区切りの行を足すだけで、正本（Event Log・reviews・Note / Tag）を消さない。
+  // Reset の前後は Event Store と同じ順序の源の番号で決める（D117。起動時は同じ DB の ordinals、省略時はプロセスのカウンタ）。
   const learningResets =
     options.learningResetStore ?? new InMemoryLearningResetStore();
   registerLearningRoutes(
@@ -209,7 +210,7 @@ export function buildApp(options: AppOptions = {}) {
       nextSeed,
       nextHandId,
       // Drill の系列の Score も、通常の Score と同じ Learning Reset のカテゴリ（score）で区切る（D114。暫定）。
-      scoreSince: () => learningResets.boundaries().score,
+      scoreBoundary: () => learningResets.boundaries().score,
     }),
     orchestrator,
   );
