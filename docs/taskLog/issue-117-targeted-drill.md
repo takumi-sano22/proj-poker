@@ -40,4 +40,8 @@
 ## 残課題
 
 - Pass A の Review は Event Log の判断時点の情報だけから作るので、Drill の設定（相手の傾向の Preset）は Review の入力に入らない（D116 の「既存の Pass A の経路をそのまま使う」に従った）
-- Drill の開始は冪等ではない（応答が失われた開始の再送は別の Drill になる。途中で止まった Drill の Hand は保存されず、`drills` の行だけが残る）
+- 途中で止まった Drill の Hand（再起動で消える）は保存されず、`drills` の行だけが残る（一覧では `finished: false`）
+
+## Codex レビューへの対応
+
+- [P1] Drill の開始の再送で別の Drill ができる（CONFIRMED）: 同じ元の判断の Drill の Hand がこのプロセスで進行中なら、新しく作らずその Drill を 200 で返すようにした（`DrillService.ongoingDrill`）。`routes/drills.test.ts` に再送のテストを足した

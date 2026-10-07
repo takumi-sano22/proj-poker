@@ -1,7 +1,8 @@
 // Targeted Drill の API（#117・docs/07 §7・D105・D110・D116）。
 // - `POST /api/drills`: body `{ handId, decisionIndex }`。元の Hand の Hero の判断（Pass A の Review があるもの）から、一要素だけ変えた
 //   Drill を決定論で選び、Drill の Hand（専用の Session の通常の Hand）を始める。応答は POST /api/hands と同じ形に Drill の説明（drill）を足したもの。
-//   以降の Hero の操作・SSE・Review は通常の Hand と同じ API（/api/hands/:handId/…・/api/reviews/…）を Drill の handId で使う
+//   以降の Hero の操作・SSE・Review は通常の Hand と同じ API（/api/hands/:handId/…・/api/reviews/…）を Drill の handId で使う。
+//   同じ元の判断の Drill の Hand がまだ終わっていなければ、新しく作らずその Drill を 200 で返す（開始の再送を冪等にする）
 // - `GET /api/drills`: Drill の一覧と、Drill の系列の集計（通常の Score と別。D105）
 // 返すのは Hero に見える値だけ（Drill の Hand の HeroView・元の Hand の公開の事実と Drill の設定）。他者の札・Deck・seed・
 // 元の CPU の Hidden Persona を含めない（seed は drills テーブルにだけ残す）。
@@ -60,7 +61,8 @@ export function registerDrillRoutes(
         });
       }
       const started = result.value.handId;
-      return reply.code(201).send({
+      // 同じ元の判断の進行中の Drill を返したとき（開始の再送）は 200。
+      return reply.code(result.value.created ? 201 : 200).send({
         drill: result.value.drill,
         handId: started,
         players: orchestrator.players,

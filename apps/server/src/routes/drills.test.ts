@@ -140,6 +140,30 @@ describe("POST /api/drills", () => {
     expect(strip(rb.view)).toEqual(strip(ra.view));
   });
 
+  it("同じ元の判断の Drill の Hand が終わっていなければ、開始の再送は新しく作らずその Drill を返す", async () => {
+    const { app, btn, drillStore } = setup();
+    const first = await startDrill(app, btn.handId, 1);
+    expect(first.statusCode).toBe(201);
+    const again = await startDrill(app, btn.handId, 1);
+    expect(again.statusCode).toBe(200);
+    const a = first.json<DrillStartBody>();
+    const b = again.json<DrillStartBody>();
+    expect(b.handId).toBe(a.handId);
+    expect(b.drill.drillId).toBe(a.drill.drillId);
+    expect(drillStore.list()).toHaveLength(1);
+    // Drill の Hand が終わった後は、新しい Drill を作る。
+    const lastSeq = a.view.log.at(-1)?.seq ?? 0;
+    await app.inject({
+      method: "POST",
+      url: `/api/hands/${a.handId}/actions`,
+      payload: { lastSeq, action: { type: "fold" } },
+    });
+    const next = await startDrill(app, btn.handId, 1);
+    expect(next.statusCode).toBe(201);
+    expect(next.json<DrillStartBody>().handId).not.toBe(a.handId);
+    expect(drillStore.list()).toHaveLength(2);
+  });
+
   it("Pass A の Review が無い判断・無い Hand・無い判断・Drill の Hand からは始めない", async () => {
     const { app, btn } = setup();
     const noReview = await startDrill(app, btn.handId, 0);

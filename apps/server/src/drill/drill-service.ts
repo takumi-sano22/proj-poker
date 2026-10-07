@@ -114,6 +114,8 @@ export interface DrillServiceOptions {
     startDrill(
       input: DrillHandStart,
     ): Promise<OrchestratorResult<{ handId: string; view: HeroView }>>;
+    /** このプロセスで進めている Hand の Hero の View（未知の Hand なら null）。 */
+    heroView(handId: string): HeroView | null;
   };
   readonly heroId: string;
   readonly table: TableConfig;
@@ -131,12 +133,21 @@ export class DrillService {
     this.policy = options.policy ?? DEFAULT_DRILL_POLICY;
   }
 
-  /** 元の Hand の判断から Drill を選んで始める。Drill の Hand の Hero の手番（練習する判断）の View を返す。 */
+  /**
+   * 元の Hand の判断から Drill を選んで始める。Drill の Hand の Hero の手番（練習する判断）の View を返す。
+   * 同じ元の判断の Drill の Hand がこのプロセスでまだ終わっていなければ、新しく作らずその Drill を返す（created: false）。
+   * 応答だけが失われた開始の再送で別の Drill を作らない（終わっていない Drill の Hand を放置して増やさない）。
+   */
   async start(
     handId: string,
     decisionIndex: number,
   ): Promise<
-    DrillResult<{ drill: DrillView; handId: string; view: HeroView }>
+    DrillResult<{
+      drill: DrillView;
+      handId: string;
+      view: HeroView;
+      created: boolean;
+    }>
   > {
     const { events, drills, heroId } = this.options;
     if (drills.byDrillHandId(handId) !== null) {
@@ -165,6 +176,8 @@ export class DrillService {
         "Drill は Pass A の Review がある判断から作る（先にその判断を Review する）",
       );
     }
+    const ongoing = this.ongoingDrill(handId, decisionIndex);
+    if (ongoing !== null) return { ok: true, value: ongoing };
     const seed = this.options.nextSeed();
     const plan = planDrill(set, seed, this.options.table, this.policy);
     if (plan === null) {
@@ -198,8 +211,39 @@ export class DrillService {
         drill: this.viewOf(record),
         handId: started.value.handId,
         view: started.value.view,
+        created: true,
       },
     };
+  }
+
+  /** 同じ元の判断の Drill のうち、Hand がこのプロセスで進行中のもの（最後に足したもの）。無ければ null。 */
+  private ongoingDrill(
+    handId: string,
+    decisionIndex: number,
+  ): {
+    drill: DrillView;
+    handId: string;
+    view: HeroView;
+    created: false;
+  } | null {
+    const records = this.options.drills
+      .list()
+      .filter(
+        (r) =>
+          r.sourceHandId === handId && r.sourceDecisionIndex === decisionIndex,
+      );
+    for (const record of [...records].reverse()) {
+      const view = this.options.orchestrator.heroView(record.drillHandId);
+      if (view !== null && view.status !== "complete") {
+        return {
+          drill: this.viewOf(record),
+          handId: record.drillHandId,
+          view,
+          created: false,
+        };
+      }
+    }
+    return null;
   }
 
   /** Drill の一覧（足した順）と、Drill の系列の集計（通常の Score と別。D105）。 */
