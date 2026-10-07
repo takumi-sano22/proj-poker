@@ -296,7 +296,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - Dealer Feedback（#66）: 裁定を **裁定（Ruling）・作法（Etiquette）・学習（Coaching）** の 3 分類で、分けて出します（文言は決定論で作り、LLM は使いません。Coaching は判断時点の情報だけを使います）
   - Poker Vocabulary（#66・D45）: 卓の用語（日本語 + 標準 Term）を Hover / Click / キーボードで開くと、定義・今の Hand の例・関連する概念・補足が出ます
   - BB 補助表示の切り替えと Fast Forward（#67・D49・D93）: BB 換算の ON / OFF（実額は常に表示）と、Hero Fold 後の CPU の思考待ちの短縮（Claude の応答時間は縮まない）
-  - **Replay**（#68・D38・D93）: Hand の一覧（開始の新しい順・最大 100 件）から選び、保存済みの Event を Hero の視点で一手ずつ再生します（前へ / 再生 / 一時停止 / 次へ）。AI や Engine で作り直さず（Re-simulation ではない）、他者の札は Showdown で公開された時点から見えます。宣言・Chip の操作・裁定も一手ずつ再生し、Dealer Feedback・Chip の構成・用語の説明は卓と同じものを出します
+  - **Replay**（#68・D38・D93）: Hand の一覧（新しい順＝進行中の Hand、続けて保存の新しい順・最大 100 件）から選び、保存済みの Event を Hero の視点で一手ずつ再生します（前へ / 再生 / 一時停止 / 次へ）。AI や Engine で作り直さず（Re-simulation ではない）、他者の札は Showdown で公開された時点から見えます。宣言・Chip の操作・裁定も一手ずつ再生し、Dealer Feedback・Chip の構成・用語の説明は卓と同じものを出します
 - Event Log（D37）: Handの進行はすべてEventで表し、終わったHandのEventをSQLiteへ1トランザクションで保存します（Completed Handが保存の境界。D62）
 - **MVP Review（Phase 5）**:
   - Session の Event と Resume（#77・D95）: Session の開始・終了・Hand の打ち切り・Emergency Bot への切り替えを Event にし（`schema_version` 6）、Session Projection からサーバーの再起動後も同じ Session を続けます（Stack・Button・Emergency Bot を持ち越す）
@@ -316,7 +316,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - Weakness Hypothesis と Player Profile（#114）: Supporting / Counter Evidence から決定論で状態が変わる弱点の仮説（Snapshot はマイグレーション v6）と、直近 100 件（Recent）/ 全期間（Long-term）の Profile。まとめの文は Structured Profile からのテンプレート文で、LLM も過去の文も入力にしません
   - Session Review（#116・D115）: Session の終わりに、判断の質（M 件中 N 件を Review 済み）・Ability ごとの Score・Strength / Leak・Important Hands・Hero の Stats・おすすめの Drill を出します。収支（実額が正本・BB は補助）は判断の質と別に小さく出します
   - Targeted Drill（#117・D116）: Leak の判断から、Effective Stack・Bet の額・相手の傾向のどれか一つだけを決定論で変えた類題を作り（Engine の Validation を通るものだけ）、1 Hand 遊んで練習した判断を Review します。元の Hand・判断・Review の provenance を追記型の `drills`（マイグレーション v7）に残し、結果は通常の Score と別に数えます（D105）
-  - Learning Reset（#118・D114）: Score・弱点の仮説・まとめの文をカテゴリごとに、Reset より後に終わった Hand だけで数え直します。区切りの行を追記するだけ（マイグレーション v8）で、Hand の記録・Review・Note / Tag・Stats は消えません（取り消しはできません）
+  - Learning Reset（#118・D114）: Score・弱点の仮説・まとめの文をカテゴリごとに、Reset より後に終わった Hand だけで数え直します（前後は壁時計ではなく保存の論理順序で決めます。#132・D117）。区切りの行を追記するだけ（マイグレーション v8・v9）で、Hand の記録・Review・Note / Tag・Stats は消えません（取り消しはできません）
   - Phase 6 の Critical E2E（#119）: Session の終わりまで Play → Review → Session Review → Profile → Drill → 練習した判断の Review → Learning Reset → 再起動しても学習の記録と provenance が同じ、を CI で通します（CPU は RuleBot、Review AI は固定応答）
 
 制約・未実装:
