@@ -129,7 +129,10 @@ export class LearningService {
     const hero = stats.players.find((p) => p.playerId === heroId);
     return {
       profile: { ...scored, hypotheses },
-      text: renderProfileText(since("profile")),
+      // 文の Long-term の呼び名も、profile の区切りがあれば「Reset 後」にする（画面の注記と食い違わせない）。
+      text: renderProfileText(since("profile"), {
+        afterReset: boundaries.profile !== null,
+      }),
       resets: boundaries,
       heroStats: {
         version: stats.version,

@@ -175,7 +175,7 @@ Structured Profileが正本で、自然言語のPlayer Profileはそこからの
 - **持つもの**: Policyの各Version（Profile・Hypothesis・Scoring）、対象の判断の数とReview済みの数（M件中N件。D115）、Recent・Long-term、Weakness Hypothesis（§5。Snapshotを読まず、同じEvidenceから同じ関数で作る）。Improvementは、各AbilityのTrend（§2）とHypothesisの`improving` / `resolved`で表します。
 - **自然言語のProfile**: `renderProfileText`が、Structured Profileだけを受け取る決定論のテンプレートで作ります（LLMを呼ばない。APIの課金経路を増やさない）。表示用の派生で、Structured Profileは文を持たず、過去の文を次の計算の入力にしません。
 - **Drillの除外**: `excludeHandIds`（D116。Scoreと同じ口）。表示用のAPI・UIは#116です（§6の実装）。
-- **Learning Reset（D114・#118）**: Profileの各部分は、そのカテゴリの最後のResetより後に終わったHandだけで作ります。Recent / Long-termのScoreと「M件中N件」は`score`、Weakness Hypothesisは`hypothesis`、自然言語のProfile（まとめの文）は`profile`のカテゴリに従います（カテゴリは独立。区切りの判定は`docs/04` §11）。Long-termは「全有効Evidence」ではなく「`score`のResetより後の全有効Evidence」になり、画面は「Reset 後」と区切りの時刻を出します。自然言語のProfileは、その区切りのHandだけで作ったStructured Profileからテンプレートで作り直し、過去の文・Snapshotを入力にしません。
+- **Learning Reset（D114・#118）**: Profileの各部分は、そのカテゴリの最後のResetより後に終わったHandだけで作ります。Recent / Long-termのScoreと「M件中N件」は`score`、Weakness Hypothesisは`hypothesis`、自然言語のProfile（まとめの文）は`profile`のカテゴリに従います（カテゴリは独立。区切りの判定は`docs/04` §11）。Long-termは「全有効Evidence」ではなく「`score`のResetより後の全有効Evidence」になり、画面は「Reset 後」と区切りの時刻を出します。自然言語のProfileは、その区切りのHandだけで作ったStructured Profileからテンプレートで作り直し（`profile`の区切りがあれば、文の中のLong-termも「全期間」ではなく「Reset 後」と呼ぶ）、過去の文・Snapshotを入力にしません。
 
 ## 5. Hypothesis Lifecycle
 

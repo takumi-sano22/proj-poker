@@ -231,6 +231,9 @@ describe("LearningService の Learning Reset（SQLite）", () => {
       readHypothesisSnapshot(ctx.db).map((h) => h.supportingEvidenceIds),
     ).toEqual(after.profile.hypotheses.map((h) => h.supportingEvidenceIds));
     expect(after.text).toContain("Review 済みの判断 1 件（対象の判断 4 件中）");
+    // profile の区切りの後は、文の Long-term も「全期間」と呼ばない。
+    expect(after.text).toContain("Reset 後の Overall");
+    expect(after.text).not.toContain("全期間");
     expect(after.resets.score).toBe(reset.createdAt);
     // Stats は全期間（Reset 前の 2 Hand + Reset 後の 1 Hand）。
     expect(after.heroStats.hands).toBe(3);
@@ -258,6 +261,7 @@ describe("LearningService の Learning Reset（SQLite）", () => {
     });
     expect(res.profile.decisions).toEqual({ total: 13, reviewed: 3 });
     expect(res.text).toContain("Review 済みの判断 3 件（対象の判断 13 件中）");
+    expect(res.text).toContain("全期間の Overall");
     for (const h of res.profile.hypotheses) {
       for (const id of h.supportingEvidenceIds) {
         expect(id.startsWith(`${multi.handId}/`)).toBe(true);
@@ -308,7 +312,7 @@ describe("LearningService の Learning Reset（SQLite）", () => {
         return rest;
       }),
     ).toEqual(expected.hypotheses);
-    expect(res.text).toBe(renderProfileText(expected));
+    expect(res.text).toBe(renderProfileText(expected, { afterReset: true }));
   });
 
   it("過去の Snapshot・自然言語の Profile を入力にしない（作り直しの結果は前の状態によらない）", () => {
@@ -344,7 +348,7 @@ describe("LearningService の Learning Reset（SQLite）", () => {
       reviews: ctx.reviews,
       heroId: LEARNING_HERO,
     });
-    expect(second.text).toBe(renderProfileText(expected));
+    expect(second.text).toBe(renderProfileText(expected, { afterReset: true }));
     expect(second.text).not.toBe(first.text);
     // 同じ正本からは、前の Snapshot の有無によらず同じ結果（新しい空の Snapshot で作っても同じ）。
     const fresh = new LearningService({

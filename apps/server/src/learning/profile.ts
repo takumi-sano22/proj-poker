@@ -134,15 +134,24 @@ const STATUS_LABELS: Readonly<Record<HypothesisStatus, string>> = {
   insufficient_data: "データ不足",
 };
 
+export interface ProfileTextOptions {
+  /** Structured Profile が Learning Reset（D114）より後の Hand だけから作られたか。Long-term の呼び名を「Reset 後」にする。 */
+  readonly afterReset?: boolean;
+}
+
 /**
  * Structured Profile から自然言語の Profile を作る（決定論のテンプレート。LLM を呼ばない）。
- * 表示用の派生で、正本にも次の計算の入力にもしない（引数は Structured Profile だけ）。
+ * 表示用の派生で、正本にも次の計算の入力にもしない（入力は Structured Profile と呼び名の指定だけで、過去の文を受け取らない）。
  */
-export function renderProfileText(profile: StructuredProfile): string {
+export function renderProfileText(
+  profile: StructuredProfile,
+  options: ProfileTextOptions = {},
+): string {
+  const longTermLabel = options.afterReset === true ? "Reset 後" : "全期間";
   const lines = [
     `Review 済みの判断 ${profile.decisions.reviewed} 件（対象の判断 ${profile.decisions.total} 件中）から作った Profile です。`,
     `直近 ${profile.recent.reviewed} 件の Overall: ${scoreText(profile.recent.overall)}`,
-    `全期間の Overall: ${scoreText(profile.longTerm.overall)}`,
+    `${longTermLabel}の Overall: ${scoreText(profile.longTerm.overall)}`,
   ];
 
   const improving = profile.longTerm.abilities
