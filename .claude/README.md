@@ -25,7 +25,7 @@
 ## 開発ワークフロー全体像
 
 ```
-phase-planning（Phase 着手時に子 Issue へ分解・親 #2 へ紐付け）
+phase-planning（Phase 着手時に子 Issue へ分解・その Phase の親〔MVP は #2、Post-MVP は #105〜#107〕へ紐付け）
 issue-patrol（オープン issue 巡回・優先度整理・sub-issue 紐付け確認・着手候補選定）
       │  ← 新規タスク発見時は create-issue で起票
       ▼
@@ -68,7 +68,7 @@ github-workflow（標準フロー・手順の一次情報）
 
 | skill | 用途・トリガー |
 | --- | --- |
-| `issue-patrol` | オープン issue 巡回・優先度整理・親 #2 への sub-issue 紐付け確認・着手候補選定。**実装着手は `github-workflow` にディスパッチ** |
+| `issue-patrol` | オープン issue 巡回・優先度整理・親 Issue（MVP は #2、Post-MVP は #104〜#107）への sub-issue 紐付け確認・着手候補選定。**実装着手は `github-workflow` にディスパッチ** |
 | `create-issue` | 発見したタスク/課題を GitHub Issue 化し親 Issue へ紐付ける。「issue を作って」 |
 | `release-readme-sync` | Phase 完了時にルート `README.md`（現在のフェーズ・MVP 進捗）を更新 |
 
@@ -96,7 +96,7 @@ github-workflow（標準フロー・手順の一次情報）
 | --- | --- |
 | `poker-invariant-review` | 情報境界・Hindsight Leak・チップ保存などドメイン不変条件のレビュー観点 |
 | `poker-engine-testing` | 決定論エンジンのテスト規約（Invariant / Scenario Regression / property） |
-| `phase-planning` | Phase を子 Issue へ分解し親 #2 の DoD と同期 |
+| `phase-planning` | Phase を子 Issue へ分解し、その Phase の親（MVP は #2、Post-MVP は #105〜#107）の DoD と同期 |
 | `solver-poc` | OI-002 Primary Solver 選定の PoC 手順 |
 
 ### 移設しなかった資産（理由）

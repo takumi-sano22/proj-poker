@@ -123,29 +123,30 @@ ISSUE_URL=$(gh issue create --repo takumi-sano22/proj-poker --title "[PhaseN] {t
 GH_NUM=$(echo "$ISSUE_URL" | grep -oE '[0-9]+$')
 ```
 
-### 7. 親 Issue #2 への sub-issue 紐付け
+### 7. 親 Issue への sub-issue 紐付け
 
-**proj-poker は GitHub Project を使わない**。進捗管理は親 Issue #2（MVP Parent）への **sub-issue 紐付け**で行う。ラベル（手順3）・アサイン（手順6）と並ぶ**必須の 3 点セット**として扱い、放置しない。**`sub_issues` API は Issue の数値 database id を要求する**（`gh issue view` が返す `node_id`（`I_kwDO…`）を渡すと `422 not of type integer` で失敗する）。
+**proj-poker は GitHub Project を使わない**。進捗管理は親 Issue への **sub-issue 紐付け**で行う。親は MVP（Phase 0〜5）が #2（Close 済み）、Post-MVP は Phase 6 が #105・Phase 7 が #106・Phase 8 が #107（その上に Post-MVP Parent #104。Phase に属さない Post-MVP の横断 Issue は #104。D102）。ラベル（手順3）・アサイン（手順6）と並ぶ**必須の 3 点セット**として扱い、放置しない。**`sub_issues` API は Issue の数値 database id を要求する**（`gh issue view` が返す `node_id`（`I_kwDO…`）を渡すと `422 not of type integer` で失敗する）。
 
 ```bash
 # 子 issue の数値 dbid を取得（node_id では 422 になる）
 CHILD_ID=$(gh api repos/takumi-sano22/proj-poker/issues/${GH_NUM} -q .id)
-# 親 Issue #2 配下に sub-issue として紐づける（-F で整数として渡す）
-gh api -X POST repos/takumi-sano22/proj-poker/issues/2/sub_issues -F sub_issue_id="${CHILD_ID}"
+# 親 Issue（例: Phase 6 なら 105）配下に sub-issue として紐づける（-F で整数として渡す）
+PARENT=105
+gh api -X POST repos/takumi-sano22/proj-poker/issues/${PARENT}/sub_issues -F sub_issue_id="${CHILD_ID}"
 ```
 
-> MVP 後の Phase は将来別の親 Issue になりうる。親が #2 以外と判明している場合はその番号を使う。親が不明な単発 issue は紐付けをスキップし、その旨を通知する（issue 作成自体は継続）。
+> 新たな Phase の親ができたら、その番号を使う。親が不明な単発 issue は紐付けをスキップし、その旨を通知する（issue 作成自体は継続）。
 
 **依存/ブロック（本文参照）**: 依存・ブロック関係がある場合は、issue 本文の `# 参考` セクションに `Depends on #NNN` / `Blocked by #NNN` / `Refs #NNN` を明記する（GitHub がリンク化する）。
 
 ### 8. ローカル Issue 記録台帳（proj-poker では使わない）
 
-他プロジェクトでは `docs/issues/` と `wbs.md` にローカル記録を残す運用があるが、**proj-poker では使わない**。Issue の正本は GitHub Issue と親 #2 の sub-issue / DoD チェックであり、docs/ 変更を伴う作業ログは `docs/taskLog/`（`task-log` skill）に残す。したがって docs 変更の PR 作成も本スキルでは行わない（実装・docs の PR は `github-workflow` skill に従う）。
+他プロジェクトでは `docs/issues/` と `wbs.md` にローカル記録を残す運用があるが、**proj-poker では使わない**。Issue の正本は GitHub Issue と親 Issue の sub-issue / DoD チェックであり、docs/ 変更を伴う作業ログは `docs/taskLog/`（`task-log` skill）に残す。したがって docs 変更の PR 作成も本スキルでは行わない（実装・docs の PR は `github-workflow` skill に従う）。
 
 ## 出力
 
 以下を報告する：
 - 作成した Issue の URL・タイトル・本文プレビュー
-- 紐付けた親 Issue（`#2` など。スキップした場合はその理由）
+- 紐付けた親 Issue（`#105` など。スキップした場合はその理由）
 - 付与したラベル・アサイン（担当者 or `@me`）
 - 本文に記載した依存・ブロック参照（なければその旨）

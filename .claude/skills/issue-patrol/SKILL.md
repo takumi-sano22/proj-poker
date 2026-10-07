@@ -1,13 +1,13 @@
 ---
 name: issue-patrol
-description: "プロジェクトのオープン issue を巡回し、優先度の整理・親 Issue #2 への sub-issue 紐付け確認・進捗コメント投稿・着手候補の選定を行うスキル。「issueを確認して」「issue巡回して」「未対応のissueある？」「今日やることある？」「issue確認して対応して」「タスク確認して」などのキーワードでトリガーすること。実装着手は /github-workflow にディスパッチする。ドキュメントの一括更新は /sync-check を使うこと。"
+description: "プロジェクトのオープン issue を巡回し、優先度の整理・親 Issue（MVP は #2、Post-MVP は #104〜#107）への sub-issue 紐付け確認・進捗コメント投稿・着手候補の選定を行うスキル。「issueを確認して」「issue巡回して」「未対応のissueある？」「今日やることある？」「issue確認して対応して」「タスク確認して」などのキーワードでトリガーすること。実装着手は /github-workflow にディスパッチする。ドキュメントの一括更新は /sync-check を使うこと。"
 ---
 
 # Issue 巡回・対応
 
 ## 概要
 
-オープンな GitHub Issue を巡回し、優先度を整理・親 Issue #2 への sub-issue 紐付けを確認・進捗コメントを投稿し、着手候補を選定する。本スキルの責務は **巡回・状況判定・優先度整理・選定・コメント・ディスパッチ**まで。
+オープンな GitHub Issue を巡回し、優先度を整理・親 Issue への sub-issue 紐付けを確認・進捗コメントを投稿し、着手候補を選定する。本スキルの責務は **巡回・状況判定・優先度整理・選定・コメント・ディスパッチ**まで。
 **実装そのものは `/github-workflow` が担当する**（worktree で隔離し、原則順次。並行は独立した作業のみ）。本スキルは着手候補を確認したうえで `/github-workflow` にディスパッチする。
 docs/ 正本・`decision_log.yaml`・`11_OPEN_ITEMS` などの**一括最新化**は `/sync-check` が担当する。
 
@@ -42,7 +42,7 @@ gh issue list --assignee @me --state open --label "${LABEL}" --limit ${LIMIT:-20
 取得した一覧が空（0件）の場合は「対応すべき issue はありません」と報告して終了する。
 
 取得した一覧を以下の観点でソートして優先度を判断する：
-- **Priority ラベル**（`priority:urgent` > `priority:high` > `priority:medium` > `priority:low`）。ラベルがない場合は、Phase 番号（`docs/08_MVP_AND_ROADMAP.md` の Phase 0〜8）と親 #2 の DoD の進み具合から優先度を判断する（proj-poker は GitHub Project を使わない）。
+- **Priority ラベル**（`priority:urgent` > `priority:high` > `priority:medium` > `priority:low`）。ラベルがない場合は、Phase 番号（`docs/08_MVP_AND_ROADMAP.md` の Phase 0〜8）とその Phase の親（MVP は #2、Post-MVP は #105〜#107）の DoD・#104 の Phase Gate の進み具合から優先度を判断する（proj-poker は GitHub Project を使わない）。
 - **期限**（マイルストーンの期日が近いものを優先。proj-poker では期限は Phase 順序で管理する。マイルストーンが無ければ Phase 番号の若い順を優先する）
 - **種別ラベル**（`blocker` > `bug` > `feature`）
 - **最終更新日**（長期間更新なしのものは要確認）
@@ -55,14 +55,17 @@ gh issue list --assignee @me --state open --label "${LABEL}" --limit ${LIMIT:-20
 - **レビュー待ち**: PR が作成されリンクあり
 - **ブロック中**: 依存するタスクや情報待ちの記述あり
 
-あわせて、巡回対象の各 open issue が **親 Issue #2（MVP Parent）の sub-issue になっているか**を確認する。Phase に属する issue（タイトルが `[PhaseN]`）は紐付け必須、`[横断]` は必要に応じて。
+あわせて、巡回対象の各 open issue が **その Phase の親 Issue の sub-issue になっているか**を確認する（Phase 0〜5 は #2、Phase 6 は #105・7 は #106・8 は #107。Post-MVP の `[横断]` は #104）。Phase に属する issue（タイトルが `[PhaseN]`）は紐付け必須、`[横断]` は必要に応じて。
 
 ```bash
-# 親 #2 の sub-issue 一覧を取得し、巡回対象の open issue と突合
-gh api repos/takumi-sano22/proj-poker/issues/2/sub_issues --jq '.[] | "\(.number)\t\(.state)\t\(.title)"'
+# 親（MVP は #2、Post-MVP は #104〜#107）の sub-issue 一覧を取得し、巡回対象の open issue と突合
+for p in 2 104 105 106 107; do
+  echo "== #$p"
+  gh api repos/takumi-sano22/proj-poker/issues/$p/sub_issues --jq '.[] | "\(.number)\t\(.state)\t\(.title)"'
+done
 # 未紐付けだった場合は数値 id で紐付ける（node_id では 422 になる）
 CHILD_ID=$(gh api repos/takumi-sano22/proj-poker/issues/<n> -q .id)
-gh api -X POST repos/takumi-sano22/proj-poker/issues/2/sub_issues -F sub_issue_id="${CHILD_ID}"
+gh api -X POST repos/takumi-sano22/proj-poker/issues/<親の番号>/sub_issues -F sub_issue_id="${CHILD_ID}"
 ```
 
 **学習候補の蓄積も見る**（`review-distillation` skill を採用している場合）: 本文検索で拾ったマージ済み PR（直近 N 件に絞らない）の `## Review learning` 節（ラウンドごとの「候補 N 件（area severity …）— URL」）を読み、①候補の合計が概ね 5 件以上 ②同じ `area` の候補が 3 件前後 ③`P0` / `P1` の候補がある、のいずれかなら **`review-distillation` の起動（独立 Issue）を着手候補に含めて提案する**。候補の中身（root failure class・destination）を読んで判定するのは Distill の仕事なので、ここでは本文の行から拾える件数・領域・重大度だけを見る。**行末に `（distilled: #N）` が付いた行は全候補が処理済みなので数えない**（一部処理の候補は Distill 側が候補ブロックの `distilled:` 行で識別する。巡回は本文の行だけで足りる）。本節はプロジェクト固有版にだけある場合がある（global 版と同名のため、巡回時はプロジェクト固有版があればそちらを優先して Read で読む）。
@@ -86,7 +89,7 @@ gh pr view <PR> --json body --jq .body | sed -n '/^## Review learning/,/^## /p'
 - ドキュメント更新・誤記修正
 - 小規模な機能追加・リファクタリング
 
-`phase-planning` で分解済みの Phase Issue は規模によらず候補に含めてよい。分解されていない大規模な機能追加・アーキテクチャ変更、`decision_log.yaml` の既存判断の上書きや Open Item の確定を要するもの、docs の停止ゲート（親 #2 の実装開始 Gate 等）が未解除の実装は候補に含めず、セッション冒頭の質問か Issue コメントで人間に返す。
+`phase-planning` で分解済みの Phase Issue は規模によらず候補に含めてよい。分解されていない大規模な機能追加・アーキテクチャ変更、`decision_log.yaml` の既存判断の上書きや Open Item の確定を要するもの、docs の停止ゲート（親 #2 の実装開始 Gate、#104 の実装開始 Gate・Phase Gate 等）が未解除の実装は候補に含めず、セッション冒頭の質問か Issue コメントで人間に返す。
 
 着手候補群について「対象 issue・想定作業内容・影響範囲」をまとめる。proj-poker は自走が既定のため、**確認はセッション冒頭の `AskUserQuestion` に含める**（冒頭で承認済みなら確認せず着手する。作業途中で追加確認しない）。
 未アサインの issue を含む場合は `gh issue edit {number} --add-assignee @me` で割り当てる。
@@ -119,7 +122,7 @@ PR は github-workflow が `Closes #xxx` 付きで作成済みのため、コメ
 以下をまとめて報告する：
 
 - **巡回した issue 一覧**（件数・優先度ソート後の順序）
-- **sub-issue 紐付け状況（親 #2）**（未紐付けだった issue / 追加した issue）
+- **sub-issue 紐付け状況（親 #2・#104〜#107）**（未紐付けだった issue / 追加した issue）
 - **ブロック中の issue**（ブロック理由・解消策の提案）
 - **レビュー待ちの issue**（関連 PR の URL）
 - **ディスパッチした着手候補**

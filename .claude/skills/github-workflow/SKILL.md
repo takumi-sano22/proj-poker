@@ -7,7 +7,7 @@ description: コード/ドキュメント変更を伴うすべての作業で、
 
 本文は作業の時系列（Step 0 → Issue → ブランチ → 実装 → PR → レビュー → マージ）で並ぶ。各ルールの詳細は一次記述のセクションに一元化し、他所からは参照する。末尾の「常時適用ルール」（完了報告前検証・進捗可視化）はフロー全体を通して常に適用する。
 
-> **proj-poker の実値**: リポジトリ `takumi-sano22/proj-poker`・本体作業ツリー `/home/ai/project/proj-poker`・タイトル規約は `CLAUDE.md`（`[PhaseN]` / `[横断]`）・進捗管理は GitHub Project ではなく**親 Issue #2 への sub-issue 紐付け**・実装の一次情報は `docs/03_SYSTEM_ARCHITECTURE.md` / `docs/04_DATA_AND_EVENTS.md`・Codex 連携スクリプトは `~/bin`。
+> **proj-poker の実値**: リポジトリ `takumi-sano22/proj-poker`・本体作業ツリー `/home/ai/project/proj-poker`・タイトル規約は `CLAUDE.md`（`[PhaseN]` / `[横断]`）・進捗管理は GitHub Project ではなく**親 Issue への sub-issue 紐付け**（MVP は #2、Post-MVP は #104 の下の Phase 親 #105〜#107。親の一次情報は `CLAUDE.md`）・実装の一次情報は `docs/03_SYSTEM_ARCHITECTURE.md` / `docs/04_DATA_AND_EVENTS.md`・Codex 連携スクリプトは `~/bin`。
 
 ## 標準フロー
 
@@ -112,7 +112,7 @@ description: コード/ドキュメント変更を伴うすべての作業で、
 
 `create-issue` skill の実行（skill 本文・`gh label list` / `gh issue create` / sub-issue 紐付けの出力・重複チェック結果）は親コンテキストを太らせるため、実装と同様に subagent に委譲する。
 
-- **入力（`subagent-briefing` 準拠で最小化）**: タイトル案・WHY/WHAT の要点・対象 repo・親 Issue 番号（MVP は #2）・タイトル規約（`CLAUDE.md`）・**希望ラベル**・**アサイン方針**（担当確定ならその GitHub ユーザー名／未定なら `@me`。アサイン無しで作らせない）・**relationship**（親 Stage/トラッキング Issue 番号があれば sub-issue 紐付け対象／依存・ブロック Issue 番号があれば本文 `Depends on`・`Blocked by`・`Refs` 用）・使う skill 名（`create-issue`）。
+- **入力（`subagent-briefing` 準拠で最小化）**: タイトル案・WHY/WHAT の要点・対象 repo・親 Issue 番号（MVP は #2、Post-MVP は Phase 6〜8 が #105〜#107、Phase に属さない Post-MVP の `[横断]` は #104）・タイトル規約（`CLAUDE.md`）・**希望ラベル**・**アサイン方針**（担当確定ならその GitHub ユーザー名／未定なら `@me`。アサイン無しで作らせない）・**relationship**（親 Stage/トラッキング Issue 番号があれば sub-issue 紐付け対象／依存・ブロック Issue 番号があれば本文 `Depends on`・`Blocked by`・`Refs` 用）・使う skill 名（`create-issue`）。
 - **出力**: 作成した Issue URL/番号・付与したラベル・アサイン結果・**張った relationship**・親 Issue への sub-issue 紐付け結果。（proj-poker はローカル Issue 記録台帳を採用しない）
 - **直列が既定**: 依存関係（`Depends on` / `Blocked by`）を本文に書くため、後続 Issue が先行 Issue の番号を参照できるよう直列に起票する。独立した多数の Issue だけは並列起票してよい（Phase 分解は `phase-planning` skill）。
 - **例外**: ごく軽微な単発 Issue で委譲コストが上回るなら親で直接起票してよい（過剰委譲はしない）。
@@ -265,7 +265,7 @@ done
 - `docs/decision_log.yaml` の採用済み判断の変更・Open Item（`docs/11_OPEN_ITEMS.md`）の永久確定（`decision-log` skill）
 - 新たな人間判断なしの非目標の導入（Auth・Tenant・Cloud DB・SaaS・Online Multiplayer・Voice・3D・Real Money。`docs/00` §6・`docs/03` §11）
 - 秘密情報（API キー・`.env*`・トークン）のコミット・露出
-- docs が定める停止ゲート（親 #2 の実装開始 Gate 等）の解除
+- docs が定める停止ゲート（親 #2 の実装開始 Gate、#104 の実装開始 Gate・Phase Gate 等）の解除
 
 ### マージできなかった場合の停止ルール
 
