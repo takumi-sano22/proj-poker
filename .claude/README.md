@@ -87,7 +87,7 @@ github-workflow（標準フロー・手順の一次情報）
 | skill | 用途・トリガー |
 | --- | --- |
 | `decision-log` | 人間判断を `docs/decision_log.yaml` へ記録、Open Items（`docs/11_OPEN_ITEMS.md`）の暫定値・確定の扱い |
-| `ui-design-recipes` | UI の実装値レシピ集。**現状は汎用版**（卓 UI 向けの改良は #5） |
+| `ui-design-recipes` | UI の実装値レシピ集。卓 UI の固有補強は `references/proj-poker.md`（最初に読む） |
 | `add-skill` | skill の新規追加・管理。**skill 品質チェックリストの一次情報** |
 
 ### proj-poker 固有

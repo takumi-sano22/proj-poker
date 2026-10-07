@@ -50,7 +50,7 @@
 - **人間判断の記録・Open Items** → `decision-log` skill / **Solver 選定 PoC（OI-002）** → `solver-poc` skill
 - **AI Opponent / Review の品質評価** → `llm-quality-improvement` skill
 - **実装・設計書・Issue の整合 / skill 追加** → `sync-check` / `add-skill`
-- **UI** → `ui-design-recipes`（卓 UI 向けの改良は #5 で予定。現状は汎用版）
+- **UI** → `ui-design-recipes`（卓 UI の固有補強 `references/proj-poker.md` を先に読む）
 - **ポーカードメインの根拠** → `docs/research/`（根拠資料であり仕様ではない。採用済み判断を上書きしない）
 - **GitHub の状態** → `gh` CLI / GitHub MCP の一次情報。書き込みは gh CLI
 - **skill・agents・hooks・permissions の所在と使い分け** → `.claude/README.md`（global と同名の skill は固有版を優先）

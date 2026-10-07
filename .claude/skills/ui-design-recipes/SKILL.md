@@ -11,7 +11,7 @@ description: >-
 
 # UI デザインの実装レシピ
 
-> **proj-poker での位置づけ（暫定）**: 本 skill は他 PJ（Web アプリ）由来の汎用版をそのまま移設したもの。proj-poker の卓 UI（2D Live-style Table・チップ構造描画・実額常時表示 D49・Declaration Buttons・Dealer Feedback。`docs/06_UI_UX.md`）のデザイン体系はまだ確立していない。**Phase 1 で Basic UI と CSS 方式が確定したら #5 で proj-poker 向けに改良する**（固有補強 `references/proj-poker.md` の追加、admin-dashboard / chat-thread 等の不要な reference の整理）。それまでは、汎用レシピとして参照するに留め、`docs/06_UI_UX.md` の要件を優先する。
+> **proj-poker での位置づけ**: 汎用の reference に、卓 UI の固有補強 `references/proj-poker.md` を足したもの。**UI を作る・直すときは、reference より先に `references/proj-poker.md` を読む**（素の CSS・トークン・既存部品・画面幅と卓の配置規則・重なりの測り方）。画面要件は `docs/06_UI_UX.md` が正本で、実額常時表示（D49）を優先する。卓 UI に不要な汎用 reference（チャット画面・管理画面・画面の見本・コードブロック）は #5 で削除した。
 
 画面や部品を**すでにあるデザイン体系に沿って**作るときの、実装の値と作法の集まり。
 美学の方向性を決める skill ではなく、決まった方向性を**同じ値で再現する**ための skill である。
@@ -22,7 +22,7 @@ description: >-
 ## 着手前（毎回）
 
 1. **固有の補強 md を先に読む。** 作業中のリポジトリの `CLAUDE.md` / `AGENTS.md` が
-   本 skill の固有補強 md（例: `.claude/skills/ui-design-recipes/<project>.md`）を指していれば、
+   本 skill の固有補強 md（proj-poker では `references/proj-poker.md`）を指していれば、
    reference より先に読む。固有 md には実際の色の値・既存部品の対応表・プロジェクト固有の禁止事項がある。
    **固有 md と reference が食い違ったら固有 md（とそれが指す実装）を採る。**
    reference は複数プロジェクトに共通する形に一般化してあり、個別の事情を知らないため。
@@ -48,6 +48,7 @@ description: >-
 
 | 作るもの・やること | 読む reference |
 | --- | --- |
+| **proj-poker の卓 UI（席・Bet・Pot・Card・Chip・宣言 Button・Dealer Feedback・Hero 欄・Replay・Review）・狭い画面の配置・重なりの測り方** | `references/proj-poker.md`（最初に読む） |
 | 新しいプロジェクトにこの体系を導入する | `references/README.md` → `foundations/` を順に全部 |
 | 色を決める・グラデーションをかける・アクセントを置く・ベースライン色を差し替える | `references/foundations/color-usage.md` |
 | 面（カード・吹き出し・パネル・モーダル）の重なり・影・縁を決める | `references/foundations/surface-and-depth.md` |
@@ -64,22 +65,17 @@ description: >-
 | トースト・お知らせや提案のバナー | `references/components/banner-and-toast.md` |
 | スクロールバーの見た目 | `references/components/scrollbar.md` |
 | アプリの骨組み・画面幅ごとの列の出し分け・中央寄せ・z-index | `references/layout/app-shell-responsive.md` |
-| チャット・会話画面（メッセージ一覧・吹き出しの幅・スクロール追従・入力欄） | `references/layout/chat-thread.md` |
-| 業務用の管理画面・ダッシュボード（シェル・KPI・テーブル・フィルタ・空状態・バッジ・グラフ） | `references/layout/admin-dashboard.md` |
 | hover・押下の反応（影の段上げ・持ち上げ・hover で出す操作・常時表示にする判断） | `references/effects/hover-and-press.md` |
 | 発光・装飾の演出（光るボタン・雲形の吹き出し・主役の気分のアニメーション） | `references/effects/glow-and-decor.md` |
 | 背景を透かす半透明の面（ガラスの面・アルファの決め方・クリック透過・端のフェード） | `references/effects/glass-surface.md` |
 | 絵文字・アイコン（使う場所・1 概念 1 絵文字・aria・インライン SVG） | `references/content/emoji-and-icons.md` |
-| 使い方の説明に置く画面の見本と注釈（枠・タグ・凡例） | `references/content/screen-mimic.md` |
-| コードブロック（暗い面・構文色・折りたたみ） | `references/content/code-block.md` |
 
 部品を作るときは、部品の reference に加えて、その部品が載る面の層を `surface-and-depth.md` で確かめる。
 迷ったら `surface-and-depth.md` から読む。どの部品も「どの層の面か」が決まれば、角丸・影・縁が決まる。
 
 ## 鉄則（全 reference に共通）
 
-業務用の管理画面（`layout/admin-dashboard.md`）はデザイン言語を分けた別体系なので、1〜3 は適用しない
-（色の役割は同ファイルの 4 系統に従う）。4 以降は管理画面にも適用する。
+全 reference と `references/proj-poker.md` に適用する。
 
 1. **色は役割名で呼ぶ**（`brand` / `accent` / `surface` / `on-surface`。`indigo` / `gray-900` と呼ばない）。
    色相名で呼ぶと、ブランド色を差し替えた瞬間に名前が嘘になり、参照側を全部書き換えることになる。
