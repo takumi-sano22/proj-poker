@@ -457,7 +457,7 @@
 - id: D114
   choice: "Learning Reset は区切りの行を追記し、正本を消さない（推奨案、AskUserQuestion）"
   status: "採用済み"
-  decision: "Learning Resetは追記型のテーブル（Resetの時刻・対象カテゴリ）に区切りの行を足し、Score / Profile / Hypothesisは最後のLearning Resetより後のEvidenceだけで計算する。Event Log・reviews等の正本は消さず、削除拒否のTriggerも外さない。User Read / Note / TagはLearning ResetでもOpponent Memory Resetでも消さない（消えるのはHand History Delete / Factory Resetだけで、この2つはPhase 6の範囲外のまま）。D64・D37の具体化。実装は#118。"
+  decision: "Learning Resetは追記型のテーブル（Resetの時刻・対象カテゴリ）に区切りの行を足し、Score / Profile / Hypothesisはそれぞれ、そのカテゴリを対象に含む最後のLearning Resetより後のEvidenceだけで計算する。Event Log・reviews等の正本は消さず、削除拒否のTriggerも外さない。User Read / Note / TagはLearning ResetでもOpponent Memory Resetでも消さない（消えるのはHand History Delete / Factory Resetだけで、この2つはPhase 6の範囲外のまま）。D64・D37の具体化。実装は#118。"
 - id: D115
   choice: "Score と Decision Quality Summary は Review 済みの判断だけを数える（推奨案、AskUserQuestion）"
   status: "採用済み"
