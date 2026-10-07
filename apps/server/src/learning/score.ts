@@ -72,7 +72,37 @@ export function computeScoreReport(
 ): ScoreReport {
   const policy = options.policy ?? DEFAULT_SCORING_POLICY;
   const set = buildAbilityEvidence(source, policy, options);
-  const scored = set.evidence.filter((e) => e.points !== null);
+  const scores = scoreEvidence(set.evidence, policy);
+
+  return {
+    policyVersion: policy.version,
+    heroId: source.heroId,
+    decisions: {
+      total: set.decisionCount,
+      reviewed: set.reviewedCount,
+      scored: scores.scored,
+      insufficientEvidence: set.reviewedCount - scores.scored,
+    },
+    overall: scores.overall,
+    abilities: scores.abilities,
+    evidence: set.evidence,
+  };
+}
+
+/** Ability Evidence の列（判断の順）の集計。Player Profile の Recent / Long-term（#114）も同じ集計を使う。 */
+export interface EvidenceScores {
+  /** Poker Decision の集計に入った数（insufficient_evidence を除く）。 */
+  readonly scored: number;
+  readonly overall: ScoreValue;
+  readonly abilities: readonly AbilityScore[];
+}
+
+/** Ability Evidence の列を Policy で集計する。同じ列・同じ Policy からは同じ結果。 */
+export function scoreEvidence(
+  evidence: readonly AbilityEvidence[],
+  policy: ScoringPolicy,
+): EvidenceScores {
+  const scored = evidence.filter((e) => e.points !== null);
 
   const abilities = policy.abilities.map((ability): AbilityScore => {
     if (ability === "live_mechanics") {
@@ -80,7 +110,7 @@ export function computeScoreReport(
       return {
         ability,
         ...aggregate(
-          set.evidence.map((e) => ({
+          evidence.map((e) => ({
             id: e.id,
             points: e.liveMechanics.points,
             weight: 1,
@@ -102,14 +132,7 @@ export function computeScoreReport(
   });
 
   return {
-    policyVersion: policy.version,
-    heroId: source.heroId,
-    decisions: {
-      total: set.decisionCount,
-      reviewed: set.reviewedCount,
-      scored: scored.length,
-      insufficientEvidence: set.reviewedCount - scored.length,
-    },
+    scored: scored.length,
     overall: aggregate(
       scored.map((e) => ({
         id: e.id,
@@ -119,7 +142,6 @@ export function computeScoreReport(
       policy,
     ),
     abilities,
-    evidence: set.evidence,
   };
 }
 

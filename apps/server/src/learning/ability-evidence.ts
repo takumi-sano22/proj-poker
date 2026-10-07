@@ -43,6 +43,8 @@ export interface AbilityEvidence {
   };
   /** Review が根拠にした Evidence の ID（provenance）。 */
   readonly reviewEvidenceIds: EvidenceIdSet;
+  /** 割り当てに使った判断時点の特徴（Hypothesis の type の分類にも使う。#114）。 */
+  readonly features: DecisionFeatures;
 }
 
 /** Score の入力。Hand は古い順（Trend はこの順で見る）。 */
@@ -122,6 +124,7 @@ function toAbilityEvidence(
       rulingNotes: features.rulingNotes,
     },
     reviewEvidenceIds: review.evidenceIds,
+    features,
   };
 }
 

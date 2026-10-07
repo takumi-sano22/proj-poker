@@ -51,6 +51,7 @@ describe("openDatabase（マイグレーション）", () => {
       "events_append_only",
       "events_no_delete",
       "hands",
+      "hypothesis_snapshots",
       "reveal_reviews",
       "reveal_reviews_append_only",
       "reveal_reviews_no_delete",
@@ -73,6 +74,45 @@ describe("openDatabase（マイグレーション）", () => {
     ]);
   });
 
+  it("版 5 の DB に版 6（hypothesis_snapshots）を当てても、既存のテーブルの定義と行は変わらない（D76・D113）", () => {
+    const legacyPath = join(dir, "v5.sqlite");
+    const v5 = new DatabaseSync(legacyPath);
+    try {
+      for (const sql of MIGRATIONS.slice(0, 5)) v5.exec(sql);
+      v5.exec("PRAGMA user_version = 5");
+      v5.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 8, '2026-10-05T00:00:00.000Z', '{}');
+        INSERT INTO user_tags VALUES (1, '2026-10-05T00:02:00.000Z', 'k', '{}', 'tight', 'add');
+      `);
+    } finally {
+      v5.close();
+    }
+    const snapshot = (db: DatabaseSync) => ({
+      schema: db
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'hypothesis_snapshots' ORDER BY name",
+        )
+        .all(),
+      events: db.prepare("SELECT * FROM events").all(),
+      tags: db.prepare("SELECT * FROM user_tags").all(),
+    });
+    const before = new DatabaseSync(legacyPath);
+    const expected = snapshot(before);
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(snapshot(db)).toEqual(expected);
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM hypothesis_snapshots").get(),
+      ).toEqual({ n: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
   it("版 4 の DB に版 5（user_notes・user_tags）を当てても、既存のテーブルの定義と行は変わらない（D76・D112）", () => {
     const legacyPath = join(dir, "v4.sqlite");
     const v4 = new DatabaseSync(legacyPath);
@@ -90,7 +130,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
