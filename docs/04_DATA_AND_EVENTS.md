@@ -413,4 +413,5 @@ Phase 6以降で足すデータは、次の方針で置きます。具体的な�
   - `learning_resets`: `seq`（追記の順。INTEGER PRIMARY KEY）・`reset_id`（1回のReset。カテゴリごとの行が同じ値）・`created_at`（Resetの時刻。ISO 8601・UTC。1回のResetの行は同じ値）・`category`（`score` / `hypothesis` / `profile`。CHECK）。`(reset_id, category)`は一意で、1回のResetの行は1トランザクションで足します。`UPDATE` / `DELETE`はTriggerで拒否します。
   - API（`docs/03` §1）: `POST /api/learning/resets`（`{ categories }`）が区切りを足し、`GET /api/learning/profile`の応答の`resets`（カテゴリごとの最後のResetの時刻）と`GET /api/drills`の`score.since`で区切りを返します。
 - **Phase 7のMemory**: CPUのObservationはappend-onlyのRaw Evidenceとして持ち、Hypothesis / TendencyはProjectionです（§6。D106）。TiltはSession終了でResetするtransientな状態で、Persona / Long-term Memoryと分けて持ちます（D107）。
+- **意味上の順序（D117）**: 「どちらが先か」で結果が変わる判定（Learning Resetの前後・Replayの新しい順・Session内のHandの順・Recentの順・最新のSession Projectionの選択・Resume）は、永続的な単調増加の論理順序で決めます。`created_at`・`started_at`・`recorded_at`等の壁時計の列は表示・監査のMetadataとして残しますが、順序の正本にしません（OSの時刻は後ろへ戻ることがある）。論理順序の具体的な持ち方は#132で決め、この文書に書きます。
 - **マイグレーション**: 既存のテーブル・列・保存済みのEventは書き換えず、足すだけにします（D76）。Eventの形を変えるときはschema_versionを上げてupcastを足します。

@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D116の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D117の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -31,6 +31,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D102〜D109 | Post-MVP（#104〜#107）の人間確定方針。Parent構造と Phase 6→7→8 の順序・Gate・不変条件の継承（D102）、Phase 6 の全Player対応 Stats Projection と `ScoringPolicy phase6_provisional_v1`（OI-006の暫定値。D103）、Recent / Long-term Profile と決定論の Hypothesis 遷移（D104）、User Read / Note / Tag と Engine Validation 必須・通常Scoreと別系列の Drill（D105）、Fixed CPU の `cpuProfileId`・Guest の寿命・append-only の Observation と recency decay・observer private の CPU-to-CPU Memory・Table Tendency（D106）、Tilt の版付き決定論 State Machine（D107）、`TournamentSession` 層と 6-max STT・Hand数base・BBA・Payout 50/30/20（OI-007の暫定値。D108）、Public Tournament Context と決定論 ICM（Chip EV と別 Evidence。D109） |
 | D110〜D112 | Phase 6 の分解（#112〜#119。Drill は決定論の変形だけで LLM 生成は Phase 6 の範囲外。D110）、Phase 6 の Stats / Score / Profile は都度計算・保存しない（Hypothesis は D104 どおり構造化保存。D111）、User Read は USER_READ_RECORDED（schema_version 8）・Note / Tag はマイグレーション v5 の追記型テーブル（D112） |
 | D113〜D116 | Weakness Hypothesis は reviews から作り直せる Snapshot 表（マイグレーション v6。#115 を #114 より先に実装。D113）、Learning Reset は区切りの行の追記で正本を消さず User Read / Note / Tag も消さない（D114）、Score と Decision Quality Summary は Review 済みの判断だけを数え M 件中 N 件を表示（D115）、Drill は専用 Session の通常 Hand と追記型の drills 表で区別し通常の集計から除く（D116） |
+| D117 | 意味上の順序（Learning Resetの前後・Replay・Session内のHand・Recent・最新のSession Projection・Resume）は永続的な単調増加の論理順序で決め、壁時計の列は表示・監査のMetadataとして残す。#129・#130は#132でまとめて直し、それまでPhase 6 → 7 Gateを保留する |
 
 ## 特に重要なClosed Decision
 

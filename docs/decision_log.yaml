@@ -1,4 +1,4 @@
-# D01〜D116の採用済み人間判断。
+# D01〜D117の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -466,3 +466,7 @@
   choice: "Drill は専用 Session の通常 Hand として保存し、追記型の drills 表で区別する（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "Drillは専用のSessionの通常のHandとしてPoker Engineで終局まで進め（相手のActionは元HandのScriptかRuleBotの決定論）、Event Logに保存する（Eventの形は変えない）。元のHand / Decision / Reviewのid・変形の種類・seed・DrillのHandのidを持つ追記型のdrillsテーブルで通常Playと区別し、Stats・Score・Profile・Hypothesis・Resume・Replayの通常の集計はdrillsにあるHandを除く。DrillのReviewは既存のPass Aの経路をそのまま使う。D105・D110の具体化。実装は#117。"
+- id: D117
+  choice: "意味上の順序は永続的な単調増加の論理順序で決め、壁時計は表示・監査の Metadata にする。#129・#130 を直すまで Phase 6 → 7 Gate を保留する（#132 の人間判断）"
+  status: "採用済み"
+  decision: "正しさに関わる「どちらが先か」の順序・境界（Learning Resetの前後・Replayの新しい順・Session内のHandの順・Recentの順・最新のSession Projectionの選択・Resume等）には壁時計を使わず、永続的な単調増加の論理順序を正本にする。created_at / started_at / recorded_at等の壁時計の列は表示・監査のMetadataとして残してよいが、順序の正本にしない。時刻をclampして戻らない時計に見せる解決は採らない。論理順序は追加マイグレーションで表し、既存のテーブル・列・行とappend-only / DELETE拒否の契約を壊さない。#129・#130は同根の横断問題として#132でまとめて直し、それまでPhase 6 → 7 Gateを保留する。D37・D76・D114の具体化。"
