@@ -33,8 +33,10 @@ import {
   recordSessionEvent,
   recordUserRead,
   resolvePendingOutOfTurn,
+  startDrillHand,
   startHand,
   type CpuSeatMetadata,
+  type DrillSpot,
   type EngineError,
   type FallbackKind,
   type HandEvent,
@@ -159,7 +161,26 @@ export interface HandOrchestratorOptions {
   readonly nextHandId: () => string;
   /** 新しい Session の ID。省略時は UUID。 */
   readonly nextSessionId?: () => string;
+  /**
+   * Resume（D95）で戻さない Hand（Drill の Hand。D116）。最後の Hand がこの中にある Session（Drill の専用の Session）は戻さない。
+   * 省略時は空。
+   */
+  readonly excludeFromResume?: () => ReadonlySet<string>;
   readonly logger?: OrchestratorLogger;
+}
+
+/**
+ * Drill の Hand の開始（#117・D116）。Spot は Engine の Validation を通ったもの（drill/drill-plan.ts）で、相手の Action は
+ * 判断の直前までは Spot の Script（元の Hand の公開の Action）、その後は RuleBot の決定論（persona があればその Preset）で決める。
+ * CPU の LLM は呼ばない（課金の経路を増やさない）。ユーザーの弱点（Profile・Hypothesis・Score）は受け取らない（不変条件 2）。
+ */
+export interface DrillHandStart {
+  readonly handId: string;
+  readonly sessionId: string;
+  readonly spot: DrillSpot;
+  /** RuleBot の seed の元（Drill の seed）。 */
+  readonly seed: number;
+  readonly persona: PersonaPresetId | null;
 }
 
 export type HeroViewListener = (view: HeroView) => void;
@@ -275,7 +296,9 @@ export class HandOrchestrator {
    * 途中で止まった Hand（保存は Hand の終わり）は戻さない（Hand 途中の完全復帰は求めない）。
    */
   private resumeSession(): SessionPointer | null {
-    const projection = this.options.store.latestSessionProjection();
+    const projection = this.options.store.latestSessionProjection(
+      this.options.excludeFromResume?.() ?? new Set(),
+    );
     if (projection === null || projection.state !== "ready_for_next_hand") {
       return null;
     }
@@ -442,6 +465,84 @@ export class HandOrchestrator {
       ok: true,
       value: { handId, view: this.heroViewOf(handId), created: true },
     };
+  }
+
+  /**
+   * Drill の Hand を始める（#117・D116）。専用の Session（その Hand だけの Session）の通常の Hand として、Spot の開始と Script を
+   * Engine で判断の直前まで進めて Event Log へ追記し、Hero の手番（練習する判断）の View を返す。
+   * 今の Session（this.session）は変えない（Drill の後も通常の Play はそのまま続く。Drill の Hand は Resume でも戻さない）。
+   * Hero の Action・SSE・Review は通常の Hand と同じ経路で扱う。CPU は RuleBot だけで、Persona は Drill の設定（Hidden Persona は読まない）。
+   */
+  async startDrill(
+    input: DrillHandStart,
+  ): Promise<OrchestratorResult<{ handId: string; view: HeroView }>> {
+    const { store, setup } = this.options;
+    const { handId, sessionId, spot } = input;
+    if (spot.heroId !== this.heroId) {
+      return {
+        ok: false,
+        error: {
+          kind: "invalid_input",
+          message: `Drill の Hero が卓の Hero と違う: ${spot.heroId}`,
+        },
+      };
+    }
+    if (this.hands.has(handId) || store.read(handId).length > 0) {
+      throw new Error(`Hand ID が重複した: ${handId}`);
+    }
+    const cpuSeats = spot.seats.filter((s) => s.playerId !== this.heroId);
+    const opened = startDrillHand({
+      handId,
+      sessionId,
+      spot,
+      config: setup.table,
+      // Drill の CPU は RuleBot だけ（Model は使わない）。
+      metadata: {
+        appVersion: this.options.appVersion ?? APP_VERSION,
+        cpuProfileVersion: PERSONA_PROFILE_VERSION,
+        cpuSeats: cpuSeats.map((s): CpuSeatMetadata => ({
+          playerId: s.playerId,
+          ...RULE_BOT_INFO,
+        })),
+      },
+    });
+    if (!opened.ok) return opened;
+    const personas: Record<string, PersonaPresetId> = {};
+    if (input.persona !== null) {
+      for (const s of cpuSeats) personas[s.playerId] = input.persona;
+    }
+    store.append(handId, opened.value.events, { sessionId, personas });
+
+    // 判断の後の相手は RuleBot（Drill の Persona。無ければ既定）。seed は Drill の seed と Spot の席順から導く（同じ Drill なら同じ判断）。
+    const persona =
+      input.persona === null ? undefined : PERSONA_PRESETS[input.persona];
+    const opponents = new Map<string, OpponentAgent>();
+    const fallbackBots = new Map<string, RuleBot>();
+    spot.seats.forEach((s, seatIndex) => {
+      if (s.playerId === this.heroId) return;
+      const cpuSeed = deriveSeed(input.seed, seatIndex);
+      opponents.set(s.playerId, new RuleBot(cpuSeed, persona));
+      fallbackBots.set(s.playerId, new RuleBot(cpuSeed, persona));
+    });
+    const rt: HandRuntime = {
+      handId,
+      sessionId,
+      opponents,
+      fallbackBots,
+      listeners: new Set(),
+      outageListeners: new Set(),
+      emergencyBots: new Map(),
+      running: null,
+      cancelWait: null,
+      failure: null,
+      outage: null,
+      outageRevision: 0,
+      fastForward: false,
+      endThinkWait: null,
+    };
+    this.hands.set(handId, rt);
+    await this.proceed(rt);
+    return { ok: true, value: { handId, view: this.heroViewOf(handId) } };
   }
 
   /**

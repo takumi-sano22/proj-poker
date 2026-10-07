@@ -110,6 +110,8 @@ Playtest後に決定します。
 
 #116で置いた暫定値（確定ではない。詳細は `docs/07` §6「実装（#116）」）: Session Reviewの`SessionReviewPolicy phase6_session_review_v1`は、Strengthを`strong`、Leakを`major_leak` / `improvement_suggested`の判断とし（`reasonable`・`mixed_marginal`はどちらにも入れない）、Important HandsはImportant SpotかStrength / Leakの判断があるHandをLeakの多い順・Important Spotの多い順に5 Handまで出す。Recommended Drillの候補はLeakの最初の判断（Drillは#117）。Playtest後にVersionを上げて見直す。
 
+#117で置いた暫定値（確定ではない。詳細は `docs/07` §7「実装（#117）」）: Targeted Drillの`DrillPolicy phase6_drill_v1`は、変形の種類を`effective_stack`（開始時の全員のStackを0.5倍・2倍）・`bet_size`（Heroが直面した相手の最初のBetを、Betの直前のPotの33%・75%・150%）・`opponent_tendency`（判断の後の相手を6つのPersona PresetのどれかのRuleBotにする。PresetはOI-005の暫定値）とし、seedで種類の順 → 値の順を決めてEngineのValidationを通る最初の候補を使う。Drillの題材はRecommended Drillの候補（Leakの最初の判断）。Drillの系列のScoreは通常と同じ`ScoringPolicy`で、練習した判断だけを数える。Playtest後にVersionを上げて見直す。
+
 ## OI-007 — Tournament Preset
 
 確定:

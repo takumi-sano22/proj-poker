@@ -88,6 +88,9 @@ export type ApiErrorKind =
   | "invalid_question"
   // Note / Tag の API（#115）
   | "not_found"
+  // Drill の API（#117）
+  | "review_required"
+  | "drill_unavailable"
   | "network"
   | "unknown";
 
@@ -117,6 +120,8 @@ const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "followup_limit",
   "invalid_question",
   "not_found",
+  "review_required",
+  "drill_unavailable",
 ];
 
 export async function getJson<T>(path: string): Promise<T> {

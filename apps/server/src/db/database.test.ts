@@ -47,6 +47,10 @@ describe("openDatabase（マイグレーション）", () => {
       db.close();
     }
     expect(tableNames(dbPath)).toEqual([
+      "drills",
+      "drills_append_only",
+      "drills_no_delete",
+      "drills_source_review",
       "events",
       "events_append_only",
       "events_no_delete",
@@ -74,6 +78,71 @@ describe("openDatabase（マイグレーション）", () => {
     ]);
   });
 
+  it("版 6 の DB に版 7（drills）を当てても、既存のテーブルの定義と行は変わらない（D76・D116）", () => {
+    const legacyPath = join(dir, "v6.sqlite");
+    const v6 = new DatabaseSync(legacyPath);
+    try {
+      for (const sql of MIGRATIONS.slice(0, 6)) v6.exec(sql);
+      v6.exec("PRAGMA user_version = 6");
+      v6.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 8, '2026-10-05T00:00:00.000Z', '{}');
+        INSERT INTO hypothesis_snapshots VALUES ('p/t', 'p', 't', 'suspected', '[]', '[]', '2026-10-05T00:02:00.000Z');
+      `);
+    } finally {
+      v6.close();
+    }
+    const snapshot = (db: DatabaseSync) => ({
+      schema: db
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'drills' ORDER BY name",
+        )
+        .all(),
+      events: db.prepare("SELECT * FROM events").all(),
+      hypotheses: db.prepare("SELECT * FROM hypothesis_snapshots").all(),
+    });
+    const before = new DatabaseSync(legacyPath);
+    const expected = snapshot(before);
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(snapshot(db)).toEqual(expected);
+      expect(db.prepare("SELECT COUNT(*) AS n FROM drills").get()).toEqual({
+        n: 0,
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("drills は追記だけで、元の判断の Pass A の Review を指す行だけを受け付ける（D116）", () => {
+    const db = openDatabase(dbPath);
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:01:00.000Z');
+        INSERT INTO reviews VALUES ('r1', 'h1', 2, 10, 'decision', 1, '2026-10-05T00:02:00.000Z', 'standard',
+          'review_standard', NULL, 'kb', NULL, 'sufficiency_gate', 'insufficient_evidence', 'low', '[]', '{}', '{}', '{}', NULL);
+      `);
+      const insert = db.prepare(
+        "INSERT INTO drills VALUES (?, '2026-10-05T00:03:00.000Z', 'h1', ?, 'r1', 'bet_size', '{\"kind\":\"bet_size\",\"potFraction\":0.75}', 'phase6_drill_v1', 7, ?)",
+      );
+      insert.run("d1", 2, "dh1");
+      // 判断の番号が Review と合わない行は拒否する。
+      expect(() => insert.run("d2", 3, "dh2")).toThrow(/Pass A review/);
+      // 同じ Drill の Hand を 2 回登録しない。
+      expect(() => insert.run("d3", 2, "dh1")).toThrow();
+      expect(() => db.exec("UPDATE drills SET seed = 8")).toThrow(
+        /append-only/,
+      );
+      expect(() => db.exec("DELETE FROM drills")).toThrow(/append-only/);
+    } finally {
+      db.close();
+    }
+  });
+
   it("版 5 の DB に版 6（hypothesis_snapshots）を当てても、既存のテーブルの定義と行は変わらない（D76・D113）", () => {
     const legacyPath = join(dir, "v5.sqlite");
     const v5 = new DatabaseSync(legacyPath);
@@ -92,7 +161,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'hypothesis_snapshots' ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -130,7 +199,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),

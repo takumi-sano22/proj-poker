@@ -198,12 +198,15 @@ export class ReplayService {
     private readonly store: EventStore,
     private readonly heroId: string,
     private readonly players: readonly SeatPlayer[],
+    /** 通常の一覧から除く Hand（D116: Drill の Hand）。1 Hand の再生（hand）は Drill の Hand も返す（Drill の Review から開く）。 */
+    private readonly excludeFromList: () => ReadonlySet<string> = () =>
+      new Set(),
   ) {}
 
-  /** Hand 一覧（開始の新しい順。最大 REPLAY_LIST_LIMIT 件）。 */
+  /** Hand 一覧（開始の新しい順。最大 REPLAY_LIST_LIMIT 件）。Drill の Hand は入れない。 */
   list(): ReplayHandSummary[] {
     return this.store
-      .listHands(REPLAY_LIST_LIMIT)
+      .listHands(REPLAY_LIST_LIMIT, this.excludeFromList())
       .map((summary) =>
         summarizeReplayHand(summary, this.events(summary.handId), this.heroId),
       );

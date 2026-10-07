@@ -255,6 +255,14 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 - **Ability**: Abilityごとに点数・確度・件数・傾向を1行で出し、Live MechanicsはPokerの判断と別のScoreだと示します。
 - **Strength / Leak・Important Hands**: Hand の番号・Street・Action・段階評価（Important HandsはHeroの札・Important Spotの理由・Review済みの数）を出します。勝ち負けでは選ばず、結果は出しません。
 - **Stats**: Hero自身の代表Stats（VPIP・PFR・3-bet等）を、割合と分子 / 分母で出します（機会が無ければ割合を出さない）。他Playerの統計は出しません。
-- **Recommended Drill**: 候補（Leakの最初の判断）と、押せない「Drill を始める」と「準備中」を出します（Drillは#117）。
+- **Recommended Drill**: 候補（Leakの最初の判断）と「Drill を始める」を出します。候補が無ければButtonは押せません。押すとTargeted Drill（下記）を始めます（#117）。
+- **Drill の結果**: 「Drill の結果（通常の Score と別に数えます）」の欄に、練習した判断の「M 件中 N 件を Review 済み」とOverall（確度と件数つき）と、Drillごとの行（変えた要素・段階評価または「未 Review」）を出します。行から、練習した判断のReviewを開きます（D105）。
 - **Player Profile**: 「直近 N 件（Recent）」「全期間（Long-term）」のタブで、Review済みの数・Overall・Abilityを出し分け、全期間のWeakness Hypothesis（状態の文字と支持 / 反証の件数）・決定論の文のまとめ・全期間のHeroのStatsを続けます。
 - Hidden Persona・CPUのPrivateな状態・他者の札・Learning-only Revealは画面に届きません（APIが返さない）。値はすべて`ui-design-recipes`の既存トークン（Reviewの面・段階評価の色・`.spot-row`・`.pass-tab`）で描き、横スクロールが出ないこと・Buttonが覆われないことを1280×900・375×667・320×568で確かめました。
+
+### Targeted Drill（#117・D105・D110・D116・`docs/07` §7）
+
+- Session Reviewの「Drill を始める」で、Drillの卓に移ります（`App.tsx`の画面の状態`drill`）。卓・進行ログ・Heroの欄は通常の卓と同じ部品で、上にDrillの説明の面（`components/DrillBanner.tsx`）を置きます。説明は、変えた要素の名前（有効 Stack / Bet の額 / 相手の傾向）と、元 → Drillの値（Stackと Betの額は実額が正本でBBは補助。D49）、相手の傾向はDrillの設定のPresetの名前です。しくみ（Heroの札と判断時点のBoard・それまでのActionは元のまま、相手の札とこの後のBoardは配り直す、相手はRuleBot、結果は別に数える）は畳んだ欄（`<details>`）に置き、狭い画面で卓を押し下げすぎないようにします。
+- Drillの卓にはCPUのNote / Tagの欄を出しません（Drillの相手はDrillの設定のRuleBot）。Handが終わったら、結果の欄（広い画面は卓の中央、狭い画面はHeroの欄。§1）に獲得の行と「卓に戻る」を出し、Heroの欄に「練習した判断の Review」を出します（既存のReviewの画面。Pass Aの経路そのまま）。「次の Hand へ」は出しません。通常の卓のSessionはDrillの間もそのまま残り、「卓に戻る」で続きに戻ります。
+- 上の席の札は卓の枠より上へはみ出すので、説明の面の下を広い画面で32px・狭い画面で20px空けます。1280×900・375×760・320×568で、説明の面と席の札が重ならないこと・横スクロールが出ないことを確かめました。
+

@@ -12,6 +12,8 @@ import {
   type OpponentInfo,
   type TableSetup,
 } from "./config.js";
+import { DrillService } from "./drill/drill-service.js";
+import { InMemoryDrillStore, type DrillStore } from "./drill/drill-store.js";
 import { InMemoryEventStore, type EventStore } from "./event-store.js";
 import { HandOrchestrator } from "./hand-orchestrator.js";
 import type { OpponentFactory } from "./opponents/opponent-agent.js";
@@ -35,6 +37,7 @@ import {
   type ReviewStore,
 } from "./review/review-store.js";
 import { ReviewService } from "./review/review-service.js";
+import { registerDrillRoutes } from "./routes/drills.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerLearningRoutes } from "./routes/learning.js";
 import { registerNoteRoutes } from "./routes/notes.js";
@@ -81,6 +84,8 @@ export interface AppOptions {
   readonly noteStore?: NoteStore;
   /** Weakness Hypothesis の Snapshot（#114・#116）。起動時は SQLite（v6）、省略時のメモリ内実装はテスト用。 */
   readonly hypothesisSnapshot?: HypothesisSnapshotStore;
+  /** Targeted Drill の記録（#117）。起動時は SQLite（v7）、省略時のメモリ内実装はテスト用。 */
+  readonly drillStore?: DrillStore;
 }
 
 // listen と分けて組み立てだけを export する。テストから起動せずに叩けるようにするため。
@@ -97,6 +102,12 @@ export function buildApp(options: AppOptions = {}) {
   // Orchestrator（書く側）と Replay（読む側）は同じ Store を使う。
   const store = options.store ?? new InMemoryEventStore();
   const setup = options.setup ?? PHASE1_TABLE_SETUP;
+  // Drill の Hand（D116）は通常の集計・Resume・Replay の一覧から除く。除く対象は drills テーブルから読むたびに作る。
+  const drillStore = options.drillStore ?? new InMemoryDrillStore();
+  const drillHandIds = () => drillStore.drillHandIds();
+  // seed はサーバーだけが持つ。クライアントから受け取らず、レスポンスにも出さない（Deck を推測させない）。
+  const nextSeed = options.nextSeed ?? (() => randomInt(0, 2 ** 32));
+  const nextHandId = options.nextHandId ?? randomUUID;
   const orchestrator = new HandOrchestrator({
     store,
     setup,
@@ -106,9 +117,9 @@ export function buildApp(options: AppOptions = {}) {
       : { opponentInfo: options.opponentInfo }),
     botDelayMs: options.botDelayMs ?? DEFAULT_BOT_THINK_DELAY_MS,
     opponentTimeoutMs: options.opponentTimeoutMs ?? DEFAULT_OPPONENT_TIMEOUT_MS,
-    // seed はサーバーだけが持つ。クライアントから受け取らず、レスポンスにも出さない（Deck を推測させない）。
-    nextSeed: options.nextSeed ?? (() => randomInt(0, 2 ** 32)),
-    nextHandId: options.nextHandId ?? randomUUID,
+    nextSeed,
+    nextHandId,
+    excludeFromResume: drillHandIds,
     logger: app.log,
   });
   app.addHook("onClose", (_instance, done) => {
@@ -125,7 +136,10 @@ export function buildApp(options: AppOptions = {}) {
   );
   // Hero はちょうど 1 人（Orchestrator の生成で検証済み）。
   const heroId = setup.players.find((p) => p.kind === "hero")?.playerId ?? "";
-  registerReplayRoutes(app, new ReplayService(store, heroId, setup.players));
+  registerReplayRoutes(
+    app,
+    new ReplayService(store, heroId, setup.players, drillHandIds),
+  );
 
   // Review は保存済みの Hand を読むので、Replay と同じ Store を使う。省略時は Solver を未導入・Claude を呼ばない形にする（テスト用）。
   const review = options.review ?? {};
@@ -167,7 +181,25 @@ export function buildApp(options: AppOptions = {}) {
       heroId,
       hypotheses:
         options.hypothesisSnapshot ?? new InMemoryHypothesisSnapshotStore(),
+      excludeHandIds: drillHandIds,
     }),
+  );
+
+  // Targeted Drill（#117）。元の判断の Pass A の Review を provenance にし、Drill の Hand は Orchestrator で通常の Hand として進める。
+  // Drill の判断の Review は既存の Review の API をそのまま使う（D116）。集計は通常の Score と別の系列（D105）。
+  registerDrillRoutes(
+    app,
+    new DrillService({
+      events: store,
+      reviews: reviewStore,
+      drills: drillStore,
+      orchestrator,
+      heroId,
+      table: setup.table,
+      nextSeed,
+      nextHandId,
+    }),
+    orchestrator,
   );
 
   return app;

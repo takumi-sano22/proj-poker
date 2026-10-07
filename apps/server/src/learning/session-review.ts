@@ -6,7 +6,7 @@
 // - Important Hands は判断時点の Hero Information Set から選んだ Important Spot（#78）と、Pass A の段階評価だけで選ぶ（結果を見ない）
 // - Stats は Hero の行だけを返す（他 Player の詳細 HUD を出さない。D32）。入力は public の Event だけ（stats.ts）
 // - Hidden Persona・CPU の Private な状態・他者の Hidden Cards・Pass B（Learning-only Reveal）は入力にも応答にも入れない
-// - Drill の Hand は excludeHandIds で除く（D116。drills テーブルは #117 で作るので、今は呼び出し側が空集合を渡す）
+// - Drill の Hand は excludeHandIds で除く（D116。呼び出し側が drills テーブルの Hand を渡す）
 import {
   extractImportantSpots,
   heroInformationSets,
@@ -135,10 +135,11 @@ export interface SessionReview {
     readonly overall: StatTable | null;
   };
   /**
-   * Recommended Drill の入口（D116）。Drill の生成・開始は #117 なので、今は候補（Leak の最初の判断）だけで、始められない。
+   * Recommended Drill の入口（D116・#117）。候補は Leak の最初の判断（Pass A の Review がある判断）。候補があれば、その判断から
+   * Drill を始められる（POST /api/drills。Drill の Hand は通常の集計から除く）。
    */
   readonly recommendedDrill: {
-    readonly available: false;
+    readonly available: boolean;
     readonly candidate: SessionDecisionRef | null;
   };
 }
@@ -218,7 +219,10 @@ export function computeSessionReview(
       hands: hero?.hands ?? 0,
       overall: hero?.overall ?? null,
     },
-    recommendedDrill: { available: false, candidate: leaks[0] ?? null },
+    recommendedDrill: {
+      available: leaks[0] !== undefined,
+      candidate: leaks[0] ?? null,
+    },
   };
 }
 

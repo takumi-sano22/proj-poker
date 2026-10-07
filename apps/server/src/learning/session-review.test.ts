@@ -138,8 +138,9 @@ describe("Session Review（phase6_session_review_v1）", () => {
       [2, 2, "major_leak"],
       [1, 1, "improvement_suggested"],
     ]);
+    // 候補（Leak の最初の判断。Pass A の Review がある）があれば Drill を始められる（#117）。
     expect(result.recommendedDrill).toEqual({
-      available: false,
+      available: true,
       candidate: result.leaks[0],
     });
     // Leak のある Hand が Important Hands の先頭に来る（同じ数なら Important Spot の多い Hand、Hand の順）。

@@ -96,7 +96,7 @@ export interface SessionReview {
   readonly leaks: readonly SessionDecisionRef[];
   readonly importantHands: readonly SessionImportantHand[];
   readonly heroStats: HeroStats;
-  /** Drill の入口（#117 まで始められない）。 */
+  /** Drill の入口（#117）。候補（Leak の最初の判断）があれば始められる。 */
   readonly recommendedDrill: {
     readonly available: boolean;
     readonly candidate: SessionDecisionRef | null;

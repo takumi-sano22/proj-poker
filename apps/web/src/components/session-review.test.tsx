@@ -2,7 +2,8 @@
 // - 判断の質（Decision Quality）を収支より先に出し、「M 件中 N 件を Review 済み」を必ず出す（D115）
 // - 点数だけを出さず、確度と件数を添える。数えられる判断が無ければ点数を出さない
 // - 収支は実額が正本で、BB は補助（設定で消せる。D49）
-// - 未 Review の判断をまとめて Review する Button は無い。Drill は入口だけで始められない（#117）
+// - 未 Review の判断をまとめて Review する Button は無い。Drill は候補があるときだけ始められる（#117）
+// - Drill の結果は通常の Score と別の欄に、練習した判断の M 件中 N 件と一緒に出す（D105）
 // - Stats は分子 / 分母を出す。Persona・他 Player の名前は出さない
 import type { StatTable, StatValue } from "@proj-poker/engine";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,7 +21,12 @@ import {
   statText,
 } from "../lib/learning.js";
 import { BbDisplayProvider } from "./BbDisplay.js";
-import { ProfileBody, SessionReviewBody } from "./SessionReviewScreen.js";
+import type { DrillResults } from "../lib/drill-api.js";
+import {
+  DrillResultsBody,
+  ProfileBody,
+  SessionReviewBody,
+} from "./SessionReviewScreen.js";
 
 const noop = () => undefined;
 
@@ -129,7 +135,11 @@ function sessionReview(overrides: Partial<SessionReview> = {}): SessionReview {
 function render(review: SessionReview, showBB = true): string {
   return renderToStaticMarkup(
     <BbDisplayProvider value={showBB}>
-      <SessionReviewBody review={review} onOpenReview={noop} />
+      <SessionReviewBody
+        review={review}
+        onOpenReview={noop}
+        onStartDrill={noop}
+      />
     </BbDisplayProvider>,
   );
 }
@@ -183,21 +193,23 @@ describe("SessionReviewBody", () => {
     expect(html).not.toContain("確度 判断なし");
   });
 
-  it("まとめて Review する Button は無く、Drill は入口だけで始められない", () => {
+  it("まとめて Review する Button は無く、Drill は候補があるときだけ始められる", () => {
     const html = render(
       sessionReview({
         recommendedDrill: {
-          available: false,
+          available: true,
           candidate: sessionReview().leaks[0] ?? null,
         },
       }),
     );
     expect(html).not.toMatch(/まとめて|すべて Review|一括/);
     expect(html).toContain("候補: Hand 2 のターンの判断（大きな損失）");
-    expect(html).toMatch(
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>Drill を始める/);
+    expect(html).toContain("結果は通常の Score に混ぜません");
+    const none = render(sessionReview());
+    expect(none).toMatch(
       /<button[^>]*disabled=""[^>]*>Drill を始める<\/button>/,
     );
-    expect(html).toContain("Drill は準備中です。");
   });
 
   it("Ability は点数と確度・件数・傾向を出し、Live Mechanics は Poker の判断と別だと示す", () => {
@@ -292,5 +304,53 @@ describe("Learning の文言", () => {
     expect(sampleCaveat(30, 40, "high")).toContain("比較的安定");
     expect(statText("vpip", stat(1, 4))).toBe("25%（1 / 4）");
     expect(statText("aggression_factor", stat(3, 0))).toBe("—（3 / 0）");
+  });
+});
+
+describe("DrillResultsBody", () => {
+  const results = (overrides: Partial<DrillResults> = {}): DrillResults => ({
+    policyVersion: "phase6_drill_v1",
+    drills: [
+      {
+        drillId: "d1",
+        createdAt: "2026-10-07T00:00:00.000Z",
+        policyVersion: "phase6_drill_v1",
+        source: { handId: "h1", decisionIndex: 1 },
+        variant: { kind: "bet_size", potFraction: 0.75 },
+        change: null,
+        drillHandId: "dh1",
+        decisionIndex: 1,
+        finished: true,
+        assessment: "strong",
+      },
+    ],
+    score: {
+      policyVersion: "phase6_provisional_v1",
+      decisions: { total: 1, reviewed: 1 },
+      overall: score(100, 1),
+      abilities: [],
+    },
+    ...overrides,
+  });
+
+  it("練習した判断の M 件中 N 件・点数・確度と、Drill ごとの段階評価を出す", () => {
+    const html = renderToStaticMarkup(
+      <DrillResultsBody results={results()} onOpenReview={noop} />,
+    );
+    expect(html).toContain("練習した判断 1 件中 1 件を Review 済み");
+    expect(html).toContain("100 点");
+    expect(html).toContain("Bet の額（Bet Size）");
+    expect(html).toContain("良い判断");
+  });
+
+  it("終わった Drill が無ければ点数を出さない", () => {
+    const html = renderToStaticMarkup(
+      <DrillResultsBody
+        results={results({ drills: [] })}
+        onOpenReview={noop}
+      />,
+    );
+    expect(html).toContain("終わった Drill はまだありません");
+    expect(html).not.toContain("点");
   });
 });

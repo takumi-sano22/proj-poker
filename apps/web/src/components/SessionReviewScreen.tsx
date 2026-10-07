@@ -3,7 +3,7 @@
 // - Score は点数だけを出さず、Confidence・件数と「M 件中 N 件を Review 済み」を必ず添える。未 Review の判断をまとめて Review する
 //   Button は置かない（D115）。Review は Strength / Leak・Important Hands の行から Hand の Review 画面を開いて 1 つずつ作る
 // - Stats は Hero 自身の行だけ（他 Player の HUD を出さない。D32）。Hidden Persona・CPU の Private な状態・他者の札・Pass B は届かない
-// - Recommended Drill は入口だけ（Drill の生成・開始は #117）
+// - Recommended Drill は候補（Leak の最初の判断）から Targeted Drill を始める入口（#117）。Drill の結果は通常の Score と別の欄に出す（D105）
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ACTION_TERMS, STREET_TERMS, termLabel } from "../lib/format.js";
 import {
@@ -21,6 +21,8 @@ import {
   scoreText,
   statText,
 } from "../lib/learning.js";
+import { fetchDrills, type DrillResults } from "../lib/drill-api.js";
+import { DRILL_VARIANT_LABELS } from "../lib/drill.js";
 import {
   fetchProfile,
   fetchSessionReview,
@@ -44,10 +46,14 @@ import { PlayingCard } from "./PlayingCard.js";
 /** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
 type OpenReview = (handId: string, decisionIndex: number | null) => void;
 
+/** 元の判断から Targeted Drill を始める（#117）。 */
+type StartDrill = (handId: string, decisionIndex: number) => void;
+
 interface SessionReviewScreenProps {
   /** Session の Hand（どれでもよい。終わった Session の最後の Hand を渡す）。 */
   readonly handId: string;
   readonly onOpenReview: OpenReview;
+  readonly onStartDrill: StartDrill;
 }
 
 type Load<T> =
@@ -83,17 +89,23 @@ function useLoad<T>(load: () => Promise<T>): readonly [Load<T>, () => void] {
 export function SessionReviewScreen({
   handId,
   onOpenReview,
+  onStartDrill,
 }: SessionReviewScreenProps) {
   const loadSession = useCallback(() => fetchSessionReview(handId), [handId]);
   const [session, retrySession] = useLoad(loadSession);
   const [profile, retryProfile] = useLoad(fetchProfile);
+  const [drills, retryDrills] = useLoad(fetchDrills);
   return (
     <main className="review learning">
       <div className="review__head">
         <h2 className="review__title">Session の振り返り（Session Review）</h2>
       </div>
       {session.state === "ready" ? (
-        <SessionReviewBody review={session.value} onOpenReview={onOpenReview} />
+        <SessionReviewBody
+          review={session.value}
+          onOpenReview={onOpenReview}
+          onStartDrill={onStartDrill}
+        />
       ) : (
         <LoadState
           load={session}
@@ -101,6 +113,19 @@ export function SessionReviewScreen({
           onRetry={retrySession}
         />
       )}
+      <section className="review-section" aria-labelledby="learning-drills">
+        <h3 className="review-section__title" id="learning-drills">
+          Drill の結果（通常の Score と別に数えます）
+        </h3>
+        {drills.state === "ready" ? (
+          <DrillResultsBody
+            results={drills.value}
+            onOpenReview={onOpenReview}
+          />
+        ) : (
+          <LoadState load={drills} what="Drill の結果" onRetry={retryDrills} />
+        )}
+      </section>
       <section className="review-section" aria-labelledby="learning-profile">
         <h3 className="review-section__title" id="learning-profile">
           Player Profile（直近 / 全期間）
@@ -149,9 +174,11 @@ function LoadState({
 export function SessionReviewBody({
   review,
   onOpenReview,
+  onStartDrill,
 }: {
   readonly review: SessionReview;
   readonly onOpenReview: OpenReview;
+  readonly onStartDrill: StartDrill;
 }) {
   const dq = review.decisionQuality;
   return (
@@ -198,7 +225,10 @@ export function SessionReviewBody({
         </h3>
         <StatsRows stats={review.heroStats} />
       </section>
-      <RecommendedDrill drill={review.recommendedDrill} />
+      <RecommendedDrill
+        drill={review.recommendedDrill}
+        onStartDrill={onStartDrill}
+      />
     </>
   );
 }
@@ -452,11 +482,16 @@ function StatsRows({ stats }: { readonly stats: HeroStats }) {
   );
 }
 
-/** Recommended Drill の入口。Drill は次の段階で足すので、今は候補だけを出して始められない。 */
+/**
+ * Recommended Drill の入口（#117）。候補（Leak の最初の判断）から、一要素だけ変えた類題（Targeted Drill）を始める。
+ * Drill の Hand の結果は通常の Score と別に数える（D105）。
+ */
 function RecommendedDrill({
   drill,
+  onStartDrill,
 }: {
   readonly drill: SessionReview["recommendedDrill"];
+  readonly onStartDrill: StartDrill;
 }) {
   const c = drill.candidate;
   return (
@@ -473,15 +508,76 @@ function RecommendedDrill({
         <button
           type="button"
           className="btn btn--secondary btn--sm"
-          disabled={!drill.available}
+          disabled={!drill.available || c === null}
+          onClick={() => {
+            if (c !== null) onStartDrill(c.handId, c.decisionIndex);
+          }}
         >
           Drill を始める
         </button>
       </div>
-      {!drill.available && (
-        <p className="review-section__note">Drill は準備中です。</p>
-      )}
+      <p className="review-section__note">
+        元の判断から Stack・Bet
+        の額・相手の傾向のどれか一つだけを変えた類題を、1 Hand
+        遊びます。結果は通常の Score に混ぜません。
+      </p>
     </section>
+  );
+}
+
+/** Drill の結果（通常の Score と別の系列。D105）。練習した判断の Review の数と点数、Drill ごとの行。 */
+export function DrillResultsBody({
+  results,
+  onOpenReview,
+}: {
+  readonly results: DrillResults;
+  readonly onOpenReview: OpenReview;
+}) {
+  const { score } = results;
+  const finished = results.drills.filter((d) => d.finished);
+  if (finished.length === 0) {
+    return <p className="evidence__muted">終わった Drill はまだありません。</p>;
+  }
+  return (
+    <div className="learning-card">
+      <p className="learning-count">
+        練習した判断 {score.decisions.total} 件中 {score.decisions.reviewed}{" "}
+        件を Review 済み
+      </p>
+      <div className="learning-score">
+        <span className="learning-score__value">
+          {scoreText(score.overall)}
+        </span>
+        {score.overall.score !== null && (
+          <span className="learning-score__meta">
+            {scoreMeta(score.overall)}
+          </span>
+        )}
+      </div>
+      <ul className="spot-list">
+        {[...finished].reverse().map((d) => (
+          <li key={d.drillId}>
+            <button
+              type="button"
+              className="spot-row"
+              onClick={() => onOpenReview(d.drillHandId, d.decisionIndex)}
+            >
+              <span className="spot-row__street">
+                {DRILL_VARIANT_LABELS[d.variant.kind]}
+              </span>
+              <span className="spot-row__main">練習した判断の Review</span>
+              <span
+                className={`spot-row__state${d.assessment === null ? "" : ` assessment assessment--${assessmentTone(d.assessment)}`}`}
+              >
+                {d.assessment === null
+                  ? "未 Review"
+                  : ASSESSMENT_TERMS[d.assessment].ja}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -67,7 +67,7 @@ describe("GET /api/learning/session-review/:handId", () => {
     expect(body.decisionQuality).toMatchObject({ total: 9, reviewed: 2 });
     expect(body.leaks.map((l) => l.handId)).toEqual([sb.handId]);
     expect(body.strengths.map((l) => l.handId)).toEqual([btn.handId]);
-    expect(body.recommendedDrill.available).toBe(false);
+    expect(body.recommendedDrill.available).toBe(true);
     // 読み出しで Review の Version は増えない。
     expect(reviews.list(btn.handId, 0, "decision")).toHaveLength(1);
     expect(reviews.list(btn.handId, 1, "decision")).toHaveLength(0);
