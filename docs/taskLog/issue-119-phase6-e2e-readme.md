@@ -38,7 +38,7 @@ Phase 6（Session Learning）の最終 PR（P6-8）。Phase 6 の学習の流れ
 ## 実行した確認
 
 - 着手時の `pnpm e2e`（main と同じ内容）: 1 回目 1 failed / 3 passed（`session.spec.ts` の Resume の Stack の検査）、直後の再実行で 4 passed → #129 に起票（下の残課題）。
-- `pnpm --filter`（直接 `npx vitest run`）: `src/review/fake-review-query.test.ts` 4 passed・`src/routes/learning-leakage.test.ts` 1 passed。
+- 単体の実行（`apps/server` で `npx vitest run`）: `src/review/fake-review-query.test.ts` 4 passed・`src/routes/learning-leakage.test.ts` 1 passed。
 - `npx playwright test tests/learning.spec.ts`: 繰り返し実行（`--repeat-each=12` で 11 passed / 1 failed、`--repeat-each=15` で 15 passed）。失敗はどれも「Reset の後の Drill の系列の Score が 0 件」の検査で、原因を次のように確かめた。
   - 失敗した回の DB を残して読むと、`learning_resets.created_at`（15:43:19.716）が、操作の順では前にある Drill の Hand の `HAND_FINISHED`（15:43:20.055）と練習した判断の Review（15:43:20.571）より早かった（Playwright の Trace の操作の順は Drill の Hand の終わり → Review → Reset）。
   - この WSL の壁時計を 90 秒測ると、約 27 秒ごとに約 2.1 秒と約 0.6 秒、後ろへ戻っていた（`Date.now()` と `performance.now()` の差。累計 -8.2 秒）。
