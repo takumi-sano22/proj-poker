@@ -48,7 +48,7 @@ E2E で確かめること（親 #106 の P7-9 と、`docs/09` §8 の一覧）:
 
 - `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`: すべて通過（engine 32 files / 363 tests、web 9 / 141、server 57 / 726。e2e の `tsc --noEmit` も通過）
 - `pnpm e2e`（全 6 件）: 通過（41.7 秒）
-- 安定性 `pnpm e2e --repeat-each=10`（全 6 件 × 10 = 60 件）を 3 回: 1 回目 60 passed / 0 failed（6.8 分）、2 回目 60 passed / 0 failed（6.8 分）、3 回目 60 passed / 0 failed（6.9 分）。一度だけ落ちる失敗は出なかった
+- 安定性 `pnpm e2e --repeat-each=10`（全 6 件 × 10 = 60 件）を 3 回: 1 回目 60 passed / 0 failed（6.8 分）、2 回目 60 passed / 0 failed（6.8 分）、3 回目 60 passed / 0 failed（6.9 分）。一度だけ落ちる失敗は出なかった。Codex の指摘の対応（進行中の応答の検査、df43104）の後にも 3 回流し、1 回目 60 passed / 0 failed（7.0 分）、2 回目 60 / 0（6.8 分）、3 回目 60 / 0（6.8 分）
 - 変異の確認（手元で入れて戻した）: 支援モジュールで Reset の区切りを当てないようにすると、(6) の「Reset の後の最初の Hand の Memory は空」が `Expected: 0 / Received: 6` で落ちる
 - 値の確認（手元で一時的に出力して戻した）: Session 2 の最初の Hand の開始時、ben・dan・emi は Hero と互いを 4 Hand 見ていて、goro（初めて座る）と Guest からは全員 0、Session 2 の Guest の Memory は空。Session 1 の終わりの Tilt は dan・fumi が 1、Session 2 の最初の Hand の開始時は全員 0。Reset の後の最初の Hand は区切りを当てなければ Hero を 6 Hand（Fixed）・2 Hand（goro・Guest）見ている
 
