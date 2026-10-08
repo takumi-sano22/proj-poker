@@ -140,7 +140,38 @@ RuleBotの決定論だけで回し、ClaudeもAPIキーも使いません。CI�
 - **(4) Action Diversity・Strategic coherence**: どの条件でも、Illegal 0・Checkできるのに Fold 0、Persona Differentiation（上の表と同じ定義）とPersonaごとのAction Diversityが層なしの0.75倍以上、攻撃性（Bet / Raiseの割合）の順序（Maniac > Nit・LAG > Nit・Maniac > Calling Station）が保たれること。合格ラインは測定の前に決めた暫定値です（OI-011。`MEMORY_EVAL_TARGETS`）。
 - **(5) Latency**: 同じOrchestratorの実行で、Handの開始時のMemory・Tilt・Table Tendencyの計算時間（CPU全員分）を保存済みのHandの数ごとに記録します。CIでは値の大きさを判定しません（実行環境で変わる）。
 - **時計が後ろへ戻った記録（D117）**: 記録時刻が保存の順と逆に並ぶEvent Storeと、進む時計のEvent Storeで同じSessionを進め、CPUに渡る合成の入力（Memory・Tilt・Table Tendency）と判断が同じであること。
-- **ClaudeのCPU**: 既存の録画（`recordings/opponent-eval.json`）の再生が通り続けることだけを確かめます（代表Spotの入力には層が無いので、Promptの指紋は変わらない）。Memory等の節の入ったPromptの録画は、APIの呼び出しが要るので取っていません。
+- **ClaudeのCPU**: 既存の録画（`recordings/opponent-eval.json`）の再生が通り続けることを確かめます（代表Spotの入力には層が無いので、Promptの指紋は変わらない）。Memory等の節の入ったPromptは、次の節の録画で測ります（#155）。
+
+### Memory付きPromptのClaudeのEval（Issue #155・D123）
+
+Memory（Hypothesisの要約）・Table Tendency・Tiltの節が入ったPromptで、ClaudeのCPUの判断を録画します。呼び出しは`eval:opponent`と同じ経路（Claude Agent SDK・Claude CodeのOAuth〔サブスク枠〕・`buildClaudeEnv`）だけで、APIキーは使いません（D87・D123）。
+
+- **置き場所**: `memory-prompt-eval.ts`（Spotと条件・上限・集計）・`memory-prompt-run.ts`（手動の実行）・`memory-prompt-eval.test.ts`（CI）・`recordings/opponent-memory-prompt-eval.json`（録画）。ハーネス（`harness.ts`）は既存のOpponent Evalと同じで、本番のFactory・検証・Retry・Fallbackを通ります。
+- **Spotと条件**: 代表Spot 2（`river_facing_big_bet`・`flop_cbet`）× 条件3 × Persona 6 × repeat 1 = 36判断。条件は baseline（層なし。既存の録画と同じPrompt）・loose（Memory Evalの`all_loose`: 相手がLooseと分かるMemory・緩い卓・Tilt 3段）・tight（`all_tight`: 相手がTightと分かるMemory・締まった卓・Tilt 3段）です。looseとtightはTiltが同じなので、両者の差は相手と卓の傾向の向きだけです（Tiltだけの効果はこの3条件では分けられない）。層を足したSpotのHandのIDは元のSpotと同じにします（IDはPromptに入る）。
+- **意図した向き**: River（Potを超えるBetに直面）では攻める（Loose）相手ならCallが増え、Flop（C-betするか）ではC-betによく降りる（Tight）相手ならBet（BluffのC-bet）が増える。looseとtightの割合（全Personaの合計）を比べ、同じ条件のRuleBot（400 seed）を参照に並べます。向きの合格ラインは置きません（1条件・1 Personaに1判断で、統計として成立しないため）。
+- **上限（D123）**: 判断36・呼び出し（Retryを含む）72を`MEMORY_PROMPT_EVAL_LIMITS`に置き、判断の数は実行の前に確かめ、呼び出しは番人（`createCallBudget`）で上限に達したら呼ばずに止めます。障害（ログイン・利用枠を含む）が出たら残りを打ち切ります。`--dry-run`はモデルを呼ばずに判断・Promptの数と漏れを数え、`--record`は録画が既にあれば実行せず、足りない判断だけを`--resume`で残りの回数の中で集めます。`buildClaudeEnv`が外す`ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`に加え、Bedrock / Vertex / Foundry・別の接続先へ切り替わる変数があれば実行しません。
+- **Leakage**: 既存の検査（知ってよい札以外のCard・Deck / seed / `system`のEvent・Persona・他のPresetの名前）に加え、入力のMemoryのSubjectに判断するCPU自身が入っていないこと（他のCPUのMemoryを渡した形）・PromptのMemoryの節が1つだけであること・Promptにreveal / weakness / learningの語が無いことを確かめます。
+- **CI**: 録画を本番と同じ経路で再生し、集計が録画時と一致すること・Hidden Information Leakageと障害が0件・上限の中で取ったことを確かめます。Prompt・Optionsが変わると指紋（paramsHash）が合わず再生が失敗します。合格ラインは上の表（`OPPONENT_EVAL_TARGETS`）と同じで、CIで落とすのはLeakageと障害だけです。
+
+録画の結果（2026-10-08・`claude-haiku-4-5`（`opponent_fast`）・Agent SDK 0.3.289・実行1回・呼び出し36回 / 上限72）:
+
+| 指標 | 値 |
+|---|---|
+| 判断 / 呼び出し | 36 / 36 |
+| Structured Output Valid率 / Illegal Action率 / Retry率 / Fallback率 | 1 / 0 / 0 / 0 |
+| 障害 / Hidden Information Leakage | 0 / 0 |
+| Latency（ms。min / median / p90 / max） | 7694 / 9581 / 11008 / 14280 |
+| Persona Differentiation（全体） | 0.667（River 0.733・Flopは0.6。3条件とも同じ値だが、Actionの組は条件で違う） |
+| Checkできるのに Fold | 1件（`flop_cbet@tight`のNit） |
+
+向き（見るActionの割合。全Personaの合計 baseline / loose / tight。RuleBotは同じ条件の400 seed）:
+
+| Spot（見るAction・増える向き） | Claude | RuleBot | 意図した向き（Claude） |
+|---|---|---|---|
+| River（Call・Looseで増える） | 0.5 / 0.333 / 0.5 | 0.22 / 0.269 / 0.138 | ならなかった（loose < tight） |
+| Flop（Bet・Tightで増える） | 0.5 / 0.5 / 0.667 | 0.075 / 0.035 / 0.123 | なった（tight > loose） |
+
+- 条件で判断が変わったのは River の LAG（Call → loose で Fold・tight で Raise）と Weak-tight Recreational（Fold → tight で Call）、Flop の Nit（Check → tight で Fold）と Weak-tight Recreational（Check → tight で Bet）だけで、他の Persona は 3 条件で同じ Action でした。1条件・1 Personaに1判断なので、向きの差は偶然の幅に入ります（結論にしない）。
 
 ## 6. Review Eval
 

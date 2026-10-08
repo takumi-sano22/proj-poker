@@ -77,7 +77,7 @@ export function createReplayClock(): ReplayClock {
  * ClaudeOpponent の message の読み方も本番と同じ経路を通る。渡された引数の指紋が録画と違えば例外にする（録画が古い）。
  */
 export function replayQueryFor(
-  recording: OpponentEvalRecording,
+  recording: Pick<OpponentEvalRecording, "cases">,
   clock: ReplayClock,
 ): (c: EvalCase) => ClaudeQuery {
   const byKey = new Map(recording.cases.map((c) => [caseKey(c), c]));
