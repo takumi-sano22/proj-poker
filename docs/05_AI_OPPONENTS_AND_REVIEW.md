@@ -103,6 +103,20 @@ Phase 7のTilt（D107。#106 P7-5）:
 - TiltのPrivate StateはHeroのEvidenceに使いません。
 - Trigger・しきい値・増減・減衰の値はVersion付きの暫定値です（OI-011）。D119の暫定値（`phase7_tilt_v1`）: 0〜3の整数の段階で、Trigger（40BB以上のPotの負け・3連敗・ShowdownでBluffが見つかる・大勝ち）で上がり、1 HandごとにPersonaの`recoverySpeed`に応じて下がります。反映はLooseness / Aggressionを段階ごとに上限付きで少しずらすだけです。順序はHandの論理順序で決め、壁時計を使いません（D117）。
 
+Tiltの実装（#140。`apps/server/src/opponents/tilt.ts`・`tilt-policy.ts`。数値と定義はすべてOI-011の暫定値で、確定ではない）:
+
+- **単位と寿命**: Session の中の席（その Session の参加者）ごとの状態です。Fixed CPU の Long-term Memory（§5のHypothesis）・Personaとは別の層で、保存しません（テーブル・列・Event・`schema_version`を足さない）。Hand Orchestratorが Handの開始時（そのHandをEvent Storeへ書く前）に、今のSessionの保存済み（終わった）Handを論理順序（`ordinals.ord`）で頭から畳み込んで作る純粋関数です。Sessionが変われば0から始まるので、Session終了でResetされ、`SESSION_ENDED`の無い放置されたSessionの後でも次のSessionへ持ち越しません。Resumeでは同じSessionのHandから同じ値になります。Personaの無いCPU・DrillのHandはTiltを持ちません。
+- **入力**: そのCPUが卓で見えたEvent（`public`と自分宛ての`private`。保存されたVisibilityとEngineが種類から決めるVisibilityの両方で判定）と自分の結果だけです。他者のHidden Cards・Deck・`system`の記録・Learning-only Reveal・Heroの弱点は読みません。CPUが座っていないHand（Bustの後）と、`HAND_FINISHED`の無いHand（打ち切ったHand）では動きません。
+- **1 Handの結果**（そのCPU自身から見た定義）:
+  - Showdownの負け: Foldせずに札を比べたPotまで残り、Potを1枚も受け取らなかった。Potを1枚でも受け取れば勝ち（連敗が切れる）。Foldした Handは勝ちでも負けでもない（連敗を切らない）。
+  - 40BB以上のPotの負け（Trigger）: Showdownの負けで、争えたPotの総額がそのHandのBig Blindの40倍以上。
+  - 3連敗（Trigger）: Showdownの負けが3回続いた（数えた連続は0に戻し、次の3連敗でまた発火）。
+  - ShowdownでBluffが見つかる（Trigger）: Showdownの負けで、そのHandの最後に額を引き上げた（Bet / Raise / 額を上げるAll-in）のが自分で、Board 5枚に対して自分の2枚で役が上がっておらず（7枚の役の種類がBoard 5枚だけの役の種類と同じ）、その役がOne Pair以下。
+  - 大勝ち（Overconfidence。Trigger）: 収支（受け取った額 − 出した額）がプラスで、受け取ったPotの総額がBig Blindの40倍以上。
+- **遷移**（`phase7_tilt_v1`）: 段階は0〜3の整数です。1 Handで発火したTriggerの数を数え、`ceil(数 × tiltSusceptibility × 2)`段上げます（上限3。上がったHandは下がらない）。Triggerの無いHandが`round(10 − 8 × recoverySpeed)`回続くごとに1段下げます（TAG Regularは4 Hand、Maniacは8 Hand）。
+- **反映**: RuleBotは、1段あたりPersonaのPreflop LoosenessとAggressionを+0.05（3段で+0.15が上限。軸は1を超えない）ずらしたPersonaでしきい値を作るだけで（`tiltedPersona`）、乱数の引き方は変えず、Legal Actionの中から選びます（D40）。ClaudeのCPUには、そのCPU自身のInternal State（§1のPersona / State・`docs/04` §5）として、1以上のときだけ「あなたの今の状態」の節に段階と固定の説明（参加する手が少し広がり、少し攻撃的になる）を入れます。0のときは節ごと入れず、Promptは#140より前と同じ文字列です（LLMの呼び出しの回数・経路は変えない）。
+- **境界**: TiltはHeroのEvidence・Review・UI・Event・APIの応答に出しません。他のCPUの`KnowledgeState`・Promptにも出しません。`opponents/tilt-isolation.test.ts`が、`review/`・`learning/`からのimportがTiltのモジュールに届かないことと、Fakeの`query()`で2つのSessionを進めたClaudeのCPUの全Promptで、Tiltの節がそのCPU自身の席の値（Personaで畳み込んだ値。0なら節が無い）だけであること・次のSessionが0から始まること・ReviewのPrompt・Heroへの応答・Event LogにTiltが出ないことを確かめます。
+
 ## 5. Opponent Modeling
 
 各CPUは以下を分離して保持します。

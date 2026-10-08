@@ -171,6 +171,7 @@ Evidence Gateの振る舞いは確定。
 - 十分なSampleの基準
 - PersonaごとのHypothesisの更新の速さ・早合点の傾向
 - TiltのTrigger・しきい値・増減・減衰の値と、Personaへの反映の大きさ
+- `phase7_tilt_v1`（#140）のTriggerの定義の細部（Showdownの負けだけを負けと数える・FoldしたHandは連敗を切らない・Bluffは「最後に額を上げた自分が、自分の2枚で役が上がらずOne Pair以下で負けた」・大勝ちは「収支プラスで受け取ったPotが40BB以上」）、上がり幅（`ceil(Triggerの数 × tiltSusceptibility × 2)`）、下がり方（Triggerの無いHandが`round(10 − 8 × recoverySpeed)`回で1段）、反映の幅（1段あたりLooseness / Aggression +0.05。3段で+0.15）
 - KnowledgeStateへ注入するMemoryの要約のEvidence IDの数（暫定値3。`phase7_memory_injection_v1`。Subjectごと5項目はD121）と、RuleBotへの反映の大きさ（`phase7_rulebot_memory_v1`。#139）
 
 Phase 7でVersion付きのConfig / Policyに暫定値を置き、Eval / Playtestで見直します。
