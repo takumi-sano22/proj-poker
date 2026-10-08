@@ -13,6 +13,7 @@ import {
   SB_VS_BTN,
   playScriptedHand,
 } from "../testing/review-eval/hands.js";
+import { SAMPLE_TABLE_TENDENCY } from "../testing/table-tendency-fixture.js";
 import { buildReviewEvidence } from "./evidence.js";
 import { buildRevealEvidence } from "./reveal-evidence.js";
 import {
@@ -210,9 +211,11 @@ describe("対応表の網羅（Evidence の項目名・enum の値）", () => {
       const reveal = projectLearningReveal(events);
       for (const [i, set] of sets.entries()) {
         const reasons = spots.find((s) => s.decisionIndex === i)?.reasons ?? [];
+        // 卓の傾向（D122・#153）がある Evidence の項目名・値も網羅する。
         const evidence = await buildReviewEvidence(set, reasons, {
           kb,
           solver,
+          tableTendency: SAMPLE_TABLE_TENDENCY,
         });
         Object.assign(names, replacementNamesOf(evidence));
         walk(evidence);
@@ -241,6 +244,31 @@ describe("evidenceGlossary", () => {
     expect(decision).not.toContain("holeCards:");
     expect(reveal).toContain("- potOdds: Pot Odds");
     expect(reveal).toContain("- inAssumedRange:");
+  });
+
+  it("卓の傾向（D122・#153）の項目は、Pass A で卓の傾向があるときだけ出す（無い Prompt・Pass B は #153 より前と同じ）", () => {
+    const decision = evidenceGlossary("decision");
+    const withTendency = evidenceGlossary("decision", { tableTendency: true });
+    for (const glossary of [decision, evidenceGlossary("reveal")]) {
+      expect(glossary).not.toContain("- tableTendency:");
+      expect(glossary).not.toContain("- sufficient:");
+    }
+    expect(withTendency).toContain("- tableTendency: 卓の傾向");
+    expect(withTendency).toContain("- sufficient: サンプルが十分か");
+    // 卓の傾向の項目を足しても、他の項目の説明はそのまま。
+    const lines = withTendency.split("\n");
+    for (const line of decision.split("\n")) expect(lines).toContain(line);
+  });
+
+  it("卓の傾向の項目名・値は置換する（Review AI の文に残さない）", () => {
+    expect(
+      sanitizeText("aggression_frequency は sufficient=false で保留", {}),
+    ).toBe(
+      "Postflop の Aggression の頻度 は サンプルが足りない（保留） で保留",
+    );
+    expect(sanitizeText("tableTendency の rate: 0.3", {})).toBe(
+      "卓の傾向 の 割合 0.3",
+    );
   });
 
   it("説明のある項目名は重複しない", () => {

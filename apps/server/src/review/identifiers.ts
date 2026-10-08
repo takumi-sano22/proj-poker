@@ -24,6 +24,11 @@ interface EvidenceTerm {
   readonly plain?: true;
   /** reveal は Pass B（Hand 後の答え合わせ）だけの項目。Pass A・その Follow-up の Prompt には説明も出さない。 */
   readonly pass: "decision" | "reveal";
+  /**
+   * Table Tendency（D122・#153）の項目。Evidence に Table Tendency があるときだけ説明を出す
+   * （無い Evidence の Prompt を #153 より前と同じ文字列に保つ。Review Eval の録画の指紋を変えない）。置換には常に使う。
+   */
+  readonly tableTendency?: true;
 }
 
 /** Evidence の項目の説明（Prompt に添える説明と、出力の置換の両方がこの 1 か所を見る）。 */
@@ -162,6 +167,55 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
   },
   { name: "userRead", text: "Hero 自身の読み", pass: "decision" },
   {
+    name: "tableTendency",
+    text: "卓の傾向",
+    note: "この Hand より前に Hero が見た Hand の公開された Action だけから数えた、Hero 以外の卓全体の傾向",
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
+    name: "policyVersion",
+    text: "卓の傾向の数え方の版",
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
+    name: "rate",
+    text: "割合",
+    note: "回数 ÷ 機会の数",
+    plain: true,
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
+    name: "numerator",
+    text: "回数",
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
+    name: "denominator",
+    text: "機会の数",
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
+    name: "hands",
+    text: "数えた Hand の数",
+    plain: true,
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
+    name: "sufficient",
+    text: "サンプルが十分か",
+    whenTrue: "サンプルが十分",
+    whenFalse: "サンプルが足りない（保留）",
+    plain: true,
+    pass: "decision",
+    tableTendency: true,
+  },
+  {
     name: "inAssumedRange",
     text: "実際の札が判断時点に仮定した Range に入っていたか",
     whenTrue: "実際の札は判断時点に仮定した Range に入っていた",
@@ -222,6 +276,9 @@ const VALUE_TERMS: Readonly<Record<string, string>> = {
   invalid_input: "不正な入力",
   process_failed: "Solver の異常終了",
   parse_failure: "Solver の出力の読み取り失敗",
+  // Table Tendency の項目と Policy の版（D122・#153）
+  aggression_frequency: "Postflop の Aggression の頻度",
+  phase7_table_tendency_v1: "卓の傾向の数え方の版",
   // 段階評価・理論の根拠
   mixed_marginal: "僅差",
   improvement_suggested: "改善の余地あり",
@@ -307,10 +364,18 @@ export function replacementNamesOf(evidence: {
   return names;
 }
 
-/** Prompt に添える「Evidence の項目の説明」。Pass A（decision）と Pass B（reveal）で出す項目を分ける（Pass A の Prompt に Hand 後の項目の名前を出さない）。 */
-export function evidenceGlossary(pass: "decision" | "reveal"): string {
+/**
+ * Prompt に添える「Evidence の項目の説明」。Pass A（decision）と Pass B（reveal）で出す項目を分ける（Pass A の Prompt に Hand 後の項目の名前を出さない）。
+ * Table Tendency の項目は、Evidence に Table Tendency があるとき（options.tableTendency）だけ出す（構造ゲート）。
+ */
+export function evidenceGlossary(
+  pass: "decision" | "reveal",
+  options: { readonly tableTendency?: boolean } = {},
+): string {
   const terms = EVIDENCE_TERMS.filter(
-    (t) => pass === "reveal" || t.pass === "decision",
+    (t) =>
+      (pass === "reveal" || t.pass === "decision") &&
+      (t.tableTendency !== true || options.tableTendency === true),
   );
   return [
     "## Evidence の項目の説明（文では項目名や id を書かず、説明の言葉で書く。席は displayName で書く）",
@@ -332,7 +397,7 @@ const IDENTIFIER_PATTERNS: readonly RegExp[] = [
   // Evidence 内の位置（math.equity.method 等）
   /(?<![A-Za-z0-9_.])(?:math|range|solver|context|knowledge|reveal|equity|aggression|decision)\.[a-zA-Z]+(?:\.[a-zA-Z]+)*/g,
   // Evidence の id（math:review-... 等）
-  /(?<![A-Za-z0-9_])(?:ctx|math|range|solver|kb|reveal|equity|aggression):[^\s,、。）)」]+/g,
+  /(?<![A-Za-z0-9_])(?:ctx|math|range|solver|kb|reveal|equity|aggression|tendency):[^\s,、。）)」]+/g,
 ];
 
 /** 文に残っている識別子の疑い（重複なし）。 */

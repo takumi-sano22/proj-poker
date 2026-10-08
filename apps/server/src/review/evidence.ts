@@ -1,6 +1,8 @@
 // Review Evidence の組み立て（docs/05 §6・docs/03 §7）。入力は判断時点の Hero Information Set（#78）だけ。
 // Event Log・判断より後の Event・他者の Hidden Cards・Learning-only Reveal・system の記録・CPU の Persona は受け取らないので、
 // Evidence に入る経路が無い（不変条件 2・3。Hindsight Leak の防止）。Card は Card の形のまま持ち、Prompt を作るときに表記へ直す。
+// Table Tendency（D122・#153）だけは前の Hand から作る値で、呼び出し側（ReviewService）が判断の Hand より前に保存した Hand に絞って作り、
+// 出来上がった値を受け取る（ここでは Event Store を読まない）。
 import {
   analyzeDecision,
   classifyPreflop,
@@ -15,6 +17,7 @@ import {
 } from "@proj-poker/engine";
 import { searchKb, type LoadedKb } from "../kb/index.js";
 import type { KbSpot, KbSpotKind } from "../kb/types.js";
+import type { TableTendency } from "../memory/table-tendency.js";
 import type { SolverAdapter } from "../solver/types.js";
 import type { PlayerNames } from "./identifiers.js";
 import { buildSolverEvidence } from "./solver-evidence.js";
@@ -23,6 +26,7 @@ import type {
   EvidenceIdSet,
   KnowledgeEvidence,
   MathEvidence,
+  OpponentObservationEvidence,
   RangeEvidence,
   ReviewEvidence,
   UserReadEvidence,
@@ -37,12 +41,17 @@ export interface EvidenceDeps {
   readonly signal?: AbortSignal;
   /** Solver の失敗の本文をログに残す。 */
   readonly onSolverFailure?: (error: unknown) => void;
+  /**
+   * Hero から見た Table Tendency（D122・#153）。判断の Hand より前に保存した、今の Session の Hand の public の Event だけから
+   * 作った値（buildHeroTableTendencyFromStore に beforeOrd を渡した結果）を渡す。省略（Review Eval・テスト）なら入れない。
+   */
+  readonly tableTendency?: TableTendency;
 }
 
 /** Knowledge Evidence に入れる KB の項目数（暫定値）。Prompt の長さと根拠の幅の釣り合いで決める。 */
 export const REVIEW_KB_LIMIT = 4;
 
-/** 相手の Observation の記録はまだ無い（CPU Memory・Hero の観察の蓄積は後の Phase）。 */
+/** 相手の Observation の記録が無い（十分な Table Tendency が無い）ときの理由。#153 より前と同じ文で、Prompt を変えない。 */
 const NO_OBSERVATION_REASON =
   "相手の過去の傾向（Observation）の記録はまだ無い。この Hand の公開された Action 以外に、相手の読みの根拠は無い。";
 
@@ -86,14 +95,54 @@ export async function buildReviewEvidence(
     context,
     math,
     range,
-    opponentObservation: {
-      status: "unavailable",
-      reason: NO_OBSERVATION_REASON,
-    },
+    opponentObservation: opponentObservationEvidence(
+      deps.tableTendency,
+      prefix,
+    ),
     solver,
     knowledge: knowledgeEvidence(set.knowledge, deps.kb),
     userRead: userReadEvidence(set, deps.playerNames),
   };
+}
+
+/**
+ * Opponent Observation（D122）。Table Tendency の十分な項目が 1 つ以上あるときだけ available にし、項目ごとに id と割合を付ける
+ * （割合は決定論で計算し、Review AI に計算させない）。不十分な項目も sufficient: false のまま残す（保留として読ませる）。
+ * 十分な項目が無ければ unavailable のまま（#153 より前と同じ Evidence・Prompt）。
+ */
+function opponentObservationEvidence(
+  tendency: TableTendency | undefined,
+  prefix: string,
+): OpponentObservationEvidence {
+  if (tendency === undefined || !tendency.items.some((i) => i.sufficient)) {
+    return { status: "unavailable", reason: NO_OBSERVATION_REASON };
+  }
+  return {
+    status: "available",
+    tableTendency: {
+      policyVersion: tendency.policyVersion,
+      hands: tendency.hands,
+      items: tendency.items.map((i) => ({
+        id: `tendency:${prefix}/${i.item}`,
+        item: i.item,
+        rate:
+          i.denominator === 0
+            ? null
+            : Math.round((i.numerator / i.denominator) * 1000) / 1000,
+        numerator: i.numerator,
+        denominator: i.denominator,
+        hands: i.hands,
+        sufficient: i.sufficient,
+      })),
+    },
+  };
+}
+
+/** Table Tendency の項目の id（無ければ空）。 */
+export function tableTendencyIdsOf(evidence: ReviewEvidence): string[] {
+  return evidence.opponentObservation.status === "available"
+    ? evidence.opponentObservation.tableTendency.items.map((i) => i.id)
+    : [];
 }
 
 /**
@@ -139,6 +188,10 @@ export function evidenceIdsOf(
       evidence.userRead.status === "collected"
         ? evidence.userRead.items.map((i) => i.id)
         : [],
+    // 卓の傾向（D122）があるときだけ持つ（無い Review の記録は #153 より前と同じ形）。
+    ...(evidence.opponentObservation.status === "available"
+      ? { tableTendency: tableTendencyIdsOf(evidence) }
+      : {}),
     cited,
   };
 }
@@ -153,6 +206,7 @@ export function allEvidenceIds(evidence: ReviewEvidence): Set<string> {
     ...ids.solver,
     ...ids.knowledge,
     ...ids.userRead,
+    ...(ids.tableTendency ?? []),
   ]);
 }
 

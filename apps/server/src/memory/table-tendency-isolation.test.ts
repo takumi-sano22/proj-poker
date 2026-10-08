@@ -4,7 +4,9 @@
 // 2. 動的: Claude の CPU の query() と Review の query() を Fake にして（Claude は呼ばない。D87）Session を進め、全 Prompt を走査する。
 //    - CPU の Prompt の卓の傾向の節は、その CPU が座っていた、その Hand より前に保存した Hand の public の Event から作った値だけで、
 //      Hand が 0 なら節ごと無い（Session の最初の Hand は今と同じ Prompt）
-//    - Review（Pass A）の Prompt・Hero への API の応答・Event Log に Table Tendency が出ない（Review の Evidence にはまだつながない）
+//    - Review（Pass A）の Prompt の卓の傾向は、Hero が座って見えた、判断の Hand より前に保存した Hand の public の Event から作った値だけで
+//      （D122・#153。十分な項目が無ければ入らない）、CPU の Memory の要約・Tilt・Persona は入らない
+//    - Review 以外の Hero への API の応答・Event Log に Table Tendency が出ない
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { HeroView, PlayerAction } from "@proj-poker/engine";
 import { existsSync, readFileSync } from "node:fs";
@@ -15,9 +17,12 @@ import { buildApp } from "../app.js";
 import type { ClaudeQuery } from "../claude/structured-query.js";
 import { InMemoryEventStore } from "../event-store.js";
 import { createClaudeOpponentFactory } from "../opponents/claude-opponent.js";
+import { PERSONA_PRESET_IDS } from "../opponents/persona.js";
 import { createFakeReviewQuery } from "../review/fake-review-query.js";
 import type { ReviewStatus } from "../review/review-service.js";
+import type { ReviewEvidence } from "../review/types.js";
 import {
+  buildHeroTableTendencyFromStore,
   buildTableTendency,
   loadTableTendencySources,
 } from "./table-tendency.js";
@@ -118,8 +123,15 @@ function tendencyIn(prompt: string): unknown {
   return at < 0 ? undefined : JSON.parse(sections[at + 1] ?? "");
 }
 
+/** Review（Pass A）の Prompt の Evidence の JSON。 */
+function reviewEvidenceIn(prompt: string): ReviewEvidence {
+  const sections = prompt.split("\n\n");
+  const at = sections.findIndex((s) => s.startsWith("## Evidence（"));
+  return JSON.parse(sections[at + 1] ?? "") as ReviewEvidence;
+}
+
 describe("Table Tendency の境界（Prompt の動的な走査）", () => {
-  it("CPU の Prompt の卓の傾向は、その CPU が座っていた前の Hand の public の Event からの値だけで、Review・Hero への応答・Event Log に出ない", async () => {
+  it("CPU の Prompt の卓の傾向は、その CPU が座っていた前の Hand の public の Event からの値だけ。Review の卓の傾向は Hero が見た前の Hand からの値だけで、Review 以外の Hero への応答・Event Log に出ない", async () => {
     const store = new InMemoryEventStore();
     let handNo = 0;
     let seedNo = 0;
@@ -165,7 +177,7 @@ describe("Table Tendency の境界（Prompt の動的な走査）", () => {
     });
     apps.push(app);
 
-    const responses: string[] = [];
+    const responses: { url: string; body: string }[] = [];
     const inject = async <T>(
       method: "GET" | "POST",
       url: string,
@@ -177,7 +189,7 @@ describe("Table Tendency の境界（Prompt の動的な走査）", () => {
         ...(payload === undefined ? {} : { payload }),
       });
       expect(res.statusCode, `${method} ${url}`).toBeLessThan(300);
-      responses.push(res.body);
+      responses.push({ url, body: res.body });
       return res.json<T>();
     };
     /** Hand を終わりまで進める（Hero は Call / Check）。 */
@@ -205,15 +217,22 @@ describe("Table Tendency の境界（Prompt の動的な走査）", () => {
       return started.handId;
     };
 
+    // 12 Hand 進め、5 Hand 目（前の Hand が 4 つ。十分な項目が無い）と 12 Hand 目（前の Hand が 11。十分な項目がある）の判断を Review する。
     let last = await play(null);
     const hand1 = last;
-    for (let i = 0; i < 4; i++) last = await play(last);
-    const reviewUrl = `/api/reviews/hands/${last}/decisions/0`;
-    await inject("POST", reviewUrl, {});
-    for (let i = 0; i < 400; i++) {
-      const body = await inject<ReviewStatus>("GET", reviewUrl);
-      if (body.generation.state !== "pending") break;
-      await new Promise((r) => setTimeout(r, 5));
+    const played = [hand1];
+    for (let i = 0; i < 11; i++) {
+      last = await play(last);
+      played.push(last);
+    }
+    for (const reviewed of [played[4], last]) {
+      const reviewUrl = `/api/reviews/hands/${reviewed}/decisions/0`;
+      await inject("POST", reviewUrl, {});
+      for (let i = 0; i < 400; i++) {
+        const body = await inject<ReviewStatus>("GET", reviewUrl);
+        if (body.generation.state !== "pending") break;
+        await new Promise((r) => setTimeout(r, 5));
+      }
     }
     const sessionId = store.sessionIdOfHand(hand1) ?? "";
     expect(store.sessionIdOfHand(last)).toBe(sessionId);
@@ -239,13 +258,67 @@ describe("Table Tendency の境界（Prompt の動的な走査）", () => {
       true,
     );
 
-    // Review の Prompt・Hero への API の応答・Event Log に Table Tendency は出ない。
-    expect(reviewPrompts.length).toBeGreaterThan(0);
+    // Review の Prompt の卓の傾向は、Hero が座って見えた、判断の Hand より前に保存した Hand からの値だけ（D122）。
+    expect(reviewPrompts).toHaveLength(2);
+    const observed: string[] = [];
     for (const prompt of reviewPrompts) {
-      expect(prompt).not.toContain("卓の傾向");
-      expect(prompt).not.toContain("phase7_table_tendency");
+      const evidence = reviewEvidenceIn(prompt);
+      const expected = buildHeroTableTendencyFromStore(store, {
+        sessionId,
+        heroPlayerId: "hero",
+        beforeOrd: store.savedOrder(evidence.handId) ?? 0,
+      });
+      const observation = evidence.opponentObservation;
+      observed.push(`${evidence.handId}:${observation.status}`);
+      if (expected.items.some((i) => i.sufficient)) {
+        expect(observation.status).toBe("available");
+        if (observation.status === "available") {
+          expect(observation.tableTendency.hands).toBe(expected.hands);
+          expect(
+            observation.tableTendency.items.map(
+              ({ item, numerator, denominator, hands, sufficient }) => ({
+                item,
+                numerator,
+                denominator,
+                hands,
+                sufficient,
+              }),
+            ),
+          ).toEqual(
+            expected.items.map(
+              ({ item, numerator, denominator, hands, sufficient }) => ({
+                item,
+                numerator,
+                denominator,
+                hands,
+                sufficient,
+              }),
+            ),
+          );
+        }
+      } else {
+        expect(observation.status).toBe("unavailable");
+        expect(prompt).not.toContain("卓の傾向");
+        expect(prompt).not.toContain("phase7_table_tendency");
+      }
+      // CPU の Memory の要約・Tilt・Persona・Pool の Identity は Review の Prompt に入らない。
+      for (const marker of [
+        "あなたの記憶",
+        "あなたの今の状態",
+        "phase7_memory",
+        "phase7_tilt",
+        "phase7_pool",
+        "phase7_rulebot",
+        ...PERSONA_PRESET_IDS.map((id) => `"${id}"`),
+      ]) {
+        expect(prompt).not.toContain(marker);
+      }
     }
-    for (const body of responses) {
+    // 検査が空振りしていない: 前の Hand が少ない判断には入らず、多い判断には入る。
+    expect(observed).toEqual([`${played[4]}:unavailable`, `${last}:available`]);
+    // Review 以外の Hero への API の応答に Table Tendency は出ない（Review の応答の Evidence には Hero の卓の傾向が入る）。
+    for (const { url, body } of responses) {
+      if (url.startsWith("/api/reviews/")) continue;
       expect(body).not.toContain("tableTendency");
       expect(body).not.toContain("phase7_table_tendency");
     }
@@ -254,5 +327,5 @@ describe("Table Tendency の境界（Prompt の動的な走査）", () => {
         expect(JSON.stringify(s)).not.toContain("phase7_table_tendency");
       }
     }
-  }, 30_000);
+  }, 60_000);
 });

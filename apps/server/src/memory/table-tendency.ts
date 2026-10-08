@@ -209,7 +209,7 @@ export function buildCpuTableTendenciesFromStore(
 /**
  * Hero 用の入り口。今の Session の、Hero が座って見えた保存済みの Hand の public の Event だけから作る（Hand が無ければ hands 0）。
  * beforeOrd を渡すと、その論理順序より前に保存した Hand だけを数える（ある判断の時点の値にするため。後の Hand を混ぜない）。
- * まだ Review の Evidence にはつないでいない（docs/05 §6 の Opponent Observation の契約を変えずに入れる経路が無いため。#141 の作業ログ）。
+ * Review（Pass A）の Evidence の Opponent Observation に、判断の Hand の ord を beforeOrd にして使う（D122・#153。review/review-service.ts）。
  */
 export function buildHeroTableTendencyFromStore(
   store: TableTendencyStore,
