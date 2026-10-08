@@ -492,6 +492,29 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'opponent_memory_resets is append-only');
   END;
   `,
+  // v12: CPU Memory の Observation の Cache（D124・#165）。Hand ごとに Observer 別に抽出した観察（memory/observation.ts の ObservedHand）を、
+  // 抽出の Version 付きで持つ。正本ではなく、消しても Event Log から作り直せる派生の Cache（memory/observation-cache.ts）。
+  // v6 の hypothesis_snapshots と同じく DELETE を許し、追記専用の Trigger は付けない（Version の違う行は消して作り直す）。
+  // Hand の保存のトランザクションでは書かず、Hand の開始で Memory を読むときに、Cache に無い Hand だけを足す。
+  // Opponent Memory Reset・Guest・論理順序・Observer の見える範囲の判定は Event Log 側（hands・session_participants・ordinals・
+  // opponent_memory_resets）で行い、この表には持たない。hands を外部キーで参照しない（Cache が正本の行の削除を妨げない）。
+  // observer_key は参加者の参照の鍵（participantKey）。observed は Observer の席・席→参加者・Event ごとの行為者（Observer が座っていない
+  // Hand は NULL）、events は Observer が見た public の Event の列（同じ Hand なら Observer に依らず同じ）。既存のテーブル・列・行は変えない（D76）。
+  // マイグレーション v12 は D124 の人間判断の範囲。
+  `
+  CREATE TABLE observed_hand_cache (
+    observer_key       TEXT NOT NULL CHECK (length(observer_key) > 0),
+    hand_id            TEXT NOT NULL,
+    extraction_version TEXT NOT NULL CHECK (length(extraction_version) > 0),
+    hero_player_id     TEXT NOT NULL,
+    ord                INTEGER NOT NULL CHECK (ord >= 1),
+    observed           TEXT CHECK (observed IS NULL OR (json_valid(observed) AND json_type(observed) = 'object')),
+    events             TEXT CHECK (events IS NULL OR (json_valid(events) AND json_type(events) = 'array')),
+    PRIMARY KEY (observer_key, hand_id),
+    -- 座っていない Hand は両方 NULL、座っていた Hand は両方を持つ。
+    CHECK ((observed IS NULL) = (events IS NULL))
+  ) STRICT;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

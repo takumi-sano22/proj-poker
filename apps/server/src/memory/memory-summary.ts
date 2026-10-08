@@ -12,11 +12,17 @@ import {
   type MemoryPolicy,
 } from "./memory-policy.js";
 import {
-  buildOpponentHypothesesFromStore,
+  ObservationCacheReader,
+  type ObservationCacheLogger,
+  type ObservationCacheStore,
+} from "./observation-cache.js";
+import {
+  buildOpponentHypotheses,
   type OpponentHypothesis,
   type TendencyEstimate,
 } from "./opponent-hypothesis.js";
 import {
+  extractObservedHandsFromStore,
   participantKey,
   type ObservationStore,
   type ObserverRef,
@@ -204,6 +210,14 @@ export interface MemoryFromStoreInput {
   /** Memory を作る CPU の席（参加者の引ける CPU だけ）。 */
   readonly observers: readonly MemoryObserverSeat[];
   readonly policy?: MemoryPolicy;
+  /**
+   * Observation の Cache（D124・#165。observation-cache.ts）。省略時は Cache を使わず、Event Log から都度抽出する（メモリ内の Event Store）。
+   * Cache の有無で結果は変わらない。logger は Cache の読み書きの失敗を残す先。
+   */
+  readonly observationCache?: {
+    readonly store: ObservationCacheStore;
+    readonly logger: ObservationCacheLogger;
+  };
 }
 
 /**
@@ -216,10 +230,28 @@ function cachedObservationStore(store: ObservationStore): ObservationStore {
     string,
     ReturnType<ObservationStore["sessionParticipants"]>
   >();
+  // 保存済みの Hand の一覧・Hand の Session・論理順序も、CPU ごとに引き直さない（#165。Hand ごとの引きが CPU の数だけ重なっていた）。
+  let finished: ReturnType<ObservationStore["finishedHandIds"]> | undefined;
+  const sessionOf = new Map<string, string | null>();
+  const ordOf = new Map<string, number | null>();
   return {
-    finishedHandIds: () => store.finishedHandIds(),
-    sessionIdOfHand: (handId) => store.sessionIdOfHand(handId),
-    savedOrder: (handId) => store.savedOrder(handId),
+    finishedHandIds: () => (finished ??= store.finishedHandIds()),
+    sessionIdOfHand: (handId) => {
+      let sessionId = sessionOf.get(handId);
+      if (sessionId === undefined) {
+        sessionId = store.sessionIdOfHand(handId);
+        sessionOf.set(handId, sessionId);
+      }
+      return sessionId;
+    },
+    savedOrder: (handId) => {
+      let ord = ordOf.get(handId);
+      if (ord === undefined) {
+        ord = store.savedOrder(handId);
+        ordOf.set(handId, ord);
+      }
+      return ord;
+    },
     read: (handId) => {
       let events = reads.get(handId);
       if (events === undefined) {
@@ -240,7 +272,8 @@ function cachedObservationStore(store: ObservationStore): ObservationStore {
 }
 
 /**
- * 保存済みの Hand から、CPU ごとにその CPU 自身の Memory の要約を作る（都度計算。保存しない）。返す Map の鍵は Observer の席。
+ * 保存済みの Hand から、CPU ごとにその CPU 自身の Memory の要約を作る（Hypothesis・要約は都度計算で保存しない。observationCache を
+ * 渡したときだけ、Hand ごとの観察の抽出結果を Cache に足して使い回す〔D124〕）。返す Map の鍵は Observer の席。
  * 呼ぶのは Hand の開始時で、その Hand を Event Store へ書く前（＝保存済みの Hand だけが入力になる）。
  * CPU ごとに、その CPU を Observer とする観察だけから作る（別の CPU の観察を混ぜない）。
  */
@@ -250,18 +283,31 @@ export function buildOpponentMemoriesFromStore(
 ): Map<string, OpponentMemorySummary> {
   const policy = input.policy ?? DEFAULT_MEMORY_POLICY;
   const cached = cachedObservationStore(store);
+  // Cache の読み手は 1 回の計算の間だけ（同じ Hand の public の Event の復元を CPU 間で使い回す）。
+  const reader =
+    input.observationCache === undefined
+      ? null
+      : new ObservationCacheReader(
+          input.observationCache.store,
+          input.observationCache.logger,
+        );
   const memories = new Map<string, OpponentMemorySummary>();
   for (const seat of input.observers) {
-    const hypotheses = buildOpponentHypothesesFromStore(
-      cached,
-      {
-        observer: seat.observer,
-        heroPlayerId: input.heroPlayerId,
-        currentSessionId: input.currentSessionId,
-        afterOrd: seat.afterOrd ?? null,
-      },
-      { observerSkill: seat.observerSkill, policy },
-    );
+    const query = {
+      observer: seat.observer,
+      heroPlayerId: input.heroPlayerId,
+      currentSessionId: input.currentSessionId,
+      afterOrd: seat.afterOrd ?? null,
+    };
+    const hands =
+      reader === null
+        ? extractObservedHandsFromStore(cached, query)
+        : reader.extract(cached, query);
+    const hypotheses = buildOpponentHypotheses(hands, {
+      observer: seat.observer,
+      observerSkill: seat.observerSkill,
+      policy,
+    });
     memories.set(
       seat.playerId,
       summarizeOpponentMemory(hypotheses, {

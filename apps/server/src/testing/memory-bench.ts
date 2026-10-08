@@ -2,7 +2,10 @@
 // 実 SQLite（一時ファイルの DB）に本番の Hand Orchestrator（RuleBot）で Hand を溜め、各チェックポイントで次の 2 つを測る。
 //   A. 層ごとの計算時間（Hand の開始時に呼ぶ 3 つの層。孤立して繰り返す）: Memory / Tilt / Table Tendency / その合計
 //   B. Hand の開始全体（HandOrchestrator.startHand の所要時間。層の計算を含む）。層が無い序盤（保存済み 20〜59 Hand）との差で層の分を見る
-// CI の pnpm test には入らない（手で実行する）。Cache・新しいテーブルは足さない（測って決める Issue）。Claude も API キーも使わない。
+// #165（D124）で Observation の Cache（v12 の observed_hand_cache）を足した。Orchestrator は本番と同じく Cache を使い、A の Memory は
+// Cache が温まった状態（Hand の開始ごとに足りない Hand を足している）で測る。比べるために、同じ時点の Cache なし（Event Log から都度抽出）と、
+// Cache を全部消した直後の 1 回（作り直し）も測る。
+// CI の pnpm test には入らない（手で実行する）。Claude も API キーも使わない。
 // 実行: pnpm --filter @proj-poker/server bench:memory [--checkpoints 400,1000,2000,5000] [--repeats 30] [--session-hands 250] [--window 20]
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { cpus, tmpdir, totalmem } from "node:os";
@@ -12,6 +15,7 @@ import type { HeroView, PlayerAction } from "@proj-poker/engine";
 import { PHASE1_TABLE_SETUP } from "../config.js";
 import { openDatabase } from "../db/database.js";
 import { HandOrchestrator } from "../hand-orchestrator.js";
+import { SqliteObservationCache } from "../memory/observation-cache.js";
 import {
   loadObservationSources,
   participantRefOf,
@@ -79,6 +83,14 @@ try {
   const dbPath = join(tmp, "bench.sqlite");
   const db = openDatabase(dbPath);
   const store = new SqliteEventStore(db);
+  const observationCache = new SqliteObservationCache(db);
+  // Cache の読み書きの失敗の数（失敗しても Memory は Event Log から作るので、結果は変わらない。数が 0 であることを出力で確かめる）。
+  let cacheWarnings = 0;
+  const cacheLogger = {
+    warn: () => {
+      cacheWarnings += 1;
+    },
+  };
   const setup = PHASE1_TABLE_SETUP;
   const heroId = setup.players.find((p) => p.kind === "hero")?.playerId ?? "";
 
@@ -107,6 +119,13 @@ try {
     nextSeed: () => 42_000 + handNo,
     nextHandId: () => `hand-${++handNo}`,
     nextSessionId: () => `session-${++sessionNo}`,
+    observationCache,
+    logger: {
+      warn: (_obj, msg) => {
+        if (msg.includes("Cache")) cacheWarnings += 1;
+      },
+      error: () => {},
+    },
   });
 
   /** startHand の所要時間の記録（保存済みの Hand の数 = startHand を呼ぶ時点で終わっていた Hand の数）。 */
@@ -165,19 +184,40 @@ try {
       participants: store.sessionParticipants(projection.sessionId),
     };
     const seatIds = started.seats.map((s) => s.playerId);
+    const withCache = { store: observationCache, logger: cacheLogger };
+    // Cache を全部消した直後の 1 回（Event Log から作り直して Cache に足す）。この呼び出しで Cache はまた温まる。
+    db.exec("DELETE FROM observed_hand_cache");
+    const coldStart = performance.now();
+    buildLayersAt(store, context, seatIds, heroId, 1, withCache);
+    const cold = performance.now() - coldStart;
     // 1 回目は捨てる（計測の前に Statement・JIT を温める）。
-    buildLayersAt(store, context, seatIds, heroId, 1);
+    buildLayersAt(store, context, seatIds, heroId, 1, withCache);
     const memory: number[] = [];
     const tilt: number[] = [];
     const table: number[] = [];
     const total: number[] = [];
     for (let i = 0; i < repeats; i++) {
       const t = performance.now();
-      const { timings } = buildLayersAt(store, context, seatIds, heroId, 1);
+      const { timings } = buildLayersAt(
+        store,
+        context,
+        seatIds,
+        heroId,
+        1,
+        withCache,
+      );
       total.push(performance.now() - t);
       memory.push(timings.memoryMs);
       tilt.push(timings.tiltMs);
       table.push(timings.tableTendencyMs);
+    }
+    // 比べるための Cache なし（#150 と同じ都度計算。同じ回数・同じ時点）。
+    buildLayersAt(store, context, seatIds, heroId, 1);
+    const memoryNoCache: number[] = [];
+    for (let i = 0; i < repeats; i++) {
+      memoryNoCache.push(
+        buildLayersAt(store, context, seatIds, heroId, 1).timings.memoryMs,
+      );
     }
     // Memory のうち Event の読み出し（SQLite の SELECT・JSON.parse・upcast）だけの時間。1 Observer の分（Orchestrator は 1 回の計算の間
     // 読み出しを使い回すので、5 人分でも Event の読み出しは 1 回分）。
@@ -196,8 +236,17 @@ try {
         load.push(performance.now() - t);
       }
     }
+    const cacheRow = db
+      .prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(length(observed) + length(events)), 0) AS bytes FROM observed_hand_cache",
+      )
+      .get() as { n: number; bytes: number };
     return {
       memory: stats(memory),
+      memoryNoCache: stats(memoryNoCache),
+      cold,
+      cacheRows: cacheRow.n,
+      cacheBytes: cacheRow.bytes,
       tilt: stats(tilt),
       table: stats(table),
       total: stats(total),
@@ -275,17 +324,18 @@ try {
     `- 層の測定: 各 checkpoint で ${repeats} 回（1 回の warm-up を捨てる）・Hand の開始全体: checkpoint の直後の ${windowSize} Hand・Session は ${sessionHands} Hand ごとに区切る`,
   );
   console.log(`- Hand の生成に ${wallSeconds.toFixed(1)} 秒`);
+  console.log(`- Cache の読み書きの失敗（warn）: ${cacheWarnings} 回`);
   console.log(
-    `\n## A. 層ごとの計算時間（ミリ秒。中央値 / 最大。CPU 5 人分・孤立して繰り返し）`,
+    `\n## A. 層ごとの計算時間（ミリ秒。中央値 / 最大。CPU 5 人分・孤立して繰り返し。(1)〜(4) は Cache が温まった状態）`,
   );
   console.log(
-    "| 保存済みの Hand | 今の Session の Hand | Event 行数 | DB (MiB) | (1) Memory | うち Event の読み出し（1 Observer 分）| (2) Tilt | (3) Table Tendency | (4) 合計 |",
+    "| 保存済みの Hand | 今の Session の Hand | Event 行数 | DB (MiB) | Cache の行数 / JSON (MiB) | (1) Memory | Memory（Cache なし）| Memory（Cache を消した直後の 1 回）| うち Event の読み出し（1 Observer 分）| (2) Tilt | (3) Table Tendency | (4) 合計 |",
   );
-  console.log("|---|---|---|---|---|---|---|---|---|");
+  console.log("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of results) {
     const l = r.layers;
     console.log(
-      `| ${r.savedHands} | ${l.sessionHands} | ${r.events} | ${(r.dbBytes / 1024 ** 2).toFixed(1)} | ${cell(l.memory)} | ${cell(l.load)} | ${cell(l.tilt)} | ${cell(l.table)} | ${cell(l.total)} |`,
+      `| ${r.savedHands} | ${l.sessionHands} | ${r.events} | ${(r.dbBytes / 1024 ** 2).toFixed(1)} | ${l.cacheRows} / ${(l.cacheBytes / 1024 ** 2).toFixed(1)} | ${cell(l.memory)} | ${cell(l.memoryNoCache)} | ${fmt(l.cold)} | ${cell(l.load)} | ${cell(l.tilt)} | ${cell(l.table)} | ${cell(l.total)} |`,
     );
   }
   console.log(

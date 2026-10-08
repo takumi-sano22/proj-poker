@@ -33,6 +33,7 @@ import {
   InMemoryOpponentMemoryResetStore,
   type OpponentMemoryResetStore,
 } from "./memory/memory-reset.js";
+import type { ObservationCacheStore } from "./memory/observation-cache.js";
 import { InMemoryNoteStore, type NoteStore } from "./notes/note-store.js";
 import { ReplayService } from "./replay.js";
 import {
@@ -100,6 +101,8 @@ export interface AppOptions {
   readonly learningResetStore?: LearningResetStore;
   /** Opponent Memory Reset の区切り（#143・D120）。起動時は SQLite（v11）、省略時のメモリ内実装はテスト用。 */
   readonly opponentMemoryResetStore?: OpponentMemoryResetStore;
+  /** CPU Memory の Observation の Cache（#165・D124）。起動時は SQLite（v12）、省略時は Cache を使わない（メモリ内の Event Store。テスト用）。 */
+  readonly observationCache?: ObservationCacheStore;
 }
 
 /** 省略時の Learning Reset Store。メモリ内の Event Store とだけ、論理順序のカウンタを共有できる（D117）。 */
@@ -153,6 +156,9 @@ export function buildApp(options: AppOptions = {}) {
     nextHandId,
     excludeFromResume: drillHandIds,
     memoryResets,
+    ...(options.observationCache === undefined
+      ? {}
+      : { observationCache: options.observationCache }),
     logger: app.log,
   });
   app.addHook("onClose", (_instance, done) => {
