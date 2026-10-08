@@ -20,8 +20,10 @@ import type {
 import type { TableTendency } from "../memory/table-tendency.js";
 import type { OpponentInput } from "./opponent-agent.js";
 import {
+  composeTuning,
   memoryAdjustedTuning,
   memoryReadingOf,
+  RULEBOT_COMPOSITION_V1,
   RULEBOT_MEMORY_V1,
   RULEBOT_TABLE_TENDENCY_V1,
   RuleBot,
@@ -602,5 +604,186 @@ describe("RuleBot と Table Tendency（#141）", () => {
     expect(run(PERSONA_PRESETS.lag, tendency(0.9, 0.9))).toEqual(
       run(PERSONA_PRESETS.lag, tendency(0.9, 0.9)),
     );
+  });
+});
+
+describe("RuleBot の合成（Persona・Tilt・Table Tendency・Memory。#142）", () => {
+  /** 最初の Actor が最小額で Raise した後の、次の Actor の入力と Raise した席。 */
+  function facingRaiseInput(seed: number): OpponentInput & {
+    aggressor: string;
+  } {
+    const result = startHand({
+      handId: `c${seed}`,
+      seats: ["p1", "p2", "p3", "p4", "p5", "p6"].map((playerId) => ({
+        playerId,
+        stack: PHASE1_CASH_PRESET.startingStack,
+      })),
+      buttonPlayerId: "p1",
+      config: PHASE1_CASH_PRESET,
+      deal: { seed },
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    const first = getLegalActions(result.value.state);
+    const raise = first?.actions.find((a) => a.type === "raise");
+    if (first === null || raise?.type !== "raise") {
+      throw new Error("Raise できない");
+    }
+    const raised = applyAction(result.value.state, first.playerId, {
+      type: "raise",
+      amount: raise.min,
+    });
+    if (!raised.ok) throw new Error(raised.error.message);
+    const legal = getLegalActions(raised.value.state);
+    if (legal === null) throw new Error("Actor がいない");
+    return {
+      knowledge: projectKnowledgeState(
+        [...result.value.events, ...raised.value.events],
+        legal.playerId,
+      ),
+      legal,
+      aggressor: first.playerId,
+    };
+  }
+
+  /** 4 つの層を一番大きく効かせる入力（Tilt 3 段・攻める卓・攻める相手）。 */
+  function extremeInput(seed: number): OpponentInput {
+    const input = facingRaiseInput(seed);
+    return {
+      ...input,
+      knowledge: {
+        ...input.knowledge,
+        tilt: {
+          level: PHASE7_TILT_V1.maxLevel,
+          maxLevel: PHASE7_TILT_V1.maxLevel,
+          policyVersion: PHASE7_TILT_V1.version,
+        },
+        tableTendency: {
+          policyVersion: "phase7_table_tendency_v1",
+          hands: 50,
+          items: (["vpip", "aggression_frequency"] as const).map((item) => ({
+            item,
+            policyVersion: "phase7_table_tendency_v1",
+            numerator: 95,
+            denominator: 100,
+            hands: 50,
+            sufficient: true,
+          })),
+        },
+        memory: {
+          policyVersion: "phase7_memory_v1",
+          injectionVersion: "phase7_memory_injection_v1",
+          context: "cash",
+          subjects: [
+            {
+              playerId: input.aggressor,
+              subject: { kind: "cpu_profile", cpuProfileId: "fixed_x" },
+              handsObserved: 80,
+              items: [
+                {
+                  item: "aggression_frequency",
+                  frequency: 0.95,
+                  weightedOpportunities: 60,
+                  opportunities: 60,
+                  sufficient: true,
+                  evidenceCount: 1,
+                  evidenceIds: ["h0#5"],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    };
+  }
+
+  /** 上限を掛けない、順に当てただけのしきい値（#141 までの RuleBot の合成）。 */
+  function uncapped(persona: Persona, input: OpponentInput) {
+    const k = input.knowledge;
+    const base =
+      k.tilt === undefined
+        ? tuningFromPersona(persona)
+        : tuningFromPersona(tiltedPersona(persona, k.tilt));
+    return memoryAdjustedTuning(
+      tableTendencyAdjustedTuning(base, k, persona.traits.adaptability),
+      k,
+      memoryReadingOf(persona),
+    );
+  }
+
+  /** 全軸が 1 の Persona（読みの強さと Adaptability が最大）。 */
+  const sharp: Persona = {
+    ...PERSONA_PRESETS.tag_regular,
+    traits: Object.fromEntries(
+      Object.keys(PERSONA_PRESETS.tag_regular.traits).map((k) => [k, 1]),
+    ) as unknown as Persona["traits"],
+  };
+
+  it("Persona なしは、Tilt・Table Tendency・Memory があっても既定のしきい値で、判断も変えない（D71 の挙動のまま）", () => {
+    expect(composeTuning(undefined, extremeInput(1).knowledge)).toEqual(
+      composeTuning(undefined, facingRaiseInput(1).knowledge),
+    );
+    const run = (extreme: boolean) =>
+      Array.from({ length: 100 }, (_, i) =>
+        new RuleBot(900 + i).choose(
+          extreme ? extremeInput(i + 1) : facingRaiseInput(i + 1),
+        ),
+      );
+    expect(run(true)).toEqual(run(false));
+  });
+
+  it("今の Preset では上限に届かず、#141 までの順（Persona → Tilt → Table Tendency → Memory）の結果と同じ（既存の挙動を変えない）", () => {
+    const input = extremeInput(1);
+    for (const id of PERSONA_PRESET_IDS) {
+      const persona = PERSONA_PRESETS[id];
+      expect(composeTuning(persona, input.knowledge), id).toEqual(
+        uncapped(persona, input),
+      );
+      expect(composeTuning(persona, facingRaiseInput(1).knowledge), id).toEqual(
+        tuningFromPersona(persona),
+      );
+    }
+  });
+
+  it("層を合わせたずれは Persona だけのしきい値から ±maxTotalShift まで（全軸が 1 の Persona で差を示す）", () => {
+    const input = extremeInput(1);
+    const anchor = tuningFromPersona(sharp);
+    const before = uncapped(sharp, input);
+    const after = composeTuning(sharp, input.knowledge);
+    const cap = RULEBOT_COMPOSITION_V1.maxTotalShift;
+    // 上限が無いと Table Tendency（0.1）と Memory（0.15）で 0.25 ずれる。合成では 0.2 で止まる。
+    expect(before.mediumLooseCall - anchor.mediumLooseCall).toBeCloseTo(
+      RULEBOT_TABLE_TENDENCY_V1.maxShift + RULEBOT_MEMORY_V1.maxShift,
+      10,
+    );
+    expect(after.mediumLooseCall - anchor.mediumLooseCall).toBeCloseTo(cap, 10);
+    for (const key of [
+      "strongAggression",
+      "mediumBetFrequency",
+      "mediumRaiseFrequency",
+      "mediumLooseCall",
+      "weakBluffFrequency",
+      "weakLimpFrequency",
+    ] as const) {
+      expect(Math.abs(after[key] - anchor[key]), key).toBeLessThanOrEqual(
+        cap + 1e-12,
+      );
+      expect(after[key]).toBeGreaterThanOrEqual(0);
+      expect(after[key]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("合成の結果でも選ぶ Action は Legal Action の中で、同じ入力・同じ seed なら同じ判断列", () => {
+    for (const id of PERSONA_PRESET_IDS) {
+      const run = () =>
+        Array.from({ length: 50 }, (_, i) => {
+          const input = extremeInput(i + 1);
+          const action = new RuleBot(700 + i, PERSONA_PRESETS[id]).choose(
+            input,
+          );
+          expect(input.legal.actions.map((a) => a.type)).toContain(action.type);
+          return action;
+        });
+      expect(run()).toEqual(run());
+    }
   });
 });

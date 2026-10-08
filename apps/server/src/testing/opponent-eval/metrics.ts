@@ -241,7 +241,7 @@ function total(counts: Readonly<Record<string, number>>): number {
 }
 
 /** 2 つの分布の Total Variation Distance（0〜1）。 */
-function distance(
+export function distance(
   a: Readonly<Record<string, number>>,
   b: Readonly<Record<string, number>>,
 ): number {
@@ -255,7 +255,7 @@ function distance(
   );
 }
 
-function meanPairwiseDistance(
+export function meanPairwiseDistance(
   distributions: readonly Readonly<Record<string, number>>[],
 ): number {
   const values: number[] = [];
@@ -273,7 +273,7 @@ function meanPairwiseDistance(
 }
 
 /** Shannon Entropy（bit）。Σ p·log2(1/p) の形で足し、-0 を出さない。 */
-function entropy(counts: Readonly<Record<string, number>>): number {
+export function entropy(counts: Readonly<Record<string, number>>): number {
   const t = total(counts);
   if (t === 0) return 0;
   return Object.values(counts)

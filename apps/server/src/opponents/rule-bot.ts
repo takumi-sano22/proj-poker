@@ -8,6 +8,7 @@
 // 少しずらした Persona でしきい値を作る（tiltedPersona）。乱数の引き方は変えず、Illegal / Random な Action は作らない。
 // KnowledgeState にその CPU から見た Table Tendency（D106・#141）があれば、Persona の Adaptability の範囲で同じ 2 つのしきい値だけを
 // 少しずらす（tableTendencyAdjustedTuning。十分な Sample の項目だけ）。
+// 4 つの層（Persona・Tilt・Table Tendency・Memory）の合成は composeTuning の 1 か所で、順序と合計のずれの上限を決めて行う（#142）。
 import {
   HandCategory,
   createRng,
@@ -297,6 +298,64 @@ export function tiltedPersona(persona: Persona, tilt: CpuTilt): Persona {
   };
 }
 
+/**
+ * 4 つの層の合成の係数（phase7_rulebot_composition_v1。#142）。数値は OI-011 の暫定値で、確定ではない。
+ * - maxTotalShift: Persona だけのしきい値（tuningFromPersona）からの、Tilt・Table Tendency・Memory を合わせたずれの上限
+ *   （しきい値ごと。確率の差）。今の Preset と各層の上限（Tilt 3 段・Table Tendency 0.1 × Adaptability・Memory 0.15 × 読みの強さ）では届かず、
+ *   軸の大きい Persona や、層の係数を上げた Version でも、1 つのしきい値が Persona の性格から大きく離れないようにする
+ */
+export const RULEBOT_COMPOSITION_V1 = {
+  version: "phase7_rulebot_composition_v1",
+  maxTotalShift: 0.2,
+} as const;
+
+/** 確率のしきい値の項目（preflopRange 以外）。 */
+const NUMERIC_TUNING_KEYS = [
+  "strongAggression",
+  "mediumBetFrequency",
+  "mediumRaiseFrequency",
+  "mediumLooseCall",
+  "weakBluffFrequency",
+  "weakLimpFrequency",
+] as const satisfies readonly (keyof RuleBotTuning)[];
+
+/**
+ * その判断で使うしきい値を、Persona（固定）・Tilt・Table Tendency・Memory の順に決定論で合成する（#142。乱数を引かない）。
+ * 1. Persona: tuningFromPersona（Persona なしは DEFAULT_TUNING のまま返す。D71 の挙動で、Tilt・Table Tendency・Memory も読まない）
+ * 2. Tilt: Persona の Preflop Looseness・Aggression を段階ごとにずらした Persona でしきい値を作り直す（tiltedPersona）
+ * 3. Table Tendency: 卓全体の傾向で 2 つのしきい値をずらす（Adaptability × 上限）
+ * 4. Memory: 相手ごとの傾向で同じ 2 つのしきい値をずらす（読みの強さ × 上限。卓全体より個別の相手の情報を後に当てる）
+ * 5. 上限: 確率のしきい値ごとに、1（Persona だけ）の値からのずれを ±maxTotalShift に丸める（0〜1 の範囲も保つ）。参加 Range（preflopRange）は
+ *    Tilt だけが変えるので、そのまま
+ * 選ぶ Action は呼び出し側が Legal Action の中から決めるので、合成の結果で Illegal な Action は作らない（D40）。
+ */
+export function composeTuning(
+  persona: Persona | undefined,
+  knowledge: CpuKnowledgeState,
+): RuleBotTuning {
+  if (persona === undefined) return DEFAULT_TUNING;
+  const anchor = tuningFromPersona(persona);
+  const tilted =
+    knowledge.tilt === undefined
+      ? anchor
+      : tuningFromPersona(tiltedPersona(persona, knowledge.tilt));
+  const adjusted = memoryAdjustedTuning(
+    tableTendencyAdjustedTuning(tilted, knowledge, persona.traits.adaptability),
+    knowledge,
+    memoryReadingOf(persona),
+  );
+  const cap = RULEBOT_COMPOSITION_V1.maxTotalShift;
+  const capped: { -readonly [K in keyof RuleBotTuning]: RuleBotTuning[K] } = {
+    ...adjusted,
+  };
+  for (const key of NUMERIC_TUNING_KEYS) {
+    capped[key] = clamp01(
+      Math.min(anchor[key] + cap, Math.max(anchor[key] - cap, adjusted[key])),
+    );
+  }
+  return capped;
+}
+
 /** RuleBot を作る OpponentFactory。Persona があればそのしきい値で判断する。 */
 export const createRuleBot: OpponentFactory = (seed, _playerId, persona) =>
   new RuleBot(seed, persona);
@@ -304,17 +363,11 @@ export const createRuleBot: OpponentFactory = (seed, _playerId, persona) =>
 export class RuleBot implements OpponentAgent {
   private readonly rng: Rng;
   private readonly persona: Persona | undefined;
-  private readonly tuning: RuleBotTuning;
-  /** Memory を使う強さ（memoryReadingOf）。Persona なしは 0。 */
-  private readonly reading: number;
 
-  /** persona を省くと既定のしきい値（D71 の暫定 Bot のまま。Memory も読まない）。 */
+  /** persona を省くと既定のしきい値（D71 の暫定 Bot のまま。Memory・Tilt・Table Tendency も読まない）。 */
   constructor(seed: number, persona?: Persona) {
     this.rng = createRng(seed);
     this.persona = persona;
-    this.tuning =
-      persona === undefined ? DEFAULT_TUNING : tuningFromPersona(persona);
-    this.reading = memoryReadingOf(persona);
   }
 
   /** OpponentAgent としての出力。中身は choose と同じ判断を OpponentOutput の形にしたもの。 */
@@ -332,21 +385,8 @@ export class RuleBot implements OpponentAgent {
    * （待ち時間も障害も無く、seed だけで結果が決まる）。
    */
   choose({ knowledge, legal }: OpponentInput): PlayerAction {
-    // Tilt は Persona のある CPU だけが持つ（Persona なしは D71 の挙動のまま）。
-    const base =
-      this.persona !== undefined && knowledge.tilt !== undefined
-        ? tuningFromPersona(tiltedPersona(this.persona, knowledge.tilt))
-        : this.tuning;
-    // 卓全体の傾向（Table Tendency）を先に、相手ごとの Memory を後に当てる（どちらも 2 つのしきい値を上限付きでずらすだけ）。
-    const tuning = memoryAdjustedTuning(
-      tableTendencyAdjustedTuning(
-        base,
-        knowledge,
-        this.persona?.traits.adaptability ?? 0,
-      ),
-      knowledge,
-      this.reading,
-    );
+    // Persona・Tilt・Table Tendency・Memory の合成は composeTuning の 1 か所（順序と合計のずれの上限。#142）。
+    const tuning = composeTuning(this.persona, knowledge);
     const strength = rateStrength(
       knowledge.holeCards,
       knowledge.board,

@@ -126,6 +126,22 @@ Poker Engine Correctnessとは別に評価します。
 - 合格ラインは測定の前に決めた暫定値で、Persona・Promptの見直し（Playtest）と合わせて見直します（永久仕様ではありません）。CIで落とすのはHidden Information Leakageと障害だけで、その他は手動のEvalで表示します（録画は一回分のスナップショットのため）。
 - **明らかなStrategic Incoherence**はJudge（人間かLLM）が要るため、まだ測りません（`llm-quality-improvement`のJudgeの設計で扱います）。
 
+### Opponent MemoryのEval（Issue #142）
+
+RuleBotの決定論だけで回し、ClaudeもAPIキーも使いません。CI（`pnpm test`）で回るのは`apps/server/src/testing/opponent-eval/memory-eval.test.ts`で、向き・境界だけを判定します。分布と計算時間の値は手動の`pnpm --filter @proj-poker/server eval:opponent-memory [--hands 200,200] [--repeats 5]`（`memory-run.ts`）で表示し、作業ログに残します。
+
+- **代表Spotと層の条件**（`memory-eval.ts`）: 上の代表Spot（本番と同じ`projectKnowledgeState`の入力）に、本番と同じ形の`memory` / `tilt` / `tableTendency`を足した入力で、6つのPersona × 400 seedのRuleBotの判断を集め、Engineで合法かを確かめます。条件は、層なし・Memory（Subjectが Loose / Tight・保留）・Tilt 3段・卓が緩い / 締まっている・3つの層を同じ向きに最大で足したもの、です。
+- **(1) Memoryが戦略に効く**: `river_facing_big_bet`（QJsのトップペアでPotを超えるBetに直面）で、攻める（Loose）相手と分かっていればCallが増え、攻めない（Tight）相手なら減る。`flop_cbet`（AJoでC-betするか）で、C-betによく降りる（Tight）相手にはBluffのC-betが増え、降りない（Loose）相手には減る。Persona ごとに向きが逆にならず、全Personaの合計で向きどおりに動き、保留（Sample不足）のMemoryでは変わらないこと。
+- **(2) Fixed Poolの継続性・(3) Guestの一時性・(6) Leakage 0**: 本番のHand Orchestrator（RuleBot・メモリ内のEvent Store・既定の6人卓）で2つのSession（60 Hand + 20 Hand。区切りはCPUの障害 → Session終了の本番の経路）を進め、CPUに渡った入力をそのまま記録します。両方のSessionの同じ席にGuestが座るseedを選びます。
+  - 層の値は、Orchestratorと同じ入力で作った値とCPUに渡った値が一致する（評価ハーネスと本番の組み立ての一致。LC-050）
+  - 両方のSessionに座ったFixed CPUは、Session 2の最初の判断からSession 1の観察（Evidence）をMemoryに持ち、Session 2でMemoryの有無でしきい値の変わる判断がある
+  - Session 1のGuestはSessionの中でMemoryを積むが、Session 2の誰のMemoryにもSubjectとして出ず、同じ席の新しいGuestのMemoryは空から始まる
+  - どのCPUの入力にも、知ってよい札以外のCard・Deck / seed / `system`のEvent・Persona・Reveal・Heroの弱点が無く、層を除いたKnowledgeStateはEngineのProjectionと同じ。MemoryのEvidenceはそのCPU自身が座っていたHandだけ（Session 1にいなかったFixed CPUがSession 2にいることも確かめ、検査を空振りさせない）
+- **(4) Action Diversity・Strategic coherence**: どの条件でも、Illegal 0・Checkできるのに Fold 0、Persona Differentiation（上の表と同じ定義）とPersonaごとのAction Diversityが層なしの0.75倍以上、攻撃性（Bet / Raiseの割合）の順序（Maniac > Nit・LAG > Nit・Maniac > Calling Station）が保たれること。合格ラインは測定の前に決めた暫定値です（OI-011。`MEMORY_EVAL_TARGETS`）。
+- **(5) Latency**: 同じOrchestratorの実行で、Handの開始時のMemory・Tilt・Table Tendencyの計算時間（CPU全員分）を保存済みのHandの数ごとに記録します。CIでは値の大きさを判定しません（実行環境で変わる）。
+- **時計が後ろへ戻った記録（D117）**: 記録時刻が保存の順と逆に並ぶEvent Storeと、進む時計のEvent Storeで同じSessionを進め、CPUに渡る合成の入力（Memory・Tilt・Table Tendency）と判断が同じであること。
+- **ClaudeのCPU**: 既存の録画（`recordings/opponent-eval.json`）の再生が通り続けることだけを確かめます（代表Spotの入力には層が無いので、Promptの指紋は変わらない）。Memory等の節の入ったPromptの録画は、APIの呼び出しが要るので取っていません。
+
 ## 6. Review Eval
 
 確認:
