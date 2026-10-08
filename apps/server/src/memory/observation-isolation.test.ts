@@ -59,6 +59,8 @@ describe("Observation の抽出の境界（静的）", () => {
         join(MEMORY, "observation.ts"),
         join(MEMORY, "opponent-hypothesis.ts"),
         join(MEMORY, "memory-policy.ts"),
+        // Observation の Cache（#165・D124）も同じ境界の中（learning/ に届かない・Learning-only Reveal を参照しない）。
+        join(MEMORY, "observation-cache.ts"),
       ]),
     );
     const reachable = reachableFrom(entries);

@@ -65,6 +65,7 @@ import {
   type OpponentMemorySummary,
 } from "./memory/memory-summary.js";
 import type { OpponentMemoryResetStore } from "./memory/memory-reset.js";
+import type { ObservationCacheStore } from "./memory/observation-cache.js";
 import { participantRefOf } from "./memory/observation.js";
 import {
   buildCpuTableTendenciesFromStore,
@@ -193,6 +194,11 @@ export interface HandOrchestratorOptions {
    * Event Store と同じ順序の源（同じ DB の ordinals、またはメモリ内の同じカウンタ）を使う Store を渡す。省略時は区切り無し。
    */
   readonly memoryResets?: OpponentMemoryResetStore;
+  /**
+   * CPU Memory の Observation の Cache（D124・#165。起動時は SQLite の v12）。Event Store と同じ DB の Store を渡す。省略時は Cache を使わず、
+   * Event Log から都度抽出する（メモリ内の Event Store）。Cache の有無で Memory は変わらない。
+   */
+  readonly observationCache?: ObservationCacheStore;
   readonly logger?: OrchestratorLogger;
 }
 
@@ -979,11 +985,16 @@ export class HandOrchestrator {
       ];
     });
     if (observers.length === 0) return new Map();
+    const cache = this.options.observationCache;
     return buildOpponentMemoriesFromStore(this.options.store, {
       heroPlayerId: this.heroId,
       currentSessionId: plan.sessionId,
       seats,
       observers,
+      // Cache（D124）は読むときに足りない Hand だけを足す。失敗は warn に残し、Memory は Event Log から作る。
+      ...(cache === undefined
+        ? {}
+        : { observationCache: { store: cache, logger: this.logger } }),
     });
   }
 

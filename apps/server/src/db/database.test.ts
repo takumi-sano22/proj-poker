@@ -62,6 +62,7 @@ describe("openDatabase（マイグレーション）", () => {
       "learning_resets",
       "learning_resets_append_only",
       "learning_resets_no_delete",
+      "observed_hand_cache",
       "opponent_memory_resets",
       "opponent_memory_resets_append_only",
       "opponent_memory_resets_no_delete",
@@ -115,7 +116,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -180,7 +181,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -249,7 +250,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       sessions: db.prepare("SELECT * FROM sessions ORDER BY rowid").all(),
@@ -342,7 +343,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('session_participants', 'opponent_memory_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('session_participants', 'opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       rows: [
@@ -444,7 +445,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'opponent_memory_resets' ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       rows: [
@@ -477,6 +478,101 @@ describe("openDatabase（マイグレーション）", () => {
           "CHECK (kind IN ('hand_saved', 'learning_reset'))",
         ) as unknown,
       });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("版 11 の DB に版 12（observed_hand_cache）を当てても、既存のテーブル・Trigger の定義と行は変わらない（D76・D124）", () => {
+    const legacyPath = join(dir, "v11.sqlite");
+    const v11 = new DatabaseSync(legacyPath);
+    try {
+      for (const sql of MIGRATIONS.slice(0, 11)) v11.exec(sql);
+      v11.exec("PRAGMA user_version = 11");
+      v11.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-08T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-08T00:00:00.000Z', '2026-10-08T00:01:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 8, '2026-10-08T00:00:00.000Z', '{}');
+        INSERT INTO session_participants (session_id, player_id, kind, cpu_profile_id, guest_id, pool_version)
+          VALUES ('s1', 'cpu1', 'fixed', 'fixed_aki', NULL, 'phase7_pool_v1');
+        INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', 'h1');
+        INSERT INTO opponent_memory_resets (reset_id, created_at, scope, cpu_profile_id, ord)
+          VALUES ('m1', '2026-10-08T00:02:00.000Z', 'all', NULL, 1);
+      `);
+    } finally {
+      v11.close();
+    }
+    const snapshot = (db: DatabaseSync) => ({
+      schema: db
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'observed_hand_cache' ORDER BY name",
+        )
+        .all(),
+      rows: [
+        "events",
+        "hands",
+        "sessions",
+        "session_participants",
+        "ordinals",
+        "opponent_memory_resets",
+      ].map((table) => db.prepare(`SELECT * FROM ${table}`).all()),
+    });
+    const before = new DatabaseSync(legacyPath);
+    const expected = snapshot(before);
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(12);
+      expect(snapshot(db)).toEqual(expected);
+      // Cache は空から始め、backfill しない（読むときに足りない分だけ作る）。
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM observed_hand_cache").get(),
+      ).toEqual({ n: 0 });
+      // 派生の Cache なので追記専用の Trigger は付けない。
+      expect(
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'observed_hand_cache'",
+          )
+          .all(),
+      ).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("observed_hand_cache は Observer × Hand で 1 行、座っていない Hand は observed・events とも NULL、UPDATE / DELETE を許す（D124）", () => {
+    const db = openDatabase(dbPath);
+    try {
+      const insert = db.prepare(
+        `INSERT INTO observed_hand_cache (observer_key, hand_id, extraction_version, hero_player_id, ord, observed, events)
+         VALUES (?, ?, 'v1', 'hero', ?, ?, ?)`,
+      );
+      // hands を参照しない（Cache が正本の行の削除を妨げない）ので、Hand の行が無くても入る。
+      insert.run('["cpu_profile","fixed_aki"]', "h1", 1, '{"seats":[]}', "[]");
+      insert.run('["cpu_profile","fixed_aki"]', "h2", 2, null, null);
+      expect(() =>
+        insert.run('["cpu_profile","fixed_aki"]', "h1", 1, "{}", "[]"),
+      ).toThrow(/UNIQUE/);
+      // observed と events の片方だけ・JSON でない値・形の違う JSON・ord 0 は入れない。
+      expect(() =>
+        insert.run('["cpu_profile","fixed_ben"]', "h1", 1, "{}", null),
+      ).toThrow();
+      expect(() =>
+        insert.run('["cpu_profile","fixed_ben"]', "h1", 1, "x", "[]"),
+      ).toThrow();
+      expect(() =>
+        insert.run('["cpu_profile","fixed_ben"]', "h1", 1, "[]", "{}"),
+      ).toThrow();
+      expect(() =>
+        insert.run('["cpu_profile","fixed_ben"]', "h1", 0, "{}", "[]"),
+      ).toThrow();
+      expect(() => insert.run("", "h1", 1, "{}", "[]")).toThrow();
+      db.exec("UPDATE observed_hand_cache SET extraction_version = 'v2'");
+      db.exec("DELETE FROM observed_hand_cache");
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM observed_hand_cache").get(),
+      ).toEqual({ n: 0 });
     } finally {
       db.close();
     }
@@ -537,7 +633,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -575,7 +671,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants', 'opponent_memory_resets', 'observed_hand_cache') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),

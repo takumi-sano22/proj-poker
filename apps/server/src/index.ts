@@ -21,6 +21,7 @@ import { loadKb } from "./kb/index.js";
 import { SqliteHypothesisSnapshotStore } from "./learning/hypothesis-snapshot.js";
 import { SqliteLearningResetStore } from "./learning/learning-reset.js";
 import { SqliteOpponentMemoryResetStore } from "./memory/memory-reset.js";
+import { SqliteObservationCache } from "./memory/observation-cache.js";
 import {
   buildClaudeEnv,
   createClaudeOpponentFactory,
@@ -98,6 +99,8 @@ const app = buildApp({
   learningResetStore: new SqliteLearningResetStore(db),
   // Opponent Memory Reset（#143）は同じ DB の opponent_memory_resets（v11）に区切りの行を足す（正本は消さない。D120）。
   opponentMemoryResetStore: new SqliteOpponentMemoryResetStore(db),
+  // CPU Memory の Observation の Cache（#165・D124）は同じ DB の observed_hand_cache（v12）。消しても Event Log から作り直せる派生。
+  observationCache: new SqliteObservationCache(db),
   createOpponent,
   opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),

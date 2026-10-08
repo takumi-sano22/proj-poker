@@ -24,6 +24,7 @@ import { createOrdinalCounter } from "../../logical-order.js";
 import type { HypothesisItemId } from "../../memory/memory-policy.js";
 import {
   buildOpponentMemoriesFromStore,
+  type MemoryFromStoreInput,
   type MemoryObserverSeat,
   type MemoryTableSeat,
   type OpponentMemorySummary,
@@ -427,6 +428,8 @@ export function buildLayersAt(
   seatIds: readonly string[],
   heroId: string,
   repeats = 1,
+  /** CPU Memory の Observation の Cache（#165。本番の Hand Orchestrator と同じ渡し方）。省略時は Cache を使わない。 */
+  observationCache?: MemoryFromStoreInput["observationCache"],
 ): { readonly layers: LayerMaps; readonly timings: LayerTimings } {
   const participantOf = new Map(
     context.participants.map((p) => [p.playerId, p] as const),
@@ -482,6 +485,7 @@ export function buildLayersAt(
             currentSessionId: context.sessionId,
             seats,
             observers,
+            ...(observationCache === undefined ? {} : { observationCache }),
           });
     memoryTimes.push(performance.now() - t);
     t = performance.now();

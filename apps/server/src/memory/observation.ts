@@ -298,17 +298,21 @@ export function observationsOf(hands: readonly ObservedHand[]): Observation[] {
   });
 }
 
+/** 抽出の候補の 1 Hand（Event を読む前）。ObservationSourceHand から events を除いたもの。 */
+export type ObservationCandidate = Omit<ObservationSourceHand, "events">;
+
 /**
- * Event Store から抽出の入力を読む（保存済みの Hand だけ。進行中の Hand は ord が無く、Hand の途中の情報は KnowledgeState が持つ）。
- * Observer が参加者にいない Session の Hand は Event を読まない。Guest の Observer は今の Session だけを読む。
- * Opponent Memory Reset の区切り（afterOrd）以前の Hand も読まない。
+ * Event Store から、Observer が観察しうる保存済みの Hand を選ぶ（Event は読まない。進行中の Hand は ord が無く、Hand の途中の情報は
+ * KnowledgeState が持つ）。判定は Event Log 側の情報（hands.session_id・session_participants・ordinals.ord）だけで行う:
+ * Observer が参加者にいない Session の Hand・Guest の Observer の今の Session 以外の Hand・Opponent Memory Reset の区切り（afterOrd）以前の
+ * Hand を外す。Observation の Cache（observation-cache.ts。D124）も、この候補の選び方をそのまま使う。
  */
-export function loadObservationSources(
-  store: ObservationStore,
+export function observationCandidates(
+  store: Omit<ObservationStore, "read">,
   query: ObservationQuery,
-): ObservationSourceHand[] {
+): ObservationCandidate[] {
   const participantsOf = new Map<string, readonly SessionParticipant[]>();
-  const sources: ObservationSourceHand[] = [];
+  const candidates: ObservationCandidate[] = [];
   for (const handId of store.finishedHandIds()) {
     const sessionId = store.sessionIdOfHand(handId);
     if (sessionId === null) continue;
@@ -330,15 +334,22 @@ export function loadObservationSources(
     }
     // Opponent Memory Reset の区切り以前の Hand は Event を読まない（extractObservedHands でも外す）。
     if (!afterReset(ord, query)) continue;
-    sources.push({
-      handId,
-      sessionId,
-      ord,
-      participants,
-      events: store.read(handId).map((s) => s.event),
-    });
+    candidates.push({ handId, sessionId, ord, participants });
   }
-  return sources;
+  return candidates;
+}
+
+/**
+ * Event Store から抽出の入力を読む（保存済みの Hand だけ）。候補の選び方は observationCandidates。
+ */
+export function loadObservationSources(
+  store: ObservationStore,
+  query: ObservationQuery,
+): ObservationSourceHand[] {
+  return observationCandidates(store, query).map((c) => ({
+    ...c,
+    events: store.read(c.handId).map((s) => s.event),
+  }));
 }
 
 /** Event Store から、Observer が見た Hand を抽出する（都度計算。保存しない）。 */
