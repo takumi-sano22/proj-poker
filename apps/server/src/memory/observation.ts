@@ -34,6 +34,16 @@ export type ObserverRef = CpuProfileSubject | GuestRef;
 /** Observation の context。Raw Observation は共通に使い、Hypothesis が context ごとに分ける（D106）。tournament は Phase 8 で使う枠。 */
 export type ObservationContext = "cash" | "tournament";
 
+/** 抽出が読む Event Store の部分（保存済みの Hand・Session の参加者・論理順序）。 */
+export type ObservationStore = Pick<
+  EventStore,
+  | "finishedHandIds"
+  | "sessionIdOfHand"
+  | "sessionParticipants"
+  | "savedOrder"
+  | "read"
+>;
+
 /** 抽出の入力の 1 Hand（保存済みの Hand）。Event Store から loadObservationSources で作る。 */
 export interface ObservationSourceHand {
   readonly handId: string;
@@ -115,7 +125,9 @@ export function participantKey(ref: ParticipantRef): string {
 }
 
 /** Session の参加者の行を参照にする。 */
-function participantRefOf(p: SessionParticipant): CpuProfileSubject | GuestRef {
+export function participantRefOf(
+  p: SessionParticipant,
+): CpuProfileSubject | GuestRef {
   return p.kind === "fixed"
     ? { kind: "cpu_profile", cpuProfileId: p.cpuProfileId }
     : { kind: "guest", guestId: p.guestId };
@@ -275,7 +287,7 @@ export function observationsOf(hands: readonly ObservedHand[]): Observation[] {
  * Observer が参加者にいない Session の Hand は Event を読まない。Guest の Observer は今の Session だけを読む。
  */
 export function loadObservationSources(
-  store: EventStore,
+  store: ObservationStore,
   query: ObservationQuery,
 ): ObservationSourceHand[] {
   const participantsOf = new Map<string, readonly SessionParticipant[]>();
@@ -312,7 +324,7 @@ export function loadObservationSources(
 
 /** Event Store から、Observer が見た Hand を抽出する（都度計算。保存しない）。 */
 export function extractObservedHandsFromStore(
-  store: EventStore,
+  store: ObservationStore,
   query: ObservationQuery,
 ): ObservedHand[] {
   return extractObservedHands(loadObservationSources(store, query), query);

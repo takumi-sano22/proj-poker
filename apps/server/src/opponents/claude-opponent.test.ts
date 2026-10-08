@@ -25,6 +25,7 @@ import {
   outageKindOf,
   type ClaudeQuery,
 } from "./claude-opponent.js";
+import type { OpponentMemorySummary } from "../memory/memory-summary.js";
 import { OpponentOutageError, type OpponentInput } from "./opponent-agent.js";
 import { checkOpponentOutput } from "./opponent-output.js";
 
@@ -337,6 +338,56 @@ describe("buildOpponentPrompt", () => {
       correction: { stage: "amount_range", reason: "raise の額は 4〜200: 1" },
     });
     expect(retried).toContain("amount_range: raise の額は 4〜200: 1");
+  });
+
+  it("Memory（#139）は節ごと出し分ける: 無ければ #139 より前と同じ文字列、あれば説明つきの節に構造化データのまま入れる", () => {
+    const { input } = firstDecisionInput();
+    const prompt = buildOpponentPrompt(input);
+    expect(prompt).not.toContain("あなたの記憶");
+    // Memory の無い入力の Prompt は、KnowledgeState をそのまま JSON にした #139 より前の形と同じ（Opponent Eval の録画の引数を変えない）。
+    expect(prompt).toContain(
+      JSON.stringify(input.knowledge, (_k, v: unknown) =>
+        typeof v === "object" && v !== null && "rank" in v && "suit" in v
+          ? cardToString(v as Parameters<typeof cardToString>[0])
+          : v,
+      ),
+    );
+    const memory: OpponentMemorySummary = {
+      policyVersion: "phase7_memory_v1",
+      injectionVersion: "phase7_memory_injection_v1",
+      context: "cash",
+      subjects: [
+        {
+          playerId: "p2",
+          subject: { kind: "cpu_profile", cpuProfileId: "fixed_ben" },
+          handsObserved: 12,
+          items: [
+            {
+              item: "vpip",
+              frequency: 0.42,
+              weightedOpportunities: 11.8,
+              opportunities: 12,
+              sufficient: false,
+              evidenceCount: 5,
+              evidenceIds: ["h1#7", "h2#9", "h3#8"],
+            },
+          ],
+        },
+      ],
+    };
+    const withMemory = buildOpponentPrompt({
+      ...input,
+      knowledge: { ...input.knowledge, memory },
+    });
+    const sections = withMemory.split("\n\n");
+    const at = sections.findIndex((s) => s.startsWith("## あなたの記憶"));
+    expect(at).toBeGreaterThan(0);
+    // 構造化データのまま（自然言語へ書き換えない）入り、この Hand の情報の節には Memory を混ぜない。
+    expect(JSON.parse(sections[at + 1] ?? "")).toEqual(memory);
+    expect(sections[at - 1]).not.toContain("handsObserved");
+    expect(
+      withMemory.replace(sections[at] + "\n\n" + sections[at + 1] + "\n\n", ""),
+    ).toBe(prompt);
   });
 
   it("選べる Action と bet / raise の額の範囲を書き、自分の札は表記で入れる", () => {

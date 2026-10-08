@@ -1,5 +1,6 @@
 import {
   PHASE1_CASH_PRESET,
+  applyAction,
   getLegalActions,
   projectKnowledgeState,
   startHand,
@@ -12,7 +13,18 @@ import {
   type Persona,
   type PersonaPresetId,
 } from "./persona.js";
-import { RuleBot, tuningFromPersona } from "./rule-bot.js";
+import type {
+  MemoryItemSummary,
+  OpponentMemorySummary,
+} from "../memory/memory-summary.js";
+import type { OpponentInput } from "./opponent-agent.js";
+import {
+  memoryAdjustedTuning,
+  memoryReadingOf,
+  RULEBOT_MEMORY_V1,
+  RuleBot,
+  tuningFromPersona,
+} from "./rule-bot.js";
 
 /** 6 人卓を seed で開始し、最初の Actor の入力を作る。 */
 function firstDecisionInput(seed: number) {
@@ -143,5 +155,231 @@ describe("RuleBot と Persona（#51）", () => {
     expect(decisions(PERSONA_PRESETS.lag, 50)).toEqual(
       decisions(PERSONA_PRESETS.lag, 50),
     );
+  });
+});
+
+describe("RuleBot と Memory（#139・D121）", () => {
+  type SubjectInput = Record<
+    string,
+    Partial<Record<string, [number, boolean]>>
+  >;
+
+  /** 席ごとに項目 → [割合, 十分か] を持つ Memory の要約。 */
+  function memoryOf(subjects: SubjectInput): OpponentMemorySummary {
+    return {
+      policyVersion: "phase7_memory_v1",
+      injectionVersion: "phase7_memory_injection_v1",
+      context: "cash",
+      subjects: Object.entries(subjects).map(([playerId, items]) => ({
+        playerId,
+        subject: { kind: "cpu_profile", cpuProfileId: `fixed_${playerId}` },
+        handsObserved: 40,
+        items: Object.entries(items).map(([item, value]) => ({
+          item: item as MemoryItemSummary["item"],
+          frequency: value?.[0] ?? 0,
+          weightedOpportunities: 30,
+          opportunities: 30,
+          sufficient: value?.[1] ?? false,
+          evidenceCount: 1,
+          evidenceIds: ["h0#5"],
+        })),
+      })),
+    };
+  }
+
+  /** 最初の Actor が最小額で Raise した後の、次の Actor の入力（Raise に直面している）。 */
+  function facingRaise(seed = 1): OpponentInput & { aggressor: string } {
+    const result = startHand({
+      handId: `r${seed}`,
+      seats: ["p1", "p2", "p3", "p4", "p5", "p6"].map((playerId) => ({
+        playerId,
+        stack: PHASE1_CASH_PRESET.startingStack,
+      })),
+      buttonPlayerId: "p1",
+      config: PHASE1_CASH_PRESET,
+      deal: { seed },
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    const first = getLegalActions(result.value.state);
+    const raise = first?.actions.find((a) => a.type === "raise");
+    if (first === null || raise?.type !== "raise")
+      throw new Error("Raise できない");
+    const raised = applyAction(result.value.state, first.playerId, {
+      type: "raise",
+      amount: raise.min,
+    });
+    if (!raised.ok) throw new Error(raised.error.message);
+    const events = [...result.value.events, ...raised.value.events];
+    const legal = getLegalActions(raised.value.state);
+    if (legal === null) throw new Error("Actor がいない");
+    return {
+      knowledge: projectKnowledgeState(events, legal.playerId),
+      legal,
+      aggressor: first.playerId,
+    };
+  }
+
+  const reading = memoryReadingOf(PERSONA_PRESETS.tag_regular);
+  const base = tuningFromPersona(PERSONA_PRESETS.tag_regular);
+
+  it("読みの強さは Skill・Adaptability・Opponent Reading Quality の平均で、Persona なしは 0（Memory を読まない）", () => {
+    const t = PERSONA_PRESETS.tag_regular.traits;
+    expect(reading).toBeCloseTo(
+      (t.skill + t.adaptability + t.opponentReadingQuality) / 3,
+      12,
+    );
+    expect(memoryReadingOf(undefined)).toBe(0);
+    const input = facingRaise();
+    const knowledge = {
+      ...input.knowledge,
+      memory: memoryOf({
+        [input.aggressor]: { aggression_frequency: [0.9, true] },
+      }),
+    };
+    expect(memoryAdjustedTuning(base, knowledge, 0)).toBe(base);
+    expect(memoryAdjustedTuning(base, input.knowledge, reading)).toBe(base);
+  });
+
+  it("攻める相手の Raise には medium の Call を広げ、攻めない相手には狭める（ずれは maxShift × 読みの強さまで）", () => {
+    const input = facingRaise();
+    const tuned = (frequency: number, sufficient = true) =>
+      memoryAdjustedTuning(
+        base,
+        {
+          ...input.knowledge,
+          memory: memoryOf({
+            [input.aggressor]: {
+              aggression_frequency: [frequency, sufficient],
+            },
+          }),
+        },
+        reading,
+      );
+    const max = RULEBOT_MEMORY_V1.maxShift * reading;
+    expect(tuned(0.95).mediumLooseCall).toBeCloseTo(
+      base.mediumLooseCall + max,
+      12,
+    );
+    expect(tuned(0.05).mediumLooseCall).toBeLessThan(base.mediumLooseCall);
+    expect(tuned(0.05).mediumLooseCall).toBeGreaterThanOrEqual(
+      base.mediumLooseCall - max,
+    );
+    // 不十分な Sample の項目は読まない。Call 以外のしきい値は変えない。
+    expect(tuned(0.95, false)).toEqual(base);
+    expect({ ...tuned(0.95), mediumLooseCall: base.mediumLooseCall }).toEqual(
+      base,
+    );
+  });
+
+  it("Postflop の Bluff は、降りていない相手全員の fold_to_cbet_flop が十分なときだけ、一番降りない相手でずらす", () => {
+    const input = facingRaise();
+    const flop = {
+      ...input.knowledge,
+      street: "flop" as const,
+      board: [
+        { rank: 2, suit: "c" },
+        { rank: 7, suit: "d" },
+        { rank: 11, suit: "h" },
+      ] as const,
+      actionHistory: [],
+      seats: input.knowledge.seats.map((s) => ({
+        ...s,
+        folded: !["p2", "p3", input.knowledge.viewerId].includes(s.playerId),
+      })),
+    };
+    const tuned = (p2: [number, boolean], p3?: [number, boolean]) =>
+      memoryAdjustedTuning(
+        base,
+        {
+          ...flop,
+          memory: memoryOf({
+            p2: { fold_to_cbet_flop: p2 },
+            ...(p3 === undefined ? {} : { p3: { fold_to_cbet_flop: p3 } }),
+          }),
+        },
+        reading,
+      );
+    const live = ["p2", "p3"].filter((p) => p !== input.knowledge.viewerId);
+    expect(live.length).toBeGreaterThan(0);
+    const both = (f: [number, boolean]) => tuned(f, f);
+    expect(both([0.9, true]).weakBluffFrequency).toBeGreaterThan(
+      base.weakBluffFrequency,
+    );
+    expect(both([0.1, true]).weakBluffFrequency).toBeLessThan(
+      base.weakBluffFrequency,
+    );
+    // 一番降りない相手で決める。誰か 1 人でも不十分なら変えない。
+    if (live.length === 2) {
+      expect(tuned([0.9, true], [0.1, true]).weakBluffFrequency).toBe(
+        both([0.1, true]).weakBluffFrequency,
+      );
+      expect(tuned([0.9, true], [0.9, false])).toEqual(base);
+    }
+    // Preflop では Bluff をずらさない。
+    expect(
+      memoryAdjustedTuning(
+        base,
+        {
+          ...input.knowledge,
+          memory: memoryOf({ p2: { fold_to_cbet_flop: [0.9, true] } }),
+        },
+        reading,
+      ).weakBluffFrequency,
+    ).toBe(base.weakBluffFrequency);
+  });
+
+  it.each(PERSONA_PRESET_IDS)(
+    "%s: 極端な Memory でも選ぶ Action は常に Legal Action の中で、同じ入力なら同じ判断（決定論）",
+    (id: PersonaPresetId) => {
+      for (let seed = 1; seed <= 100; seed++) {
+        const input = facingRaise(seed);
+        const memory = memoryOf(
+          Object.fromEntries(
+            input.knowledge.seats.map((s, i) => [
+              s.playerId,
+              {
+                aggression_frequency: [i % 2 === 0 ? 1 : 0, true],
+                fold_to_cbet_flop: [i % 2 === 0 ? 0 : 1, true],
+              },
+            ]),
+          ),
+        );
+        const withMemory = {
+          ...input,
+          knowledge: { ...input.knowledge, memory },
+        };
+        const action = new RuleBot(seed, PERSONA_PRESETS[id]).choose(
+          withMemory,
+        );
+        expect(
+          new RuleBot(seed, PERSONA_PRESETS[id]).choose(withMemory),
+        ).toEqual(action);
+        const option = input.legal.actions.find((a) => a.type === action.type);
+        expect(option).toBeDefined();
+        if (
+          (action.type === "bet" || action.type === "raise") &&
+          (option?.type === "bet" || option?.type === "raise")
+        ) {
+          expect(Number.isSafeInteger(action.amount)).toBe(true);
+          expect(action.amount).toBeGreaterThanOrEqual(option.min);
+          expect(action.amount).toBeLessThanOrEqual(option.max);
+        }
+      }
+    },
+  );
+
+  it("Persona なしの RuleBot は Memory があっても判断を変えない（D71 の挙動のまま）", () => {
+    for (let seed = 1; seed <= 50; seed++) {
+      const input = facingRaise(seed);
+      const memory = memoryOf({
+        [input.aggressor]: { aggression_frequency: [1, true] },
+      });
+      expect(
+        new RuleBot(seed).choose({
+          ...input,
+          knowledge: { ...input.knowledge, memory },
+        }),
+      ).toEqual(new RuleBot(seed).choose(input));
+    }
   });
 });
