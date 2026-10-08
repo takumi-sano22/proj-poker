@@ -627,18 +627,21 @@ describe("Property の検査を通す Hand の網羅（固定 Scenario。#167）
     },
   ];
 
-  const covered = new Set<CoverageKind>();
+  // 各 Scenario が狙いの種類を通したことは、それぞれの it で確かめる（空振りしていない）。
   for (const { title, hero, kinds, build } of scenarios) {
     it(title, () => {
       const seen = new Set<CoverageKind>();
       checkHand(build().events, hero, seen);
-      // その Hand が狙いの種類を通している（検査が空振りしていない）。
       for (const kind of kinds) expect(seen.has(kind)).toBe(true);
-      for (const k of seen) covered.add(k);
     });
   }
 
+  // 全 Scenario をこの it の中で流して集める（他の it の実行順・選択に依存しない）。
   it("上の Scenario で、Property の検査が見る全ての種類（River・Out-of-Turn・裁定・打ち切り・system・Important Spot）を通している", () => {
+    const covered = new Set<CoverageKind>();
+    for (const { hero, build } of scenarios) {
+      checkHand(build().events, hero, covered);
+    }
     expect([...covered].sort()).toEqual([...COVERAGE_KINDS].sort());
   });
 });
