@@ -240,6 +240,67 @@ describe.each(implementations)("%s", (_name, createStore) => {
     expect(store.finishedHandIds()).toEqual(["h1", "h2", "h3"]);
   });
 
+  it("壁時計が後ろへ戻っても、listHands・finishedHandIds・sessionHandIds は保存の順、途中の Hand は始めた順で並ぶ（D117・#129）", () => {
+    // 時計は呼ぶたびに 1 分ずつ戻る（後の記録ほど時刻が古い）。
+    let minute = 59;
+    const store = createStore({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute--)),
+    });
+    const started = sampleEvents();
+    // 保存の順: h1（s1）→ h2（s2）→ h3（s1）。h4・h5（s1）は途中。
+    for (const [handId, sessionId] of [
+      ["h1", "s1"],
+      ["h2", "s2"],
+      ["h3", "s1"],
+    ] as const) {
+      store.append(handId, started, { sessionId });
+      store.append(handId, finishingEvents(started));
+    }
+    store.append("h4", started, { sessionId: "s1" });
+    store.append("h5", started, { sessionId: "s1" });
+
+    const ids = (limit: number) => store.listHands(limit).map((h) => h.handId);
+    expect(ids(10)).toEqual(["h5", "h4", "h3", "h2", "h1"]);
+    expect(ids(3)).toEqual(["h5", "h4", "h3"]);
+    expect(store.finishedHandIds()).toEqual(["h1", "h2", "h3"]);
+    expect(store.sessionHandIds("h4")).toEqual(["h1", "h3"]);
+    expect(store.savedOrder("h5")).toBeNull();
+    expect(store.savedOrder("unknown")).toBeNull();
+
+    // 途中の h4 を終えると、保存の順で最後になる（始めたのは h5 より前で、時刻は最も古い）。
+    store.append("h4", finishingEvents(started));
+    expect(ids(10)).toEqual(["h5", "h4", "h3", "h2", "h1"]);
+    expect(store.finishedHandIds()).toEqual(["h1", "h2", "h3", "h4"]);
+    expect(store.sessionHandIds("h1")).toEqual(["h1", "h3", "h4"]);
+    const order = ["h1", "h2", "h3", "h4"].map(
+      (id) => store.savedOrder(id) ?? Number.NaN,
+    );
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(new Set(order).size).toBe(4);
+  });
+
+  it("後に Hand が終わった Session の時刻の方が古くても、latestSessionProjection はその Session を選ぶ（D117）", () => {
+    let minute = 50;
+    const store = createStore({
+      now: () => new Date(Date.UTC(2026, 9, 5, 0, minute)),
+    });
+    const started = sampleEvents();
+    store.append("h1", started, { sessionId: "s1" });
+    store.append("h1", finishingEvents(started));
+    // 時計が 10 分戻ってから、s2 の Hand が終わる。
+    minute = 40;
+    store.append("h2", started, { sessionId: "s2" });
+    store.append("h2", finishingEvents(started));
+    const latest = store.latestSessionProjection();
+    expect(latest).toMatchObject({ sessionId: "s2", lastHandId: "h2" });
+    // updatedAt は表示・監査用の時刻のまま（clamp しない）。
+    expect(latest?.updatedAt).toBe("2026-10-05T00:40:00.000Z");
+    // 最後の Hand を除くと、その前の Session。
+    expect(store.latestSessionProjection(new Set(["h2"]))).toMatchObject({
+      sessionId: "s1",
+    });
+  });
+
   it("Hand の終わりの後ろには、同じ追記の SESSION_ENDED 1 つだけを置ける（D95）", () => {
     const started = sampleEvents();
     const rest = finishingEvents(started);

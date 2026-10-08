@@ -19,7 +19,7 @@ export function registerReplayRoutes(
   app: FastifyInstance,
   replay: ReplayService,
 ): void {
-  // Hand の一覧（開始の新しい順）。未完了の Hand は complete: false・heroNet: null（打ち切った Hand は aborted: true）。
+  // Hand の一覧（新しい順。進行中の Hand、続けて保存の新しい順〔論理順序。D117〕）。未完了の Hand は complete: false・heroNet: null（打ち切った Hand は aborted: true）。
   app.get("/api/replay/hands", () => ({ hands: replay.list() }));
 
   // 1 Hand の再生の材料。steps は Hero に見える Event の prefix ごとの Hero の視点（replaySteps）。

@@ -15,7 +15,7 @@ import {
 } from "@proj-poker/engine";
 import type { EventStore } from "../event-store.js";
 import { isHandEnd } from "../event-store.js";
-import { endedAfter } from "../learning/learning-reset.js";
+import { savedAfter, type ResetBoundary } from "../learning/learning-reset.js";
 import type {
   DrillHandStart,
   OrchestratorError,
@@ -102,7 +102,10 @@ export interface DrillResults {
   readonly drills: readonly DrillSummary[];
   readonly score: {
     readonly policyVersion: string;
-    /** score の Learning Reset の時刻（D114。無ければ null）。これより後に終わった Drill の Hand だけを数える。 */
+    /**
+     * score の Learning Reset の時刻（D114。無ければ null。表示用）。この Reset より後に保存された（終わった）Drill の Hand だけを数える
+     * （前後は論理順序で決める。D117）。
+     */
     readonly since: string | null;
     readonly decisions: ScoreReport["decisions"];
     readonly overall: ScoreReport["overall"];
@@ -129,8 +132,8 @@ export interface DrillServiceOptions {
   readonly nextHandId: () => string;
   readonly nextSessionId?: () => string;
   readonly policy?: DrillPolicy;
-  /** score の Learning Reset の時刻（D114。v8 の learning_resets）。省略時は区切りなし。 */
-  readonly scoreSince?: () => string | null;
+  /** score の最後の Learning Reset（D114。v8 の learning_resets・v9 の ordinals）。省略時は区切りなし。 */
+  readonly scoreBoundary?: () => ResetBoundary | null;
 }
 
 export class DrillService {
@@ -274,10 +277,11 @@ export class DrillService {
     });
     // 終わった Drill の Hand だけを、練習した判断から数える（Script が再現した元の判断は数えない）。
     // score の Learning Reset より前に終わった Drill の Hand は数えない（D114。通常の Score と同じカテゴリに従わせる暫定）。
-    const since = this.options.scoreSince?.() ?? null;
+    // 前後は保存の論理順序で決める（D117。壁時計の時刻では比べない）。
+    const boundary = this.options.scoreBoundary?.() ?? null;
     const counted = records
-      .map((r) => ({ record: r, stored: events.read(r.drillHandId) }))
-      .filter(({ stored }) => endedAfter(stored, since));
+      .filter((r) => savedAfter(events.savedOrder(r.drillHandId), boundary))
+      .map((r) => ({ record: r, stored: events.read(r.drillHandId) }));
     const report = computeScoreReport(
       {
         hands: counted.map(({ stored }) => stored.map((s) => s.event)),
@@ -298,7 +302,7 @@ export class DrillService {
       drills: summaries,
       score: {
         policyVersion: report.policyVersion,
-        since,
+        since: boundary?.createdAt ?? null,
         decisions: report.decisions,
         overall: report.overall,
         abilities: report.abilities,

@@ -2,6 +2,7 @@
 // Interface だけを Orchestrator へ見せる。起動時は SQLite 実装（sqlite-event-store.ts。D72）、テストの既定はメモリ内実装を使う。
 import { randomUUID } from "node:crypto";
 import type { HandEvent } from "@proj-poker/engine";
+import { processOrdinals, type OrdinalCounter } from "./logical-order.js";
 import {
   nextSessionProjection,
   type SessionProjection,
@@ -54,7 +55,8 @@ export interface EventStore {
   /** Hand の Event を seq 順で返す。未知の Hand なら空配列。 */
   read(handId: string): readonly StoredHandEvent[];
   /**
-   * Event のある Hand を、開始の新しい順に最大 limit 件返す（HAND_FINISHED の無い Hand も含む）。
+   * Event のある Hand を新しい順に最大 limit 件返す（HAND_FINISHED の無い Hand も含む）。順は論理順序（D117・logical-order.ts）で、
+   * 先にメモリにある終わっていない Hand（このプロセスで始めた順の逆）、続けて終わった Hand（保存の順の逆）。壁時計の時刻では並べない。
    * exclude の Hand（Drill の Hand。D116）は数えずに除く（除いた後で最大 limit 件）。
    */
   listHands(
@@ -63,18 +65,23 @@ export interface EventStore {
   ): readonly StoredHandSummary[];
   /**
    * 最後に Hand が終わった Session の Session Projection（D95。再起動後の Resume に使う）。まだ無ければ null。
-   * 最後の Hand が exclude にある Session（Drill の専用の Session。D116）は選ばない。
+   * 「最後」は最後の Hand の保存の順（論理順序。D117）で決める。最後の Hand が exclude にある Session（Drill の専用の Session。D116）は選ばない。
    */
   latestSessionProjection(
     exclude?: ReadonlySet<string>,
   ): SessionProjection | null;
   /**
-   * handId と同じ Session の、終わった（HAND_FINISHED か HAND_ABORTED まで済んだ）Hand の handId を開始の古い順に返す
+   * handId と同じ Session の、終わった（HAND_FINISHED か HAND_ABORTED まで済んだ）Hand の handId を保存の古い順（論理順序。D117）に返す
    * （Session Review。#116）。handId が進行中の Hand でも、その Session の終わった Hand を返す。未知の Hand なら空配列。
    */
   sessionHandIds(handId: string): readonly string[];
-  /** 終わった Hand の handId を、開始の古い順にすべて返す（Recent / Long-term の Player Profile。#116）。 */
+  /** 終わった Hand の handId を、保存の古い順（論理順序。D117）にすべて返す（Recent / Long-term の Player Profile。#116）。 */
   finishedHandIds(): readonly string[];
+  /**
+   * 終わった Hand の保存の論理順序の番号（D117。Learning Reset の前後の判定に使う）。終わっていない・未知の Hand は null。
+   * 同じ順序の源（同じ DB の ordinals、またはメモリ内の同じカウンタ）を使う Learning Reset Store の番号と比べられる。
+   */
+  savedOrder(handId: string): number | null;
 }
 
 export class EventSeqConflictError extends Error {
@@ -84,6 +91,8 @@ export class EventSeqConflictError extends Error {
 export interface InMemoryEventStoreOptions {
   readonly now?: () => Date;
   readonly newEventId?: () => string;
+  /** 保存の論理順序の番号を振るカウンタ（D117）。省略時はプロセスで 1 つのカウンタ（Learning Reset Store と共有する）。 */
+  readonly ordinals?: OrdinalCounter;
 }
 
 /** Hand の Session と Persona の割り当て（Hand の最初の追記で決まる）。 */
@@ -100,13 +109,17 @@ export class InMemoryEventStore implements EventStore {
   private readonly projections = new Map<string, SessionProjection>();
   /** Hand が終わった Session の ID（終わった順。同じ Session は最後に終わった位置へ移す）。 */
   private readonly finishedOrder: string[] = [];
+  /** 終わった Hand → 保存の論理順序の番号（D117。SqliteEventStore の ordinals と同じ意味）。 */
+  private readonly saved = new Map<string, number>();
   private readonly now: () => Date;
   private readonly newEventId: () => string;
+  private readonly ordinals: OrdinalCounter;
   private readonly defaultSessionId = randomUUID();
 
   constructor(options: InMemoryEventStoreOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.newEventId = options.newEventId ?? randomUUID;
+    this.ordinals = options.ordinals ?? processOrdinals;
   }
 
   append(
@@ -142,6 +155,7 @@ export class InMemoryEventStore implements EventStore {
       const at = this.finishedOrder.indexOf(session.sessionId);
       if (at >= 0) this.finishedOrder.splice(at, 1);
       this.finishedOrder.push(session.sessionId);
+      this.saved.set(handId, this.ordinals.next());
     }
     log.push(...stored);
     this.logs.set(handId, log);
@@ -158,12 +172,15 @@ export class InMemoryEventStore implements EventStore {
     limit: number,
     exclude: ReadonlySet<string> = new Set(),
   ): readonly StoredHandSummary[] {
-    // Map は追記した順（Hand を始めた順）を保つので、逆順が開始の新しい順。
-    return [...this.logs.entries()]
-      .reverse()
-      .filter(([handId]) => !exclude.has(handId))
+    // 終わっていない Hand（Map の追記の順＝このプロセスで始めた順の逆）を先に、終わった Hand を保存の新しい順に（D117）。
+    const pending = [...this.logs.keys()]
+      .filter((handId) => !this.saved.has(handId))
+      .reverse();
+    const finished = [...this.finishedHandIds()].reverse();
+    return [...pending, ...finished]
+      .filter((handId) => !exclude.has(handId))
       .slice(0, limit)
-      .map(([handId, log]) => summarizeLog(handId, log));
+      .map((handId) => summarizeLog(handId, this.logs.get(handId) ?? []));
   }
 
   latestSessionProjection(
@@ -181,16 +198,20 @@ export class InMemoryEventStore implements EventStore {
   sessionHandIds(handId: string): readonly string[] {
     const sessionId = this.sessions.get(handId)?.sessionId;
     if (sessionId === undefined) return [];
-    // Map は追記した順（Hand を始めた順）を保つので、そのままが開始の古い順。
     return this.finishedHandIds().filter(
       (id) => this.sessions.get(id)?.sessionId === sessionId,
     );
   }
 
   finishedHandIds(): readonly string[] {
-    return [...this.logs.entries()]
-      .filter(([, log]) => log.some((s) => isHandEnd(s.event)))
+    // 保存の古い順（D117）。Map は番号を振った順に入るが、番号で並べて意味を明示する。
+    return [...this.saved.entries()]
+      .sort(([, a], [, b]) => a - b)
       .map(([handId]) => handId);
+  }
+
+  savedOrder(handId: string): number | null {
+    return this.saved.get(handId) ?? null;
   }
 }
 

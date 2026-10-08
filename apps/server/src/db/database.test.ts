@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { SqliteLearningResetStore } from "../learning/learning-reset.js";
+import { MissingOrdinalError } from "../logical-order.js";
+import { SqliteEventStore } from "../sqlite-event-store.js";
 import {
   MIGRATIONS,
   openDatabase,
@@ -59,6 +62,10 @@ describe("openDatabase（マイグレーション）", () => {
       "learning_resets",
       "learning_resets_append_only",
       "learning_resets_no_delete",
+      "ordinals",
+      "ordinals_append_only",
+      "ordinals_no_delete",
+      "ordinals_target",
       "reveal_reviews",
       "reveal_reviews_append_only",
       "reveal_reviews_no_delete",
@@ -71,6 +78,8 @@ describe("openDatabase（マイグレーション）", () => {
       "reviews_no_delete",
       "session_projections",
       "sessions",
+      // ordinals の AUTOINCREMENT が使う SQLite の内部テーブル（v9）。
+      "sqlite_sequence",
       "user_notes",
       "user_notes_append_only",
       "user_notes_no_delete",
@@ -99,7 +108,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('drills', 'learning_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('drills', 'learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -164,7 +173,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'learning_resets' ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -208,6 +217,103 @@ describe("openDatabase（マイグレーション）", () => {
     }
   });
 
+  it("版 8 の DB に版 9（ordinals）を当てると、既存の行は変えずに Hand と Reset の論理順序を backfill する（D76・D117）", () => {
+    const legacyPath = join(dir, "v8.sqlite");
+    const v8 = new DatabaseSync(legacyPath);
+    try {
+      for (const sql of MIGRATIONS.slice(0, 8)) v8.exec(sql);
+      v8.exec("PRAGMA user_version = 8");
+      // 壁時計の巻き戻りを含む記録: h2 は h1 の後に保存したが終わりの時刻は前、r2 は r1 の後に足したが時刻は前。
+      // h3 と r3 は同じ時刻（今の判定と同じく Hand を前にする）。
+      v8.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-05T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-05T00:09:00.000Z', '2026-10-05T00:10:00.000Z');
+        INSERT INTO hands VALUES ('h2', 's1', '2026-10-05T00:04:00.000Z', '2026-10-05T00:05:00.000Z');
+        INSERT INTO hands VALUES ('h3', 's1', '2026-10-05T00:19:00.000Z', '2026-10-05T00:20:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 8, '2026-10-05T00:09:00.000Z', '{}');
+        INSERT INTO learning_resets (reset_id, created_at, category) VALUES ('r1', '2026-10-05T00:07:00.000Z', 'score');
+        INSERT INTO learning_resets (reset_id, created_at, category) VALUES ('r1', '2026-10-05T00:07:00.000Z', 'hypothesis');
+        INSERT INTO learning_resets (reset_id, created_at, category) VALUES ('r2', '2026-10-05T00:06:00.000Z', 'score');
+        INSERT INTO learning_resets (reset_id, created_at, category) VALUES ('r3', '2026-10-05T00:20:00.000Z', 'profile');
+      `);
+    } finally {
+      v8.close();
+    }
+    const snapshot = (db: DatabaseSync) => ({
+      schema: db
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('ordinals', 'sqlite_sequence') ORDER BY name",
+        )
+        .all(),
+      sessions: db.prepare("SELECT * FROM sessions ORDER BY rowid").all(),
+      hands: db.prepare("SELECT * FROM hands ORDER BY rowid").all(),
+      events: db.prepare("SELECT * FROM events ORDER BY rowid").all(),
+      resets: db.prepare("SELECT * FROM learning_resets ORDER BY seq").all(),
+    });
+    const before = new DatabaseSync(legacyPath);
+    const expected = snapshot(before);
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(snapshot(db)).toEqual(expected);
+      // Hand どうしは rowid、Reset どうしは seq の順を保ち、先頭どうしを時刻で比べて併合する（同じ時刻は Hand が先）。
+      expect(
+        db.prepare("SELECT ord, kind, ref_id FROM ordinals ORDER BY ord").all(),
+      ).toEqual([
+        { ord: 1, kind: "learning_reset", ref_id: "r1" },
+        { ord: 2, kind: "learning_reset", ref_id: "r2" },
+        { ord: 3, kind: "hand_saved", ref_id: "h1" },
+        { ord: 4, kind: "hand_saved", ref_id: "h2" },
+        { ord: 5, kind: "hand_saved", ref_id: "h3" },
+        { ord: 6, kind: "learning_reset", ref_id: "r3" },
+      ]);
+      // Store から読むと、Hand は保存の順、区切りはカテゴリごとに seq が最大の行の Reset。
+      const events = new SqliteEventStore(db);
+      expect(events.finishedHandIds()).toEqual(["h1", "h2", "h3"]);
+      expect(new SqliteLearningResetStore(db).boundaries()).toEqual({
+        score: { ord: 2, createdAt: "2026-10-05T00:06:00.000Z" },
+        hypothesis: { ord: 1, createdAt: "2026-10-05T00:07:00.000Z" },
+        profile: { ord: 6, createdAt: "2026-10-05T00:20:00.000Z" },
+      });
+      // 追記だけ: UPDATE / DELETE は拒否する。
+      expect(() => db.exec("UPDATE ordinals SET ord = 99")).toThrow(
+        /append-only/,
+      );
+      expect(() => db.exec("DELETE FROM ordinals")).toThrow(/append-only/);
+      // 参照先が実在しない行・同じ参照先の 2 行目は足せない。
+      expect(() =>
+        db.exec(
+          "INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', 'unknown')",
+        ),
+      ).toThrow(/existing hand or learning reset/);
+      expect(() =>
+        db.exec(
+          "INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', 'r1')",
+        ),
+      ).toThrow(/existing hand or learning reset/);
+      expect(() =>
+        db.exec(
+          "INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', 'h1')",
+        ),
+      ).toThrow();
+      // 論理順序の行が欠けた保存済みの Hand は、読み出しで見つけて例外にする（LIMIT で落とさない）。
+      db.exec(
+        "INSERT INTO hands VALUES ('h4', 's1', '2026-10-05T00:00:00.000Z', '2026-10-05T00:00:00.000Z')",
+      );
+      expect(() => events.savedOrder("h4")).toThrow(MissingOrdinalError);
+      expect(() => events.finishedHandIds()).toThrow(MissingOrdinalError);
+      expect(() => events.listHands(1)).toThrow(MissingOrdinalError);
+      // backfill の後の番号は続きから振る。
+      db.exec(
+        "INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', 'h4')",
+      );
+      expect(events.savedOrder("h4")).toBe(7);
+    } finally {
+      db.close();
+    }
+  });
+
   it("版 5 の DB に版 6（hypothesis_snapshots）を当てても、既存のテーブルの定義と行は変わらない（D76・D113）", () => {
     const legacyPath = join(dir, "v5.sqlite");
     const v5 = new DatabaseSync(legacyPath);
@@ -226,7 +332,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills', 'learning_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -264,7 +370,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills', 'learning_resets') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),

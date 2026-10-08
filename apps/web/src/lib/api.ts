@@ -301,7 +301,7 @@ export interface ReplayHand {
   readonly decisions: readonly ReplayDecision[];
 }
 
-/** Replay の Hand 一覧（開始の新しい順）。保存済みの Event だけから作られ、AI で作り直さない（D38）。 */
+/** Replay の Hand 一覧（新しい順。進行中の Hand、続けて保存の新しい順〔論理順序。D117〕）。保存済みの Event だけから作られ、AI で作り直さない（D38）。 */
 export async function fetchReplayHands(): Promise<
   readonly ReplayHandSummary[]
 > {

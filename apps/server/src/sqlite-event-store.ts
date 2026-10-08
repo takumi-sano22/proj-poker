@@ -4,6 +4,8 @@
 // 再起動すると途中の Hand は消え、終わった Hand だけが残る（Hand 途中の完全復帰は要求しない）。
 // Hand の終わりは HAND_FINISHED か、AI 障害の後の打ち切り HAND_ABORTED（D95）。同じトランザクションで、その Session の
 // Session Projection（session-projection.ts）も書き替える（docs/04 §10。再起動後の Resume に使う）。
+// 同じトランザクションで ordinals（v9）に保存の論理順序の行を足す。Hand の順（Replay の一覧・Session 内の順・Recent の順・最新の Session）は
+// この番号で決め、壁時計の列（started_at・finished_at・updated_at）では並べない（D117。OS の時刻は後ろへ戻ることがある）。
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { HandEvent } from "@proj-poker/engine";
@@ -27,6 +29,7 @@ import {
   type StoredHandEvent,
   type StoredHandSummary,
 } from "./event-store.js";
+import { MissingOrdinalError } from "./logical-order.js";
 import {
   nextSessionProjection,
   type SessionProjection,
@@ -69,6 +72,14 @@ interface HandRow {
   finished_at: string;
   /** HAND_ABORTED で終えた Hand なら 1。 */
   aborted: number;
+  /** 保存の論理順序（ordinals.ord。行が欠けていれば null）。 */
+  ord: number | null;
+}
+
+/** Hand と保存の論理順序の番号（行が欠けていれば null）。 */
+interface HandOrdinalRow {
+  hand_id: string;
+  ord: number | null;
 }
 
 interface SessionProjectionRow {
@@ -80,6 +91,11 @@ interface SessionProjectionRow {
   personas: string;
   emergency_bots: string;
   updated_at: string;
+}
+
+/** 最新の Session Projection の行と、その最後の Hand の保存の論理順序（ordinals.ord。行が欠けていれば null）。 */
+interface LatestProjectionRow extends SessionProjectionRow {
+  ord: number | null;
 }
 
 interface EventRow {
@@ -105,12 +121,14 @@ export class SqliteEventStore implements EventStore {
   private readonly insertSession: StatementSync;
   private readonly insertHand: StatementSync;
   private readonly insertEvent: StatementSync;
+  private readonly insertOrdinal: StatementSync;
   private readonly selectEvents: StatementSync;
   private readonly selectHand: StatementSync;
   private readonly selectRecentHands: StatementSync;
   private readonly selectSessionOfHand: StatementSync;
   private readonly selectSessionHands: StatementSync;
   private readonly selectFinishedHands: StatementSync;
+  private readonly selectSavedOrder: StatementSync;
   private readonly selectProjection: StatementSync;
   private readonly selectLatestProjection: StatementSync;
   private readonly upsertProjection: StatementSync;
@@ -144,39 +162,49 @@ export class SqliteEventStore implements EventStore {
     this.selectEvents = db.prepare(
       "SELECT event_id, hand_id, schema_version, recorded_at, payload FROM events WHERE hand_id = ? ORDER BY seq",
     );
+    this.insertOrdinal = db.prepare(
+      "INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', ?)",
+    );
     this.selectHand = db.prepare("SELECT 1 FROM hands WHERE hand_id = ?");
-    // 同じ時刻に始まった Hand は、保存した順（rowid）の新しい方を先にする。
+    // Hand の順は保存の論理順序（ordinals.ord。D117）。ordinals は LEFT JOIN で引き、欠けた行（ord が NULL）は先頭に並べて
+    // 読み出しで見つける（LIMIT で落とさない。見つけたら MissingOrdinalError）。
+    const handOrdinal =
+      "LEFT JOIN ordinals o ON o.kind = 'hand_saved' AND o.ref_id = h.hand_id";
     // 打ち切った Hand（HAND_ABORTED を持つ）は Event の type で見分ける（hands の列は変えない。D95）。
     // 除く Hand（Drill の Hand。D116）は JSON の配列で渡し、LIMIT の前に除く。
     this.selectRecentHands = db.prepare(
-      `SELECT h.hand_id, h.started_at, h.finished_at,
+      `SELECT h.hand_id, h.started_at, h.finished_at, o.ord,
          EXISTS (SELECT 1 FROM events e WHERE e.hand_id = h.hand_id AND e.type = 'HAND_ABORTED') AS aborted
-       FROM hands h
+       FROM hands h ${handOrdinal}
        WHERE h.hand_id NOT IN (SELECT value FROM json_each(?))
-       ORDER BY h.started_at DESC, h.rowid DESC LIMIT ?`,
+       ORDER BY o.ord IS NULL DESC, o.ord DESC LIMIT ?`,
     );
-    // Session Review（#116）と Player Profile（#116）の読み出し。hands にあるのは終わった Hand だけ（D62）。
-    // 開始の古い順で、同じ時刻なら保存した順（rowid）。
+    // Session Review（#116）と Player Profile（#116）の読み出し。hands にあるのは終わった Hand だけ（D62）。保存の古い順。
     this.selectSessionOfHand = db.prepare(
       "SELECT session_id FROM hands WHERE hand_id = ?",
     );
     this.selectSessionHands = db.prepare(
-      "SELECT hand_id FROM hands WHERE session_id = ? ORDER BY started_at, rowid",
+      `SELECT h.hand_id, o.ord FROM hands h ${handOrdinal} WHERE h.session_id = ? ORDER BY o.ord`,
     );
     this.selectFinishedHands = db.prepare(
-      "SELECT hand_id FROM hands ORDER BY started_at, rowid",
+      `SELECT h.hand_id, o.ord FROM hands h ${handOrdinal} ORDER BY o.ord`,
+    );
+    this.selectSavedOrder = db.prepare(
+      `SELECT h.hand_id, o.ord FROM hands h ${handOrdinal} WHERE h.hand_id = ?`,
     );
     const projectionColumns =
       "session_id, last_hand_id, state, end_reason, stacks, personas, emergency_bots, updated_at";
     this.selectProjection = db.prepare(
       `SELECT ${projectionColumns} FROM session_projections WHERE session_id = ?`,
     );
-    // 最後に Hand が終わった Session。同じ時刻なら、先に作った行（rowid）より後の Session を選ぶ。
+    // 最後に Hand が終わった Session＝最後の Hand の保存の論理順序が最も大きい行（D117。updated_at の時刻では選ばない）。
     // 最後の Hand が除く Hand（Drill の専用の Session の Hand。D116）の Session は選ばない（JSON の配列で渡す）。
     this.selectLatestProjection = db.prepare(
-      `SELECT ${projectionColumns} FROM session_projections
-       WHERE last_hand_id NOT IN (SELECT value FROM json_each(?))
-       ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+      `SELECT p.session_id, p.last_hand_id, p.state, p.end_reason, p.stacks, p.personas, p.emergency_bots, p.updated_at, o.ord
+       FROM session_projections p
+       LEFT JOIN ordinals o ON o.kind = 'hand_saved' AND o.ref_id = p.last_hand_id
+       WHERE p.last_hand_id NOT IN (SELECT value FROM json_each(?))
+       ORDER BY o.ord IS NULL DESC, o.ord DESC LIMIT 1`,
     );
     // Session Projection は Session ごとに 1 行で、Hand が終わるたびに書き替える（派生データ。正本は Event Log）。
     this.upsertProjection = db.prepare(
@@ -236,7 +264,8 @@ export class SqliteEventStore implements EventStore {
 
   /**
    * 保存済みの Hand（HAND_FINISHED か打ち切りの HAND_ABORTED まで済んだ Hand）と、メモリにだけある Hand（進行中・内部エラーで
-   * 止まった Hand。D62）を合わせて、開始の新しい順に最大 limit 件返す。メモリの Hand は再起動で消えるので、一覧からも消える。
+   * 止まった Hand。D62）を合わせて、新しい順に最大 limit 件返す。メモリの Hand（このプロセスで始めた順の逆）を先に、保存済みの Hand
+   * （保存の論理順序の逆。D117）を後に並べる。メモリの Hand は再起動で消えるので、一覧からも消える。
    */
   listHands(
     limit: number,
@@ -248,6 +277,7 @@ export class SqliteEventStore implements EventStore {
         limit,
       ) as unknown as HandRow[]
     ).map((row): StoredHandSummary => {
+      requireOrdinal(row);
       const aborted = row.aborted === 1;
       return {
         handId: row.hand_id,
@@ -257,14 +287,12 @@ export class SqliteEventStore implements EventStore {
         aborted,
       };
     });
-    // メモリの Hand は追記した順なので、逆順が開始の新しい順。sort は安定なので同じ時刻ならこの順を保つ。
+    // メモリの Hand は Map の追記の順（このプロセスで始めた順）なので、逆順が新しい順。壁時計の時刻では並べない（D117）。
     const pending = [...this.pending.entries()]
       .reverse()
       .filter(([handId]) => !exclude.has(handId))
       .map(([handId, p]) => summarizeLog(handId, p.log));
-    return [...pending, ...persisted]
-      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
-      .slice(0, limit);
+    return [...pending, ...persisted].slice(0, limit);
   }
 
   latestSessionProjection(
@@ -272,8 +300,10 @@ export class SqliteEventStore implements EventStore {
   ): SessionProjection | null {
     const row = this.selectLatestProjection.get(
       JSON.stringify([...exclude]),
-    ) as unknown as SessionProjectionRow | undefined;
-    return row === undefined ? null : toProjection(row);
+    ) as unknown as LatestProjectionRow | undefined;
+    if (row === undefined) return null;
+    requireOrdinal({ hand_id: row.last_hand_id, ord: row.ord });
+    return toProjection(row);
   }
 
   sessionHandIds(handId: string): readonly string[] {
@@ -286,14 +316,21 @@ export class SqliteEventStore implements EventStore {
       )?.session_id;
     if (sessionId === undefined) return [];
     return (
-      this.selectSessionHands.all(sessionId) as unknown as { hand_id: string }[]
-    ).map((row) => row.hand_id);
+      this.selectSessionHands.all(sessionId) as unknown as HandOrdinalRow[]
+    ).map(savedHandId);
   }
 
   finishedHandIds(): readonly string[] {
-    return (
-      this.selectFinishedHands.all() as unknown as { hand_id: string }[]
-    ).map((row) => row.hand_id);
+    return (this.selectFinishedHands.all() as unknown as HandOrdinalRow[]).map(
+      savedHandId,
+    );
+  }
+
+  savedOrder(handId: string): number | null {
+    const row = this.selectSavedOrder.get(handId) as unknown as
+      HandOrdinalRow | undefined;
+    // hands に無い Hand（進行中・未知）は保存されていない。
+    return row === undefined ? null : requireOrdinal(row);
   }
 
   /** DB を閉じる。以降は使えない。途中の Hand（メモリ側）は保存されずに消える（D62）。 */
@@ -330,6 +367,8 @@ export class SqliteEventStore implements EventStore {
       );
       this.insertSession.run(sessionId, first.recordedAt);
       this.insertHand.run(handId, sessionId, first.recordedAt, last.recordedAt);
+      // 保存の論理順序（D117）。Hand の順はこの番号で決める（started_at・finished_at は表示・監査用に残す）。
+      this.insertOrdinal.run(handId);
       for (const s of log) {
         this.insertEvent.run(
           s.eventId,
@@ -396,6 +435,22 @@ export class SqliteEventStore implements EventStore {
       }),
     );
   }
+}
+
+/** 保存済みの Hand の論理順序の番号。行が欠けていれば MissingOrdinalError（v9 の backfill 後は必ずある。D117）。 */
+function requireOrdinal(row: HandOrdinalRow): number {
+  if (row.ord === null) {
+    throw new MissingOrdinalError(
+      `保存済みの Hand ${row.hand_id} に論理順序（ordinals）の行が無い`,
+    );
+  }
+  return row.ord;
+}
+
+/** 論理順序の行があることを確かめて handId を返す（並びは SQL の ORDER BY o.ord）。 */
+function savedHandId(row: HandOrdinalRow): string {
+  requireOrdinal(row);
+  return row.hand_id;
 }
 
 /** Session Projection の行を読む（JSON の列を戻す）。 */

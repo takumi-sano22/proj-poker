@@ -203,7 +203,7 @@ export class ReplayService {
       new Set(),
   ) {}
 
-  /** Hand 一覧（開始の新しい順。最大 REPLAY_LIST_LIMIT 件）。Drill の Hand は入れない。 */
+  /** Hand 一覧（新しい順＝進行中の Hand、続けて保存の新しい順〔論理順序。D117〕。最大 REPLAY_LIST_LIMIT 件）。Drill の Hand は入れない。 */
   list(): ReplayHandSummary[] {
     return this.store
       .listHands(REPLAY_LIST_LIMIT, this.excludeFromList())

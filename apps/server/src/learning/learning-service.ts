@@ -6,7 +6,8 @@
 //   正本（Event Log・reviews）は書き換えない
 // - Stats は Hero の行だけを返す（他 Player の詳細 HUD を出さない。D32）
 // - Learning Reset（D114・#118）: Score / Hypothesis / 自然言語の Profile は、それぞれのカテゴリの最後の Reset より後に終わった Hand の
-//   Evidence だけで計算する（learning-reset.ts）。Stats と Session Review（1 Session の振り返り）は Reset の対象にしない
+//   Evidence だけで計算する（learning-reset.ts）。前後は保存の論理順序で決める（D117）。Stats と Session Review（1 Session の振り返り）は
+//   Reset の対象にしない
 // ユーザーの弱点なので、CPU の KnowledgeState・Prompt・CPU Memory へは渡さない（不変条件 2）。
 import { projectPlayerStats, type StatTable } from "@proj-poker/engine";
 import type { EventStore, StoredHandEvent } from "../event-store.js";
@@ -16,11 +17,13 @@ import type {
   HypothesisSnapshotStore,
 } from "./hypothesis-snapshot.js";
 import {
-  endedAfter,
+  resetTimes,
+  savedAfter,
   type LearningResetCategory,
   type LearningResetRecord,
   type LearningResetStore,
-  type ResetBoundaries,
+  type ResetBoundary,
+  type ResetTimes,
 } from "./learning-reset.js";
 import {
   computePlayerProfile,
@@ -61,14 +64,20 @@ export interface ProfileResponse {
   };
   /** Structured Profile からの決定論のテンプレート文（表示用の派生。LLM を呼ばない）。 */
   readonly text: string;
-  /** カテゴリごとの最後の Learning Reset の時刻（無ければ null。D114）。 */
-  readonly resets: ResetBoundaries;
+  /** カテゴリごとの最後の Learning Reset の時刻（無ければ null。D114。表示用で、区切りの判定は論理順序で行う。D117）。 */
+  readonly resets: ResetTimes;
   /** Hero の Stats（全期間。他 Player の行は返さない）。 */
   readonly heroStats: {
     readonly version: string;
     readonly hands: number;
     readonly overall: StatTable | null;
   };
+}
+
+/** 終わった Hand の Event と保存の論理順序の番号。 */
+interface SavedHand {
+  readonly stored: readonly StoredHandEvent[];
+  readonly savedOrder: number | null;
 }
 
 export class LearningService {
@@ -123,7 +132,7 @@ export class LearningService {
     const scored = since("score");
     const hypotheses = this.replaceSnapshot(since("hypothesis").hypotheses);
     const stats = projectPlayerStats(
-      stored.map((s) => s.map((e) => e.event)),
+      stored.map((h) => h.stored.map((e) => e.event)),
       { excludeHandIds },
     );
     const hero = stats.players.find((p) => p.playerId === heroId);
@@ -133,7 +142,7 @@ export class LearningService {
       text: renderProfileText(since("profile"), {
         afterReset: boundaries.profile !== null,
       }),
-      resets: boundaries,
+      resets: resetTimes(boundaries),
       heroStats: {
         version: stats.version,
         hands: hero?.hands ?? 0,
@@ -148,7 +157,7 @@ export class LearningService {
    */
   reset(categories: readonly LearningResetCategory[]): {
     readonly reset: LearningResetRecord;
-    readonly resets: ResetBoundaries;
+    readonly resets: ResetTimes;
   } {
     const { resets } = this.options;
     const reset = resets.add(categories);
@@ -164,26 +173,29 @@ export class LearningService {
         ).hypotheses,
       );
     }
-    return { reset, resets: boundaries };
+    return { reset, resets: resetTimes(boundaries) };
   }
 
-  /** 終わった Hand の保存済みの Event（開始の古い順）。 */
-  private finishedHands(): readonly (readonly StoredHandEvent[])[] {
+  /** 終わった Hand の保存済みの Event と保存の論理順序の番号（保存の古い順。D117）。 */
+  private finishedHands(): readonly SavedHand[] {
     const { events } = this.options;
-    return events.finishedHandIds().map((id) => events.read(id));
+    return events.finishedHandIds().map((id) => ({
+      stored: events.read(id),
+      savedOrder: events.savedOrder(id),
+    }));
   }
 
-  /** 区切り（since）より後に終わった Hand だけで Structured Profile を作る。 */
+  /** 区切り（boundary）より後に保存された（終わった）Hand だけで Structured Profile を作る。 */
   private structured(
-    stored: readonly (readonly StoredHandEvent[])[],
-    since: string | null,
+    saved: readonly SavedHand[],
+    boundary: ResetBoundary | null,
     policy: ProfilePolicy,
     excludeHandIds: ReadonlySet<string>,
   ): StructuredProfile {
     const { reviews, heroId } = this.options;
-    const hands = stored
-      .filter((s) => endedAfter(s, since))
-      .map((s) => s.map((e) => e.event));
+    const hands = saved
+      .filter((h) => savedAfter(h.savedOrder, boundary))
+      .map((h) => h.stored.map((e) => e.event));
     return computePlayerProfile(
       { hands, reviews, heroId },
       { excludeHandIds, policy },
