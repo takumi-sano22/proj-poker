@@ -3,12 +3,15 @@
 // 応答に Persona・他 Player の Stats・Pass B を入れないことを確かめる。
 import { afterEach, describe, expect, it } from "vitest";
 import { buildApp } from "../app.js";
+import { openDatabase } from "../db/database.js";
 import { InMemoryEventStore } from "../event-store.js";
 import { InMemoryHypothesisSnapshotStore } from "../learning/hypothesis-snapshot.js";
 import type { ProfileResponse } from "../learning/learning-service.js";
 import type { SessionReview } from "../learning/session-review.js";
+import { createOrdinalCounter, processOrdinals } from "../logical-order.js";
 import { InMemoryRevealReviewStore } from "../review/reveal-store.js";
 import { InMemoryReviewStore } from "../review/review-store.js";
+import { SqliteEventStore } from "../sqlite-event-store.js";
 import { forbiddenKeys } from "../testing/leaks.js";
 import {
   LEARNING_HANDS,
@@ -210,5 +213,78 @@ describe("POST /api/learning/resets", () => {
     ).json<ProfileResponse>();
     expect(profile.resets.score).toBeNull();
     expect(profile.profile.decisions).toEqual({ total: 13, reviewed: 3 });
+  });
+});
+
+describe("POST /api/learning/resets の順序の源（D117・#157）", () => {
+  /** Event Store だけ独自のカウンタを渡し、learningResetStore を省いた App（既定の Learning Reset Store の組み立てを確かめる）。 */
+  function setupOwnCounter(eventCounterStart: number) {
+    const ordinals = createOrdinalCounter();
+    for (let i = 0; i < eventCounterStart; i++) ordinals.next();
+    const store = new InMemoryEventStore({ ordinals });
+    const reviews = new InMemoryReviewStore();
+    const app = buildApp({
+      logger: false,
+      store,
+      review: { store: reviews, revealStore: new InMemoryRevealReviewStore() },
+      hypothesisSnapshot: new InMemoryHypothesisSnapshotStore(),
+    });
+    apps.push(app);
+    const save = (hand: PlayedHand, decision: number) => {
+      store.append(hand.handId, hand.events, { sessionId: "s1" });
+      reviews.append(fixtures.review(hand, decision, "major_leak"));
+    };
+    const reset = () =>
+      app.inject({
+        method: "POST",
+        url: "/api/learning/resets",
+        payload: { categories: ["score", "hypothesis", "profile"] },
+      });
+    const profile = async () =>
+      (
+        await app.inject({ method: "GET", url: "/api/learning/profile" })
+      ).json<ProfileResponse>();
+    return { save, reset, profile };
+  }
+
+  it("Event Store の番号がプロセスの既定のカウンタより先に進んでいても、Reset 前に保存した Hand は Reset 後に入らない", async () => {
+    const { save, reset, profile } = setupOwnCounter(1000);
+    save(fixtures.play(LEARNING_HANDS.btn), 0);
+    expect((await profile()).profile.decisions.total).toBeGreaterThan(0);
+    expect((await reset()).statusCode).toBe(201);
+    expect((await profile()).profile.decisions).toEqual({
+      total: 0,
+      reviewed: 0,
+    });
+  });
+
+  it("Event Store の番号がプロセスの既定のカウンタより遅れていても、Reset 後に保存した Hand は入り、Reset 前の Hand は入らない", async () => {
+    // プロセスの既定のカウンタを先へ進める（Event Store の独自のカウンタは 1 から）。
+    for (let i = 0; i < 1000; i++) processOrdinals.next();
+    const { save, reset, profile } = setupOwnCounter(0);
+    save(fixtures.play(LEARNING_HANDS.btn), 0);
+    await reset();
+    save(fixtures.play(LEARNING_HANDS.sb), 2);
+    const { decisions } = (await profile()).profile;
+    expect(decisions.reviewed).toBe(1);
+    expect(decisions.total).toBeGreaterThan(0);
+    // sb の判断だけが数えられている（btn と sb の両方を数えた場合より少ない）。
+    const both = setupOwnCounter(0);
+    both.save(fixtures.play(LEARNING_HANDS.btn), 0);
+    both.save(fixtures.play(LEARNING_HANDS.sb), 2);
+    expect(decisions.total).toBeLessThan(
+      (await both.profile()).profile.decisions.total,
+    );
+  });
+
+  it("メモリ内以外の Event Store を渡して learningResetStore を省くと、順序の源を共有できないので組み立てで拒否する", () => {
+    const db = openDatabase(":memory:");
+    try {
+      expect(() =>
+        buildApp({ logger: false, store: new SqliteEventStore(db) }),
+      ).toThrow(/learningResetStore/);
+    } finally {
+      db.close();
+    }
   });
 });

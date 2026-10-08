@@ -96,10 +96,20 @@ export interface AppOptions {
   readonly hypothesisSnapshot?: HypothesisSnapshotStore;
   /** Targeted Drill の記録（#117）。起動時は SQLite（v7）、省略時のメモリ内実装はテスト用。 */
   readonly drillStore?: DrillStore;
-  /** Learning Reset の区切り（#118・D114）。起動時は SQLite（v8）、省略時のメモリ内実装はテスト用。 */
+  /** Learning Reset の区切り（#118・D114）。起動時は SQLite（v8）、省略時のメモリ内実装はテスト用（メモリ内の Event Store とカウンタを共有する。#157）。 */
   readonly learningResetStore?: LearningResetStore;
   /** Opponent Memory Reset の区切り（#143・D120）。起動時は SQLite（v11）、省略時のメモリ内実装はテスト用。 */
   readonly opponentMemoryResetStore?: OpponentMemoryResetStore;
+}
+
+/** 省略時の Learning Reset Store。メモリ内の Event Store とだけ、論理順序のカウンタを共有できる（D117）。 */
+function defaultLearningResetStore(store: EventStore): LearningResetStore {
+  if (store instanceof InMemoryEventStore) {
+    return new InMemoryLearningResetStore({ ordinals: store.ordinals });
+  }
+  throw new Error(
+    "メモリ内以外の Event Store を渡すときは、同じ順序の源を使う learningResetStore も渡す（D117）",
+  );
 }
 
 // listen と分けて組み立てだけを export する。テストから起動せずに叩けるようにするため。
@@ -203,9 +213,11 @@ export function buildApp(options: AppOptions = {}) {
   // Session Review・Player Profile（#116）は、同じ Event Store と Pass A の reviews を読むだけ（Review を作らない。D115）。
   // Pass B の Store は渡さない（Hindsight を Score・Profile に混ぜない）。
   // Learning Reset（#118・D114）は区切りの行を足すだけで、正本（Event Log・reviews・Note / Tag）を消さない。
-  // Reset の前後は Event Store と同じ順序の源の番号で決める（D117。起動時は同じ DB の ordinals、省略時はプロセスのカウンタ）。
+  // Reset の前後は Event Store と同じ順序の源の番号で決める（D117。起動時は同じ DB の ordinals）。省略時のメモリ内実装は、
+  // メモリ内の Event Store のカウンタを共有する（独自のカウンタを渡した Event Store でも、Hand の番号と比べられる Reset の番号になる）。
+  // メモリ内以外の Event Store で省くと順序の源を共有できないので、黙って別の源を使わずに拒否する。
   const learningResets =
-    options.learningResetStore ?? new InMemoryLearningResetStore();
+    options.learningResetStore ?? defaultLearningResetStore(store);
   registerLearningRoutes(
     app,
     new LearningService({

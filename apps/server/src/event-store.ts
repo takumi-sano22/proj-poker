@@ -140,7 +140,8 @@ export class InMemoryEventStore implements EventStore {
   private readonly saved = new Map<string, number>();
   private readonly now: () => Date;
   private readonly newEventId: () => string;
-  private readonly ordinals: OrdinalCounter;
+  /** 保存の論理順序のカウンタ。buildApp が既定の Learning Reset Store に同じカウンタを渡す（D117。別の源だと番号を比べられない）。 */
+  readonly ordinals: OrdinalCounter;
   private readonly defaultSessionId = randomUUID();
 
   constructor(options: InMemoryEventStoreOptions = {}) {
