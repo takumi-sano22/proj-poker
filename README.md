@@ -338,7 +338,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
 - Persona の数値（OI-005）・モデル名（`claude-haiku-4-5` / `claude-sonnet-5-5` / `claude-opus-5-5`）と判断待ち・Review・Solver の上限（OI-001）・Primary Solver（OI-002）・Eval の合格ライン（`docs/09` §5・§6）は暫定値です（永久仕様ではありません）
 - **Fixed Pool の人数・名前・Persona の内訳と Guest の出やすさ（`phase7_pool_v1`）は OI-005 の暫定値、Memory の recency decay・十分な Sample の基準・注入の上限・Tilt の Trigger と幅・Table Tendency・層の合成と Memory の Eval の合格ライン（`phase7_*` の各 Policy）は OI-011 の暫定値**です（永久仕様ではありません）
-- CPU の Memory・Tilt・Table Tendency は Hand の開始時に毎回 Event Log から計算します（Cache は無い。Cache を足すかは測って決める: #150）。Table Tendency を Hero の Review の Evidence に入れるかは未定です（#153）。Memory の節が入った Prompt の Claude の CPU の Eval は録画していません（API キーの利用は人間判断: #155）
+- CPU の Memory・Tilt・Table Tendency は Hand の開始時に毎回 Event Log から計算します（Cache は無い。Cache を足すかは測って決める: #150）。Table Tendency を Hero の Review の Evidence に入れることは D122 で決まり、実装待ちです（#153）。Memory の節が入った Prompt の Claude の CPU の Eval は、D123 により API キーを使わず OAuth 経路で最大 36 Decision を録画する予定で、まだ録画していません（#155）
 - Opponent Memory Reset は API だけで、画面の入口はありません（Hero に Fixed CPU の名前・`cpuProfileId` を見せていないため）。1 つの Fixed CPU を対象にする Reset は、`cpuProfileId` を知っている場合だけ使えます
 - テスト用の組み立て（`buildApp` に Event Store だけを独自の順序の源で渡す経路）では、既定の Learning Reset Store の区切りの番号が Event Store と別の源になります（本番の起動は同じ SQLite の DB を使うので影響しません: #157）
 - **Solver は Heads-Up の Turn / River だけ**です。Preflop・Flop・Multiway（3 人以上）・Side Pot あり・Rake ありの Spot は Unsupported で、Math・Range・KB で Review します（Multiway の Deep Solver は OI-009）。Solver の結果は Street の最初の判断（OOP）の頻度だけで、Action EV は出しません
