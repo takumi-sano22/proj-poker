@@ -53,7 +53,7 @@ Claude Codeが新しいMarkdown、Issue本文、PR本文、README、設計メモ
 
 | ファイル | 責務 |
 |---|---|
-| `decision_log.yaml` | D01〜D124の採用済み人間判断 |
+| `decision_log.yaml` | D01〜D126の採用済み人間判断 |
 | `01_PRODUCT_REQUIREMENTS.md` | 機能要件・非機能要件・スコープ |
 | `02_DOMAIN_RULES_AND_POLICIES.md` | Poker Engine、裁定、Information Boundary、Invariant |
 | `03_SYSTEM_ARCHITECTURE.md` | Component境界、Data Flow、AI/Solver/KB責務 |
@@ -63,7 +63,7 @@ Claude Codeが新しいMarkdown、Issue本文、PR本文、README、設計メモ
 | `07_LEARNING_AND_ANALYTICS.md` | Session Review、統計、弱点仮説、Drill |
 | `08_MVP_AND_ROADMAP.md` | MVP Definition of Done、実装Phase |
 | `09_TEST_STRATEGY.md` | Deterministic / AI / E2E test |
-| `10_DECISION_TRACEABILITY.md` | D01〜D124と実装領域の対応 |
+| `10_DECISION_TRACEABILITY.md` | D01〜D126と実装領域の対応 |
 | `11_OPEN_ITEMS.md` | 意図的に未確定の事項 |
 | `research/*` | ポーカードメインの調査・出典 |
 

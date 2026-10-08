@@ -1,4 +1,4 @@
-# D01〜D124の採用済み人間判断。
+# D01〜D126の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -498,3 +498,11 @@
   choice: "CPU Memory の永続 Cache は、Hand ごとの観察を派生の表（マイグレーション v12）に持ち、読むときに足りない分だけ補う（#150 の測定を受けた人間判断、AskUserQuestion）"
   status: "採用済み"
   decision: "#150の測定（実SQLiteで5,000 HandのHandの開始が約0.98秒。約85%がMemory）を受け、CPU Memoryに永続のCacheを足す。Cacheするのは、Handごとに抽出したObservation（Observer別・抽出のVersion付き）で、マイグレーションv12の派生の表に置く。HypothesisのrecencyとSampleの集計は今どおり都度計算し、Cacheに入れない。更新はHandの開始でMemoryを読むときに、Cacheに無いHand（論理順序のordで判定）だけを作って足し、Handの保存のトランザクションは変えない。表は消してもEvent Logから作り直せる派生で正本にしない。DELETEを許し（v6のhypothesis_snapshotsと同じ扱い）、抽出のVersionが変わったら消して作り直す。Opponent Memory Reset（D120）・Guest（D118）・論理順序（D117）の判定は今どおりEvent Log側の情報で行う。D118の「Observationは別の表やEventに書かない」は正本の置き場の規定で、この表は正本ではなく作り直せる派生のCacheなので、D118を変えない。D76・D106・D111・D118の具体化。実装は#165。"
+- id: D125
+  choice: "Review の自然言語中の数値 Grounding は Phase 7 では実装せず、横断の品質課題として残す（#168 の人間判断）"
+  status: "採用済み"
+  decision: "Review の文の中の数値（Pot・Stack・Equity・%等）をEvidenceと機械照合するruntimeの汎用的な検証は、Phase 7では実装せず、Phase 7のBlockerにしない。Promptで「Evidenceの数値をそのまま使い、再計算・創作しない」と指示し、GroundingがEvidence IDの実在と利用条件まで検査していること、表現差・丸め・BB併記でfalse positiveが増えること、#169でHeroが正本のTable Tendencyの値をUIから直接確かめられるようにすることを理由とする。LLMのRetryを増やす変更はしない。#168は横断の品質課題として#104の配下に残す。D40・D122の具体化。"
+- id: D126
+  choice: "River の代表 Spot だけで Claude CPU の実モデル Eval を追加測定する（最大 36 Decision・72 呼び出し。#171 の人間判断）"
+  status: "採用済み"
+  decision: "#155の初回（D123）でRiverのCallの割合がloose < tightになったのが少数標本の揺れかを確かめるため、river_facing_big_betの1 Spot × Persona 6 × 条件3（baseline・loose・tight）× 追加repeat 2の最大36 Decision（Retryを含む呼び出しは最大72回）を追加で録画する。経路はD123と同じ（Claude Agent SDK・Claude CodeのOAuth〔サブスク枠〕・buildClaudeEnv。API キー不使用。Bedrock / Vertex / Foundry等へ切り替えない）。D123の録画は残し、追加分は別の録画（または別のVersion）として管理し、CIは再生だけ。既存の録画と追加分を合わせてRiverを集計する。結果が意図した向きにならなくても、その場でPrompt / Policyを変えず、十分なサンプルでも逆向きが続くなら事実を記録して新しいIssueに分け、人間判断に返す。OAuth・利用枠で実行できなければAPI キーへ切り替えず停止する。D87・D123の具体化。"
