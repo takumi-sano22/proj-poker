@@ -442,4 +442,40 @@ describe.each(implementations)("%s", (_name, createStore) => {
       emergencyBots: [],
     });
   });
+
+  it("Session の参加者（D118）は Session の最初の Hand が終わったときだけ残し、以降の Hand・追記の値では変えない", () => {
+    const store = createStore();
+    const started = sampleEvents();
+    const fixed = {
+      playerId: "b",
+      kind: "fixed",
+      cpuProfileId: "fixed_aki",
+      poolVersion: "phase7_pool_v1",
+    } as const;
+    const guest = {
+      playerId: "b",
+      kind: "guest",
+      guestId: "guest/s2/b",
+      poolVersion: "phase7_pool_v1",
+    } as const;
+    store.append("h1", started, { sessionId: "s1", participants: [fixed] });
+    // Hand が終わるまでは残さない（Session の行も無い）。
+    expect(store.sessionParticipants("s1")).toEqual([]);
+    store.append("h1", finishingEvents(started), {
+      participants: [guest],
+    });
+    expect(store.sessionParticipants("s1")).toEqual([fixed]);
+    // 同じ Session の 2 Hand 目の値は見ない（参加者は Session の途中で変えない）。
+    store.append("h2", started, { sessionId: "s1", participants: [guest] });
+    store.append("h2", finishingEvents(started));
+    expect(store.sessionParticipants("s1")).toEqual([fixed]);
+    // 参加者を渡さずに始めた Session（v10 より前・Drill の専用の Session）は空。
+    store.append("h3", started, { sessionId: "s3" });
+    store.append("h3", finishingEvents(started));
+    expect(store.sessionParticipants("s3")).toEqual([]);
+    store.append("h4", started, { sessionId: "s2", participants: [guest] });
+    store.append("h4", finishingEvents(started));
+    expect(store.sessionParticipants("s2")).toEqual([guest]);
+    expect(store.sessionParticipants("unknown")).toEqual([]);
+  });
 });

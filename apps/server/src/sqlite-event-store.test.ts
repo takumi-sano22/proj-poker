@@ -846,6 +846,105 @@ describe("SqliteEventStore（Session の永続化と Resume。#77・D95）", () 
     expect(reopen().listHands(10)).toEqual([]);
   });
 
+  it("Session の参加者（D118）を最初の Hand と同じトランザクションで session_participants に書き、開き直しても席順で読める", () => {
+    const store = open();
+    const { started, rest } = finishedHandEvents("h1");
+    const participants = [
+      {
+        playerId: "a",
+        kind: "guest",
+        guestId: "guest/s1/a",
+        poolVersion: "phase7_pool_v1",
+      },
+      {
+        playerId: "b",
+        kind: "fixed",
+        cpuProfileId: "fixed_emi",
+        poolVersion: "phase7_pool_v1",
+      },
+    ] as const;
+    store.append("h1", started, { sessionId: "s1", participants });
+    store.append("h1", rest);
+    expect(reopen().sessionParticipants("s1")).toEqual(participants);
+    // Persona は DB の参加者に入れない（Secret Persona。D28）。
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT session_id, player_id, kind, cpu_profile_id, guest_id, pool_version FROM session_participants ORDER BY seq",
+          )
+          .all(),
+      ).toEqual([
+        {
+          session_id: "s1",
+          player_id: "a",
+          kind: "guest",
+          cpu_profile_id: null,
+          guest_id: "guest/s1/a",
+          pool_version: "phase7_pool_v1",
+        },
+        {
+          session_id: "s1",
+          player_id: "b",
+          kind: "fixed",
+          cpu_profile_id: "fixed_emi",
+          guest_id: null,
+          pool_version: "phase7_pool_v1",
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("Guest の id を別の Session で使おうとしたら、その Hand ごと保存しない（同じトランザクション。D118）", () => {
+    const store = open();
+    const guest = {
+      playerId: "b",
+      kind: "guest",
+      guestId: "guest/s1/b",
+      poolVersion: "phase7_pool_v1",
+    } as const;
+    const first = finishedHandEvents("h1");
+    store.append("h1", first.started, {
+      sessionId: "s1",
+      participants: [guest],
+    });
+    store.append("h1", first.rest);
+    const second = finishedHandEvents("h2");
+    store.append("h2", second.started, {
+      sessionId: "s2",
+      participants: [guest],
+    });
+    expect(() => store.append("h2", second.rest)).toThrow(/UNIQUE/);
+    expect(reopen().read("h2")).toEqual([]);
+    expect(reopen().sessionParticipants("s2")).toEqual([]);
+    expect(reopen().sessionParticipants("s1")).toEqual([guest]);
+  });
+
+  it("Orchestrator の Session の参加者を保存し、再起動後の Resume でも同じ参加者のまま続ける（D118）", async () => {
+    const store = open();
+    const first = await playHand(orchestratorOn(store, "a"), null);
+    const sessionId = sessionOfHand(first) ?? "";
+    const participants = store.sessionParticipants(sessionId);
+    // 6 人卓の CPU 5 席が、席順にすべて Fixed CPU か Guest で埋まる。
+    expect(participants.map((p) => p.playerId)).toEqual(
+      PHASE1_TABLE_SETUP.players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => p.playerId),
+    );
+
+    const reopened = reopen();
+    const resumed = orchestratorOn(reopened, "b");
+    // 起動時に Session Projection と一緒に、その Session の参加者を戻す。
+    expect(resumed.sessionParticipants).toEqual(participants);
+    const second = await playHand(resumed, null);
+    expect(sessionOfHand(second)).toBe(sessionId);
+    // 同じ Session の参加者は変わらない（行も足さない）。
+    expect(reopened.sessionParticipants(sessionId)).toEqual(participants);
+  });
+
   it("再起動後は Hand の合間の Session を Resume し、途中だった Hand は捨てて最後に終わった Hand から続ける（D62）", async () => {
     const store = open();
     const before = orchestratorOn(store, "a");

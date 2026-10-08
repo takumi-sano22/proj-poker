@@ -76,6 +76,9 @@ describe("openDatabase（マイグレーション）", () => {
       "reviews",
       "reviews_append_only",
       "reviews_no_delete",
+      "session_participants",
+      "session_participants_append_only",
+      "session_participants_no_delete",
       "session_projections",
       "sessions",
       // ordinals の AUTOINCREMENT が使う SQLite の内部テーブル（v9）。
@@ -108,7 +111,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('drills', 'learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -173,7 +176,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -242,7 +245,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('ordinals', 'sqlite_sequence') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('ordinals', 'sqlite_sequence', 'session_participants') ORDER BY name",
         )
         .all(),
       sessions: db.prepare("SELECT * FROM sessions ORDER BY rowid").all(),
@@ -314,6 +317,105 @@ describe("openDatabase（マイグレーション）", () => {
     }
   });
 
+  it("版 9 の DB に版 10（session_participants）を当てても、既存のテーブルの定義と行は変わらず、参加者は backfill しない（D76・D118）", () => {
+    const legacyPath = join(dir, "v9.sqlite");
+    const v9 = new DatabaseSync(legacyPath);
+    try {
+      for (const sql of MIGRATIONS.slice(0, 9)) v9.exec(sql);
+      v9.exec("PRAGMA user_version = 9");
+      v9.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-08T00:00:00.000Z');
+        INSERT INTO hands VALUES ('h1', 's1', '2026-10-08T00:00:00.000Z', '2026-10-08T00:01:00.000Z');
+        INSERT INTO events VALUES ('e1', 'h1', 0, 'HAND_STARTED', 8, '2026-10-08T00:00:00.000Z', '{}');
+        INSERT INTO session_projections VALUES ('s1', 'h1', 'ready_for_next_hand', NULL, '[]', '{"cpu1":"nit"}', '[]', '2026-10-08T00:01:00.000Z');
+        INSERT INTO user_notes (note_id, revision, created_at, subject_key, subject, body)
+          VALUES ('n1', 1, '2026-10-08T00:02:00.000Z', '["session_player","s1","cpu1"]', '{"kind":"session_player","sessionId":"s1","playerId":"cpu1"}', 'note');
+        INSERT INTO ordinals (kind, ref_id) VALUES ('hand_saved', 'h1');
+      `);
+    } finally {
+      v9.close();
+    }
+    const snapshot = (db: DatabaseSync) => ({
+      schema: db
+        .prepare(
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name <> 'session_participants' ORDER BY name",
+        )
+        .all(),
+      rows: [
+        "events",
+        "hands",
+        "sessions",
+        "session_projections",
+        "user_notes",
+        "ordinals",
+      ].map((table) => db.prepare(`SELECT * FROM ${table}`).all()),
+    });
+    const before = new DatabaseSync(legacyPath);
+    const expected = snapshot(before);
+    before.close();
+    const db = openDatabase(legacyPath);
+    try {
+      expect(userVersion(db)).toBe(MIGRATIONS.length);
+      expect(snapshot(db)).toEqual(expected);
+      // v10 より前の Session に推測で Identity を作らない。
+      expect(
+        db.prepare("SELECT COUNT(*) AS n FROM session_participants").get(),
+      ).toEqual({ n: 0 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("session_participants は追記だけで、Fixed / Guest の組・Guest の id の一意を守り、人数・ID の一覧に Couple しない（D118・OI-005）", () => {
+    const db = openDatabase(dbPath);
+    try {
+      db.exec(`
+        INSERT INTO sessions VALUES ('s1', '2026-10-08T00:00:00.000Z');
+        INSERT INTO sessions VALUES ('s2', '2026-10-08T01:00:00.000Z');
+      `);
+      const insert = db.prepare(
+        "INSERT INTO session_participants (session_id, player_id, kind, cpu_profile_id, guest_id, pool_version) VALUES (?, ?, ?, ?, ?, 'phase7_pool_v1')",
+      );
+      insert.run("s1", "cpu1", "fixed", "fixed_aki", null);
+      insert.run("s1", "cpu2", "guest", null, "guest/s1/cpu2");
+      // 同じ Fixed CPU は別の Session にも座れる（Session を跨いで同じ Identity）。
+      insert.run("s2", "cpu1", "fixed", "fixed_aki", null);
+      // Pool に無い ID・多い席数も Schema は受け付ける（Pool はコードの Config。DB は人数・一覧を知らない）。
+      for (let i = 2; i <= 20; i++) {
+        insert.run("s2", `cpu${i}`, "fixed", `profile_${i}`, null);
+      }
+      // Guest の id は別の Session で使えない。
+      expect(() =>
+        insert.run("s2", "cpu21", "guest", null, "guest/s1/cpu2"),
+      ).toThrow(/UNIQUE/);
+      // 同じ Session の同じ席・同じ Fixed CPU は 1 行だけ。
+      expect(() =>
+        insert.run("s1", "cpu1", "fixed", "fixed_ben", null),
+      ).toThrow(/UNIQUE/);
+      expect(() =>
+        insert.run("s1", "cpu3", "fixed", "fixed_aki", null),
+      ).toThrow(/UNIQUE/);
+      // kind と ID の列の組が合わない行・知らない kind・無い Session は入れない。
+      expect(() => insert.run("s1", "cpu4", "fixed", null, null)).toThrow();
+      expect(() =>
+        insert.run("s1", "cpu4", "fixed", "fixed_dan", "guest/s1/cpu4"),
+      ).toThrow();
+      expect(() => insert.run("s1", "cpu4", "guest", null, null)).toThrow();
+      expect(() => insert.run("s1", "cpu4", "hero", null, null)).toThrow();
+      expect(() =>
+        insert.run("missing", "cpu1", "fixed", "fixed_aki", null),
+      ).toThrow();
+      expect(() =>
+        db.exec("UPDATE session_participants SET cpu_profile_id = 'x'"),
+      ).toThrow(/append-only/);
+      expect(() => db.exec("DELETE FROM session_participants")).toThrow(
+        /append-only/,
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   it("版 5 の DB に版 6（hypothesis_snapshots）を当てても、既存のテーブルの定義と行は変わらない（D76・D113）", () => {
     const legacyPath = join(dir, "v5.sqlite");
     const v5 = new DatabaseSync(legacyPath);
@@ -332,7 +434,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),
@@ -370,7 +472,7 @@ describe("openDatabase（マイグレーション）", () => {
     const snapshot = (db: DatabaseSync) => ({
       schema: db
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence') ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE tbl_name NOT IN ('user_notes', 'user_tags', 'hypothesis_snapshots', 'drills', 'learning_resets', 'ordinals', 'sqlite_sequence', 'session_participants') ORDER BY name",
         )
         .all(),
       events: db.prepare("SELECT * FROM events").all(),

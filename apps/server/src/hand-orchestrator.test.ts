@@ -1,5 +1,6 @@
 import {
   composeChips,
+  MAX_PLAYERS,
   type HandEvent,
   type HeroView,
   type LegalActionSet,
@@ -12,9 +13,14 @@ import { readAppVersion } from "./app-version.js";
 import { PHASE1_TABLE_SETUP, buildTableSetup } from "./config.js";
 import { InMemoryEventStore, type AppendContext } from "./event-store.js";
 import {
+  deriveSeed,
   HandOrchestrator,
   type HandOrchestratorOptions,
 } from "./hand-orchestrator.js";
+import {
+  composeSessionParticipants,
+  type SessionParticipant,
+} from "./opponents/cpu-pool.js";
 import {
   OpponentOutageError,
   type OpponentFactory,
@@ -2177,6 +2183,72 @@ describe("Session の Event と Resume（#77・D95）", () => {
       expect(presetId).toBe(before.get(playerId));
     }
     expect([...seen.values()]).not.toContain("maniac");
+  });
+
+  it("新しい Session の最初の Hand で CPU の席の参加者を seed から決め、同じ Session の Hand・再起動後の Resume では変えない（D118）", async () => {
+    const { orchestrator, events, store } = setup();
+    expect(orchestrator.sessionParticipants).toEqual([]);
+    const first = await playHand(orchestrator, null);
+    const sessionId = store.sessionOf.get(first) ?? "";
+    // 席の Persona は卓の設定のまま、Hand の seed（42）から導いた seed で編成する。
+    const expected = composeSessionParticipants({
+      sessionId,
+      seats: PHASE1_TABLE_SETUP.players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => ({
+          playerId: p.playerId,
+          persona: PHASE1_TABLE_SETUP.personas[p.playerId],
+        })),
+      seed: deriveSeed(42, MAX_PLAYERS),
+    });
+    expect(store.sessionParticipants(sessionId)).toEqual(expected);
+    expect(orchestrator.sessionParticipants).toEqual(expected);
+
+    const second = await playHand(orchestrator, first);
+    expect(store.sessionOf.get(second)).toBe(sessionId);
+    expect(orchestrator.sessionParticipants).toEqual(expected);
+    orchestrator.close();
+
+    const resumed = restart(store);
+    expect(resumed.sessionParticipants).toEqual(expected);
+    const third = await playHand(resumed, null);
+    expect(store.sessionOf.get(third)).toBe(sessionId);
+    expect(store.sessionParticipants(sessionId)).toEqual(expected);
+
+    // Identity は Event Log・Hero の View には入れない（Event Log の形は変えない。cpuProfileId から Secret Persona を辿らせない）。
+    const ids = expected.map((p) =>
+      p.kind === "fixed" ? p.cpuProfileId : p.guestId,
+    );
+    const exposed = JSON.stringify([
+      ...[first, second, third].flatMap((h) => events(h)),
+      resumed.players,
+    ]);
+    for (const id of ids) expect(exposed).not.toContain(id);
+  });
+
+  it("Session が終わって新しい Session になると参加者を決め直し、Fixed CPU は同じ cpuProfileId、Guest の id は持ち越さない（D106・D118）", async () => {
+    const { orchestrator, store, handId } = await firstHandWhere(
+      { cpu1: "shove", cpu2: "fold" },
+      (stacks) => stackOf(stacks, "hero") === 0,
+    );
+    const before = store.sessionParticipants(store.sessionOf.get(handId) ?? "");
+    expect(before.map((p) => p.playerId)).toEqual(["cpu1", "cpu2"]);
+    const next = await orchestrator.startHand(handId);
+    if (!next.ok) throw new Error(next.error.message);
+    const after = orchestrator.sessionParticipants;
+    // 同じ seed なので同じ席に同じ種類が座り、Fixed CPU は同じ cpuProfileId。
+    const fixedOf = (ps: readonly SessionParticipant[]) =>
+      ps.map((p) => (p.kind === "fixed" ? p.cpuProfileId : null));
+    expect(fixedOf(after)).toEqual(fixedOf(before));
+    // Guest の id は前の Session のものを使わない。
+    const guestIds = (ps: readonly SessionParticipant[]) =>
+      ps.flatMap((p) => (p.kind === "guest" ? [p.guestId] : []));
+    // この seed の編成には Guest が 1 席いる（Guest の持ち越しを空振りせずに確かめる）。
+    expect(guestIds(before)).toHaveLength(1);
+    for (const id of guestIds(after)) {
+      expect(guestIds(before)).not.toContain(id);
+    }
+    expect(guestIds(after)).toHaveLength(guestIds(before).length);
   });
 
   it("終わった Session（Bust・AI 障害での Session 終了）は再起動後に続けず、新しい Session で始める", async () => {

@@ -6,6 +6,7 @@
 // Session Projection（session-projection.ts）も書き替える（docs/04 §10。再起動後の Resume に使う）。
 // 同じトランザクションで ordinals（v9）に保存の論理順序の行を足す。Hand の順（Replay の一覧・Session 内の順・Recent の順・最新の Session）は
 // この番号で決め、壁時計の列（started_at・finished_at・updated_at）では並べない（D117。OS の時刻は後ろへ戻ることがある）。
+// Session の最初の Hand の保存では、同じトランザクションで CPU の席の参加者（Fixed CPU / Guest）を session_participants（v10）に足す（D118）。
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { HandEvent } from "@proj-poker/engine";
@@ -30,6 +31,7 @@ import {
   type StoredHandSummary,
 } from "./event-store.js";
 import { MissingOrdinalError } from "./logical-order.js";
+import type { SessionParticipant } from "./opponents/cpu-pool.js";
 import {
   nextSessionProjection,
   type SessionProjection,
@@ -98,6 +100,14 @@ interface LatestProjectionRow extends SessionProjectionRow {
   ord: number | null;
 }
 
+interface ParticipantRow {
+  player_id: string;
+  kind: SessionParticipant["kind"];
+  cpu_profile_id: string | null;
+  guest_id: string | null;
+  pool_version: string;
+}
+
 interface EventRow {
   event_id: string;
   hand_id: string;
@@ -106,10 +116,11 @@ interface EventRow {
   payload: string;
 }
 
-/** まだ終わっていない Hand（メモリだけ）。Session と Persona の割り当ては Hand の最初の追記で決まる。 */
+/** まだ終わっていない Hand（メモリだけ）。Session と Persona の割り当てと参加者は Hand の最初の追記で決まる。 */
 interface PendingHand {
   readonly sessionId: string;
   readonly personas: Readonly<Record<string, string>>;
+  readonly participants: readonly SessionParticipant[];
   readonly log: StoredHandEvent[];
 }
 
@@ -132,6 +143,8 @@ export class SqliteEventStore implements EventStore {
   private readonly selectProjection: StatementSync;
   private readonly selectLatestProjection: StatementSync;
   private readonly upsertProjection: StatementSync;
+  private readonly insertParticipant: StatementSync;
+  private readonly selectParticipants: StatementSync;
 
   /** DB ファイル（":memory:" も可）を開いてマイグレーションを当て、Store を作る。close で DB も閉じる。 */
   static open(
@@ -206,6 +219,13 @@ export class SqliteEventStore implements EventStore {
        WHERE p.last_hand_id NOT IN (SELECT value FROM json_each(?))
        ORDER BY o.ord IS NULL DESC, o.ord DESC LIMIT 1`,
     );
+    // CPU の席の参加者（v10。D118）。追記だけで、保存した順（席順）に読む。
+    this.insertParticipant = db.prepare(
+      "INSERT INTO session_participants (session_id, player_id, kind, cpu_profile_id, guest_id, pool_version) VALUES (?, ?, ?, ?, ?, ?)",
+    );
+    this.selectParticipants = db.prepare(
+      "SELECT player_id, kind, cpu_profile_id, guest_id, pool_version FROM session_participants WHERE session_id = ? ORDER BY seq",
+    );
     // Session Projection は Session ごとに 1 行で、Hand が終わるたびに書き替える（派生データ。正本は Event Log）。
     this.upsertProjection = db.prepare(
       `INSERT INTO session_projections (${projectionColumns}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -236,6 +256,7 @@ export class SqliteEventStore implements EventStore {
     const sessionId =
       pending?.sessionId ?? context.sessionId ?? this.defaultSessionId;
     const personas = pending?.personas ?? context.personas ?? {};
+    const participants = pending?.participants ?? context.participants ?? [];
     assertAppendable(handId, log, events);
 
     const stored = toStoredEvents(
@@ -246,10 +267,15 @@ export class SqliteEventStore implements EventStore {
     );
     const next = [...log, ...stored];
     if (!events.some(isHandEnd)) {
-      this.pending.set(handId, { sessionId, personas, log: next });
+      this.pending.set(handId, {
+        sessionId,
+        personas,
+        participants,
+        log: next,
+      });
     } else {
       // 書き込みに失敗したら例外のまま返し、メモリ側も変えない（Hand は未完了のまま残る）。
-      this.persist(handId, sessionId, personas, next);
+      this.persist(handId, sessionId, personas, participants, next);
       this.pending.delete(handId);
     }
     return stored;
@@ -333,17 +359,27 @@ export class SqliteEventStore implements EventStore {
     return row === undefined ? null : requireOrdinal(row);
   }
 
+  sessionParticipants(sessionId: string): readonly SessionParticipant[] {
+    return (
+      this.selectParticipants.all(sessionId) as unknown as ParticipantRow[]
+    ).map(toParticipant);
+  }
+
   /** DB を閉じる。以降は使えない。途中の Hand（メモリ側）は保存されずに消える（D62）。 */
   close(): void {
     this.pending.clear();
     if (this.db.isOpen) this.db.close();
   }
 
-  /** 終わった Hand の全 Event と、その Session の Session Projection を 1 トランザクションで書く。 */
+  /**
+   * 終わった Hand の全 Event と、その Session の Session Projection を 1 トランザクションで書く。
+   * Session の最初の Hand（まだ Projection が無い）なら、CPU の席の参加者も同じトランザクションで足す。
+   */
   private persist(
     handId: string,
     sessionId: string,
     personas: Readonly<Record<string, string>>,
+    participants: readonly SessionParticipant[],
     log: readonly StoredHandEvent[],
   ): void {
     const first = log[0];
@@ -366,6 +402,19 @@ export class SqliteEventStore implements EventStore {
         },
       );
       this.insertSession.run(sessionId, first.recordedAt);
+      // 参加者は Session の途中で変えないので、Session の最初の Hand のときだけ書く（2 Hand 目以降の値は見ない）。
+      if (previous === undefined) {
+        for (const p of participants) {
+          this.insertParticipant.run(
+            sessionId,
+            p.playerId,
+            p.kind,
+            p.kind === "fixed" ? p.cpuProfileId : null,
+            p.kind === "guest" ? p.guestId : null,
+            p.poolVersion,
+          );
+        }
+      }
       this.insertHand.run(handId, sessionId, first.recordedAt, last.recordedAt);
       // 保存の論理順序（D117）。Hand の順はこの番号で決める（started_at・finished_at は表示・監査用に残す）。
       this.insertOrdinal.run(handId);
@@ -451,6 +500,23 @@ function requireOrdinal(row: HandOrdinalRow): number {
 function savedHandId(row: HandOrdinalRow): string {
   requireOrdinal(row);
   return row.hand_id;
+}
+
+/** session_participants の行を読む（kind と ID の列の組は CHECK で守られている）。 */
+function toParticipant(row: ParticipantRow): SessionParticipant {
+  return row.kind === "fixed"
+    ? {
+        playerId: row.player_id,
+        kind: "fixed",
+        cpuProfileId: row.cpu_profile_id as string,
+        poolVersion: row.pool_version,
+      }
+    : {
+        playerId: row.player_id,
+        kind: "guest",
+        guestId: row.guest_id as string,
+        poolVersion: row.pool_version,
+      };
 }
 
 /** Session Projection の行を読む（JSON の列を戻す）。 */
