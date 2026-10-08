@@ -286,22 +286,20 @@ describe("buildTableTendency（public の Event だけから数える）", () =>
     const base = buildTableTendency(sources(), "cpu1");
     expect(buildTableTendency(sources(true), "cpu1")).toEqual(base);
     // ACTION_TAKEN でも保存された Visibility が public でなければ通さない（whitelist は両方の Visibility を見る）。
-    const forged = sources().map((s) => ({
+    const stray: HandEvent = {
+      type: "ACTION_TAKEN",
+      playerId: "cpu2",
+      street: "preflop",
+      action: "raise",
+      amount: 50,
+      toAmount: 50,
+      allIn: false,
+      seq: 999,
+      visibility: { type: "private", playerId: "cpu2" },
+    };
+    const forged: TableTendencySourceHand[] = sources().map((s) => ({
       ...s,
-      events: [
-        ...s.events,
-        {
-          type: "ACTION_TAKEN",
-          playerId: "cpu2",
-          street: "preflop",
-          action: "raise",
-          amount: 50,
-          toAmount: 50,
-          allIn: false,
-          seq: 999,
-          visibility: { type: "private", playerId: "cpu2" },
-        },
-      ],
+      events: [...s.events, stray],
     }));
     expect(buildTableTendency(forged, "cpu1")).toEqual(base);
     // 同じ入力からは同じ結果。
