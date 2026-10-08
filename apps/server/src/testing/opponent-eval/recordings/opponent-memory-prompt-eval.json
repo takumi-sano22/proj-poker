@@ -1,0 +1,743 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-08T11:44:15.764Z",
+  "model": "claude-haiku-4-5",
+  "sdkVersion": "0.3.289",
+  "spots": [
+    "river_facing_big_bet@baseline",
+    "river_facing_big_bet@loose",
+    "river_facing_big_bet@tight",
+    "flop_cbet@baseline",
+    "flop_cbet@loose",
+    "flop_cbet@tight"
+  ],
+  "personas": [
+    "tag_regular",
+    "lag",
+    "calling_station",
+    "nit",
+    "maniac",
+    "weak_tight_recreational"
+  ],
+  "repeats": 1,
+  "concurrency": 1,
+  "limits": {
+    "maxDecisions": 36,
+    "maxCalls": 72
+  },
+  "modelCalls": 36,
+  "runs": 1,
+  "cases": [
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "7fc465e51361fee6",
+          "output": {
+            "action": "call",
+            "rationale": "相手のターンまでのチェック行動からブラフの可能性が高く、ポットオッズ34.67%に対してQhigh は十分な勝率があるためコール。"
+          },
+          "ms": 14280
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "8ef96c071e0c123a",
+          "output": {
+            "action": "call",
+            "rationale": "Qs Jsのペアはポットオッズで正当化される呼び出し価値があり、ターンチェック後のリバーbetから相手の強さが不確実なため、raisのリスクより情報確保を優先する。"
+          },
+          "ms": 10673
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "2abd985121af8ed6",
+          "output": {
+            "action": "call",
+            "rationale": "ペア完成もドロー完成もない最下位の手札だが、ポットオッズと Call Range の広さから river での overcall クセに従い、26 をコールして相手を見る。"
+          },
+          "ms": 8872
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "340ef421b1545717",
+          "output": {
+            "action": "fold",
+            "rationale": "River での Overfold クセと低いリスク許容度から、相手の強いベットに対して Queen ペアは弱すぎるため折る。"
+          },
+          "ms": 10976
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "08176fcf82af98a1",
+          "output": {
+            "action": "raise",
+            "amount": 80,
+            "rationale": "規律が極度に低く攻撃性と bluff 傾向が異常に高いマニアックプレイヤーとして、弱い手でも相手の bet に過度に激しく raise で対抗する。"
+          },
+          "ms": 7928
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "47b2743a4a9c73ce",
+          "output": {
+            "action": "fold",
+            "rationale": "Weak-tight プレイヤーとして River での Queen high は弱すぎ、Overfold 傾向に従い、相手のベットに対して不確実性が高いため fold が適切。"
+          },
+          "ms": 9375
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "545e4528b20114d9",
+          "output": {
+            "action": "call",
+            "rationale": "ポットオッズ3.9:1に対してQueen ペアの勝率は十分で、相手の幅広いレンジへの対抗価値がある。"
+          },
+          "ms": 10384
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "935424bff16bd93b",
+          "output": {
+            "action": "fold",
+            "rationale": "River最終街でQueen-highは相手のベットに対してエクイティが不足しており、ポットオッズも合わず、弱い手をコールするリスクを避ける。"
+          },
+          "ms": 10684
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "ff623eb2ffe37c7b",
+          "output": {
+            "action": "call",
+            "rationale": "Qs Js でペアを持ち、相手の遅れたベットはそこまで強そうではなく、自分のオーバーコール傾向とルーズなコール範囲から、ポットオッズも相応にあるためコールします。"
+          },
+          "ms": 10082
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "22c310cac284eed5",
+          "output": {
+            "action": "fold",
+            "rationale": "River での相手の aggressive bet に対して Queen high only では勝率が低く、Nit スタイルのオーバーフォール傾向と low 読み精度を考慮して fold が適切。"
+          },
+          "ms": 11557
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "851b883f30769118",
+          "output": {
+            "action": "raise",
+            "amount": 78,
+            "rationale": "Maniac スタイルの高い Aggression と Bluff Tendency により、Queen High でもリバーの相手ベットに対して攻撃的に raise する。"
+          },
+          "ms": 9977
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e29b886cfc3073e5",
+          "output": {
+            "action": "fold",
+            "rationale": "River で Queen high は弱く、相手の高い攻撃性に対して私の低い攻撃性と Overfold 傾向から fold が最適である。"
+          },
+          "ms": 9443
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "1c6aa45722d926f9",
+          "output": {
+            "action": "call",
+            "rationale": "相手は非攻撃的で低い aggression 傾向を示しており、Turn チェック後の River ベットから強手ではなく、Pot odds 34.7% で Queen ハイでの Call は利益的。"
+          },
+          "ms": 10801
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "4c0ef363aab95457",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "河牌持有顶对强花，对手前街弱玩突然下注，以高攻击性加注来提取价值并驱赶对手的诈唬范围。"
+          },
+          "ms": 9863
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "4a24c94ee202246e",
+          "output": {
+            "action": "call",
+            "rationale": "River でペアのクイーンを持ち、ポットオッズが有利であり、私の Calling Station の性格とTilt値3により River でのオーバーコール傾向に従う。"
+          },
+          "ms": 9581
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "7d9d64773798702f",
+          "output": {
+            "action": "fold",
+            "rationale": "リバーでの相手のベットに対し、Queen one pair では十分な強さがなく、Discipline が高く Bluff の少ない自分のスタイルでは River での Overfold が一貫した判断である。"
+          },
+          "ms": 10949
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "9d53f0ced67b1d18",
+          "output": {
+            "action": "raise",
+            "amount": 78,
+            "rationale": "Maniac スタイルで Bluff が多く、相手の弱そうな行動パターンに対してポジティブ EV と判断、積極的に Raise で主導権を取る。"
+          },
+          "ms": 9548
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "a3f15472621d14ee",
+          "output": {
+            "action": "call",
+            "rationale": "Qs Js でクイーンペアを持ち、River で相手のベットに対して直接ショーダウンする価値があると判断。"
+          },
+          "ms": 9871
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@baseline",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "d07bdabb5b9dd701",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "相手のフロップチェックは弱さを示唆しており、攻撃性の高いプレイスタイルに基づいてCbetで圧力をかける。"
+          },
+          "ms": 9007
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@baseline",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "9b4f52000af97a8c",
+          "output": {
+            "action": "bet",
+            "amount": 7,
+            "rationale": "相手のチェック後、フラッシュドロー付きのAs Jh でアグレッシブにCベットしてポットをコントロール。"
+          },
+          "ms": 8746
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@baseline",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e6dbc6d7721b6360",
+          "output": {
+            "action": "check",
+            "rationale": "攻撃性が低く読み精度も低いため、相手がチェックしている局面では積極的にベットせず、スペードドローを持つ A ハイで次のストリートの展開を見る。"
+          },
+          "ms": 9584
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@baseline",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "f81a17acf6157182",
+          "output": {
+            "action": "check",
+            "rationale": "AJは現時点では脆弱なハンドであり、低攻撃性かつ高規律のNitスタイルに従い、相手がチェックしたため無料カードを見るためチェックバックします。"
+          },
+          "ms": 9029
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@baseline",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "52b3e0721d9102f4",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "Maniacで攻撃性と過度なブラフ傾向が強いため、相手のチェックに対して積極的にベットしてポットを奪う。"
+          },
+          "ms": 9523
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@baseline",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "c411f2b5a237eebe",
+          "output": {
+            "action": "check",
+            "rationale": "弱いハンドで Bluff する傾向がなく、相手がチェックしてくれたため無料でカードを見て Turn で判断するのが低リスク低技術的なプレイ。"
+          },
+          "ms": 7694
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@loose",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "77d5c8d502b0645f",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "Preflop raiser として相手の Flop check weakness に対し、standard な C-bet で pot を奪取する意図で bet します。"
+          },
+          "ms": 9415
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@loose",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "9851eb447803867a",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "As Jh のドロー手でセミブラフ C-bet を打ち、相手の Check に対して攻撃的にポットを争い、アグレッシブな LAG スタイルを貫く。"
+          },
+          "ms": 11936
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@loose",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e83adbee76a686b1",
+          "output": {
+            "action": "check",
+            "rationale": "低攻撃性とBluff傾向がほぼゼロのため、弱いAハイではC-betをせず、相手がチェックした後は自然にチェックバック。"
+          },
+          "ms": 9592
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@loose",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "815545e3bc77e30a",
+          "output": {
+            "action": "check",
+            "rationale": "低い bluff 傾向と高い規律により、As Jh の中程度の強さではリスク回避を優先し、追加投資を避けて相手の行動を見る。"
+          },
+          "ms": 10504
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@loose",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "6dccae539d70a603",
+          "output": {
+            "action": "bet",
+            "amount": 10,
+            "rationale": "Maniacで高攻撃性・過度なブラフ傾向のため、相手の Flop チェックに対して即座に C-bet で圧力をかけ、弱いハンドながら攻撃的に pot を奪取する。"
+          },
+          "ms": 9528
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@loose",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "f83cccaf5a1a9978",
+          "output": {
+            "action": "check",
+            "rationale": "攻撃性と Bluff が低く、relative hand strength が marginal なため、相手の Check に合わせて Turn のカードを見て判断する弱気な防守的プレイが私のキャラクターに合っている。"
+          },
+          "ms": 9513
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@tight",
+      "personaId": "tag_regular",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "b3a5d575194a2131",
+          "output": {
+            "action": "bet",
+            "amount": 8,
+            "rationale": "Preflop raiser としてのポジション有利と相手のチェックの弱さから、AJでポット半分程度のC-betを打つ。"
+          },
+          "ms": 9338
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@tight",
+      "personaId": "lag",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "9c645bd1a6135810",
+          "output": {
+            "action": "bet",
+            "amount": 8,
+            "rationale": "相手の C-bet フォールド率が 75% と高く、フロップでのチェックから受身的な相手に対して LAG スタイルの積極的 C-bet を実行し、ポットを奪取する。"
+          },
+          "ms": 9469
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@tight",
+      "personaId": "calling_station",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "11d5611a4757389d",
+          "output": {
+            "action": "check",
+            "rationale": "Calling Stationで攻撃性が低く、Bluff傾向が極めて低いため、弱いハイカードでベットせずにチェックバックしてターンでの流れを見る。"
+          },
+          "ms": 9581
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@tight",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "d1669bc96f9bdd61",
+          "output": {
+            "action": "fold",
+            "rationale": "As Jh はボード上で弱いハンドであり、相手がチェックしたとはいえ、Nit スタイルの高い規律に従い無駄なリスクを避けるべき。"
+          },
+          "ms": 8238
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@tight",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "af71bd4411d318bd",
+          "output": {
+            "action": "bet",
+            "amount": 25,
+            "rationale": "フラッシュドロー＋ハイカードを持つ Maniac として、高い攻撃性と Bluff 傾向に従い、相手の弱そうな Check に対して積極的に Bet します。"
+          },
+          "ms": 8987
+        }
+      ]
+    },
+    {
+      "spotId": "flop_cbet@tight",
+      "personaId": "weak_tight_recreational",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "503fd3c406cea007",
+          "output": {
+            "action": "bet",
+            "amount": 2,
+            "rationale": "フラッシュドロー付きのAJで、cpu2が弱そうにcheckしたため、小額のbetで価値を獲得する。"
+          },
+          "ms": 11008
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "decisions": 36,
+    "calls": 36,
+    "structuredOutputValidRate": 1,
+    "illegalActionRate": 0,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "outages": 0,
+    "hiddenInformationLeakage": 0,
+    "latencyMs": {
+      "min": 7694,
+      "median": 9581,
+      "p90": 11008,
+      "max": 14280
+    },
+    "personaDifferentiation": 0.667,
+    "personaDifferentiationBySpot": {
+      "river_facing_big_bet@baseline": 0.733,
+      "river_facing_big_bet@loose": 0.733,
+      "river_facing_big_bet@tight": 0.733,
+      "flop_cbet@baseline": 0.6,
+      "flop_cbet@loose": 0.6,
+      "flop_cbet@tight": 0.6
+    },
+    "actionDiversity": {
+      "tag_regular": 1,
+      "lag": 1.792,
+      "calling_station": 1,
+      "nit": 0.918,
+      "maniac": 1,
+      "weak_tight_recreational": 1.918
+    },
+    "actionCounts": {
+      "tag_regular": {
+        "river_facing_big_bet@baseline": {
+          "call": 1
+        },
+        "river_facing_big_bet@loose": {
+          "call": 1
+        },
+        "river_facing_big_bet@tight": {
+          "call": 1
+        },
+        "flop_cbet@baseline": {
+          "bet": 1
+        },
+        "flop_cbet@loose": {
+          "bet": 1
+        },
+        "flop_cbet@tight": {
+          "bet": 1
+        }
+      },
+      "lag": {
+        "river_facing_big_bet@baseline": {
+          "call": 1
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 1
+        },
+        "river_facing_big_bet@tight": {
+          "raise": 1
+        },
+        "flop_cbet@baseline": {
+          "bet": 1
+        },
+        "flop_cbet@loose": {
+          "bet": 1
+        },
+        "flop_cbet@tight": {
+          "bet": 1
+        }
+      },
+      "calling_station": {
+        "river_facing_big_bet@baseline": {
+          "call": 1
+        },
+        "river_facing_big_bet@loose": {
+          "call": 1
+        },
+        "river_facing_big_bet@tight": {
+          "call": 1
+        },
+        "flop_cbet@baseline": {
+          "check": 1
+        },
+        "flop_cbet@loose": {
+          "check": 1
+        },
+        "flop_cbet@tight": {
+          "check": 1
+        }
+      },
+      "nit": {
+        "river_facing_big_bet@baseline": {
+          "fold": 1
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 1
+        },
+        "river_facing_big_bet@tight": {
+          "fold": 1
+        },
+        "flop_cbet@baseline": {
+          "check": 1
+        },
+        "flop_cbet@loose": {
+          "check": 1
+        },
+        "flop_cbet@tight": {
+          "fold": 1
+        }
+      },
+      "maniac": {
+        "river_facing_big_bet@baseline": {
+          "raise": 1
+        },
+        "river_facing_big_bet@loose": {
+          "raise": 1
+        },
+        "river_facing_big_bet@tight": {
+          "raise": 1
+        },
+        "flop_cbet@baseline": {
+          "bet": 1
+        },
+        "flop_cbet@loose": {
+          "bet": 1
+        },
+        "flop_cbet@tight": {
+          "bet": 1
+        }
+      },
+      "weak_tight_recreational": {
+        "river_facing_big_bet@baseline": {
+          "fold": 1
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 1
+        },
+        "river_facing_big_bet@tight": {
+          "call": 1
+        },
+        "flop_cbet@baseline": {
+          "check": 1
+        },
+        "flop_cbet@loose": {
+          "check": 1
+        },
+        "flop_cbet@tight": {
+          "bet": 1
+        }
+      }
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  }
+}
