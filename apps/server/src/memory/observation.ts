@@ -66,6 +66,11 @@ export interface ObservationQuery {
    * （Guest の Identity は Session 限り。次の Session では読まない＝破棄。D118）。
    */
   readonly currentSessionId: string;
+  /**
+   * Observer に効く Opponent Memory Reset の区切り（D120・memory-reset.ts の boundaryFor の ord）。この番号より大きい ord で保存された
+   * Hand だけを観察する（区切り以前の Hand は Observer の Memory から外す。Event Log は消さない）。省略・null は区切り無し（全期間）。
+   */
+  readonly afterOrd?: number | null;
 }
 
 /** Observer が見た 1 Event。 */
@@ -171,12 +176,22 @@ export function isObservable(event: HandEvent): boolean {
   );
 }
 
+/** Hand が Observer の Opponent Memory Reset の区切りより後に保存されたか（区切りが無ければ常に真。番号の比較なので壁時計に依らない）。 */
+function afterReset(ord: number, query: ObservationQuery): boolean {
+  return (
+    query.afterOrd === undefined ||
+    query.afterOrd === null ||
+    ord > query.afterOrd
+  );
+}
+
 /**
  * Observer が座っていた保存済みの Hand ごとに、見た Event を論理順序で返す（純粋関数。同じ入力なら同じ結果）。
  * - Observer が参加者にいない Session（v10 より前の Session・Drill の専用の Session を含む）と、Observer が座っていない Hand
  *   （Bust した後の Hand）は観察しない
  * - Guest の Observer は今の Session の Hand だけを観察する。Guest の Subject は今の Session の Hand でだけ引き、
  *   前の Session の Hand では誰か引けない席（null）にする（推測で Identity を作らない）
+ * - Observer に Opponent Memory Reset の区切り（afterOrd）があれば、それより ord が大きい Hand だけを観察する（D120）
  * - 並びは ord の小さい順、Hand の中は seq の小さい順（入力の並び・壁時計に依らない）
  */
 export function extractObservedHands(
@@ -198,6 +213,7 @@ export function extractObservedHands(
     .flatMap((source): ObservedHand[] => {
       const current = source.sessionId === query.currentSessionId;
       if (observerIsGuest && !current) return [];
+      if (!afterReset(source.ord, query)) return [];
       const observerPlayerId = observerSeatOf(
         query.observer,
         source.participants,
@@ -285,6 +301,7 @@ export function observationsOf(hands: readonly ObservedHand[]): Observation[] {
 /**
  * Event Store から抽出の入力を読む（保存済みの Hand だけ。進行中の Hand は ord が無く、Hand の途中の情報は KnowledgeState が持つ）。
  * Observer が参加者にいない Session の Hand は Event を読まない。Guest の Observer は今の Session だけを読む。
+ * Opponent Memory Reset の区切り（afterOrd）以前の Hand も読まない。
  */
 export function loadObservationSources(
   store: ObservationStore,
@@ -311,6 +328,8 @@ export function loadObservationSources(
     if (ord === null) {
       throw new RangeError(`保存済みの Hand ${handId} に論理順序の番号が無い`);
     }
+    // Opponent Memory Reset の区切り以前の Hand は Event を読まない（extractObservedHands でも外す）。
+    if (!afterReset(ord, query)) continue;
     sources.push({
       handId,
       sessionId,

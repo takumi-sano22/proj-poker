@@ -94,6 +94,11 @@ export interface EventStore {
    */
   savedOrder(handId: string): number | null;
   /**
+   * 今までに振った論理順序の最後の番号（D117。SQLite は MAX(ordinals.ord)、メモリ内はカウンタの最後の番号。無ければ 0）。
+   * Opponent Memory Reset（D120・memory/memory-reset.ts）の区切りに使う。番号は振らない。
+   */
+  lastOrdinal(): number;
+  /**
    * Session の CPU の席の参加者（D118・#136）を、保存した順（席順）に返す。Session の最初の Hand が終わるまでは空。
    * 参加者を渡さずに始めた Session（v10 より前の Session・Drill の専用の Session）も空。
    */
@@ -247,6 +252,10 @@ export class InMemoryEventStore implements EventStore {
 
   savedOrder(handId: string): number | null {
     return this.saved.get(handId) ?? null;
+  }
+
+  lastOrdinal(): number {
+    return this.ordinals.current();
   }
 
   sessionParticipants(sessionId: string): readonly SessionParticipant[] {

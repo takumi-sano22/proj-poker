@@ -64,6 +64,7 @@ import {
   type MemoryTableSeat,
   type OpponentMemorySummary,
 } from "./memory/memory-summary.js";
+import type { OpponentMemoryResetStore } from "./memory/memory-reset.js";
 import { participantRefOf } from "./memory/observation.js";
 import {
   buildCpuTableTendenciesFromStore,
@@ -187,6 +188,11 @@ export interface HandOrchestratorOptions {
    * 省略時は空。
    */
   readonly excludeFromResume?: () => ReadonlySet<string>;
+  /**
+   * Opponent Memory Reset の区切り（D120・#143）。CPU の Memory は、その CPU に効く最後の区切りより後に保存された Hand だけから作る。
+   * Event Store と同じ順序の源（同じ DB の ordinals、またはメモリ内の同じカウンタ）を使う Store を渡す。省略時は区切り無し。
+   */
+  readonly memoryResets?: OpponentMemoryResetStore;
   readonly logger?: OrchestratorLogger;
 }
 
@@ -933,6 +939,7 @@ export class HandOrchestrator {
    * - Observer は session_participants の参加者（Fixed CPU / Guest）。参加者の引けない CPU（v10 より前の Session）は作らない
    * - Subject は今の Hand の他の参加者（Hero と他 CPU）で、席の playerId との対応はこの Hand の中だけのもの
    * - Skill は Observer の Persona（Fixed CPU は Pool の Persona、Guest は席の Persona）。Persona が無ければ平均（0.5）
+   * - Opponent Memory Reset（D120）の後は、その CPU に効く最後の区切りより後に保存された Hand だけを入力にする
    */
   private opponentMemories(
     plan: HandPlan,
@@ -956,14 +963,18 @@ export class HandOrchestrator {
       const p = participantOf.get(s.playerId);
       if (s.playerId === this.heroId || p === undefined) return [];
       const presetId = plan.personas[s.playerId];
+      const observer = participantRefOf(p);
       return [
         {
           playerId: s.playerId,
-          observer: participantRefOf(p),
+          observer,
           observerSkill:
             presetId === undefined
               ? AVERAGE_SKILL
               : PERSONA_PRESETS[presetId].traits.skill,
+          // その CPU に効く Opponent Memory Reset の区切りより後に保存された Hand だけから作る（D120）。
+          afterOrd:
+            this.options.memoryResets?.boundaryFor(observer)?.ord ?? null,
         },
       ];
     });

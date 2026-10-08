@@ -140,6 +140,7 @@ export class SqliteEventStore implements EventStore {
   private readonly selectSessionHands: StatementSync;
   private readonly selectFinishedHands: StatementSync;
   private readonly selectSavedOrder: StatementSync;
+  private readonly selectLastOrdinal: StatementSync;
   private readonly selectProjection: StatementSync;
   private readonly selectLatestProjection: StatementSync;
   private readonly upsertProjection: StatementSync;
@@ -204,6 +205,9 @@ export class SqliteEventStore implements EventStore {
     );
     this.selectSavedOrder = db.prepare(
       `SELECT h.hand_id, o.ord FROM hands h ${handOrdinal} WHERE h.hand_id = ?`,
+    );
+    this.selectLastOrdinal = db.prepare(
+      "SELECT COALESCE(MAX(ord), 0) AS ord FROM ordinals",
     );
     const projectionColumns =
       "session_id, last_hand_id, state, end_reason, stacks, personas, emergency_bots, updated_at";
@@ -363,6 +367,10 @@ export class SqliteEventStore implements EventStore {
       HandOrdinalRow | undefined;
     // hands に無い Hand（進行中・未知）は保存されていない。
     return row === undefined ? null : requireOrdinal(row);
+  }
+
+  lastOrdinal(): number {
+    return (this.selectLastOrdinal.get() as { ord: number }).ord;
   }
 
   sessionParticipants(sessionId: string): readonly SessionParticipant[] {

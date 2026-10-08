@@ -454,6 +454,44 @@ export const MIGRATIONS: readonly string[] = [
     SELECT RAISE(ABORT, 'session_participants is append-only');
   END;
   `,
+  // v11: Opponent Memory Reset の区切り（D64・D120・#143）。Reset は行の削除ではなく、ここへ区切りの行を足す（Event Log・reviews・
+  // User Read / Note / Tag・learning_resets は変えない）。対象は全 CPU（scope = all）か 1 つの Fixed CPU（scope = cpu_profile）。
+  // 区切りは追加した時点の ordinals の最大の ord（Hand が 0 件なら 0）を ord の列に持ち、CPU の Memory はその ord より大きい ord で
+  // 保存された Hand だけから作る（memory/memory-reset.ts。壁時計の created_at は表示用で、比べない。D117）。ordinals には行を足さない
+  // （ordinals の kind の CHECK は変えない。D120）。ord の値は挿入の Trigger で「その時点の最大」に縛る（区切りの取得と挿入は同じ
+  // トランザクション）。既存のテーブル・列・行は変えない（D76）。追記だけで、UPDATE / DELETE は Trigger で拒否する。
+  // マイグレーション v11 は D120 の人間判断の範囲。
+  `
+  CREATE TABLE opponent_memory_resets (
+    seq            INTEGER PRIMARY KEY,
+    reset_id       TEXT NOT NULL UNIQUE,
+    created_at     TEXT NOT NULL,
+    scope          TEXT NOT NULL CHECK (scope IN ('all', 'cpu_profile')),
+    cpu_profile_id TEXT CHECK (cpu_profile_id IS NULL OR length(cpu_profile_id) > 0),
+    ord            INTEGER NOT NULL CHECK (ord >= 0),
+    -- scope は NOT NULL、IS NOT NULL は NULL にならないので、比較は真偽のどちらかになる。
+    CHECK ((scope = 'cpu_profile') = (cpu_profile_id IS NOT NULL))
+  ) STRICT;
+
+  CREATE TRIGGER opponent_memory_resets_ord
+  BEFORE INSERT ON opponent_memory_resets
+  WHEN NEW.ord IS NOT (SELECT COALESCE(MAX(ord), 0) FROM ordinals)
+  BEGIN
+    SELECT RAISE(ABORT, 'opponent_memory_resets.ord must be the current max ordinals.ord');
+  END;
+
+  CREATE TRIGGER opponent_memory_resets_append_only
+  BEFORE UPDATE ON opponent_memory_resets
+  BEGIN
+    SELECT RAISE(ABORT, 'opponent_memory_resets is append-only');
+  END;
+
+  CREATE TRIGGER opponent_memory_resets_no_delete
+  BEFORE DELETE ON opponent_memory_resets
+  BEGIN
+    SELECT RAISE(ABORT, 'opponent_memory_resets is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

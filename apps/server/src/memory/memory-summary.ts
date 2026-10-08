@@ -187,6 +187,11 @@ export interface MemoryObserverSeat {
   readonly observer: ObserverRef;
   /** Observer の Persona の Skill（0〜1）。 */
   readonly observerSkill: number;
+  /**
+   * Observer に効く Opponent Memory Reset の区切りの ord（D120・memory-reset.ts）。これより大きい ord の Hand だけから Memory を作る。
+   * 省略・null は区切り無し（全期間）。
+   */
+  readonly afterOrd?: number | null;
 }
 
 /** Event Store から Memory を作るときの入力。 */
@@ -253,6 +258,7 @@ export function buildOpponentMemoriesFromStore(
         observer: seat.observer,
         heroPlayerId: input.heroPlayerId,
         currentSessionId: input.currentSessionId,
+        afterOrd: seat.afterOrd ?? null,
       },
       { observerSkill: seat.observerSkill, policy },
     );
