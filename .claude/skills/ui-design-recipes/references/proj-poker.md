@@ -56,11 +56,12 @@
 
 ## 画面幅と卓の配置規則
 
-- **境界は 719px / 720px の 1 本**（`max-width: 719px` が狭い画面）。ほかに `min-width: 1024px`（進行ログを右に出す 2 列）、`max-width: 359px`（320px 級の詰め）、`hover: hover`（hover の演出）。**同じ閾値を CSS と JS で別々に書かない**。JS で要るときは `useNarrowScreen` を使う。
+- **卓の配置の境界は 719px / 720px の 1 本**（`max-width: 719px` が狭い画面）。ほかに `min-width: 1024px`（進行ログを右に出す 2 列）、`max-width: 359px`（320px 級の詰め）、`hover: hover`（hover の演出）。**同じ閾値を CSS と JS で別々に書かない**。JS で要るときは `useNarrowScreen` を使う。
 - **席と重なる欄は卓の中央に重ねない**。狭い画面では、Hand の結果・Session 終了の案内・CPU 障害のダイアログを Hero 欄に置く。広い画面では卓の中央に置く。ただし Session 終了の案内（理由と 2 つの Button）は、結果の欄が縦に 2 つの Button で背高になり 1280×720 で Hero の席に覆われたので（#158）、広い画面でも Hero 欄に置く（卓の中央は獲得額の一覧だけ。`sessionEndInDock`）。同じ内容を 2 か所に描かないので、CSS で隠し分けず、`useNarrowScreen` で描く場所を 1 か所に決める。
 - **Bet の札**: 広い画面では卓の上、席の前に置く（`--bet-rx` / `--bet-ry`）。狭い画面では席の面の中、Stack の Chip の下に置く（`BetPill` を `Seat` の `betInside` で切り替える。`.bet--inside`）。卓の上に置くと、席数によっては中央や隣の席と重なる。
 - **卓の中央**: 狭い画面の 2・3・6 人卓は、1 行目を Board、2 行目を Street と Pot にする。中央の高さに席の面が来る 4・5・7・8 人卓は、Street・Board・Pot を縦に積む（`data-center-stacked`。`CENTER_STACKED_SEAT_COUNTS` の 1 か所で決める）。
 - **卓の縦横比**: 広い画面は 16:10。狭い画面は縦長で、値は `styles.css` と `docs/06` §1 にある。席の面に要素を足すと、`.seat` は面ごと中心に合わせている（`translate(-50%, -50%)`）ため、中央の側にも同じだけ伸びる。足したときは縦横比・`--seat-ry`・面の幅を一緒に見直す。
+- **中間幅（720〜1023px）の Hero 欄**: 卓は広い画面の配置のまま、Hero 欄だけ狭い画面と同じ詰め方（Hero 欄の grid・宣言 Button・Betting Area・確定 Button の compact は `max-width: 1023px`）にし、手番の案内（`.dock__turn`）は 1 行目の右に置く（`min-width: 720px` かつ `max-width: 1023px`）。欄が横いっぱいに広がるのに、Hero の札・Stack の右の列だけに操作を詰めると、Betting Area が潰れて折り返し 434px（720×600）まで高くなった（#163）。Hero の欄の高さは、**Hero の席から Board までの高さを欄の分だけ引いた画面の高さに収める**ことで決める（720 以上は E2E が測る）。
 - **Hero 欄は低く保つ**: 手番などの 1 行の案内は札の右に並べる。RULING は省かず、全体の高さで吸収する。
 - **flex の行がはみ出す中身を持つなら `flex: none` にする**。縮めると、隣の Button と重なる。
 
@@ -82,6 +83,8 @@
   - Hero 欄の高さ
 - 絶対配置がはみ出す要素は、卓の外の隣接要素（見出し・進行ログ）まで含めて測る。
 - Session 終了後の配置は `e2e/tests/session-end-layout.spec.ts`（1280×720・1024×768・375×667・320×568 で矩形の交差と Button の中心の hit-test）。
+- **画面の大きさごとの配置は `e2e/tests/table-layout.spec.ts`**（720×600・1024×768・1280×720・375×667・320×568 × Hand の途中の Hero の手番・Session の終わり。測り方は `e2e/support/layout.ts`: 席・Board・Pot・結果の矩形の交差、Hero 欄の Button の中心の hit-test、通常の click の確認〔`trial`〕、横スクロール、720px 以上は「Hero 欄を除いた画面の高さに Hero の席・Board・Pot が同時に収まる」）。**中間幅（720〜1023px）を測る画面の一覧に入れる**。
+- 手元でも、720×600・900×700・1023×768 を測る（欄が折り返す幅は、広い画面の配置が収まらなくなる 720px 付近に出る）。
 - E2E（`e2e/tests/session.spec.ts`）の 375px のテストは、Playwright の `click()` が覆われた Button で失敗するので、そのまま重なりの検査になる。
 - 手順と過去の数値は作業ログにある: `docs/taskLog/issue-5-table-ui-narrow-overlap.md`、`docs/taskLog/issue-5-bet-placement-seat-count.md`。
 

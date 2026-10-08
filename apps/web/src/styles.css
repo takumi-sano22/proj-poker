@@ -1355,7 +1355,7 @@ input {
 
 /* 狭い画面では Hero の札・Stack と、手番などの 1 行の案内を同じ行に並べ、欄を低くする（卓の下側を覆う高さを減らす。#5）。
    .dock__controls は箱を作らず、中の項目（案内・裁定・操作）を dock の grid に直接並べる。案内だけを 1 行目の右へ置く */
-@media (max-width: 719px) {
+@media (max-width: 1023px) {
   .dock {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -1368,6 +1368,14 @@ input {
     grid-column: 1 / -1;
   }
   .dock__controls > .dock__message {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
+/* 中間幅（720〜1023px）は、手番の案内（と User Read の入口）も 1 行目の右へ置く。右の列に収まるので、Hero 欄が 1 行ぶん低くなる（#163） */
+@media (min-width: 720px) and (max-width: 1023px) {
+  .dock__controls > .dock__turn {
     grid-column: 2;
     grid-row: 1;
   }
@@ -1664,7 +1672,7 @@ input {
   }
 }
 
-@media (max-width: 719px) {
+@media (max-width: 1023px) {
   .chip-controls__submit {
     max-width: 112px;
     padding: 4px 10px;
@@ -1872,7 +1880,8 @@ input {
   min-width: 0;
 }
 
-@media (max-width: 719px) {
+/* 画面下の Hero 欄が横いっぱいに広がる 1023px 以下では、宣言 Button・Betting Area を詰めて Hero 欄を低くする（720〜1023px は #163） */
+@media (max-width: 1023px) {
   .declaration {
     min-height: 44px;
     padding: 4px 6px;
