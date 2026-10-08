@@ -389,7 +389,7 @@ Phase 7のOpponent Memory Reset（D120。実装は#143）: D114と同じく正�
 - **作り直し**: Hypothesis / MemoryはProjectionで保存しないので、区切りの後は正本（Event Log）から都度作り直します。Reset後のHandが無ければ空（初めての相手と同じ）、あれば同じ入力から同じ結果です。区切りを外せば前のHandを含めたHypothesisもEvent Logから作れます（Raw Evidenceは消さない）。
 - **Guest**: GuestはSession限りで、もともと次のSessionでは読みません（§6・D118）。Resetに追加の後始末はありません（行も消さない）。
 - **変えないもの**: Event Log・`reviews`・`reveal_reviews`・`review_followups`・`drills`・User Read（Event）・Note / Tag（`user_notes` / `user_tags`。`cpu_profile`のSubjectを含む）・`learning_resets`・`ordinals`・`session_participants`・`session_projections`の行。Stats・HeroのScore / Profile / Hypothesis・Table Tendency（PublicのSession内のProjection）・Tilt（transient）はResetの対象ではなく、変わりません（`memory/memory-reset.test.ts`が、区切りの表以外の全テーブルの全行と、これらの値が変わらないことを確かめる）。
-- **API**: `POST /api/opponents/memory-resets`（`docs/03` §1）。対象は全CPUか、Fixed Pool（`PHASE7_CPU_POOL`）にある1つの`cpuProfileId`です。返すのは区切りの表示用の時刻と対象だけです。画面の入口は今は置いていません（HeroにはFixed CPUの名前・`cpuProfileId`を見せていないため。#143の作業ログ）。
+- **API**: `POST /api/opponents/memory-resets`（`docs/03` §1）。対象は全CPUか、Fixed Pool（`PHASE7_CPU_POOL`）にある1つの`cpuProfileId`です。返すのは区切りの表示用の時刻と対象だけです（`cpuProfileId`は要求で受け取った値をそのまま返すだけで、Poolの一覧・名前・Persona・区切りの`ord`は返さない）。画面の入口は今は置いていません（HeroにはFixed CPUの名前・`cpuProfileId`を見せていないため。#143の作業ログ）。
 
 ### Hand History Delete
 
