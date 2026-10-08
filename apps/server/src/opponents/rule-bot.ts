@@ -4,6 +4,8 @@
 // Persona（#51）を渡すと、参加 Range と Aggression のしきい値だけを変える。Persona なしの挙動は D71 のときのまま。
 // KnowledgeState にその CPU 自身の Memory の要約（D121・#139）があれば、Persona の Skill・Adaptability・Opponent Reading Quality の
 // 範囲で 2 つのしきい値だけを少しずらす（memoryAdjustedTuning）。合法性は Legal Action の中から選ぶことで守る（D40）。
+// KnowledgeState にその CPU 自身の Tilt（D107・#140）があれば、Persona の Preflop Looseness と Aggression を段階ごとに上限付きで
+// 少しずらした Persona でしきい値を作る（tiltedPersona）。乱数の引き方は変えず、Illegal / Random な Action は作らない。
 import {
   HandCategory,
   createRng,
@@ -22,6 +24,7 @@ import type {
   OpponentOutput,
 } from "./opponent-agent.js";
 import type { Persona } from "./persona.js";
+import { tiltPolicyOf, type CpuTilt } from "./tilt.js";
 
 type Strength = "strong" | "medium" | "weak";
 
@@ -216,12 +219,31 @@ export function memoryAdjustedTuning(
   return { ...base, mediumLooseCall, weakBluffFrequency };
 }
 
+/**
+ * Tilt の段階で Persona の Preflop Looseness と Aggression だけを上げた Persona（D119。1 段あたりの幅は Policy。上限は maxLevel 倍）。
+ * 他の軸・Leak は変えない。軸は 0〜1 に丸める。
+ */
+export function tiltedPersona(persona: Persona, tilt: CpuTilt): Persona {
+  const policy = tiltPolicyOf(tilt);
+  const level = Math.min(policy.maxLevel, Math.max(0, tilt.level));
+  const shift = level * policy.traitShiftPerLevel;
+  return {
+    ...persona,
+    traits: {
+      ...persona.traits,
+      preflopLooseness: clamp01(persona.traits.preflopLooseness + shift),
+      aggression: clamp01(persona.traits.aggression + shift),
+    },
+  };
+}
+
 /** RuleBot を作る OpponentFactory。Persona があればそのしきい値で判断する。 */
 export const createRuleBot: OpponentFactory = (seed, _playerId, persona) =>
   new RuleBot(seed, persona);
 
 export class RuleBot implements OpponentAgent {
   private readonly rng: Rng;
+  private readonly persona: Persona | undefined;
   private readonly tuning: RuleBotTuning;
   /** Memory を使う強さ（memoryReadingOf）。Persona なしは 0。 */
   private readonly reading: number;
@@ -229,6 +251,7 @@ export class RuleBot implements OpponentAgent {
   /** persona を省くと既定のしきい値（D71 の暫定 Bot のまま。Memory も読まない）。 */
   constructor(seed: number, persona?: Persona) {
     this.rng = createRng(seed);
+    this.persona = persona;
     this.tuning =
       persona === undefined ? DEFAULT_TUNING : tuningFromPersona(persona);
     this.reading = memoryReadingOf(persona);
@@ -249,7 +272,12 @@ export class RuleBot implements OpponentAgent {
    * （待ち時間も障害も無く、seed だけで結果が決まる）。
    */
   choose({ knowledge, legal }: OpponentInput): PlayerAction {
-    const tuning = memoryAdjustedTuning(this.tuning, knowledge, this.reading);
+    // Tilt は Persona のある CPU だけが持つ（Persona なしは D71 の挙動のまま）。
+    const base =
+      this.persona !== undefined && knowledge.tilt !== undefined
+        ? tuningFromPersona(tiltedPersona(this.persona, knowledge.tilt))
+        : this.tuning;
+    const tuning = memoryAdjustedTuning(base, knowledge, this.reading);
     const strength = rateStrength(
       knowledge.holeCards,
       knowledge.board,

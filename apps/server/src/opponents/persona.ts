@@ -14,9 +14,9 @@ export interface PersonaTraits {
   readonly adaptability: number;
   readonly trapTendency: number;
   readonly opponentReadingQuality: number;
-  /** Tilt（Transient State）は Phase 7 で扱う。今は値を持つだけで、Prompt にも RuleBot にも使わない。 */
+  /** Tilt（Transient State。#140・opponents/tilt.ts）の上がりやすさ。Trigger 1 つあたりに上がる段の数に使う（Prompt の性格の節には入れない）。 */
   readonly tiltSusceptibility: number;
-  /** 同上（Phase 7）。 */
+  /** Tilt の下がる速さ。Trigger の無い Hand が何回続けば 1 段下がるかに使う（同上）。 */
   readonly recoverySpeed: number;
 }
 
@@ -170,7 +170,10 @@ export const PERSONA_PRESETS: Readonly<Record<PersonaPresetId, Persona>> = {
   },
 };
 
-/** Prompt に出す軸と名前。Tilt の 2 軸は Transient State が無い今は入れない（Phase 7。条件付きの指示を文で書かず、節ごと出し分ける）。 */
+/**
+ * Prompt に出す軸と名前。Tilt の 2 軸は入れない（Tilt の上がり下がりはコードの State Machine が決め、Prompt には今の段階だけを
+ * 1 以上のときに別の節で出す。#140。性格の節の文字列を変えない）。
+ */
 const PROMPT_TRAITS: readonly (readonly [keyof PersonaTraits, string])[] = [
   ["skill", "実力（Skill）"],
   ["preflopLooseness", "Preflop で参加する手の広さ（Preflop Looseness）"],
