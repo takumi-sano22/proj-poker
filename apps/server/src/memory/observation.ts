@@ -1,5 +1,6 @@
 // CPU の Observation（Raw Evidence）を正本の Event Log から決定論で抽出する（D106・D118・#137。docs/04 §6・docs/02 INV-INFO-003）。
-// Observation は別の表や Event に書かず、都度ここで作る（D111 と同じく保存しない。Event Log が append-only なので Observation も append-only）。
+// Observation の正本となる別の表や Event は作らず、ここで Event Log から作る（Event Log が append-only なので Observation も append-only）。
+// Hand ごとの抽出結果は、作り直せる派生の Cache（observation-cache.ts・v12。D124）に持つことがあるが、正本は Event Log のまま。
 // 入れてよいのは、その Observer が卓で実際に見聞きした public の Event（Showdown で表にされた札 CARDS_TABLED を含む）だけ。
 // - Observer 自身の private（自分の Hole Cards）・他者の Hidden Cards（他者宛ての private）・Future Cards（Deck の engine）・
 //   CPU の判断の経緯や運用の記録（system）は入れない（whitelist: public だけを通す）

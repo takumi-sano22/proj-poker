@@ -272,7 +272,8 @@ function cachedObservationStore(store: ObservationStore): ObservationStore {
 }
 
 /**
- * 保存済みの Hand から、CPU ごとにその CPU 自身の Memory の要約を作る（都度計算。保存しない）。返す Map の鍵は Observer の席。
+ * 保存済みの Hand から、CPU ごとにその CPU 自身の Memory の要約を作る（Hypothesis・要約は都度計算で保存しない。observationCache を
+ * 渡したときだけ、Hand ごとの観察の抽出結果を Cache に足して使い回す〔D124〕）。返す Map の鍵は Observer の席。
  * 呼ぶのは Hand の開始時で、その Hand を Event Store へ書く前（＝保存済みの Hand だけが入力になる）。
  * CPU ごとに、その CPU を Observer とする観察だけから作る（別の CPU の観察を混ぜない）。
  */
