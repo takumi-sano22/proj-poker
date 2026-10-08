@@ -130,6 +130,7 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 - **Context**: Raw ObservationはCash / Tournamentで共通に使えますが、Strategy Hypothesisはcontext（cash / tournament）を分けます。
 - **KnowledgeStateへの注入**: そのCPU自身が過去に得たObservation / Hypothesisだけを入れます（`docs/02` INV-INFO-001）。Promptへ渡す量を絞るときも、Evidence IDを失わない形にし、自然言語のMemoryを正本にしません。D121: 構造化したHypothesisの要約（Evidence ID付き、Subjectごとに上位5項目まで）をKnowledgeStateに足し、ClaudeのCPUはPromptで、RuleBotは決定論でこれを使います。LLMの呼び出しの回数・経路は増やしません。
 - **Phase 7の暫定値（D118・D119。OI-005・OI-011）**: Fixed Poolはコードの Version付きConfigで、Fixed 8人＋Guestは1卓に最大1席です。Hypothesisのrecencyは、ObserverがそのSubjectを見たHandの数に応じた指数減衰（`phase7_memory_v1`。半減期150 Hand）、十分なSampleは機会数15以上（PersonaのSkillで0.5〜1.5倍）です。どれも永久仕様ではありません。
+- **Private Hypothesisの実装（#138）**: `apps/server/src/memory/opponent-hypothesis.ts`が、ObserverのObservationからSubject × Contextごとに、観察可能な傾向の頻度（VPIP・PFR・3-bet・C-bet・Aggression Frequency等。EngineのStatsと同じ数え方）を、重み付きのnumerator / denominator・Evidence ID・十分か・PolicyのVersion付きで都度作ります。上のSkillの差は「十分なSample」の基準（`15 × (0.5 + Skill)`。重み付きの機会数で判定）で表し、不十分な項目は保留として扱います。形と規則は`docs/04` §12です。
 
 ### Table Tendency（D106。#106 P7-6）
 
