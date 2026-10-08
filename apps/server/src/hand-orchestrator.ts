@@ -47,6 +47,7 @@ import {
   startHand,
   tableConfigForLevel,
   tournamentHandContext,
+  tournamentResult,
   tournamentStandings,
   TOURNAMENT_PRESETS,
   type CpuSeatMetadata,
@@ -67,6 +68,7 @@ import {
   type TournamentHandContext,
   type TournamentPresetId,
   type TournamentProgress,
+  type TournamentResult,
   type TournamentStandings,
 } from "@proj-poker/engine";
 import { APP_VERSION } from "./app-version.js";
@@ -862,6 +864,16 @@ export class HandOrchestrator {
   tournamentStandingsOf(handId: string): TournamentStandings | null {
     const handIds = this.options.store.sessionHandIds(handId);
     return tournamentStandings(handIds.map((id) => this.events(id)));
+  }
+
+  /**
+   * その Hand の Session の Tournament の Result（順位と Payout。D129・#186）。Session の終わった Hand の Event Log から都度計算し、
+   * 保存しない。cash の Session・未知の Hand・終わった Hand がまだ無い Session は null。Hero の順位と Payout は placements から
+   * Hero の playerId で引く（未決の順位の Payout は null）。
+   */
+  tournamentResultOf(handId: string): TournamentResult | null {
+    const handIds = this.options.store.sessionHandIds(handId);
+    return tournamentResult(handIds.map((id) => this.events(id)));
   }
 
   /** Hero の View が変わるたびに呼ばれる listener を登録する。戻り値で解除する。未知の Hand なら null。 */
