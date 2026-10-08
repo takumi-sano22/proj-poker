@@ -151,12 +151,14 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 
 卓全体の傾向（aggression・looseness等）は、Public / 観察可能なEvidenceだけから作るProjectionです。個々のCPUのPrivate Memoryを集約して作りません。CPUが使える情報と、HeroのReviewが使える情報の境界を分けます。D10の「ユーザーが選ぶ卓の傾向（卓の編成）」とは別のものです。
 
+HeroのReviewでの扱い（D122。実装は#153）: Decision ReviewのEvidenceに、判断時点より前の保存済みのHandのpublicのEventだけから作ったTable Tendencyを構造化Evidence（Evidence ID付き）として足します。判断時点より後の情報・Learning-only Reveal・CPUのPrivate Memory / Private Hypothesis・Persona・Tiltは使いません。数値は決定論のコードが正本で、Review AIは説明だけを行います。
+
 実装（#141。`apps/server/src/memory/table-tendency.ts`・`table-tendency-policy.ts`。数値と定義はすべてOI-011の暫定値で、確定ではない）:
 
 - **作り方**: 今のSessionの保存済み（終わった）Handを論理順序（`ordinals.ord`）で並べ、`public`のEvent（Observationと同じwhitelist）だけから都度数えます（保存しない。D111）。Version付きのPolicy`phase7_table_tendency_v1`で、項目はviewer以外の席の`vpip`（looseness）・`pfr`・`aggression_frequency`（Postflopのaggression）と、卓全体の`showdown`（札を比べて決着したHandの割合）です。範囲はviewerが座っていたHandの新しい100 Handまでで、項目ごとにnumerator / denominator・Handの数・十分か（Handが10以上かつ機会が20以上）・PolicyのVersionを持ちます（形は`docs/04` §12）。壁時計を使いません（D117）。
 - **境界**: CPUが使えるのは、そのCPUが座っていたHandのpublicのEventから作った値です（座っていないHandを入れない）。HeroのReviewが使える範囲は、Heroが座って見えたHandのpublicのEventから作った値で、入り口を分けます（`buildCpuTableTendenciesFromStore` / `buildHeroTableTendencyFromStore`）。どちらにもHidden Cards・Future Cards・Learning-only Reveal・Persona・Tilt・Private Hypothesisは入りません（`memory/table-tendency-isolation.test.ts`・`table-tendency.test.ts`）。
 - **CPUへの反映**: Hand OrchestratorがHandの開始時に作り、数えたHandが1以上のCPUだけ`KnowledgeState`に`tableTendency`として足します。ClaudeのCPUは「卓の傾向」の節で、固定の読み方の説明と構造化データのままのJSONを受け取ります（Handが0のときは節ごと無く、Promptは#141より前と同じ文字列。LLMの呼び出しの回数・経路は変えない）。RuleBotは、PersonaのAdaptabilityに比例する幅（最大0.1）で、卓の`aggression_frequency`でmediumの手のCallを、卓の`vpip`でweakの手のBluffのしきい値をずらすだけです（十分なSampleの項目だけ。`phase7_rulebot_table_tendency_v1`）。合法性はLegal Actionの中から選ぶことで守ります（D40）。
-- **HeroのReviewへの接続**: まだ入れていません。§6のOpponent Observationは`unavailable`のままで、Table Tendencyを入れるとEvidence・Promptの契約（Review Evalの録画の指紋を含む）が変わるためです。Hero用の入り口（判断より前のHandに絞る`beforeOrd`付き）だけを用意しています。
+- **HeroのReviewへの接続**: D122で入れることに決まり、実装は#153です（上の「HeroのReviewでの扱い」）。#153のマージまでは、まだ入れていません。§6のOpponent Observationは`unavailable`のままで、Table Tendencyを入れるとEvidence・Promptの契約（Review Evalの録画の指紋を含む）が変わるためです。Hero用の入り口（判断より前のHandに絞る`beforeOrd`付き）だけを用意しています。
 
 ### 層の合成とOpponent Memory Eval（#106 P7-7。#142）
 

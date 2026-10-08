@@ -1,4 +1,4 @@
-# D01〜D121の採用済み人間判断。
+# D01〜D123の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -486,3 +486,11 @@
   choice: "Phase 7 は P7-0〜P7-9 を直列で進め、CPU の Memory は上限付きで KnowledgeState へ注入する（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "Phase 7の子Issueは#106の推奨どおりP7-0〜P7-9（#135〜#144）とし、依存順に直列で進める。CPUのMemoryは、KnowledgeStateに構造化したHypothesisの要約（Evidence ID付き、Subjectごとに上位5項目まで）として足し、Claudeの CPUはPromptでこれを受け取る。LLMの呼び出しの回数・経路は増やさない（PromptのTokenは少し増える）。RuleBotは同じ要約を決定論で使う。自然言語のMemoryを正本にしない。D40・D106・D110の具体化。"
+- id: D122
+  choice: "Hero の Review の Evidence に、判断時点より前に Hero が観察できた public の Table Tendency を構造化 Evidence として入れる（#153 の人間判断）"
+  status: "採用済み"
+  decision: "Hero の Decision ReviewのEvidenceに、判断時点より前の保存済みのHandのpublicのEventだけから決定論のコードで作ったTable Tendencyを、構造化Evidence（Evidence ID付き）として足す。判断時点より後の情報・Learning-only Reveal・CPUのPrivate Memory / Private Hypothesis・CPUのPersona・Tiltは使わない。Table Tendencyの数値は決定論のコードが正本で、Review AIは説明だけを行う。Review Evidence / Promptの契約の変更とdocs・Evalの更新は#153で行う。D35・D106・D117の具体化。"
+- id: D123
+  choice: "Memory 付き Prompt の Claude CPU の実モデル Eval を、API キーを使わず既存の OAuth 経路で、最大 36 Decision に限って録画する（#155 の人間判断）"
+  status: "採用済み"
+  decision: "Memory・Table Tendency・Tiltが入ったPromptのClaude CPUの品質を、eval:opponentと同じClaude Agent SDK・Claude CodeのOAuth（サブスク枠）・buildClaudeEnvの経路で録画する。API キーは使わず、API課金に切り替わる環境変数は除く（D87）。初回の上限は代表Spot 2・Persona 6・条件最大3（baseline・Loose側・Tight側）・repeat 1の最大36 Decision（Retryを含む呼び出しは最大72回相当）。確認するのは、Memory / Table Tendency / Tiltの戦略への反映の向き・Structured Output / Legal Action / Retry / Fallback・Persona Differentiation・Hidden Information Leakage 0（他CPUのPrivate Memory / Personaを含む）・Latency。CIは実モデルを呼ばず録画の再生だけで、paramsHashでPrompt / Optionsのdriftを検出する。OAuthのログイン・利用枠で実行できなければAPI キーへ切り替えず停止する。D40・D87・D121の具体化。実装は#155。"

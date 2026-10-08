@@ -249,7 +249,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D121の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D123の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -285,7 +285,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 できていること:
 
-- 設計ドキュメント（`docs/`）と人間判断（D01〜D121）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D123）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
 - Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
 - テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）。Ruling も固定 Scenario と Property Test で確かめます
@@ -321,7 +321,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - Targeted Drill（#117・D116）: Leak の判断から、Effective Stack・Bet の額・相手の傾向のどれか一つだけを決定論で変えた類題を作り（Engine の Validation を通るものだけ）、1 Hand 遊んで練習した判断を Review します。元の Hand・判断・Review の provenance を追記型の `drills`（マイグレーション v7）に残し、結果は通常の Score と別に数えます（D105）
   - Learning Reset（#118・D114）: Score・弱点の仮説・まとめの文をカテゴリごとに、Reset より後に終わった Hand だけで数え直します（前後は壁時計ではなく保存の論理順序で決めます。#132・D117）。区切りの行を追記するだけ（マイグレーション v8・v9）で、Hand の記録・Review・Note / Tag・Stats は消えません（取り消しはできません）
   - Phase 6 の Critical E2E（#119）: Session の終わりまで Play → Review → Session Review → Profile → Drill → 練習した判断の Review → Learning Reset → 再起動しても学習の記録と provenance が同じ、を CI で通します（CPU は RuleBot、Review AI は固定応答）
-- **Rich Opponent Simulation（Phase 7）**: CPU の層は Persona（Secret）・Long-term Memory（Session を跨ぐ）・Tilt（Session の中だけ）・Table Tendency を分けて持ち、どれも Event Log（正本）から Hand の開始時に作り直す Projection です（保存しない。D106・D107）。どの層も Hero の画面・API・Review には出しません
+- **Rich Opponent Simulation（Phase 7）**: CPU の層は Persona（Secret）・Long-term Memory（Session を跨ぐ）・Tilt（Session の中だけ）・Table Tendency を分けて持ち、どれも Event Log（正本）から Hand の開始時に作り直す Projection です（保存しない。D106・D107）。Persona・Memory・Tilt は Hero の画面・API・Review に出しません。Table Tendency は public の Event だけから作る卓の集計で、判断時点より前のものを Hero の Review の Evidence に入れることが D122 で決まっています（実装は #153）
   - Fixed CPU と Guest（#136・D118）: CPU は席（`cpu1` 等）と別の永続の `cpuProfileId` を持ちます。Fixed Pool（`phase7_pool_v1`）は 8 人で、Session の始まりに席ごとに Fixed CPU か Guest（1 卓に最大 1 席・その Session 限りの id）を seed で決めます。編成は追記型の `session_participants`（マイグレーション v10）に残し、Resume では同じ参加者で続けます。名前は画面に出しません
   - Observation（#137）: CPU が卓で実際に見た public の Event（Showdown で表にされた札を含む）だけを、Observer・Subject・Hand・seq・論理順序・Visibility・context 付きで Event Log から決定論で取り出します。他者の Hidden Cards・Future Cards・Learning-only Reveal・Hero の弱点は入りません
   - Private Hypothesis と Memory の注入（#138・#139・D119・D121）: Observer × Subject × context（cash / tournament）ごとに、recency decay（`phase7_memory_v1`）を掛けた傾向を作り、その CPU の KnowledgeState に、今の卓の相手ごとに上限付きの構造化データ（項目 5 つ・Evidence ID 3 つまで。`phase7_memory_injection_v1`）として渡します。他の CPU の Memory は渡しません
@@ -338,7 +338,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
 - Persona の数値（OI-005）・モデル名（`claude-haiku-4-5` / `claude-sonnet-5-5` / `claude-opus-5-5`）と判断待ち・Review・Solver の上限（OI-001）・Primary Solver（OI-002）・Eval の合格ライン（`docs/09` §5・§6）は暫定値です（永久仕様ではありません）
 - **Fixed Pool の人数・名前・Persona の内訳と Guest の出やすさ（`phase7_pool_v1`）は OI-005 の暫定値、Memory の recency decay・十分な Sample の基準・注入の上限・Tilt の Trigger と幅・Table Tendency・層の合成と Memory の Eval の合格ライン（`phase7_*` の各 Policy）は OI-011 の暫定値**です（永久仕様ではありません）
-- CPU の Memory・Tilt・Table Tendency は Hand の開始時に毎回 Event Log から計算します（Cache は無い。Cache を足すかは測って決める: #150）。Table Tendency を Hero の Review の Evidence に入れるかは未定です（#153）。Memory の節が入った Prompt の Claude の CPU の Eval は録画していません（API キーの利用は人間判断: #155）
+- CPU の Memory・Tilt・Table Tendency は Hand の開始時に毎回 Event Log から計算します（Cache は無い。Cache を足すかは測って決める: #150）。Table Tendency を Hero の Review の Evidence に入れることは D122 で決まり、実装待ちです（#153）。Memory の節が入った Prompt の Claude の CPU の Eval は、D123 により API キーを使わず OAuth 経路で最大 36 Decision を録画する予定で、まだ録画していません（#155）
 - Opponent Memory Reset は API だけで、画面の入口はありません（Hero に Fixed CPU の名前・`cpuProfileId` を見せていないため）。1 つの Fixed CPU を対象にする Reset は、`cpuProfileId` を知っている場合だけ使えます
 - テスト用の組み立て（`buildApp` に Event Store だけを独自の順序の源で渡す経路）では、既定の Learning Reset Store の区切りの番号が Event Store と別の源になります（本番の起動は同じ SQLite の DB を使うので影響しません: #157）
 - **Solver は Heads-Up の Turn / River だけ**です。Preflop・Flop・Multiway（3 人以上）・Side Pot あり・Rake ありの Spot は Unsupported で、Math・Range・KB で Review します（Multiway の Deep Solver は OI-009）。Solver の結果は Street の最初の判断（OOP）の頻度だけで、Action EV は出しません
