@@ -399,6 +399,25 @@ describe("buildOpponentPrompt", () => {
     );
   });
 
+  it("Tilt（#140）は 1 以上のときだけ節ごと入れる: 無ければ今と同じ文字列、あれば Hand の情報の節に混ぜず段階だけを書く", () => {
+    const { input } = firstDecisionInput();
+    const prompt = buildOpponentPrompt(input, "タイトで慎重");
+    expect(prompt).not.toContain("Tilt");
+    const tilt = { level: 2, maxLevel: 3, policyVersion: "phase7_tilt_v1" };
+    const withTilt = buildOpponentPrompt(
+      { ...input, knowledge: { ...input.knowledge, tilt } },
+      "タイトで慎重",
+    );
+    const sections = withTilt.split("\n\n");
+    const at = sections.findIndex((s) => s.startsWith("## あなたの今の状態"));
+    expect(at).toBeGreaterThan(0);
+    expect(sections[at]).toContain("Tilt: 2（0〜3。");
+    // Tilt の節を除けば Tilt の無い Prompt と同じ（Hand の情報の JSON に tilt を混ぜない。Policy の Version も出さない）。
+    expect(withTilt.replace(sections[at] + "\n\n", "")).toBe(prompt);
+    expect(withTilt).not.toContain("phase7_tilt_v1");
+    expect(withTilt).not.toContain('"tilt"');
+  });
+
   it("選べる Action と bet / raise の額の範囲を書き、自分の札は表記で入れる", () => {
     const { input } = firstDecisionInput();
     const prompt = buildOpponentPrompt(input);

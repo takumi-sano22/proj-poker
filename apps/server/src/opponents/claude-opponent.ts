@@ -1,6 +1,6 @@
 // Claude の Opponent Agent（Model Adapter。docs/03 §3・D87）。
 // Claude Agent SDK の query() を「1 回の判断」として使い、ローカルでログイン済みの Claude Code の OAuth（サブスク枠）で呼ぶ。API キーは使わない。
-// 渡すのはその CPU の KnowledgeState（その CPU 自身の Memory の要約を含む。D121）・Legal Action・Persona だけ（D28・docs/05 §1）。出力の検証・Retry・Fallback は Orchestrator（D40・D41）。
+// 渡すのはその CPU の KnowledgeState（その CPU 自身の Memory の要約〔D121〕と Tilt〔D107〕を含む）・Legal Action・Persona だけ（D28・docs/05 §1）。出力の検証・Retry・Fallback は Orchestrator（D40・D41）。
 // ログイン切れ・利用枠の上限・子プロセスの失敗は例外（＝障害。D86）にし、形の崩れた出力は不正な出力として Orchestrator の検証に回す。
 import { cardToString, type Card } from "@proj-poker/engine";
 import {
@@ -64,6 +64,20 @@ const MEMORY_GUIDE = [
 const MEMORY_PERSONA_LINE =
   "あなたの性格の「相手への適応」と「相手の読みの精度」の程度に合わせて使ってください。";
 
+/**
+ * Tilt の節（D107・#140）。その CPU 自身の Internal State で、1 以上のときだけ節ごと入れる（0 のときは Prompt を変えない。
+ * 条件付きの指示を文で書かない）。反映の向きは RuleBot と同じ（Looseness / Aggression を少し上げるだけ）で、合法性は変えない（D40）。
+ */
+function describeTilt(
+  tilt: NonNullable<OpponentInput["knowledge"]["tilt"]>,
+): string {
+  return [
+    "## あなたの今の状態（この Session の流れで生じた感情の揺れ。Tilt）",
+    `Tilt: ${tilt.level}（0〜${tilt.maxLevel}。0 は平常で、大きい Pot の負け・連敗・Bluff が見つかった・大勝ちで上がり、Hand が進むと下がります）`,
+    "段階が高いほど、普段の性格より参加する手が少し広がり、少し攻撃的になります。選べる Action とその額の範囲の中から選ぶことは変わりません。",
+  ].join("\n");
+}
+
 export class ClaudeOpponent implements OpponentAgent {
   constructor(private readonly options: ClaudeOpponentOptions) {}
 
@@ -119,7 +133,8 @@ export function buildOpponentPrompt(
   }
   // Memory は Hand の中の情報と分けて、説明付きの節に出す。Memory の無い CPU では節ごと入れず、この Hand の情報の節は
   // Memory を足す前（#139 より前）と同じ文字列にする（条件付きの指示を文で書かない。Opponent Eval の録画の引数も変えない）。
-  const { memory, ...table } = input.knowledge;
+  // Tilt もその CPU 自身の Internal State なので、この Hand の情報の節に混ぜず、1 以上のときだけ別の節に出す（#140）。
+  const { memory, tilt, ...table } = input.knowledge;
   sections.push(
     `## あなたに見えている情報（あなたの ID は ${input.knowledge.viewerId}。Card は 2 文字で、As はスペードの A、Td はダイヤの 10）`,
     JSON.stringify(table, cardReplacer),
@@ -129,6 +144,9 @@ export function buildOpponentPrompt(
       hasPersona ? `${MEMORY_GUIDE}\n${MEMORY_PERSONA_LINE}` : MEMORY_GUIDE,
       JSON.stringify(memory),
     );
+  }
+  if (tilt !== undefined) {
+    sections.push(describeTilt(tilt));
   }
   sections.push(
     "## 選べる Action",

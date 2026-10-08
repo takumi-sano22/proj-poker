@@ -10,6 +10,7 @@ import type {
 } from "@proj-poker/engine";
 import type { OpponentMemorySummary } from "../memory/memory-summary.js";
 import type { Persona } from "./persona.js";
+import type { CpuTilt } from "./tilt.js";
 
 /** 出力の検証で不正と判定した段。AI_ACTION_INVALID の Event にも残すので、型は Engine の Event と共有する（D83）。 */
 export type { InvalidOutputStage };
@@ -28,6 +29,11 @@ export interface OpponentCorrection {
  */
 export interface CpuKnowledgeState extends KnowledgeState {
   readonly memory?: OpponentMemorySummary;
+  /**
+   * その CPU 自身の Tilt（Internal State。D107・#140。docs/04 §5・docs/05 §4）。今の Session の保存済みの Hand から Hand の開始時に作る
+   * transient な状態で、1 以上のときだけ持つ（0 のときは項目ごと持たず、Prompt を変えない）。他の CPU の Tilt は入らない。
+   */
+  readonly tilt?: CpuTilt;
 }
 
 /** CPU に渡す入力。global な HandState・他者の Hole Cards・Deck は型の上でも渡せない。 */

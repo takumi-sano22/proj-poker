@@ -23,8 +23,11 @@ import {
   memoryReadingOf,
   RULEBOT_MEMORY_V1,
   RuleBot,
+  tiltedPersona,
   tuningFromPersona,
 } from "./rule-bot.js";
+import type { CpuTilt } from "./tilt.js";
+import { PHASE7_TILT_V1 } from "./tilt-policy.js";
 
 /** 6 人卓を seed で開始し、最初の Actor の入力を作る。 */
 function firstDecisionInput(seed: number) {
@@ -411,5 +414,92 @@ describe("RuleBot と Memory（#139・D121）", () => {
         }),
       ).toEqual(new RuleBot(seed).choose(input));
     }
+  });
+});
+
+describe("RuleBot と Tilt（#140・D107・D119）", () => {
+  const tilt = (level: number): CpuTilt => ({
+    level,
+    maxLevel: PHASE7_TILT_V1.maxLevel,
+    policyVersion: PHASE7_TILT_V1.version,
+  });
+  const decisions = (
+    persona: Persona | undefined,
+    t: CpuTilt | undefined,
+    n = 400,
+  ): PlayerAction[] =>
+    Array.from({ length: n }, (_, i) => {
+      const input = firstDecisionInput(i + 1);
+      return new RuleBot(1000 + i, persona).choose(
+        t === undefined
+          ? input
+          : { ...input, knowledge: { ...input.knowledge, tilt: t } },
+      );
+    });
+  const rate = (actions: PlayerAction[], types: PlayerAction["type"][]) =>
+    actions.filter((a) => types.includes(a.type)).length / actions.length;
+
+  it("Preflop Looseness と Aggression だけを 1 段 0.05 ずつ上げ、上限は 3 段（+0.15）。他の軸は変えない", () => {
+    const nit = PERSONA_PRESETS.nit;
+    const t3 = tiltedPersona(nit, tilt(3));
+    expect(t3.traits.preflopLooseness).toBeCloseTo(0.3, 10);
+    expect(t3.traits.aggression).toBeCloseTo(0.5, 10);
+    expect({ ...t3.traits, preflopLooseness: 0, aggression: 0 }).toEqual({
+      ...nit.traits,
+      preflopLooseness: 0,
+      aggression: 0,
+    });
+    expect(t3.leaks).toEqual(nit.leaks);
+    // 範囲外の段は上限で止め、軸は 1 を超えない。
+    expect(tiltedPersona(nit, tilt(9))).toEqual(t3);
+    expect(
+      tiltedPersona(PERSONA_PRESETS.maniac, tilt(3)).traits.aggression,
+    ).toBe(1);
+    // 知らない Policy の Version は拒否する（黙って別の Policy で反映しない）。
+    expect(() =>
+      tiltedPersona(nit, { ...tilt(1), policyVersion: "unknown" }),
+    ).toThrow(RangeError);
+  });
+
+  it("Tilt が上がるほど参加と Raise が増える（同じ seed で比べる）", () => {
+    const calm = decisions(PERSONA_PRESETS.tag_regular, undefined);
+    const tilted = decisions(PERSONA_PRESETS.tag_regular, tilt(3));
+    const vpip = (a: PlayerAction[]) => rate(a, ["call", "raise", "bet"]);
+    expect(vpip(tilted)).toBeGreaterThan(vpip(calm));
+    expect(rate(tilted, ["raise", "bet"])).toBeGreaterThanOrEqual(
+      rate(calm, ["raise", "bet"]),
+    );
+  });
+
+  it.each(PERSONA_PRESET_IDS)(
+    "%s が Tilt 3 でも、選ぶ Action は常に Legal Action の中（額も範囲内の整数）",
+    (id: PersonaPresetId) => {
+      for (let seed = 1; seed <= 200; seed++) {
+        const input = firstDecisionInput(seed);
+        const action = new RuleBot(seed, PERSONA_PRESETS[id]).choose({
+          ...input,
+          knowledge: { ...input.knowledge, tilt: tilt(3) },
+        });
+        const option = input.legal.actions.find((a) => a.type === action.type);
+        expect(option).toBeDefined();
+        if (
+          (action.type === "bet" || action.type === "raise") &&
+          (option?.type === "bet" || option?.type === "raise")
+        ) {
+          expect(Number.isSafeInteger(action.amount)).toBe(true);
+          expect(action.amount).toBeGreaterThanOrEqual(option.min);
+          expect(action.amount).toBeLessThanOrEqual(option.max);
+        }
+      }
+    },
+  );
+
+  it("Persona なしの RuleBot は Tilt があっても判断を変えない。同じ seed・同じ Tilt なら同じ判断列（再現性）", () => {
+    expect(decisions(undefined, tilt(3), 100)).toEqual(
+      decisions(undefined, undefined, 100),
+    );
+    expect(decisions(PERSONA_PRESETS.lag, tilt(2), 50)).toEqual(
+      decisions(PERSONA_PRESETS.lag, tilt(2), 50),
+    );
   });
 });

@@ -84,6 +84,11 @@ import {
   PERSONA_PROFILE_VERSION,
   type PersonaPresetId,
 } from "./opponents/persona.js";
+import {
+  buildTiltsFromStore,
+  type CpuTilt,
+  type TiltSeat,
+} from "./opponents/tilt.js";
 import { RuleBot } from "./opponents/rule-bot.js";
 
 /** Orchestrator が返す失敗。Engine の拒否理由はそのまま通す。 */
@@ -207,6 +212,11 @@ interface HandRuntime {
    * 参加者の引けない CPU（v10 より前の Session・Drill）は持たない。
    */
   readonly memories: ReadonlyMap<string, OpponentMemorySummary>;
+  /**
+   * CPU ごとの、その CPU 自身の Tilt（D107・#140）。Hand の開始時に今の Session の保存済みの Hand だけから作り、Hand の間は変えない。
+   * 1 以上の CPU だけが持つ。Persona の無い CPU・Drill は持たない。
+   */
+  readonly tilts: ReadonlyMap<string, CpuTilt>;
   /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
   readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
@@ -441,6 +451,8 @@ export class HandOrchestrator {
     if (!started.ok) return started;
     // CPU の Memory は、この Hand を書く前に保存済みの Hand だけから作る（決まった時点・同じ入力なら同じ要約。D121・D117）。
     const memories = this.opponentMemories(plan);
+    // Tilt も同じ時点で、今の Session の保存済みの Hand だけから作る（新しい Session は 0 から。D107・D117）。
+    const tilts = this.opponentTilts(plan);
     // 新しい Session の最初の Hand には、開始の Event に続けて SESSION_STARTED を置く（D95）。
     // Session の最初の Hand は全員が均等 Stack（Big Blind より多い）で始まるので、開始の時点では終わっていない。
     const opening = plan.newSession
@@ -491,6 +503,7 @@ export class HandOrchestrator {
       sessionId: plan.sessionId,
       opponents,
       memories,
+      tilts,
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -574,6 +587,8 @@ export class HandOrchestrator {
       opponents,
       // Drill の専用の Session は参加者の行を持たないので、CPU の Memory も持たない（D116・D118）。
       memories: new Map(),
+      // Drill の専用の Session はその Hand だけなので、Tilt も持たない（D116）。
+      tilts: new Map(),
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -948,6 +963,27 @@ export class HandOrchestrator {
   }
 
   /**
+   * 座っている CPU ごとに、その CPU 自身の Tilt を作る（D107・D119・#140）。Event Store へこの Hand を書く前に呼ぶ。
+   * - Tilt は Session の中の席ごとの transient な状態で、Memory（参加者の Identity）とは別の層。今の Session の Hand だけを読むので、
+   *   新しい Session（Session 終了の後・放置された Session の後）は 0 から始まり、Resume では同じ Session の Hand から同じ値になる
+   * - 上がり幅・下がり方は席の Persona（Fixed CPU は Pool の Persona、Guest は席の Persona）。Persona の無い CPU は Tilt を持たない
+   */
+  private opponentTilts(plan: HandPlan): ReadonlyMap<string, CpuTilt> {
+    if (plan.newSession) return new Map();
+    const seats: TiltSeat[] = plan.seats.flatMap((s) => {
+      const presetId = plan.personas[s.playerId];
+      if (s.playerId === this.heroId || presetId === undefined) return [];
+      return [
+        { playerId: s.playerId, traits: PERSONA_PRESETS[presetId].traits },
+      ];
+    });
+    return buildTiltsFromStore(this.options.store, {
+      sessionId: plan.sessionId,
+      seats,
+    });
+  }
+
+  /**
    * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
@@ -1260,10 +1296,16 @@ export class HandOrchestrator {
     // CPU に渡すのはその CPU の KnowledgeState と Legal Action だけ（global State・他者の札・Deck を渡さない）。
     // AI_ACTION_INVALID は誰の Projection にも入らないので、再要求でも KnowledgeState は同じ。
     // Memory はその CPU 自身のもの（Hand の開始時に作った要約）だけを足す。無い CPU では項目ごと持たない（D121）。
+    // Tilt も同じく、その CPU 自身の 1 以上の段階だけを足す（0 の CPU では項目ごと持たず、Prompt を変えない。D107）。
     const projected = projectKnowledgeState(events, playerId);
     const memory = rt.memories.get(playerId);
+    const tilt = rt.tilts.get(playerId);
     const base: OpponentInput = {
-      knowledge: memory === undefined ? projected : { ...projected, memory },
+      knowledge: {
+        ...projected,
+        ...(memory === undefined ? {} : { memory }),
+        ...(tilt === undefined ? {} : { tilt }),
+      },
       legal,
     };
     const emergency = rt.emergencyBots.get(playerId);
