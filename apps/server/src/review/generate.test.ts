@@ -17,17 +17,30 @@ import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
 import { forbiddenKeys } from "../testing/leaks.js";
 import { withoutKbBodies } from "../testing/review-eval/harness.js";
 import { BTN_VS_UTG, playScriptedHand } from "../testing/review-eval/hands.js";
-import { allEvidenceIds, buildReviewEvidence } from "./evidence.js";
+import type { TableTendency } from "../memory/table-tendency.js";
+import {
+  EMPTY_TABLE_TENDENCY,
+  INSUFFICIENT_TABLE_TENDENCY,
+  SAMPLE_TABLE_TENDENCY,
+} from "../testing/table-tendency-fixture.js";
+import {
+  allEvidenceIds,
+  buildReviewEvidence,
+  evidenceIdsOf,
+} from "./evidence.js";
+import { buildFollowUpPrompt } from "./followup.js";
 import { toPlayerNames } from "./identifiers.js";
 import { REVIEW_MAX_TURNS, generateReview, modelRoleFor } from "./generate.js";
 import {
   REVIEW_SYSTEM_PROMPT,
   REVIEW_TEXT_MAX,
+  TABLE_TENDENCY_GUIDE,
   buildReviewPrompt,
   checkReviewOutput,
   reviewOutputSchema,
 } from "./review-ai.js";
 import { checkEvidenceSufficiency } from "./sufficiency.js";
+import type { FollowUpTarget } from "./reveal-types.js";
 import type { ReviewEvidence, SolverEvidenceItem } from "./types.js";
 
 const kb = loadKb();
@@ -467,5 +480,181 @@ describe("generateReview", () => {
       name: "ClaudeCallError",
       failureKind: "unauthenticated",
     });
+  });
+});
+
+describe("Table Tendency（D122・#153）の Prompt・Schema・Grounding", () => {
+  async function riverWith(
+    tableTendency?: TableTendency,
+  ): Promise<ReviewEvidence> {
+    const sets = heroInformationSets(playScriptedHand(BTN_VS_UTG), "hero");
+    const set = sets[3] as HeroInformationSet;
+    const reasons =
+      extractImportantSpots(sets).find((s) => s.decisionIndex === 3)?.reasons ??
+      [];
+    return buildReviewEvidence(set, reasons, {
+      kb,
+      solver: notInstalled,
+      ...(tableTendency === undefined ? {} : { tableTendency }),
+    });
+  }
+  const id = (item: string) => `tendency:review-btn_vs_utg/d3/${item}`;
+  const exploitEnum = (e: ReviewEvidence) =>
+    (
+      reviewOutputSchema(e) as {
+        properties: { exploitBasis: { enum: string[] } };
+      }
+    ).properties.exploitBasis.enum;
+
+  it("十分な項目があれば Opponent Observation に、項目ごとの id と決定論の割合で入り、Evidence IDs・選べる id に残る", async () => {
+    const e = await riverWith(SAMPLE_TABLE_TENDENCY);
+    expect(e.opponentObservation).toEqual({
+      status: "available",
+      tableTendency: {
+        policyVersion: "phase7_table_tendency_v1",
+        hands: 12,
+        items: [
+          {
+            id: id("vpip"),
+            item: "vpip",
+            rate: 0.3,
+            numerator: 18,
+            denominator: 60,
+            hands: 12,
+            sufficient: true,
+          },
+          {
+            id: id("pfr"),
+            item: "pfr",
+            rate: 0.117,
+            numerator: 7,
+            denominator: 60,
+            hands: 12,
+            sufficient: true,
+          },
+          {
+            id: id("aggression_frequency"),
+            item: "aggression_frequency",
+            rate: 0.333,
+            numerator: 5,
+            denominator: 15,
+            hands: 6,
+            sufficient: false,
+          },
+          {
+            id: id("showdown"),
+            item: "showdown",
+            rate: 0.333,
+            numerator: 4,
+            denominator: 12,
+            hands: 12,
+            sufficient: false,
+          },
+        ],
+      },
+    });
+    const ids = [
+      id("vpip"),
+      id("pfr"),
+      id("aggression_frequency"),
+      id("showdown"),
+    ];
+    expect(evidenceIdsOf(e).tableTendency).toEqual(ids);
+    for (const i of ids) expect(allEvidenceIds(e).has(i)).toBe(true);
+    // Table Tendency 以外の Evidence は変わらない。
+    expect({ ...e, opponentObservation: null }).toEqual({
+      ...evidence,
+      opponentObservation: null,
+    });
+  });
+
+  it("あるときだけ Prompt に読み方と項目の説明を添え、exploitBasis に observation を選べる", async () => {
+    const e = await riverWith(SAMPLE_TABLE_TENDENCY);
+    const prompt = buildReviewPrompt(e);
+    expect(prompt).toContain(TABLE_TENDENCY_GUIDE);
+    expect(prompt).toContain("- tableTendency: 卓の傾向");
+    expect(prompt).toContain("- sufficient: サンプルが十分か");
+    expect(prompt).toContain(`"id":"${id("vpip")}","item":"vpip","rate":0.3`);
+    expect(exploitEnum(e)).toEqual(["observation", "none"]);
+    expect(exploitEnum(evidence)).toEqual(["none"]);
+  });
+
+  it("無い・Hand が 0・十分な項目が無いときは、Evidence・Prompt・Schema が #153 より前と同じ（Review Eval の録画の指紋を変えない）", async () => {
+    for (const t of [
+      undefined,
+      EMPTY_TABLE_TENDENCY,
+      INSUFFICIENT_TABLE_TENDENCY,
+    ]) {
+      const e = await riverWith(t);
+      expect(e).toEqual(evidence);
+      expect(evidenceIdsOf(e)).not.toHaveProperty("tableTendency");
+      const prompt = buildReviewPrompt(e);
+      expect(prompt).toBe(buildReviewPrompt(evidence));
+      expect(prompt).not.toContain(TABLE_TENDENCY_GUIDE);
+      expect(prompt).not.toContain("tableTendency");
+      expect(reviewOutputSchema(e)).toEqual(reviewOutputSchema(evidence));
+    }
+  });
+
+  it("Grounding: exploitBasis が observation なら、サンプルが十分な項目の id を挙げる（保留の項目だけ・id 無しは不正）", async () => {
+    const e = await riverWith(SAMPLE_TABLE_TENDENCY);
+    const exploit = {
+      exploitBasis: "observation",
+      exploit:
+        "卓全体が Preflop で参加しやすい傾向なので、Value の幅を少し広げられる",
+    };
+    expect(
+      checkReviewOutput({ ...validOutput(e), ...exploit }, e),
+    ).toMatchObject({ ok: false, stage: "grounding" });
+    expect(
+      checkReviewOutput(
+        {
+          ...validOutput(e),
+          ...exploit,
+          evidenceIds: [e.math.id, id("showdown")],
+        },
+        e,
+      ),
+    ).toMatchObject({ ok: false, stage: "grounding" });
+    expect(
+      checkReviewOutput(
+        { ...validOutput(e), ...exploit, evidenceIds: [e.math.id, id("vpip")] },
+        e,
+      ),
+    ).toMatchObject({
+      ok: true,
+      value: { exploit: { basis: "observation", text: exploit.exploit } },
+    });
+    // exploitBasis が none なら、卓の傾向の id（保留の項目を含む）を挙げても通る。
+    expect(
+      checkReviewOutput(
+        { ...validOutput(e), evidenceIds: [e.math.id, id("showdown")] },
+        e,
+      ),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("Follow-up（Pass A への質問）の Prompt にも、卓の傾向があるときだけ項目の説明を出す", async () => {
+    const target = (e: ReviewEvidence): FollowUpTarget => ({
+      pass: "decision",
+      reviewId: "r1",
+      handId: e.handId,
+      decisionIndex: e.decisionIndex,
+      version: 1,
+      evidence: e,
+      explanation: {
+        practical: "妥当な Call。",
+        theory: { basis: "none", text: "" },
+        exploit: { basis: "none", text: "" },
+        conclusionChangers: ["相手の Range"],
+      },
+    });
+    const withTendency = await riverWith(SAMPLE_TABLE_TENDENCY);
+    expect(
+      buildFollowUpPrompt(target(withTendency), [], "卓の傾向は？"),
+    ).toContain("- tableTendency: 卓の傾向");
+    const without = buildFollowUpPrompt(target(evidence), [], "卓の傾向は？");
+    expect(without).not.toContain("- tableTendency:");
+    expect(without).not.toContain("- sufficient:");
   });
 });

@@ -86,19 +86,37 @@ export const USER_READ_GUIDE = [
   "- 相手の実際の札は渡していません。読みが当たっていたかどうかは書かないでください。",
 ].join("\n");
 
+/**
+ * Table Tendency（opponentObservation.tableTendency）があるときだけ Pass A の Prompt に添える、読み方（D122・docs/05 §5）。
+ * 数値は決定論のコードが正本で、Review AI は説明だけを行う。卓全体の傾向を特定の相手の傾向として扱わせない。
+ */
+export const TABLE_TENDENCY_GUIDE = [
+  "## 卓の傾向（opponentObservation.tableTendency）の扱い",
+  "- 卓の傾向は、この Hand より前に Hero が座って見えた Hand の公開された Action だけから数えた、Hero 以外の卓全体の傾向です。個々の相手の傾向ではなく、相手の実際の札・この Hand の結果は含みません。",
+  "- 項目は vpip（自発的に Pot に Chip を入れた割合）・pfr（Preflop で Raise した割合）・aggression_frequency（Postflop の Aggression の頻度）・showdown（札を比べて決着した Hand の割合）です。",
+  "- 割合・回数・機会の数・Hand の数は Evidence の値をそのまま使い、計算し直したり作ったりしないでください。",
+  "- サンプルが足りない（sufficient が false の）項目は保留です。根拠にせず、触れるならサンプルが足りないと書いてください。",
+  "- 卓全体の傾向を、特定の相手の傾向として断定しないでください。exploit で卓の傾向を根拠にするときは exploitBasis を observation にし、根拠にしたサンプルが十分な項目の id を evidenceIds に入れてください。",
+].join("\n");
+
 /** Review AI へ渡す Prompt（user message）。Evidence の JSON と、再要求のときだけ前回の不正の理由。 */
 export function buildReviewPrompt(
   evidence: ReviewEvidence,
   correction?: ReviewCorrection,
 ): string {
+  const hasTableTendency = evidence.opponentObservation.status === "available";
   const sections = [
     "## Evidence（Card は 2 文字で、As はスペードの A、Td はダイヤの 10）",
     JSON.stringify(evidence, cardReplacer),
-    evidenceGlossary("decision"),
+    evidenceGlossary("decision", { tableTendency: hasTableTendency }),
   ];
   // Hero の読みがあるときだけ扱い方を添える（構造ゲート。読みの無い判断の Prompt は従来と同じ文字列のまま）。
   if (evidence.userRead.status === "collected") {
     sections.push(USER_READ_GUIDE);
+  }
+  // 卓の傾向があるときだけ読み方を添える（構造ゲート。無い判断の Prompt は #153 より前と同じ文字列のまま）。
+  if (hasTableTendency) {
+    sections.push(TABLE_TENDENCY_GUIDE);
   }
   if (correction !== undefined) {
     sections.push(
@@ -156,7 +174,7 @@ function theoryBases(evidence: ReviewEvidence): string[] {
 }
 
 function exploitBases(evidence: ReviewEvidence): string[] {
-  // 相手の Observation の記録はまだ無い（status は常に unavailable）。記録ができたら observation を足す。
+  // 相手の Observation（今は Table Tendency だけ。D122）が無ければ observation を選ばせない。
   return evidence.opponentObservation.status === "unavailable"
     ? ["none"]
     : ["observation", "none"];
@@ -248,13 +266,21 @@ export function checkReviewOutput(
       );
     }
   }
-  if (
-    exploit.basis === "observation" &&
-    evidence.opponentObservation.status === "unavailable"
-  ) {
-    return grounding(
-      "相手の Observation が無いのに exploitBasis が observation",
-    );
+  if (exploit.basis === "observation") {
+    if (evidence.opponentObservation.status === "unavailable") {
+      return grounding(
+        "相手の Observation が無いのに exploitBasis が observation",
+      );
+    }
+    // 卓の傾向を根拠にするなら、サンプルが十分な項目の id を挙げる（保留の項目だけを根拠にさせない。D122）。
+    const sufficientIds = evidence.opponentObservation.tableTendency.items
+      .filter((i) => i.sufficient)
+      .map((i) => i.id);
+    if (!sufficientIds.some((id) => evidenceIds.includes(id))) {
+      return grounding(
+        `exploitBasis が observation なら evidenceIds にサンプルが十分な卓の傾向の id（${sufficientIds.join(" / ")} のどれか）を入れる`,
+      );
+    }
   }
   return {
     ok: true,

@@ -107,7 +107,12 @@ export function buildFollowUpPrompt(
     `## 対象の Review（${target.pass === "decision" ? "Decision Review" : "Reveal Review"}・Version ${target.version}）`,
     "### Evidence（Card は 2 文字で、As はスペードの A、Td はダイヤの 10）",
     JSON.stringify(target.evidence, cardReplacer),
-    evidenceGlossary(target.pass),
+    // 卓の傾向（D122）のある Pass A の Evidence にだけ、その項目の説明を出す（無い Evidence の Prompt は #153 より前と同じ）。
+    evidenceGlossary(target.pass, {
+      tableTendency:
+        target.pass === "decision" &&
+        target.evidence.opponentObservation.status === "available",
+    }),
     "### Review の説明",
     JSON.stringify(target.explanation),
   ];

@@ -1,6 +1,7 @@
 // Review Orchestrator（docs/03 §2・§7）。保存済みの Hand の Hero の判断ごとに、Pass A（Decision Review）・Pass B（Reveal Review。#83）の
 // Review と、Review の Version への Follow-up の答えを非同期で作り、Version / ターン付きで追記する。
 // - Pass A の入力は Event Log（正本）から作る判断時点の Hero Information Set だけ（heroInformationSets。Hindsight Leak の防止・不変条件 3）
+//   と、判断の Hand より前に保存した同じ Session の Hand の public の Event だけから作る Hero の Table Tendency（D122・#153）
 // - Pass B だけが Hand 後の Learning-only Full Reveal（projectLearningReveal）を使う。Pass B の Evidence は Pass A・CPU の入力に渡さない
 // - Follow-up は指定した Pass の Review の Evidence だけで答える（Pass A への質問に Hand 後の情報を混ぜない）
 // - 生成は Hand の進行と切り離して裏で進め、呼び出し側には「待ち（pending）」の状態を返す（docs/03 §7・async ガイダンス 3）
@@ -19,6 +20,10 @@ import {
 } from "../claude/structured-query.js";
 import { isHandEnd, type EventStore } from "../event-store.js";
 import type { LoadedKb } from "../kb/index.js";
+import {
+  buildHeroTableTendencyFromStore,
+  type TableTendency,
+} from "../memory/table-tendency.js";
 import type { SolverAdapter } from "../solver/types.js";
 import { buildReviewEvidence } from "./evidence.js";
 import { generateReview } from "./generate.js";
@@ -518,6 +523,7 @@ export class ReviewService {
       playerNames: toPlayerNames(this.deps.players),
       kb: this.deps.kb,
       solver: this.deps.solver,
+      tableTendency: this.heroTableTendencyBefore(handId),
       signal: this.closing.signal,
       onSolverFailure: (err) =>
         this.deps.logger?.warn(
@@ -545,6 +551,27 @@ export class ReviewService {
         assessment: record.assessment,
       };
     };
+  }
+
+  /**
+   * 判断時点の Hero の Table Tendency（D122・#153）。判断の Hand と同じ Session の、その Hand より前（論理順序。D117）に保存した Hand の
+   * public の Event だけから作る（その Hand 自身・後の Hand は入らない。判断より後の情報を混ぜない）。
+   * Review の対象は終わった Hand だけ（target）なので、Session と論理順序の番号は必ずある。
+   */
+  private heroTableTendencyBefore(handId: string): TableTendency {
+    const store = this.deps.events;
+    const sessionId = store.sessionIdOfHand(handId);
+    const ord = store.savedOrder(handId);
+    if (sessionId === null || ord === null) {
+      throw new Error(
+        `終わった Hand ${handId} の Session か論理順序の番号が無い`,
+      );
+    }
+    return buildHeroTableTendencyFromStore(store, {
+      sessionId,
+      heroPlayerId: this.deps.heroId,
+      beforeOrd: ord,
+    });
   }
 
   private async generateReveal(

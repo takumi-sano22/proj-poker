@@ -14,6 +14,7 @@ import type {
   Street,
 } from "@proj-poker/engine";
 import type { KbLabel, KbTopic } from "../kb/types.js";
+import type { TableTendencyItemId } from "../memory/table-tendency-policy.js";
 import type {
   BetTree,
   SolverActionFrequency,
@@ -131,11 +132,46 @@ export interface RangeEvidence {
     | null;
 }
 
-/** Opponent Observation Evidence。相手の Observation の記録（CPU Memory・Hero の観察の蓄積）はまだ無い。 */
-export interface OpponentObservationEvidence {
-  readonly status: "unavailable";
-  readonly reason: string;
+/**
+ * Table Tendency の項目 1 つ（D122・#153）。数値は決定論のコード（memory/table-tendency.ts）が数えた値が正本で、Review AI は説明だけを行う。
+ * provenance は id（Hand と判断と項目）と、項目・Policy の版。
+ */
+export interface TableTendencyEvidenceItem {
+  /** `tendency:<handId>/d<判断の番号>/<項目>`。 */
+  readonly id: string;
+  readonly item: TableTendencyItemId;
+  /** numerator / denominator（小数第 3 位まで。Review AI に割り算させない）。機会が 0 なら null。 */
+  readonly rate: number | null;
+  readonly numerator: number;
+  /** 機会の数。 */
+  readonly denominator: number;
+  /** その項目の機会があった Hand の数。 */
+  readonly hands: number;
+  /** Policy の基準（Hand の数と機会の数）以上か。false の項目は保留（根拠にしない）。 */
+  readonly sufficient: boolean;
 }
+
+/**
+ * 判断時点より前に Hero が座って見えた、今の Session の保存済みの Hand の public の Event だけから作った、
+ * Hero 以外の卓全体の傾向（D122）。個々の相手の傾向ではなく、CPU の Private Memory / Hypothesis・Persona・Tilt を含まない。
+ */
+export interface TableTendencyEvidence {
+  readonly policyVersion: string;
+  /** 数えた Hand の数。 */
+  readonly hands: number;
+  readonly items: readonly TableTendencyEvidenceItem[];
+}
+
+/**
+ * Opponent Observation Evidence。Hero が観察できた相手の傾向は、今は Table Tendency（D122・#153）だけ。
+ * 十分な項目が 1 つも無ければ unavailable のまま（Prompt を #153 より前と同じ文字列に保つ。Review Eval の録画の指紋を変えない）。
+ */
+export type OpponentObservationEvidence =
+  | { readonly status: "unavailable"; readonly reason: string }
+  | {
+      readonly status: "available";
+      readonly tableTendency: TableTendencyEvidence;
+    };
 
 /**
  * Solver Evidence。Capability Gate（supports）を通り、実際に解けたときだけ supported。
@@ -253,6 +289,8 @@ export interface EvidenceIdSet {
   readonly solver: readonly string[];
   readonly knowledge: readonly string[];
   readonly userRead: readonly string[];
+  /** Table Tendency の項目の id（D122・#153）。卓の傾向が Evidence に無い Review（#153 より前の Review を含む）には無い。 */
+  readonly tableTendency?: readonly string[];
   readonly cited: readonly string[];
 }
 
