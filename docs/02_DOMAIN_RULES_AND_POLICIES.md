@@ -215,7 +215,7 @@ Solver / ReviewがRakeを無視する場合、その制約をReviewへ表示し�
 - **Elimination**: Bust = Eliminationです。Re-entry / Rebuy / Add-onは初期Scope外です。
 - **Starting Stack・Blind Level**: Version付きConfigの暫定値です（OI-007）。標準6-max STTの暫定値はD127です（Starting Stack 1,500・Blind 10/20から10 Handごとに1 Level・BBAの額はBBと同じ・参加費100pt × 参加人数がPrize Pool）。
 - **time-base（D128）**: CoreとUIの両方で選べるPresetにします（暫定値は標準と同じStackとBlind表で1 Level 10分。OI-007）。経過時間はプレイ時間（Handの開始から終わりまでの累計。アプリを閉じていた時間は数えない）で測り、LevelはHandの開始時に決めて`HAND_STARTED`に固定します。壁時計は経過時間の計測にだけ使い、意味上の順序には使いません（D117）。hand-countのLevelはSession内のHandの数（論理順序）で決めます。
-- **Ante の Pot での扱い（D128。TDA準拠）**: AnteはDead Moneyで、Call / Raiseの額とUncalledの返却に数えません。Big Blind AnteはBBの席がBlindを先に払い、残りでAnteを払います（Stackが足りなければAnteが減る）。Big Blind AnteはMain Potに入れます。per_playerのAnteは各自の拠出としてPotの段に入れます。
+- **Ante の Pot での扱い（D128。TDA準拠）**: AnteはDead Moneyで、Call / Raiseの額とUncalledの返却に数えません。Big Blind AnteはBBの席がBlindを先に払い、残りでAnteを払います（Stackが足りなければAnteが減る）。Big Blind AnteはMain Potに入れます。per_playerのAnteは各自の拠出としてPotの段に入れます。per_playerでStackがAnteとBlindの両方に足りないときはAnteを先に払い、FoldしたPlayerのAnteは返しません（Dead Money。FoldしていないPlayerの誰のCommitも超える分は最後のPotに入る）。この2つは人間判断を経ていないOI-007の暫定Policyです（確定ではない。#184）。Handの開始時のLevelと経過（Level・Sessionの何Hand目か・プレイ時間の累計）は`HAND_STARTED`の`tournament`に残します（`docs/04` §3）。
 - **同じHandで複数人がBustしたとき**（OI-007の暫定Policy。確定ではない）: Handの開始時のStackが多い方を上位にします。開始時のStackも同じなら同順位とし、その順位の賞金を合算して等分します（TDAの標準に合わせた暫定値）。
 - **Payoutの端数**（OI-007の暫定Policy。確定ではない）: Prize Poolに割合を掛けて切り捨て、余りは上位の順位から1単位ずつ配ります。同順位の等分の余りは、席順（Buttonの左から時計回り）に1単位ずつ配ります（D75の端数と同じ考え方）。
 - **HeroのBust（D129）**: HeroがBustした時点でそのTournamentを終え、Heroの順位とPayoutを確定します。残ったCPUの順位は未決として表示し、CPUだけで続けません。Heroが最後の1人になれば優勝です。
