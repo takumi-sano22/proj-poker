@@ -7,7 +7,10 @@
 // loose と tight は Tilt が同じなので、両者の差は相手と卓の傾向の向きだけになる。
 // 呼び出しの上限（D123）はここで定数にし、ハーネスへ渡す query() を上限の番人で包んで超えて呼ばない。
 import type { ActionType } from "@proj-poker/engine";
-import type { ClaudeQuery } from "../../opponents/claude-opponent.js";
+import {
+  API_BILLING_ENV_KEYS,
+  type ClaudeQuery,
+} from "../../opponents/claude-opponent.js";
 import {
   PERSONA_PRESET_IDS,
   type PersonaPresetId,
@@ -164,6 +167,38 @@ export const dryRunQuery: ClaudeQuery = (params) => {
     } as never;
   })();
 };
+
+/**
+ * buildClaudeEnv が外す変数に加え、OAuth 以外の経路（Bedrock / Vertex / Foundry・別の接続先）へ切り替わる変数。
+ * buildClaudeEnv は本番の経路なので変えず、手動の Eval では「子プロセスの env にあれば実行しない」にする（D123・D126: API 課金に切り替えない）。
+ */
+export const OTHER_ROUTE_ENV_KEYS = [
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "ANTHROPIC_BASE_URL",
+] as const;
+
+/** 子プロセスの env に、OAuth 以外の経路へ切り替わる変数があれば例外（モデルを呼ぶ前に止める）。 */
+export function assertOAuthRoute(env: Readonly<Record<string, string>>): void {
+  const found = [...API_BILLING_ENV_KEYS, ...OTHER_ROUTE_ENV_KEYS].filter(
+    (k) => k in env,
+  );
+  if (found.length > 0) {
+    throw new Error(
+      `OAuth 以外の経路に切り替わる変数がある: ${found.join(", ")}（D123・D126）`,
+    );
+  }
+}
+
+/** 子プロセスと親の env に経路の変数があるかの表示（値は出さない）。 */
+export function describeRouteEnv(
+  env: Readonly<Record<string, string>>,
+  parent: Readonly<Record<string, string | undefined>>,
+): string {
+  const keys = [...API_BILLING_ENV_KEYS, ...OTHER_ROUTE_ENV_KEYS];
+  return `子プロセスの env: ${keys.map((k) => `${k} ${k in env ? "あり" : "なし"}`).join(" / ")}（親の env: ${keys.map((k) => `${k} ${parent[k] === undefined ? "なし" : k in env ? "あり" : "あり（外した）"}`).join(" / ")}）`;
+}
 
 /** 録画の置き場所（既存の opponent-eval.json とは別。CI はこれも再生する）。 */
 export const MEMORY_PROMPT_RECORDING_URL = new URL(

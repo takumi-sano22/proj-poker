@@ -173,6 +173,38 @@ Memory（Hypothesisの要約）・Table Tendency・Tiltの節が入ったPrompt�
 
 - 条件で判断が変わったのは River の LAG（Call → loose で Fold・tight で Raise）と Weak-tight Recreational（Fold → tight で Call）、Flop の Nit（Check → tight で Fold）と Weak-tight Recreational（Check → tight で Bet）だけで、他の Persona は 3 条件で同じ Action でした。1条件・1 Personaに1判断なので、向きの差は偶然の幅に入ります（結論にしない）。
 
+#### Riverの追加測定（Issue #171・D126）
+
+初回のRiverの向き（loose < tight）が少数標本の揺れかを確かめるため、`river_facing_big_bet`の3条件（#155と同じ組み立て）× Persona 6にrepeat 2・3を足して録画し、初回の録画のRiverの分（repeat 1）と合わせてrepeat 3で集計します。経路・番人・dry-run・`--record` / `--resume`は#155と同じで、上限は判断36・呼び出し72（`RIVER_REPEAT_EVAL_LIMITS`）です。
+
+- **置き場所**: `river-repeat-eval.ts`（母集団・上限・Riverの割合の集計）・`river-repeat-run.ts`（手動の実行。`eval:opponent-memory-river`）・`river-repeat-eval.test.ts`（CI）・`recordings/opponent-memory-prompt-river-repeat.json`（追加分だけの録画）。初回の録画（`opponent-memory-prompt-eval.json`）は読むだけで書き換えません。
+- **CI**: 初回の録画のRiverの18判断と追加分の36判断を合わせて本番と同じ経路で再生し、合計（54判断）と追加分だけの集計が録画時と一致すること・Leakageと障害が0件・上限の中で取ったことを確かめます。追加分の1回目の指紋は初回の録画の同じSpot・Personaと一致する（同じPrompt・Options）ことも確かめます。
+
+録画の結果（2026-10-08・`claude-haiku-4-5`（`opponent_fast`）・Agent SDK 0.3.289・実行1回・呼び出し36回 / 上限72）:
+
+| 指標 | 追加分（36判断） | 合計（54判断） |
+|---|---|---|
+| 呼び出し | 36 | 54 |
+| Structured Output Valid率 / Illegal Action率 / Retry率 / Fallback率 | 1 / 0 / 0 / 0 | 1 / 0 / 0 / 0 |
+| 障害 / Hidden Information Leakage | 0 / 0 | 0 / 0 |
+| Latency（ms。min / median / p90 / max） | 7440 / 9736 / 11366 / 12615 | 7440 / 9923 / 11366 / 14280 |
+| Persona Differentiation | 0.711 | 0.711（baseline 0.733・loose 0.756・tight 0.644） |
+
+Riverの割合（合計 repeat 3。全Personaの合計。各条件18判断）:
+
+| 条件 | Call | Fold | Raise | RuleBotのCall（400 seed） |
+|---|---|---|---|---|
+| baseline | 0.389 | 0.389 | 0.222 | 0.22 |
+| loose | 0.389 | 0.389 | 0.222 | 0.269 |
+| tight | 0.389 | 0.389 | 0.222 | 0.138 |
+
+PersonaごとのCallの割合（baseline / loose / tight。各3判断）: TAG Regular 0.667 / 1 / 0.667・LAG 0.667 / 0.333 / 0.333・Calling Station 1 / 1 / 1・Nit 0 / 0 / 0・Maniac 0 / 0 / 0（Raise 1 / 1 / 0.667）・Weak-tight Recreational 0 / 0 / 0.333。
+
+- 初回のloose < tight（0.333 < 0.5）は、repeat 3では続きませんでした（3条件とも0.389で同じ。追加分だけでは0.333 / 0.417 / 0.333）。逆向きではなく、ClaudeのRiverのCallの割合には、相手と卓の傾向の向き（loose / tight）による差が見えない、というのが合計のサンプルでの事実です（RuleBotはloose > tight）。同じ条件の中でも判断が揺れたPersona（TAG Regular・LAG・Maniac・Weak-tight Recreational）があり、初回の1判断だけでは条件の効果と揺れを分けられなかったことが分かります。Calling Station・Nitは9判断とも同じActionでした。
+- 「CheckできるのにFold」（初回の`flop_cbet@tight`のNit）はFlopの判断なので、Riverだけのこの測定では再現を確かめていません（D126の範囲外）。Tiltだけの効果も、この3条件では分けられないままです。
+- 結果を見てPrompt / Policyは変えていません（D126）。
+
+
 ## 6. Review Eval
 
 確認:

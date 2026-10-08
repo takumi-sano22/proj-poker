@@ -10,7 +10,6 @@ import { parseArgs } from "node:util";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { MODEL_ROLES } from "../../config.js";
 import {
-  API_BILLING_ENV_KEYS,
   buildClaudeEnv,
   type ClaudeQuery,
 } from "../../opponents/claude-opponent.js";
@@ -22,7 +21,9 @@ import {
   MEMORY_PROMPT_EVAL_SPOTS,
   MEMORY_PROMPT_RECORDING_URL,
   assertDecisionLimit,
+  assertOAuthRoute,
   createCallBudget,
+  describeRouteEnv,
   directionReport,
   dryRunQuery,
   missingCases,
@@ -50,26 +51,9 @@ if (modes.length !== 1) {
 
 // 実測のための上限。本番の OPPONENT_TIMEOUT_MS ではなく十分長くする（eval:opponent と同じ）。
 const MEASURE_TIMEOUT_MS = 120_000;
-// buildClaudeEnv が外す変数に加え、OAuth 以外の経路（Bedrock / Vertex / Foundry・別の接続先）へ切り替わる変数。
-// buildClaudeEnv は本番の経路なので変えず、ここでは「あれば実行しない」にする（D123: API 課金に切り替えない）。
-const OTHER_ROUTE_ENV_KEYS = [
-  "CLAUDE_CODE_USE_BEDROCK",
-  "CLAUDE_CODE_USE_VERTEX",
-  "CLAUDE_CODE_USE_FOUNDRY",
-  "ANTHROPIC_BASE_URL",
-] as const;
-
 const env = buildClaudeEnv(process.env);
-const billingInChild = API_BILLING_ENV_KEYS.filter((k) => k in env);
-const otherRoute = OTHER_ROUTE_ENV_KEYS.filter((k) => k in env);
-console.log(
-  `子プロセスの env: ${API_BILLING_ENV_KEYS.map((k) => `${k} ${k in env ? "あり" : "なし"}`).join(" / ")}（親の env: ${API_BILLING_ENV_KEYS.map((k) => `${k} ${process.env[k] === undefined ? "なし" : "あり（外した）"}`).join(" / ")}）`,
-);
-if (billingInChild.length + otherRoute.length > 0) {
-  throw new Error(
-    `OAuth 以外の経路に切り替わる変数がある: ${[...billingInChild, ...otherRoute].join(", ")}（D123）`,
-  );
-}
+console.log(describeRouteEnv(env, process.env));
+assertOAuthRoute(env);
 
 const spots = MEMORY_PROMPT_EVAL_SPOTS;
 const personas = MEMORY_PROMPT_EVAL_PERSONAS;
