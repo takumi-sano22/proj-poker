@@ -38,6 +38,13 @@ export interface EvalSpot {
   readonly board: string;
   /** 判断の直前までの Action（席の playerId と Action）。 */
   readonly script: readonly (readonly [string, PlayerAction])[];
+  /**
+   * 元にした代表 Spot の id（#155。Memory 等の層を足した Spot で使う）。Hand の ID はこちらから作り、層の有無の他は
+   * 元の Spot と同じ Prompt にする（Hand の ID は KnowledgeState に入り、Prompt の引数になる）。
+   */
+  readonly baseSpotId?: string;
+  /** 本番の入力に層（Memory・Tilt・Table Tendency）を足す（#155。本番の Orchestrator と同じく KnowledgeState に入れる）。 */
+  readonly withLayers?: (input: OpponentInput) => OpponentInput;
 }
 
 // 本番の既定の卓（6-max・Hero 1 人 + CPU 5 人・100BB。席順は Hero → cpu1 → … → cpu5）。最初の Hand は Hero が Button なので、
@@ -125,7 +132,7 @@ export const OPPONENT_EVAL_SPOTS: readonly EvalSpot[] = [
 /** Spot を Engine で判断の直前まで進める。手番が想定と違えば例外（Spot の定義の誤り）。 */
 export function buildSpot(spot: EvalSpot): SpotFixture {
   const started = startHand({
-    handId: `eval-${spot.id}`,
+    handId: `eval-${spot.baseSpotId ?? spot.id}`,
     seats: SEATS,
     buttonPlayerId: BUTTON,
     // 本番と同じ Preset（Rule Profile の ID も同じ）。ID は Prompt の引数（録画の指紋）に入るので、変えたら録画を取り直す。
@@ -151,11 +158,15 @@ export function buildSpot(spot: EvalSpot): SpotFixture {
       `${spot.id}: 手番が ${spot.actorId} ではない（${legal?.playerId ?? "なし"}）`,
     );
   }
+  const input: OpponentInput = {
+    knowledge: projectKnowledgeState(events, spot.actorId),
+    legal,
+  };
   return {
     actorId: spot.actorId,
     events,
     state,
-    input: { knowledge: projectKnowledgeState(events, spot.actorId), legal },
+    input: spot.withLayers?.(input) ?? input,
   };
 }
 

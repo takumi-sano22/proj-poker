@@ -84,6 +84,8 @@ export interface RunOptions {
   readonly clock?: () => number;
   /** 1 判断が終わるたびに呼ぶ（進捗の表示）。 */
   readonly onRecord?: (record: EvalRecord, done: number, total: number) => void;
+  /** 進める判断を絞る（録画に足りない判断だけを追加で集めるとき。#155）。省略時は全部。 */
+  readonly only?: (c: EvalCase) => boolean;
 }
 
 /** 全 Spot × Persona × 繰り返しの判断を集める。結果は Spot・Persona・何回目の順に並べて返す。 */
@@ -94,7 +96,8 @@ export async function runOpponentEval(
   for (const spot of options.spots) {
     for (const personaId of options.personas) {
       for (let repeat = 1; repeat <= options.repeats; repeat++) {
-        cases.push({ spotId: spot.id, personaId, repeat });
+        const c = { spotId: spot.id, personaId, repeat };
+        if (options.only?.(c) ?? true) cases.push(c);
       }
     }
   }
@@ -157,6 +160,7 @@ async function runCase(
       (card) => `input: ${card}`,
     ),
     ...forbiddenKeys(base).map((key) => `input: ${key}`),
+    ...memoryLeaks(base).map((l) => `input: ${l}`),
   ]);
   const attempts: EvalAttempt[] = [];
   let input = base;
@@ -238,7 +242,32 @@ function promptLeaks(
   const personas = Object.values(PERSONA_PRESETS)
     .filter((p) => p.id !== personaId && prompt.includes(p.label))
     .map((p) => p.label);
-  return [...cards, ...personas];
+  // Learning-only Reveal・Hero の弱点（Review の側の情報）は CPU の Prompt に入らない（#155。memory-eval の (6) と同じ語）。
+  const reviewTerms = [...prompt.matchAll(/reveal|weakness|learning/gi)].map(
+    (m) => m[0],
+  );
+  // Memory の節は、その CPU 自身の Memory の 1 つだけ（他の CPU の Private Memory を並べていない）。
+  const memorySections = prompt.split(MEMORY_SECTION_HEADING).length - 1;
+  return [
+    ...cards,
+    ...personas,
+    ...reviewTerms,
+    ...(memorySections > 1 ? [`Memory の節が ${memorySections} つ`] : []),
+  ];
+}
+
+/** Prompt の Memory の節の見出し（claude-opponent.ts の MEMORY_GUIDE の 1 行目の頭）。 */
+const MEMORY_SECTION_HEADING = "## あなたの記憶";
+
+/**
+ * 入力の Memory が、その CPU 自身の観察として形が合っているか（#155）。Subject に自分の席が入っていれば、
+ * 他の CPU の Memory（その CPU を相手として観察したもの）を渡している。
+ */
+function memoryLeaks(input: OpponentInput): string[] {
+  const { memory, viewerId } = input.knowledge;
+  return (memory?.subjects ?? [])
+    .filter((s) => s.playerId === viewerId)
+    .map((s) => `memory の Subject に自分（${s.playerId}）`);
 }
 
 const VOLATILE_OPTION_KEYS = new Set(["env", "abortController", "cwd"]);
