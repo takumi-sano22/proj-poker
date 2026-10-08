@@ -271,6 +271,36 @@ describe("RuleBot と Memory（#139・D121）", () => {
     );
   });
 
+  it("同額までの All-in（Call と同じ）は Aggressor にせず、額を引き上げた相手の傾向で Call をずらす", () => {
+    const input = facingRaise();
+    const caller = input.knowledge.seats.find(
+      (s) =>
+        s.playerId !== input.aggressor &&
+        s.playerId !== input.knowledge.viewerId,
+    )?.playerId as string;
+    const knowledge = {
+      ...input.knowledge,
+      actionHistory: [
+        ...input.knowledge.actionHistory,
+        {
+          playerId: caller,
+          street: input.knowledge.street,
+          action: "all_in" as const,
+          amount: input.knowledge.currentBet,
+          toAmount: input.knowledge.currentBet,
+          allIn: true,
+        },
+      ],
+      memory: memoryOf({
+        [input.aggressor]: { aggression_frequency: [0.95, true] },
+        [caller]: { aggression_frequency: [0.05, true] },
+      }),
+    };
+    expect(
+      memoryAdjustedTuning(base, knowledge, reading).mediumLooseCall,
+    ).toBeGreaterThan(base.mediumLooseCall);
+  });
+
   it("Postflop の Bluff は、降りていない相手全員の fold_to_cbet_flop が十分なときだけ、一番降りない相手でずらす", () => {
     const input = facingRaise();
     const flop = {

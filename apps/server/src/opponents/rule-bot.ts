@@ -156,7 +156,7 @@ function deviation(frequency: number, reference: number): number {
 /**
  * Memory の要約で、medium の手の Call（mediumLooseCall）と weak の手の Bluff（weakBluffFrequency）のしきい値だけをずらす。
  * 決定論で、乱数を引かない（引く回数を変えると seed の再現性が崩れる）。reading が 0 か Memory が無ければ元のまま。
- * - Bet / Raise に直面していて、この Street で最後に額を上げた相手の aggression_frequency が十分なら、Call をずらす
+ * - この Street で最後に額を引き上げた相手（同額までの All-in は除く）が自分でなく、その aggression_frequency が十分なら、Call をずらす
  * - Postflop でまだ降りていない（All-in でない）相手全員の fold_to_cbet_flop が十分なら、その最小（一番降りない相手）で Bluff をずらす
  */
 export function memoryAdjustedTuning(
@@ -171,17 +171,18 @@ export function memoryAdjustedTuning(
   const shift = reading * RULEBOT_MEMORY_V1.maxShift;
   let { mediumLooseCall, weakBluffFrequency } = base;
 
-  const aggressor = [...knowledge.actionHistory]
-    .reverse()
-    .find(
-      (a) =>
-        a.street === knowledge.street &&
-        a.playerId !== knowledge.viewerId &&
-        (a.action === "bet" || a.action === "raise" || a.action === "all_in") &&
-        a.toAmount === knowledge.currentBet &&
-        a.toAmount > 0,
-    );
-  if (aggressor !== undefined) {
+  // この Street で最後に額を引き上げた相手。同額までの All-in（Call と同じ）は額を引き上げないので Aggressor にしない。
+  let level = 0;
+  let aggressor: { playerId: string } | undefined;
+  for (const a of knowledge.actionHistory) {
+    if (a.street !== knowledge.street) continue;
+    const raises =
+      (a.action === "bet" || a.action === "raise" || a.action === "all_in") &&
+      a.toAmount > level;
+    if (raises) aggressor = a;
+    level = Math.max(level, a.toAmount);
+  }
+  if (aggressor !== undefined && aggressor.playerId !== knowledge.viewerId) {
     const aggression = sufficientFrequency(
       subjectOf(aggressor.playerId),
       "aggression_frequency",
