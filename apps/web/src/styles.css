@@ -2682,6 +2682,78 @@ input {
   font-size: 13px;
 }
 
+/* 卓の傾向（#169）。項目ごとに 1 つの面にして、狭い画面でも折り返すだけで横に溢れない */
+.tendency {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tendency__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+}
+
+.tendency__item--pending {
+  background: transparent;
+  color: var(--color-on-surface-muted);
+}
+
+.tendency__name {
+  flex: 1 1 14em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tendency__value {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.tendency__meta {
+  flex: 1 1 10em;
+  min-width: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+.tendency__badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* 広い画面は列をそろえて、項目ごとの割合を縦に比べやすくする */
+@media (min-width: 560px) {
+  .tendency__item {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 8.5em) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+  }
+}
+
+.tendency__sufficient {
+  border-color: var(--color-assess-good);
+  color: var(--color-assess-good);
+}
+
+.tendency__pending {
+  border-color: var(--color-assess-caution);
+  color: var(--color-assess-caution);
+}
+
 .freq {
   display: grid;
   gap: 6px;

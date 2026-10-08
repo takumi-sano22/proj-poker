@@ -9,11 +9,14 @@ import {
   decisionLabel,
   solverActionLabel,
   solverNote,
+  tendencyItemLabel,
+  tendencyValueText,
 } from "../lib/review.js";
 import type {
   DecisionContext,
   KnowledgeItem,
   MathEvidence,
+  OpponentObservation,
   RangeEvidence,
   SolverEvidence,
 } from "../lib/review-api.js";
@@ -423,6 +426,70 @@ export function Assumptions({
       <ul className="evidence-list evidence-list--muted">
         {items.map((a, i) => (
           <li key={i}>{a}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * 卓の傾向（Table Tendency。D122・#169）。Review の Evidence に保存されている決定論の値をそのまま読むだけで、画面で計算しない。
+ * 判断より前の Hand の public の Action だけから数えた、Hero 以外の卓全体の傾向（個々の相手の傾向ではない）。
+ * 表示するのは Evidence の項目（割合と分子 / 分母・機会があった Hand の数・十分か）と数えた Hand の数だけで、
+ * CPU の Private Memory・Persona・Tilt は Evidence に無く、ここにも出さない。
+ * 十分な項目が無い Review（#153 より前の Review を含む）は、無いと分かる文だけを出す。
+ */
+export function TableTendencyView({
+  observation,
+  cited,
+}: {
+  readonly observation: OpponentObservation;
+  readonly cited: readonly string[];
+}) {
+  if (observation.status !== "available") {
+    return (
+      <p className="evidence__muted">
+        卓の傾向はありません。この判断より前の Hand の記録が足りず、十分な項目が
+        1 つも無いため、卓の傾向は根拠にしていません。
+      </p>
+    );
+  }
+  const { hands, items } = observation.tableTendency;
+  return (
+    <div className="evidence-grid">
+      <p className="evidence__note">
+        この判断より前の {hands} Hand の、公開された Action
+        だけから数えた卓全体の傾向です（VPIP・PFR・攻めの頻度は Hero
+        以外の席の合計、Showdown は Hand
+        単位。個々の相手の傾向ではありません）。サンプルが足りない項目は保留で、根拠にしません。
+      </p>
+      <ul className="tendency">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            className={`tendency__item${item.sufficient ? "" : " tendency__item--pending"}`}
+            data-tendency-item={item.item}
+          >
+            <span className="tendency__name">
+              {tendencyItemLabel(item.item)}
+            </span>
+            <span className="tendency__value">{tendencyValueText(item)}</span>
+            <span className="tendency__meta">
+              機会があった Hand: {item.hands}
+            </span>
+            <span className="tendency__badges">
+              <span
+                className={`badge ${item.sufficient ? "tendency__sufficient" : "tendency__pending"}`}
+              >
+                {item.sufficient
+                  ? "サンプルが十分"
+                  : "サンプルが足りない（保留）"}
+              </span>
+              {cited.includes(item.id) && (
+                <span className="badge evidence__cited">説明の根拠</span>
+              )}
+            </span>
+          </li>
         ))}
       </ul>
     </div>

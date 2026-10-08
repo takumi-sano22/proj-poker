@@ -13,6 +13,7 @@ import {
   versionLabel,
 } from "../lib/review.js";
 import type {
+  OpponentObservation,
   ReviewGeneration,
   ReviewRecord,
   RevealRecord,
@@ -283,6 +284,194 @@ describe("Pass A（判断時点の Review）", () => {
       />,
     );
     expect(html).toContain("相手の傾向の記録がまだ無いため");
+  });
+});
+
+/** 卓の傾向のある Evidence（十分な項目 2 つと保留の項目 2 つ。サーバーの SAMPLE_TABLE_TENDENCY と同じ数）。 */
+const availableObservation: OpponentObservation = {
+  status: "available",
+  tableTendency: {
+    policyVersion: "phase7_table_tendency_v1",
+    hands: 12,
+    items: [
+      {
+        id: "tendency:h1/d0/vpip",
+        item: "vpip",
+        rate: 0.3,
+        numerator: 18,
+        denominator: 60,
+        hands: 12,
+        sufficient: true,
+      },
+      {
+        id: "tendency:h1/d0/pfr",
+        item: "pfr",
+        rate: 0.117,
+        numerator: 7,
+        denominator: 60,
+        hands: 12,
+        sufficient: true,
+      },
+      {
+        id: "tendency:h1/d0/aggression_frequency",
+        item: "aggression_frequency",
+        rate: 0.333,
+        numerator: 5,
+        denominator: 15,
+        hands: 6,
+        sufficient: false,
+      },
+      {
+        id: "tendency:h1/d0/showdown",
+        item: "showdown",
+        rate: null,
+        numerator: 0,
+        denominator: 0,
+        hands: 0,
+        sufficient: false,
+      },
+    ],
+  },
+};
+
+function renderWithObservation(
+  observation: OpponentObservation | undefined,
+  cited: string[] = ["math:1"],
+  extra: Record<string, unknown> = {},
+): string {
+  const base = decisionRecord();
+  const evidence = {
+    ...base.evidence,
+    ...extra,
+    ...(observation === undefined ? {} : { opponentObservation: observation }),
+  };
+  return renderToStaticMarkup(
+    <DecisionReviewBody
+      record={decisionRecord({ evidenceIds: { cited }, evidence })}
+      nameOf={nameOf}
+      handId="h1"
+      decisionIndex={0}
+    />,
+  );
+}
+
+describe("Pass A の根拠の欄の卓の傾向（D122・#169）", () => {
+  it("Evidence の卓の傾向を、割合と分子 / 分母・機会があった Hand・十分か保留かで項目ごとに出す", () => {
+    const html = renderWithObservation(availableObservation);
+    expect(html).toContain("卓の傾向（Table Tendency）");
+    expect(html).toContain("この判断より前の 12 Hand");
+    // 割合は Evidence の rate をそのまま（四捨五入）。分子 / 分母を併記する。
+    expect(html).toContain("30%（18 / 60）");
+    expect(html).toContain("12%（7 / 60）");
+    expect(html).toContain("33%（5 / 15）");
+    // 機会が 0 の項目は値を出さず、分子 / 分母だけ。
+    expect(html).toContain("—（0 / 0）");
+    expect(html).toContain("自分から Pot に入った割合（VPIP）");
+    expect(html).toContain("札を比べて決着した Hand の割合（Showdown）");
+    expect(html).toContain("機会があった Hand: 6");
+    // 十分と保留は文字で区別する（色だけにしない）。
+    expect(html.match(/サンプルが十分/g)).toHaveLength(2);
+    expect(html.match(/サンプルが足りない（保留）/g)).toHaveLength(2);
+    // 個々の相手の傾向ではない、と断る。
+    expect(html).toContain("個々の相手の傾向ではありません");
+  });
+
+  it("説明が根拠に挙げた項目の id には「説明の根拠」の印を付け、挙げていなければ付けない", () => {
+    const cited = renderWithObservation(availableObservation, [
+      "tendency:h1/d0/vpip",
+    ]);
+    // 区分の見出しと、挙げた項目 1 つの印。
+    expect(cited.match(/説明の根拠/g)).toHaveLength(2);
+    const notCited = renderWithObservation(availableObservation, []);
+    expect(notCited).not.toContain("説明の根拠");
+  });
+
+  it("十分な項目が無い Review（unavailable）は、無いと分かる文を出し、項目は出さない", () => {
+    const html = renderWithObservation({ status: "unavailable" });
+    expect(html).toContain("卓の傾向（Table Tendency）");
+    expect(html).toContain("卓の傾向はありません");
+    expect(html).not.toContain("tendency__item");
+    expect(html).not.toContain("サンプルが十分");
+  });
+
+  it("#153 より前の記録（opponentObservation が無い）はエラーにせず、欄を出さない", () => {
+    const html = renderWithObservation(undefined);
+    expect(html).not.toContain("卓の傾向");
+    expect(html).toContain("根拠（Evidence）");
+  });
+
+  it("Evidence に紛れた CPU の Persona・Memory・Tilt・Reveal の値は、欄にも画面のどこにも出さない（Evidence の項目だけを読む）", () => {
+    // Evidence の型に無い項目（サーバーが返さないはずの値）を紛れ込ませる。画面は Evidence の項目だけを読む。
+    const available = availableObservation;
+    const polluted = {
+      ...available,
+      persona: "tight_passive_secret",
+      tilt: { level: 3, sentinel: "TILT_SENTINEL" },
+      privateMemory: "MEMORY_SENTINEL",
+      privateHypothesis: "HYPOTHESIS_SENTINEL",
+      tableTendency: {
+        ...available.tableTendency,
+        persona: "PERSONA_SENTINEL",
+        reveal: [c(9, "h")],
+        items: available.tableTendency.items.slice(0, 1).map((item) => ({
+          ...item,
+          persona: "ITEM_PERSONA_SENTINEL",
+          tilt: "ITEM_TILT_SENTINEL",
+        })),
+      },
+    } as OpponentObservation;
+    const html = renderWithObservation(polluted, ["math:1"], {
+      persona: "TOP_PERSONA_SENTINEL",
+    });
+    expect(html).toContain("30%（18 / 60）");
+    for (const sentinel of [
+      "tight_passive_secret",
+      "TILT_SENTINEL",
+      "MEMORY_SENTINEL",
+      "HYPOTHESIS_SENTINEL",
+      "PERSONA_SENTINEL",
+      "TOP_PERSONA_SENTINEL",
+      "ITEM_PERSONA_SENTINEL",
+      "ITEM_TILT_SENTINEL",
+    ]) {
+      expect(html).not.toContain(sentinel);
+    }
+    // 卓の傾向の欄に、CPU の内部状態・Hand 後の情報を指す語は出ない。
+    const section = html.slice(html.indexOf("卓の傾向（Table Tendency）"));
+    const tendency = section.slice(0, section.indexOf("Solver"));
+    for (const word of [
+      "Persona",
+      "Memory",
+      "Tilt",
+      "Hypothesis",
+      "Reveal",
+      "全員の札",
+    ]) {
+      expect(tendency).not.toContain(word);
+    }
+  });
+
+  it("知らない項目（新しい Policy の項目）は ID のまま出し、画面を壊さない", () => {
+    const html = renderWithObservation({
+      status: "available",
+      tableTendency: {
+        policyVersion: "phase7_table_tendency_v2",
+        hands: 3,
+        items: [
+          {
+            id: "tendency:h1/d0/future_item",
+            item: "future_item" as unknown as "vpip",
+            rate: 0.5,
+            numerator: 1,
+            denominator: 2,
+            hands: 3,
+            sufficient: false,
+          },
+        ],
+      },
+    });
+    expect(html).toContain("future_item");
+    expect(html).toContain("50%（1 / 2）");
   });
 });
 
