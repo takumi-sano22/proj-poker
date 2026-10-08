@@ -253,6 +253,23 @@ Phase 6（Session Learning）の通しは、上の1〜10と重ならないよう
 - serverの設定は1本目と同じ（`e2e/support/server.ts`）に、`TABLE_SIZE=2`と`FAKE_REVIEW_ASSESSMENT=improvement_suggested`（固定応答のPass Aの段階評価を「改善の余地あり」にする。Leakが無いとDrillの候補が出ないため。既定は`reasonable`）を足します。
 - EventからStats / Scoreを作り直せること・Hidden Persona / Learning-only Revealが漏れないことの単体・統合テストは§10に置きます。
 
+### Phase 7のCritical E2E（Issue #144）
+
+Phase 7（Rich Opponent Simulation）の通しは、Fixed CPUとGuestの卓で複数のSessionを遊ぶ流れを別の1本（`e2e/tests/opponent-memory.spec.ts`）で通します。
+
+1. 6人卓で、HeroがCall / Checkだけで打ち、HeroがBustしてSessionが終わるまでPlayする。「新しい Session を始める」で次のSessionを始める
+2. 前のSessionのobservable Evidenceを、次のSessionの同じ`cpuProfileId`のCPUがMemoryとして使う: 次のSessionの最初のHandの開始時に、両方のSessionに座ったFixed CPUのMemoryは、前のSessionで同じ卓にいたHandの数だけHeroを見ていて、EvidenceはそのCPUが座っていたHandのAction
+3. Guestは次のSessionにMemoryを持ち越さない: 前のSessionのGuestはそのSessionの中ではMemoryを積むが、次のSessionには座らない。次のSessionのGuestは空のMemoryから始まり、Fixed CPUから見た新しいGuestも初対面
+4. CPU-to-CPUのPrivate Memoryが第三者のCPUに漏れない: どのObserverのMemoryも、見たHandの数がそのObserverとSubjectが同じ卓にいたHandの数と一致し、EvidenceはObserverが座っていたHandだけ。前のSessionから座るFixed CPU AがFixed CPU Bを見ていても、次のSessionで初めて座るFixed CPU Cから見たBは0
+5. TiltはSessionの終わりでResetされる: 前のSessionの終わりにTiltが1以上で、次のSessionにも座るFixed CPUがいて、次のSessionの最初のHandの開始時のTiltは全員0（Memoryは持ち越す）
+6. Opponent Memory Reset（`POST /api/opponents/memory-resets`・`{ "scope": "all" }`）の後は、Resetより前のHandをMemoryに使わない（Resetの後の最初のHandは全員が空のMemory、その次のHandはResetより後のHandだけから作る）。User Note / Tag（Resetの前に画面から残したもの）は変わらない
+7. Heroの画面と、Replay・HandのSSE（終わったHand）・Note / TagのAPIの応答に、Memory・Tilt・Table Tendencyの値、PoolのIdentity（`cpuProfileId`・Guestのid・名前）・Persona・`phase7_`のPolicyの版が出ない
+
+- HiddenのMemory・Persona・TiltはHeroの画面・APIに出さない（D105・D107）ので、確認用のAPIを本番に足しません。2〜6はテストプロセス（Node）からserverの一時DBを読み取り専用で開き、serverがHandの開始時に使うのと同じProjectionの関数（`buildOpponentMemoriesFromStore`・`buildTiltsFromStore`。入力はそのHandより前に保存されたHandだけ）で作り直して確かめます（`e2e/support/opponent-memory.ts`）。そのため`pnpm e2e`は`NODE_OPTIONS=--conditions=@proj-poker/source`でPlaywrightを動かし、`apps/server`・Engineをbuildせずに`src`から読みます。
+- serverの設定は1本目と同じ（`e2e/support/server.ts`）に、`POKER_SEED=20261042`を足します。このseedでは、1つ目のSessionが数HandでHeroのBustで終わり、両方のSessionにGuestが座り、2つ目のSessionで初めて座るFixed CPUと、1つ目の終わりにTiltが1以上で2つ目にも座るFixed CPUがいます。編成が変わってこの前提が崩れたら、検査を空振りさせずに前提のassertで落とします（seedを選び直す）。
+- 画面は1280×900で動かします。既定の1280×720では、Sessionの終わりの「新しい Session を始める」がHeroの席に覆われて押せません（#158。このE2Eでは直さない）。
+- HandはReplayの一覧の並びに頼らず、開始の応答のhandIdで特定します。「次の Hand へ」「新しい Session を始める」の後は、画面が新しいHandに切り替わるまで待ちます（`e2e/support/next-hand.ts`。#133）。
+
 ## 9. Property / Fuzz
 
 有効な用途:
@@ -285,3 +302,18 @@ Phase 6 → 7のGate（`docs/08` §3.2）の項目と、それを確かめるテ
 Hidden Persona / Learning-only RevealのLeakage 0は、経路ごとのテスト（`learning.test.ts`・`session-review.test.ts`・`drills.test.ts`・`evidence.test.ts`の`forbiddenKeys`・`collectCards`）に加え、`apps/server/src/routes/learning-leakage.test.ts`がHand API・User Read・Note / Tag・Pass A / Pass B・Drillを1本の流れで通してから、Heroに返すLearningの応答（Session Review・Profile・Drillの一覧・Note / Tag・読みの後のHeroView・Pass AのEvidenceの読み）にPersonaの語・Pass Bの文・Heroが知り得ない札が無いことを確かめます（#119）。Drillの一覧の`variant` / `change`（`opponent_tendency`のPreset）はDrill自身の設定で、元のCPUのHidden Personaではないので除きます（`docs/07` §7）。
 
 意味上の順序（D117・#132）が壁時計の巻き戻りで崩れないことは、各Storeの`now`を注入して後ろへ戻る時計を作って確かめます（本番の起動に時計をずらす仕組みは足さない）: `apps/server/src/event-store.test.ts`（「壁時計が後ろへ戻っても、listHands・finishedHandIds・sessionHandIds は保存の順、途中の Hand は始めた順で並ぶ」「後に Hand が終わった Session の時刻の方が古くても、latestSessionProjection はその Session を選ぶ」。メモリ内とSQLiteの両方）・`sqlite-event-store.test.ts`（「再起動後のメモリの Hand の開始時刻が保存済みの Hand より前に記録されても、listHands の先頭はメモリの Hand」。#129の再現）・`learning/learning-reset.test.ts`（「Hand の終わりの時刻が Reset より後でも保存が Reset より前なら除き、時刻が前でも保存が後なら入れる」「2 回目の Reset の時刻の方が古くても、追加の順で後の Reset を区切りにする」。#130）・`routes/drills.test.ts`（「Drill の系列の Score の Reset の前後は保存の順で決め、壁時計が戻っても崩れない」）・`db/database.test.ts`（「版 8 の DB に版 9（ordinals）を当てると、既存の行は変えずに Hand と Reset の論理順序を backfill する」）。E2Eは一覧の並び（`hands[0]`）に頼らず、前の段階で取ったhandIdとの差分で対象のHandを特定します（`e2e/tests/session.spec.ts`・`learning.spec.ts`）。
+
+## 11. Rich Opponent Simulation（Phase 7）のテスト
+
+Phase 7 → 8のGate（`docs/08` §3.2）の項目と、それを確かめるテストの対応です。Observation・Hypothesis・Memoryの要約・Tilt・Table Tendencyはどれも、Event Log（正本）と`session_participants`・`opponent_memory_resets`からHandの開始時に作り直すProjectionで、保存しません（D37・D106・D107）。
+
+| Gateの項目 | テスト |
+|---|---|
+| Fixed CPU IdentityとGuestの寿命がテストされる | `apps/server/src/opponents/cpu-pool.test.ts`（「Fixed CPU は Session を跨いで同じ cpuProfileId、Guest の id は Session ごとに別で次の Session へ持ち越さない」等）・`apps/server/src/memory/observation.test.ts`（「Guest は Observer でも Subject でも、次の Session では読まない」）・`e2e/tests/opponent-memory.spec.ts`（§8の3） |
+| Observationがprovenanceを持つ | `apps/server/src/memory/observation.test.ts`（「Observer・Subject・hand_id・seq・ord・Visibility・context を持ち、Subject は席でなく参加者で引く」等） |
+| CPU Private MemoryのIsolation Testが通る | `apps/server/src/memory/opponent-hypothesis.test.ts`（「A の B への Hypothesis は A の観察だけから作り、A が座っていない Hand（C の観察）を使わない」等）・`memory-injection-isolation.test.ts`・`table-tendency-isolation.test.ts`・`apps/server/src/opponents/tilt-isolation.test.ts`・`e2e/tests/opponent-memory.spec.ts`（§8の4・7） |
+| Learning-only RevealがMemoryに入らない | `apps/server/src/memory/observation.test.ts`（抽出の値に、BoardとShowdownで表にされた札以外のCardが無い）・`observation-isolation.test.ts`・`memory-injection-isolation.test.ts`（Learning-only Revealを参照しない） |
+| recency decayを含むHypothesis Projectionが再構築可能 | `apps/server/src/memory/opponent-hypothesis.test.ts`（recencyの減衰・決定論と論理順序）・`apps/server/src/memory/memory-reset.test.ts`（Resetの後のObservation・Hypothesis・注入） |
+| Tiltがdeterministic / versioned / transient | `apps/server/src/opponents/tilt.test.ts`（`phase7_tilt_v1`・State Machineの畳み込み・Sessionごとの Reset）・`tilt-isolation.test.ts`・`e2e/tests/opponent-memory.spec.ts`（§8の5） |
+| Cash / Tournament contextのStrategy Hypothesisが分離される | `apps/server/src/memory/opponent-hypothesis.test.ts`（「Cash と Tournament の Hypothesis は混ざらない（Raw Observation は共通・Hypothesis は context ごと）」） |
+| Phase 7のCritical E2E / Evalが通る | `e2e/tests/opponent-memory.spec.ts`（§8）・`apps/server/src/testing/opponent-eval/memory-eval.test.ts`（§5「Opponent MemoryのEval」） |

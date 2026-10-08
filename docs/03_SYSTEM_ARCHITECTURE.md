@@ -30,13 +30,14 @@ packages/
 apps/
 ├─ server/   Local Application Runtime（Fastify。Claude・SQLiteはここだけが扱う）
 └─ web/      Local Browser UI（Vite + React。ブラウザへClaudeの資格情報を渡さない）
-e2e/         6-max SessionのE2E（Playwright。#85・D98。プロダクトのコードは持たない）
+e2e/         Critical E2E（Playwright。#85・#119・#144・D98。プロダクトのコードは持たない）
 ```
 
 - `apps/web`はdev時に`/api`を`apps/server`へproxyし、ブラウザは同一originの`/api`だけを呼びます。proxy先のポートは`apps/server`と同じ環境変数`PORT`（既定3001）です（#85）。
 - `apps/server`はlocal専用で`127.0.0.1`にbindします。
 - `packages/engine`はruntime依存を持たず、`apps/*`へも依存しません（D68）。
 - `apps/server`は`packages/engine`をworkspace依存で使います。typecheck・lint・dev（tsx）・testではEngineをbuildせずに`src`から読みます（Engineの`package.json`の`exports`にある条件`@proj-poker/source`を、serverの`tsconfig.json`の`customConditions`・`vitest.config.mjs`・`tsx --conditions`で指定）。`build`（`tsconfig.build.json`）と`start`はbuild済みの`dist`を使います。
+- `e2e`はプロダクトのコードを持ちませんが、Phase 7のE2E（#144）は`apps/server`のProjectionの関数（Memory・Tiltの組み立て）と`SqliteEventStore`を相対パスでimportし、テストプロセスからserverの一時DBを読み取り専用で開いて確かめます（確認用のAPIを本番に足さないため。`docs/09` §8）。Engineと同じ条件`@proj-poker/source`で`src`から読みます（`e2e/tsconfig.json`の`customConditions`と、`pnpm e2e`の`NODE_OPTIONS=--conditions=@proj-poker/source`）。
 - `apps/web`も`packages/engine`をworkspace依存（devDependencies）にしますが、importするのは型（`HeroView`・`LegalActionSet`・`PlayerAction`等）と、表示用の決定論の関数（Chipの構成`composeChips`〔#62〕・Pot Odds の`potOdds`〔#79〕）だけです。Engineのロジックをブラウザで動かして合法性や他者の札を判断しません。型は同じ条件`@proj-poker/source`（webの`tsconfig.json`の`customConditions`）で`src`から読みます。
 
 ### Phase 1の実装方針（D70〜D75）
