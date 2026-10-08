@@ -26,6 +26,7 @@ import {
   applyPhysicalActions,
   foldHandEvents,
   getLegalActions,
+  MAX_PLAYERS,
   nextHandSeating,
   projectHeroView,
   projectKnowledgeState,
@@ -58,6 +59,10 @@ import {
 } from "./config.js";
 import type { EventStore } from "./event-store.js";
 import type { SessionPlayerSubject } from "./notes/subject.js";
+import {
+  composeSessionParticipants,
+  type SessionParticipant,
+} from "./opponents/cpu-pool.js";
 import {
   OpponentOutageError,
   type OpponentAgent,
@@ -236,6 +241,8 @@ interface HandPlan {
   /** 新しい Session の最初の Hand（SESSION_STARTED を置く）。 */
   readonly newSession: boolean;
   readonly personas: Readonly<Record<string, PersonaPresetId>>;
+  /** CPU の席の参加者（Fixed CPU / Guest。D118）。新しい Session では seed で決め、続く Session では Session の値を使う。 */
+  readonly participants: readonly SessionParticipant[];
   readonly seats: readonly SeatInit[];
   readonly buttonPlayerId: string;
 }
@@ -250,12 +257,17 @@ interface SessionPointer {
   readonly emergencyBots: Map<string, OutageKind>;
   /** CPU の Persona の割り当て（Session の開始時の設定。Session の途中で設定を変えて再起動しても変えない）。 */
   readonly personas: Readonly<Record<string, PersonaPresetId>>;
+  /** CPU の席の参加者（Session の開始時に決めた値。Resume では Event Store の session_participants から戻す。D118）。 */
+  readonly participants: readonly SessionParticipant[];
 }
 
 /** Hand の終わりから見た Session の状態と、続くなら次 Hand の席。 */
 interface SessionAfter {
   readonly status: SessionStatus;
-  readonly next: Omit<HandPlan, "sessionId" | "newSession" | "personas"> | null;
+  readonly next: Omit<
+    HandPlan,
+    "sessionId" | "newSession" | "personas" | "participants"
+  > | null;
 }
 
 const silentLogger: OrchestratorLogger = { warn: () => {}, error: () => {} };
@@ -343,11 +355,23 @@ export class HandOrchestrator {
         projection.emergencyBots.map((b) => [b.playerId, b.cause]),
       ),
       personas,
+      // 同じ Session の参加者をそのまま戻す（D118）。v10 より前の Session は行が無く空のまま続ける（推測で Identity を作らない）。
+      participants: this.options.store.sessionParticipants(
+        projection.sessionId,
+      ),
     };
   }
 
   get players(): readonly SeatPlayer[] {
     return this.options.setup.players;
+  }
+
+  /**
+   * 今の Session の CPU の席の参加者（Fixed CPU / Guest。D118）。まだ Session が無ければ空。
+   * server の中で CPU の Identity を引くためのもので、Hero への応答には載せない。
+   */
+  get sessionParticipants(): readonly SessionParticipant[] {
+    return this.session?.participants ?? [];
   }
 
   /**
@@ -385,7 +409,7 @@ export class HandOrchestrator {
       throw new Error(`Hand ID が重複した: ${handId}`);
     }
     const seed = this.options.nextSeed();
-    const plan = this.planNextHand();
+    const plan = this.planNextHand(seed);
     // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
     const emergencyBots =
       this.session?.sessionId === plan.sessionId
@@ -415,12 +439,14 @@ export class HandOrchestrator {
     store.append(handId, this.withSessionEnd(handId, plan.sessionId, opening), {
       sessionId: plan.sessionId,
       personas: plan.personas,
+      participants: plan.participants,
     });
     this.session = {
       sessionId: plan.sessionId,
       lastHandId: handId,
       emergencyBots,
       personas: plan.personas,
+      participants: plan.participants,
     };
 
     // 座っている CPU にだけ Opponent（と Fallback 用の RuleBot）を割り当てる。CPU の seed は卓の設定上の席番号から導く
@@ -858,9 +884,10 @@ export class HandOrchestrator {
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
    *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）。
-   *   Persona は今の卓の設定の割り当てを使う
+   *   CPU の席の参加者（Fixed CPU / Guest。D118）は、その Hand の seed から導いた seed で決定論に決め、Persona は Fixed CPU なら
+   *   Pool の Persona、Guest なら今の卓の設定の割り当て（既定の割り当てでは両者は同じ。composeSessionParticipants）
    */
-  private planNextHand(): HandPlan {
+  private planNextHand(seed: number): HandPlan {
     const current = this.session;
     if (current !== null) {
       const after = this.sessionAfter(current.lastHandId);
@@ -869,15 +896,35 @@ export class HandOrchestrator {
           sessionId: current.sessionId,
           newSession: false,
           personas: current.personas,
+          participants: current.participants,
           ...after.next,
         };
       }
     }
     const { players, startingStack, personas } = this.options.setup;
+    const sessionId = (this.options.nextSessionId ?? randomUUID)();
+    // 席番号（0〜MAX_PLAYERS - 1。CPU の seed に使う）と重ならない番号で導き、山札・CPU の乱数と別の列にする。
+    const composition = composeSessionParticipants({
+      sessionId,
+      seats: players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => ({ playerId: p.playerId, persona: personas[p.playerId] })),
+      seed: deriveSeed(seed, MAX_PLAYERS),
+    });
+    if (composition.unmatched.length > 0) {
+      // 席の Persona（CPU_PERSONAS）を満たす Fixed CPU が Pool に残っていない席は、Fixed CPU が Pool の Persona のまま座る
+      // （同じ cpuProfileId は常に同じ Persona。D118）。上書きが効かなかった席を残す（座った CPU の Persona は書かない）。
+      this.logger.warn(
+        { sessionId, seats: composition.unmatched },
+        "CPU_PERSONAS の割り当てを満たす Fixed CPU が足りない席は、Fixed Pool の Persona で座らせる（上書きはその席では効かない）",
+      );
+    }
     return {
-      sessionId: (this.options.nextSessionId ?? randomUUID)(),
+      sessionId,
       newSession: true,
-      personas,
+      // Fixed CPU は Pool の Persona、Guest は席の Persona（Session Projection に残り、Resume でも同じ）。
+      personas: composition.personas,
+      participants: composition.participants,
       seats: players.map((p) => ({
         playerId: p.playerId,
         stack: startingStack,

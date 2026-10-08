@@ -1,5 +1,6 @@
 import {
   composeChips,
+  MAX_PLAYERS,
   type HandEvent,
   type HeroView,
   type LegalActionSet,
@@ -12,9 +13,15 @@ import { readAppVersion } from "./app-version.js";
 import { PHASE1_TABLE_SETUP, buildTableSetup } from "./config.js";
 import { InMemoryEventStore, type AppendContext } from "./event-store.js";
 import {
+  deriveSeed,
   HandOrchestrator,
   type HandOrchestratorOptions,
 } from "./hand-orchestrator.js";
+import {
+  composeSessionParticipants,
+  PHASE7_CPU_POOL,
+  type SessionParticipant,
+} from "./opponents/cpu-pool.js";
 import {
   OpponentOutageError,
   type OpponentFactory,
@@ -2177,6 +2184,131 @@ describe("Session の Event と Resume（#77・D95）", () => {
       expect(presetId).toBe(before.get(playerId));
     }
     expect([...seen.values()]).not.toContain("maniac");
+  });
+
+  it("新しい Session の最初の Hand で CPU の席の参加者を seed から決め、同じ Session の Hand・再起動後の Resume では変えない（D118）", async () => {
+    const { orchestrator, events, store } = setup();
+    expect(orchestrator.sessionParticipants).toEqual([]);
+    const first = await playHand(orchestrator, null);
+    const sessionId = store.sessionOf.get(first) ?? "";
+    // 既定の割り当て順の席の Persona で、Hand の seed（42）から導いた seed で編成する。
+    const expected = composeSessionParticipants({
+      sessionId,
+      seats: PHASE1_TABLE_SETUP.players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => ({
+          playerId: p.playerId,
+          persona: PHASE1_TABLE_SETUP.personas[p.playerId],
+        })),
+      seed: deriveSeed(42, MAX_PLAYERS),
+    }).participants;
+    expect(store.sessionParticipants(sessionId)).toEqual(expected);
+    expect(orchestrator.sessionParticipants).toEqual(expected);
+
+    const second = await playHand(orchestrator, first);
+    expect(store.sessionOf.get(second)).toBe(sessionId);
+    expect(orchestrator.sessionParticipants).toEqual(expected);
+    orchestrator.close();
+
+    const resumed = restart(store);
+    expect(resumed.sessionParticipants).toEqual(expected);
+    const third = await playHand(resumed, null);
+    expect(store.sessionOf.get(third)).toBe(sessionId);
+    expect(store.sessionParticipants(sessionId)).toEqual(expected);
+
+    // Identity は Event Log・Hero の View には入れない（Event Log の形は変えない。cpuProfileId から Secret Persona を辿らせない）。
+    const ids = expected.map((p) =>
+      p.kind === "fixed" ? p.cpuProfileId : p.guestId,
+    );
+    const exposed = JSON.stringify([
+      ...[first, second, third].flatMap((h) => events(h)),
+      resumed.players,
+    ]);
+    for (const id of ids) expect(exposed).not.toContain(id);
+  });
+
+  it("CPU_PERSONAS で偏らせても（6-max で全席 maniac）、Fixed CPU は Pool の Persona で打ち、同じ cpuProfileId の Persona は Session を跨いで変わらず、効かなかった席を warn に残す（D118）", async () => {
+    const personaOfProfile = new Map(
+      PHASE7_CPU_POOL.fixed.map((p) => [p.cpuProfileId, p.persona]),
+    );
+    const seenByProfile = new Map<string, string | undefined>();
+    let warned = 0;
+    for (let seed = 1; seed <= 20; seed++) {
+      const used = new Map<string, string | undefined>();
+      const warn = vi.fn();
+      const { orchestrator, store } = setup({
+        setup: buildTableSetup(6, ["maniac"]),
+        nextSeed: () => seed,
+        logger: { warn, error: () => {} },
+        createOpponent: (cpuSeed, playerId, persona) => {
+          used.set(playerId, persona?.id);
+          return createRuleBot(cpuSeed, playerId, persona);
+        },
+      });
+      const started = await orchestrator.startHand(null);
+      if (!started.ok) throw new Error(started.error.message);
+      const participants = orchestrator.sessionParticipants;
+      expect(
+        participants.filter((p) => p.kind === "guest").length,
+      ).toBeLessThanOrEqual(1);
+      for (const p of participants) {
+        if (p.kind !== "fixed") {
+          expect(used.get(p.playerId)).toBe("maniac");
+          continue;
+        }
+        // 実際に打つ Persona は Pool の Persona（Session・seed が変わっても同じ cpuProfileId は同じ Persona）。
+        expect(used.get(p.playerId)).toBe(personaOfProfile.get(p.cpuProfileId));
+        if (seenByProfile.has(p.cpuProfileId)) {
+          expect(used.get(p.playerId)).toBe(seenByProfile.get(p.cpuProfileId));
+        }
+        seenByProfile.set(p.cpuProfileId, used.get(p.playerId));
+      }
+      const unmatched = participants.filter(
+        (p) => used.get(p.playerId) !== "maniac",
+      );
+      // maniac の Fixed CPU は 1 人なので、CPU 5 席のうち少なくとも 3 席は上書きが効かず、warn に席と求めた Persona が残る。
+      expect(unmatched.length).toBeGreaterThanOrEqual(3);
+      expect(warn).toHaveBeenCalledWith(
+        {
+          sessionId: store.sessionOf.get(started.value.handId),
+          seats: unmatched.map((p) => ({
+            playerId: p.playerId,
+            requested: "maniac",
+          })),
+        },
+        expect.stringContaining("CPU_PERSONAS"),
+      );
+      warned++;
+      orchestrator.close();
+    }
+    expect(warned).toBe(20);
+    // 20 Session で、少なくとも maniac 以外の Fixed CPU が複数回座っている（Session を跨いだ比較が空振りしていない）。
+    expect(seenByProfile.size).toBeGreaterThan(3);
+  });
+
+  it("Session が終わって新しい Session になると参加者を決め直し、Fixed CPU は同じ cpuProfileId、Guest の id は持ち越さない（D106・D118）", async () => {
+    const { orchestrator, store, handId } = await firstHandWhere(
+      { cpu1: "shove", cpu2: "fold" },
+      (stacks) => stackOf(stacks, "hero") === 0,
+    );
+    const before = store.sessionParticipants(store.sessionOf.get(handId) ?? "");
+    expect(before.map((p) => p.playerId)).toEqual(["cpu1", "cpu2"]);
+    const next = await orchestrator.startHand(handId);
+    if (!next.ok) throw new Error(next.error.message);
+    const after = orchestrator.sessionParticipants;
+    // 同じ seed なので同じ席に同じ種類が座り、Fixed CPU は同じ cpuProfileId。
+    const fixedOf = (ps: readonly SessionParticipant[]) =>
+      ps.map((p) => (p.kind === "fixed" ? p.cpuProfileId : null));
+    expect(fixedOf(after)).toEqual(fixedOf(before));
+    // Guest の id は前の Session のものを使わない。
+    const guestIds = (ps: readonly SessionParticipant[]) =>
+      ps.flatMap((p) => (p.kind === "guest" ? [p.guestId] : []));
+    // この seed の編成には Guest が 1 席いる（Guest の持ち越しを空振りせずに確かめる）。
+    expect(guestIds(before)).toHaveLength(1);
+    for (const id of guestIds(after)) {
+      expect(guestIds(before)).not.toContain(id);
+    }
+    expect(guestIds(after)).toHaveLength(guestIds(before).length);
   });
 
   it("終わった Session（Bust・AI 障害での Session 終了）は再起動後に続けず、新しい Session で始める", async () => {

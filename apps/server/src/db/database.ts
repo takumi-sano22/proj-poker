@@ -418,6 +418,42 @@ export const MIGRATIONS: readonly string[] = [
   INSERT INTO ordinals (ord, kind, ref_id)
   SELECT n, kind, ref_id FROM merged WHERE n > 0 ORDER BY n;
   `,
+  // v10: Session の CPU の席と永続 Identity の対応（D106・D118・#136）。席・player id（cpu1 等）を Identity にせず、Session × 席 →
+  // Fixed CPU の cpu_profile_id、または Guest の Session 限りの guest_id を持つ。Session の最初の Hand の保存と同じトランザクションで足す
+  // （sessions の行もその時に作るので参照できる）。Fixed Pool（ID・名前・Persona）は DB に置かずコードの Version 付き Config
+  // （opponents/cpu-pool.ts）に置き、ここは ID の一覧・人数を知らない（OI-005: Schema を固定人数に Couple しない）。Persona は入れない（D28）。
+  // guest_id は一意で、別の Session で同じ Guest の id を使わない。v10 より前の Session には行が無い（backfill しない。推測で Identity を作らない）。
+  // 既存のテーブル・列・行は変えない（D76）。追記だけで、UPDATE / DELETE は Trigger で拒否する。マイグレーション v10 は D118 の人間判断の範囲。
+  `
+  CREATE TABLE session_participants (
+    seq            INTEGER PRIMARY KEY,
+    session_id     TEXT NOT NULL REFERENCES sessions (session_id),
+    player_id      TEXT NOT NULL,
+    kind           TEXT NOT NULL CHECK (kind IN ('fixed', 'guest')),
+    cpu_profile_id TEXT,
+    guest_id       TEXT UNIQUE,
+    pool_version   TEXT NOT NULL,
+    -- kind は NOT NULL、IS NOT NULL は NULL にならないので、比較は真偽のどちらかになる。
+    CHECK ((kind = 'fixed') = (cpu_profile_id IS NOT NULL)),
+    CHECK ((kind = 'guest') = (guest_id IS NOT NULL)),
+    UNIQUE (session_id, player_id),
+    UNIQUE (session_id, cpu_profile_id)
+  ) STRICT;
+
+  CREATE INDEX session_participants_by_cpu_profile ON session_participants (cpu_profile_id, seq);
+
+  CREATE TRIGGER session_participants_append_only
+  BEFORE UPDATE ON session_participants
+  BEGIN
+    SELECT RAISE(ABORT, 'session_participants is append-only');
+  END;
+
+  CREATE TRIGGER session_participants_no_delete
+  BEFORE DELETE ON session_participants
+  BEGIN
+    SELECT RAISE(ABORT, 'session_participants is append-only');
+  END;
+  `,
 ];
 
 /** DB の schema の版が、このアプリが知る版より新しい（新しい版のアプリで作った DB を古い版で開いた）。 */

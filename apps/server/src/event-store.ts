@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import type { HandEvent } from "@proj-poker/engine";
 import { processOrdinals, type OrdinalCounter } from "./logical-order.js";
+import type { SessionParticipant } from "./opponents/cpu-pool.js";
 import {
   nextSessionProjection,
   type SessionProjection,
@@ -26,6 +27,11 @@ export interface AppendContext {
    * 保存する（D95。Event には入れない）。Hand の最初の追記の値を使い、以降の追記では見ない。
    */
   readonly personas?: Readonly<Record<string, string>>;
+  /**
+   * Session の CPU の席の参加者（Fixed CPU / Guest。D118・#136）。Session の最初の Hand が終わったとき（Session の行を作るとき）だけ
+   * 保存し、同じ Session の 2 Hand 目以降の値は見ない（参加者は Session の途中で変えない）。Hand の最初の追記の値を使う。
+   */
+  readonly participants?: readonly SessionParticipant[];
 }
 
 /** Hand の一覧の 1 行（Replay の Hand 一覧。#68）。Event の中身は持たない（中身は read で読む）。 */
@@ -82,6 +88,11 @@ export interface EventStore {
    * 同じ順序の源（同じ DB の ordinals、またはメモリ内の同じカウンタ）を使う Learning Reset Store の番号と比べられる。
    */
   savedOrder(handId: string): number | null;
+  /**
+   * Session の CPU の席の参加者（D118・#136）を、保存した順（席順）に返す。Session の最初の Hand が終わるまでは空。
+   * 参加者を渡さずに始めた Session（v10 より前の Session・Drill の専用の Session）も空。
+   */
+  sessionParticipants(sessionId: string): readonly SessionParticipant[];
 }
 
 export class EventSeqConflictError extends Error {
@@ -95,10 +106,11 @@ export interface InMemoryEventStoreOptions {
   readonly ordinals?: OrdinalCounter;
 }
 
-/** Hand の Session と Persona の割り当て（Hand の最初の追記で決まる）。 */
+/** Hand の Session と Persona の割り当てと参加者（Hand の最初の追記で決まる）。 */
 interface HandSession {
   readonly sessionId: string;
   readonly personas: Readonly<Record<string, string>>;
+  readonly participants: readonly SessionParticipant[];
 }
 
 /** プロセス内のメモリだけに持つ実装。再起動で消える（テスト用。永続化は SqliteEventStore）。 */
@@ -107,6 +119,11 @@ export class InMemoryEventStore implements EventStore {
   private readonly sessions = new Map<string, HandSession>();
   /** Session ID → Session Projection。 */
   private readonly projections = new Map<string, SessionProjection>();
+  /** Session ID → CPU の席の参加者（Session の最初の Hand が終わったときに入れ、以降は変えない。v10 の session_participants と同じ意味）。 */
+  private readonly participants = new Map<
+    string,
+    readonly SessionParticipant[]
+  >();
   /** Hand が終わった Session の ID（終わった順。同じ Session は最後に終わった位置へ移す）。 */
   private readonly finishedOrder: string[] = [];
   /** 終わった Hand → 保存の論理順序の番号（D117。SqliteEventStore の ordinals と同じ意味）。 */
@@ -132,6 +149,7 @@ export class InMemoryEventStore implements EventStore {
     const session = this.sessions.get(handId) ?? {
       sessionId: context.sessionId ?? this.defaultSessionId,
       personas: context.personas ?? {},
+      participants: context.participants ?? [],
     };
     const stored = toStoredEvents(
       handId,
@@ -145,12 +163,20 @@ export class InMemoryEventStore implements EventStore {
       const next = nextSessionProjection(
         endedSessionGuard(this.projections.get(session.sessionId)),
         {
-          ...session,
+          sessionId: session.sessionId,
+          personas: session.personas,
           handId,
           events: [...log, ...stored].map((s) => s.event),
           recordedAt: ended.recordedAt,
         },
       );
+      // Session の最初の Hand（まだ Projection が無い）のときだけ参加者を残す（SqliteEventStore と同じ）。
+      if (!this.projections.has(session.sessionId)) {
+        this.participants.set(
+          session.sessionId,
+          deepFreeze(structuredClone(session.participants)),
+        );
+      }
       this.projections.set(session.sessionId, next);
       const at = this.finishedOrder.indexOf(session.sessionId);
       if (at >= 0) this.finishedOrder.splice(at, 1);
@@ -212,6 +238,10 @@ export class InMemoryEventStore implements EventStore {
 
   savedOrder(handId: string): number | null {
     return this.saved.get(handId) ?? null;
+  }
+
+  sessionParticipants(sessionId: string): readonly SessionParticipant[] {
+    return this.participants.get(sessionId) ?? [];
   }
 }
 
