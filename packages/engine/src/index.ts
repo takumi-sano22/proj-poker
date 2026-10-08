@@ -132,6 +132,13 @@ export type {
   TournamentSession,
 } from "./tournament.js";
 
+export { tournamentStandings } from "./tournament-standings.js";
+export type {
+  TournamentPlacement,
+  TournamentStandings,
+  TournamentStatus,
+} from "./tournament-standings.js";
+
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
 export type {
   Declaration,
