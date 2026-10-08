@@ -15,6 +15,7 @@ import { PHASE1_TABLE_SETUP } from "../../config.js";
 import {
   InMemoryEventStore,
   type AppendContext,
+  type EventStore,
   type InMemoryEventStoreOptions,
   type StoredHandEvent,
 } from "../../event-store.js";
@@ -421,7 +422,7 @@ const AVERAGE_SKILL = 0.5;
  * （Hand の開始時に呼ぶ。進行中の Hand は保存済みでないので入力に入らない）。repeats 回計算し、計算時間は中央値を返す。
  */
 export function buildLayersAt(
-  store: InMemoryEventStore,
+  store: EventStore,
   context: HandContext,
   seatIds: readonly string[],
   heroId: string,
