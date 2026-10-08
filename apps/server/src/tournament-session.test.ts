@@ -688,10 +688,8 @@ describe("Tournament の Elimination と順位（D129・#185）", () => {
       expect(hero?.eliminatedInHandId).toBe(last);
       // Hero の順位は、Bust した Hand の後に残った人数より下（同じ Hand の Bust は開始時の Stack で並べる）。
       expect(hero?.place).toBeGreaterThan(standings.remaining);
-      // 残った CPU の順位は、残りが 1 人（優勝が決まった）でなければ未決（D129）。
-      expect(undecided).toHaveLength(
-        standings.remaining === 1 ? 0 : standings.remaining,
-      );
+      // 残った CPU の順位は、残りが 1 人でも未決（D129）。
+      expect(undecided).toHaveLength(standings.remaining);
     }
     // Bust した席は次の Hand に座らない（nextHandSeating）。各 Hand の席は、その前までに Bust していない Player だけ。
     for (const [k, handId] of handIds.entries()) {

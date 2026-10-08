@@ -23,7 +23,8 @@ export interface TournamentPlacement {
   readonly playerId: string;
   /**
    * 順位（1 始まり）。同じ Hand で Bust し開始時の Stack も同じなら同じ値（同順位。賞金の合算と等分は #186）。
-   * 残りが 1 人になればその 1 人が 1 位。まだ決まっていない（2 人以上が残っている。Hero の Bust で終えた時点の CPU を含む。D129）なら null。
+   * Hero が最後の 1 人（hero_last_standing）なら Hero が 1 位。まだ決まっていない（Tournament が続いている・Hero の Bust で終えた時点で
+   * 残っていた CPU〔残りが 1 人でも〕。D129）なら null。
    */
   readonly place: number | null;
   /** Bust した Hand の ID。Bust していなければ null。 */
@@ -49,7 +50,8 @@ export interface TournamentStandings {
  *   HAND_FINISHED の無い Hand（打ち切った Hand・進行中の Hand）では誰も Bust しない（Chip が動いていない）
  * - Bust した Player の順位は「その Hand の後に残った人数 + 1」から。同じ Hand で複数人が Bust したら、Hand の開始時の Stack
  *   （HAND_STARTED の seats の stack）の多い方を上位にし、同じなら同順位にする（OI-007 の暫定 Policy。docs/02 §7）
- * - 残りが 1 人になれば、その 1 人を 1 位にする（Hero が最後の 1 人なら優勝。Hero が Heads-Up で Bust したら残った CPU が 1 位）
+ * - Hero が最後の 1 人（SESSION_ENDED の hero_last_standing）なら、その 1 人を 1 位にする（優勝）。Hero の Bust（hero_busted）で終えた
+ *   ときに残っていた CPU の順位は、残りが 1 人（Heads-Up で Hero が Bust）でも未決のままにする（D129。CPU だけで続けない）
  *
  * Event Log が Session の Hand として矛盾する（Bust した Player がまた座る・途中の Hand に SESSION_ENDED がある・残りが 0 人になる等）
  * なら、誤った順位を作らずに RangeError を投げる。
@@ -99,9 +101,13 @@ export function tournamentStandings(
     if (sessionEnded?.type === "SESSION_ENDED") ended = sessionEnded;
   }
 
-  // 残りが 1 人なら、その 1 人が 1 位（Tournament はそこで終わる）。
+  // Hero が最後の 1 人で終えたときだけ、その 1 人を 1 位にする。Hero の Bust で終えたときの残りの CPU は未決（D129）。
   const [last] = alive;
-  if (alive.size === 1 && last !== undefined) {
+  if (
+    ended?.reason === "hero_last_standing" &&
+    alive.size === 1 &&
+    last !== undefined
+  ) {
     placements.set(last, {
       playerId: last,
       place: 1,

@@ -113,7 +113,7 @@ const seat = (playerId: string, stack: number): SeatInit => ({
 const BOARD = "Kd Qs 5h Jc 6s";
 
 describe("tournamentStandings（#185）", () => {
-  it("同じ Hand で複数人が Bust したら開始時の Stack の多い方が上位、同じなら同順位。残りが 1 人ならその 1 人が 1 位（Hero 優勝）", () => {
+  it("同じ Hand で複数人が Bust したら開始時の Stack の多い方が上位、同じなら同順位。Hero が最後の 1 人なら Hero が 1 位（優勝）", () => {
     // 4 人が All-in。hero（Aces）が全員を Bust させる。Bust の後に残るのは hero だけ。
     // 順位: cpu3（開始 1,000）が 2 位、cpu1・cpu2（開始 500 で同じ）は同順位の 3 位（4 位は空く）。
     const hand = playAllIn({
@@ -144,7 +144,7 @@ describe("tournamentStandings（#185）", () => {
     });
   });
 
-  it("Bust の席を除いて Heads-Up へ移り（Button = SB）、Hero が Heads-Up で Bust したら Hero は 2 位・残った CPU が 1 位", () => {
+  it("Bust の席を除いて Heads-Up へ移り（Button = SB）、Hero が Heads-Up で Bust したら Hero は 2 位・残った CPU は 1 人でも未決（D129）", () => {
     // Hand 1: 3 人が All-in。hero（Aces）が Main Pot（400 × 3）と Side Pot（200 × 2）を取り 1,600、cpu1 は 2,400、cpu2 が Bust（3 位）。
     const hand1 = playAllIn({
       handId: "h1",
@@ -192,7 +192,7 @@ describe("tournamentStandings（#185）", () => {
       remaining: 1,
       placements: [
         { playerId: "hero", place: 2, eliminatedInHandId: "h2" },
-        { playerId: "cpu1", place: 1, eliminatedInHandId: null },
+        { playerId: "cpu1", place: null, eliminatedInHandId: null },
         { playerId: "cpu2", place: 3, eliminatedInHandId: "h1" },
       ],
     });

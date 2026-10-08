@@ -13,10 +13,10 @@ Tournament の Bust = Elimination、残人数、Button / SB / BB の移動、Hea
 ## 設計方針
 
 - **Event を足さない**: Elimination（Bust = Elimination。D108）は Tournament の Session の Hand の `HAND_FINISHED.stacks` の 0、終了は `SESSION_ENDED`（`hero_busted` / `hero_last_standing`）として既に Event Log にある。Elimination の Event を別に足すと、同じ事実の二つ目の表現になり（食い違いうる）、版 9・10 で保存した Tournament（Elimination の Event が無い）を読む別の経路も要る。D129 の「Elimination・終了は Event Log に残し」はこれで満たし、版は上げない（Event Store・`session_projections` の CHECK も変えない）。PR の Review Required に記載。
-- **順位の計算（`packages/engine/src/tournament-standings.ts`）**: Session の Hand の Event Log（論理順序）を畳み込む。Hand ごとに、座っていて `HAND_FINISHED` の Stack が 0 になった Player をその Hand の Bust とし、順位は「その Hand の後に残った人数 + 1 + 同じ Hand で開始時の Stack が自分より多かった人数」（同じなら同順位。OI-007 の暫定 Policy。docs/02 §7 の既存の記述）。残りが 1 人ならその 1 人が 1 位。Hero を知らない（Hero の順位は呼び出し側が引く）。cash の Session・`SESSION_STARTED` の無い旧版の Session は null。矛盾する Log（Bust した Player がまた座る・Session の終わりの後の Hand・全員の Bust 等）は RangeError。
+- **順位の計算（`packages/engine/src/tournament-standings.ts`）**: Session の Hand の Event Log（論理順序）を畳み込む。Hand ごとに、座っていて `HAND_FINISHED` の Stack が 0 になった Player をその Hand の Bust とし、順位は「その Hand の後に残った人数 + 1 + 同じ Hand で開始時の Stack が自分より多かった人数」（同じなら同順位。OI-007 の暫定 Policy。docs/02 §7 の既存の記述）。Hero が最後の 1 人（`hero_last_standing`）ならその 1 人が 1 位。Hero を知らない（Hero の順位は呼び出し側が引く）。cash の Session・`SESSION_STARTED` の無い旧版の Session は null。矛盾する Log（Bust した Player がまた座る・Session の終わりの後の Hand・全員の Bust 等）は RangeError。
 - **状態**: `SESSION_ENDED` が無ければ `in_progress`、`hero_busted` / `hero_last_standing` は `finished`、`ai_outage` は `abandoned`。
 - **人間判断を経ていない規則（OI-007 の暫定 Policy として docs/02 §7・docs/11 に明記）**: `ai_outage` で打ち切った Tournament は、それまでに Bust した Player の順位だけを決め、残っていた Player（Hero を含む）の順位は決めない。
-- **解釈（Review Required）**: Hero が Heads-Up で Bust したときの残った CPU は、残りが 1 人なので 1 位とした（D129 の「残った CPU の順位は未決」は 2 人以上が残る場合と読んだ）。
+- **Hero の Bust で残った CPU（Codex の指摘で修正）**: 当初は Hero が Heads-Up で Bust したときの残った CPU を 1 位にしていたが、D129 の「残った CPU の順位は未決」と矛盾する（Codex [P1]）ため、`hero_busted` で終えたときは残りが 1 人でも CPU の順位を未決（null）にした。1 位を決めるのは `hero_last_standing` のときだけ。
 - **Server**: Orchestrator に `tournamentStandingsOf(handId)`（その Hand の Session の終わった Hand〔`sessionHandIds`〕から計算）を足した。API・UI への表示は #190、Payout は #186。
 
 ## 変更内容

@@ -213,7 +213,7 @@ Solver / ReviewがRakeを無視する場合、その制約をReviewへ表示し�
 - **Ante**: `none` / `per_player` / `big_blind_ante` をProfileで扱います。標準STTはBig Blind Anteです。
 - **Payout**: 初期6-max STTの暫定Presetは50% / 30% / 20%です（OI-007の暫定値。永久仕様にしない）。Custom Payoutを後から足せる構造にし、割合の合計と端数の扱いは決定論にします。
 - **Elimination**: Bust = Eliminationです。Re-entry / Rebuy / Add-onは初期Scope外です。BustしたPlayerは次のHandに座らず、Buttonの移動・Heads-Up（Button = SB）はCashと同じ規則です（D80。`nextHandSeating`）。
-- **Tournamentの終了と順位（D129・#185）**: HeroがBustした時点でTournamentを終え、Heroの順位を確定します（CPUだけで続けない）。Heroが最後の1人になれば優勝です。BustしたPlayerの順位は「そのHandの後に残った人数 + 1」からです。残りが1人になればその1人が1位です（HeroがHeads-UpでBustしたら、残ったCPUが1位）。HeroのBustで終えたときに2人以上残っていたCPUの順位は未決です。順位はEvent Logから都度計算し、保存しません（形は`docs/04` §3）。
+- **Tournamentの終了と順位（D129・#185）**: HeroがBustした時点でTournamentを終え、Heroの順位を確定します（CPUだけで続けない）。Heroが最後の1人になれば優勝です。BustしたPlayerの順位は「そのHandの後に残った人数 + 1」からです。HeroのBustで終えたときに残っていたCPUの順位は、残りが1人（Heads-UpでHeroがBust）でも未決です（D129）。順位はEvent Logから都度計算し、保存しません（形は`docs/04` §3）。
 - **打ち切ったTournament**（OI-007の暫定Policy。確定ではない。#185）: CPUの障害でHeroがSessionの終了を選んだ（`ai_outage`）Tournamentは、終える前の打ち切りとして扱います。打ち切ったHandはChipを動かさないので誰もBustせず、それまでにBustしたPlayerの順位だけが決まり、残っていたPlayer（Heroを含む）の順位は決めません。
 - **Starting Stack・Blind Level**: Version付きConfigの暫定値です（OI-007）。標準6-max STTの暫定値はD127です（Starting Stack 1,500・Blind 10/20から10 Handごとに1 Level・BBAの額はBBと同じ・参加費100pt × 参加人数がPrize Pool）。
 - **time-base（D128）**: CoreとUIの両方で選べるPresetにします（暫定値は標準と同じStackとBlind表で1 Level 10分。OI-007）。経過時間はプレイ時間（Handの開始から終わりまでの累計。アプリを閉じていた時間は数えない）で測り、LevelはHandの開始時に決めて`HAND_STARTED`に固定します。壁時計は経過時間の計測にだけ使い、意味上の順序には使いません（D117）。hand-countのLevelはSession内のHandの数（論理順序）で決めます。
