@@ -1,15 +1,21 @@
-// Tournament の設定（Versioned Config）・標準 Preset・SESSION_STARTED の Snapshot の契約（D108・D127・D128・D129・#183）。
+// Tournament の設定（Versioned Config）・標準 Preset・SESSION_STARTED の Snapshot の契約（D108・D127・D128・D129・#183）と、
+// Hand の開始時の Level の決め方（hand_count / time_base。D128・#184）。
 import { describe, expect, it } from "vitest";
 import { recordSessionEvent, startHand } from "./hand-engine.js";
 import type { HandEvent } from "./hand-events.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
 import {
+  FIRST_TOURNAMENT_PROGRESS,
   TOURNAMENT_CONFIG_VERSION,
   TOURNAMENT_PRESET_IDS,
   TOURNAMENT_PRESETS,
+  isTournamentHandContext,
   isTournamentPresetId,
+  levelAt,
+  nextTournamentProgress,
   sessionSettingsOf,
   tableConfigForLevel,
+  tournamentHandContext,
   validateTournamentConfig,
   type TournamentConfig,
 } from "./tournament.js";
@@ -25,7 +31,11 @@ function openedHand() {
       stack: STANDARD.startingStack,
     })),
     buttonPlayerId: "hero",
-    config: tableConfigForLevel(PHASE1_CASH_PRESET, STANDARD.levels[0]!),
+    config: tableConfigForLevel(
+      PHASE1_CASH_PRESET,
+      STANDARD.levels[0]!,
+      STANDARD.anteKind,
+    ),
     deal: { seed: 1 },
   });
   if (!started.ok) throw new Error(started.error.message);
@@ -156,15 +166,128 @@ describe("validateTournamentConfig", () => {
 });
 
 describe("tableConfigForLevel", () => {
-  it("Rule Profile は Cash と共有し、Blind だけを Level の額にする（D108）", () => {
-    const config = tableConfigForLevel(PHASE1_CASH_PRESET, STANDARD.levels[2]!);
+  it("Rule Profile は Cash と共有し、Blind と Ante を Level の額にする（D108・D128）", () => {
+    const config = tableConfigForLevel(
+      PHASE1_CASH_PRESET,
+      STANDARD.levels[2]!,
+      STANDARD.anteKind,
+    );
     expect(config).toEqual({
       ...PHASE1_CASH_PRESET,
       smallBlind: 25,
       bigBlind: 50,
+      ante: { kind: "big_blind_ante", amount: 50 },
     });
     // 元の Cash の設定は変えない。
     expect(PHASE1_CASH_PRESET.bigBlind).toBe(2);
+    expect("ante" in PHASE1_CASH_PRESET).toBe(false);
+  });
+
+  it("per_player はその Level の 1 人分の額を、none と額 0 の Level は Ante を持たせない", () => {
+    const level = { smallBlind: 50, bigBlind: 100, ante: 10 };
+    expect(
+      tableConfigForLevel(PHASE1_CASH_PRESET, level, "per_player").ante,
+    ).toEqual({ kind: "per_player", amount: 10 });
+    expect(
+      "ante" in
+        tableConfigForLevel(PHASE1_CASH_PRESET, { ...level, ante: 0 }, "none"),
+    ).toBe(false);
+    expect(
+      "ante" in
+        tableConfigForLevel(
+          PHASE1_CASH_PRESET,
+          { ...level, ante: 0 },
+          "big_blind_ante",
+        ),
+    ).toBe(false);
+    // 元の設定に Ante があれば、Level の Ante と混ぜずに投げる。
+    const withAnte = {
+      ...PHASE1_CASH_PRESET,
+      ante: { kind: "per_player", amount: 5 },
+    } as const;
+    expect(() => tableConfigForLevel(withAnte, level, "none")).toThrow(
+      RangeError,
+    );
+  });
+});
+
+describe("Hand の開始時の Level（D128・#184）", () => {
+  const TIME_BASE = TOURNAMENT_PRESETS.stt6_time_base;
+  const MINUTE = 60 * 1_000;
+
+  it("hand_count は Session の Hand の数で handsPerLevel ごとに 1 つ上げ、最後の Level で止める（D117・D127）", () => {
+    // 1〜10 Hand 目が Level 1、11〜20 Hand 目が Level 2。Level 12 は 111 Hand 目から続く。
+    const at = (handNumber: number, playTimeMs = 0) =>
+      levelAt(STANDARD, { handNumber, playTimeMs });
+    expect(at(1)).toBe(1);
+    expect(at(10)).toBe(1);
+    expect(at(11)).toBe(2);
+    expect(at(20)).toBe(2);
+    expect(at(21)).toBe(3);
+    expect(at(110)).toBe(11);
+    expect(at(111)).toBe(12);
+    expect(at(10_000)).toBe(12);
+    // プレイ時間は hand_count の Level に効かない。
+    expect(at(1, 100 * MINUTE)).toBe(1);
+  });
+
+  it("time_base はプレイ時間の累計で levelDurationMs ごとに 1 つ上げ、最後の Level で止める（D128）", () => {
+    const at = (playTimeMs: number, handNumber = 1) =>
+      levelAt(TIME_BASE, { handNumber, playTimeMs });
+    expect(at(0)).toBe(1);
+    expect(at(10 * MINUTE - 1)).toBe(1);
+    expect(at(10 * MINUTE)).toBe(2);
+    expect(at(25 * MINUTE)).toBe(3);
+    expect(at(110 * MINUTE)).toBe(12);
+    expect(at(10_000 * MINUTE)).toBe(12);
+    // Hand の数は time_base の Level に効かない。
+    expect(at(0, 500)).toBe(1);
+  });
+
+  it("次の Hand の進みは前の Hand の開始時の値にその Hand のプレイ時間を足し、負・数でない長さは 0 として数える", () => {
+    expect(FIRST_TOURNAMENT_PROGRESS).toEqual({ handNumber: 1, playTimeMs: 0 });
+    const second = nextTournamentProgress(FIRST_TOURNAMENT_PROGRESS, 61_234.4);
+    expect(second).toEqual({ handNumber: 2, playTimeMs: 61_234 });
+    // 壁時計の巻き戻り等で長さが負でも、累計を減らさない（Hand の数は進む）。
+    expect(nextTournamentProgress(second, -5_000)).toEqual({
+      handNumber: 3,
+      playTimeMs: 61_234,
+    });
+    expect(nextTournamentProgress(second, Number.NaN)).toEqual({
+      handNumber: 3,
+      playTimeMs: 61_234,
+    });
+  });
+
+  it("Hand の開始時の値（HAND_STARTED に残す）と、その Level の Blind / Ante を返す", () => {
+    expect(
+      tournamentHandContext(STANDARD, { handNumber: 11, playTimeMs: 1_000 }),
+    ).toEqual({
+      context: { level: 2, handNumber: 11, playTimeMs: 1_000 },
+      level: { smallBlind: 15, bigBlind: 30, ante: 30 },
+    });
+    expect(
+      tournamentHandContext(TIME_BASE, {
+        handNumber: 3,
+        playTimeMs: 20 * MINUTE,
+      }).context.level,
+    ).toBe(3);
+  });
+
+  it("Level と経過の検証: 1 以上の Level・Hand の番号と、0 以上の整数のプレイ時間", () => {
+    expect(
+      isTournamentHandContext({ level: 1, handNumber: 1, playTimeMs: 0 }),
+    ).toBe(true);
+    for (const bad of [
+      null,
+      { level: 0, handNumber: 1, playTimeMs: 0 },
+      { level: 1, handNumber: 0, playTimeMs: 0 },
+      { level: 1, handNumber: 1, playTimeMs: -1 },
+      { level: 1, handNumber: 1, playTimeMs: 1.5 },
+      { level: 1, handNumber: 1 },
+    ]) {
+      expect(isTournamentHandContext(bad)).toBe(false);
+    }
   });
 });
 

@@ -6,8 +6,10 @@ import { getLegalActions } from "./legal-actions.js";
 import { createShuffledDeck } from "./rng.js";
 import {
   PHASE1_CASH_PRESET,
+  type AnteConfig,
   type OddChipRule,
   type ReopenRule,
+  type TableConfig,
 } from "./table-config.js";
 
 const seats = (n: number, stack = 200): SeatInit[] =>
@@ -196,6 +198,111 @@ describe("startHand", () => {
       }),
     ]);
     expect(state.players.reduce((sum, p) => sum + p.stack, 0)).toBe(201);
+  });
+});
+
+describe("startHand の Ante と Tournament の Level（D128・#184）", () => {
+  const withAnte = (ante: AnteConfig): TableConfig => ({
+    ...PHASE1_CASH_PRESET,
+    smallBlind: 10,
+    bigBlind: 20,
+    ante,
+  });
+
+  it("Cash（Ante も Level も無い）の HAND_STARTED は ante・tournament の項目を持たず、ANTE_POSTED を置かない", () => {
+    const result = startHand(input());
+    if (!result.ok) throw new Error(result.error.message);
+    const [started] = result.value.events;
+    expect(started).not.toHaveProperty("ante");
+    expect(started).not.toHaveProperty("tournament");
+    expect(result.value.events.some((e) => e.type === "ANTE_POSTED")).toBe(
+      false,
+    );
+    expect(result.value.state.ante).toBeNull();
+    expect(result.value.state.mainPotAnte).toBe(0);
+  });
+
+  it("big_blind_ante: BB の Blind の直後に BB の席が払い（public）、Pot には入るが Call 額（その Street の Commit）には入らない", () => {
+    const result = startHand(
+      input({
+        config: withAnte({ kind: "big_blind_ante", amount: 20 }),
+        seats: seats(6, 1_500),
+        tournament: { level: 1, handNumber: 1, playTimeMs: 0 },
+      }),
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    const { events, state } = result.value;
+    expect(events.map((e) => e.type).slice(0, 6)).toEqual([
+      "HAND_STARTED",
+      "DECK_SHUFFLED",
+      "BLIND_POSTED",
+      "BLIND_POSTED",
+      "ANTE_POSTED",
+      "HOLE_CARD_DEALT",
+    ]);
+    const [started] = events;
+    expect(started).toMatchObject({
+      ante: { kind: "big_blind_ante", amount: 20 },
+      tournament: { level: 1, handNumber: 1, playTimeMs: 0 },
+    });
+    // Button p0 → SB p1 → BB p2。
+    const ante = events.find((e) => e.type === "ANTE_POSTED");
+    expect(ante).toEqual({
+      type: "ANTE_POSTED",
+      playerId: "p2",
+      amount: 20,
+      seq: 4,
+      visibility: { type: "public" },
+    });
+    const bb = state.players[2];
+    expect(bb?.stack).toBe(1_460);
+    expect(bb?.streetCommitted).toBe(20);
+    expect(bb?.totalCommitted).toBe(20);
+    expect(state.mainPotAnte).toBe(20);
+    expect(state.pot).toBe(50);
+    expect(getLegalActions(state)?.actions).toContainEqual({
+      type: "call",
+      amount: 20,
+    });
+  });
+
+  it("per_player: Blind より先に Button の左から全員が払い、各自の Commit（Pot の段）に入るが、その Street の Commit には入らない", () => {
+    const result = startHand(
+      input({ config: withAnte({ kind: "per_player", amount: 5 }) }),
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    const { events, state } = result.value;
+    expect(
+      events.flatMap((e) => (e.type === "ANTE_POSTED" ? [e.playerId] : [])),
+    ).toEqual(["p1", "p2", "p3", "p4", "p5", "p0"]);
+    // Ante はすべて最初の BLIND_POSTED より前。
+    const firstBlind = events.findIndex((e) => e.type === "BLIND_POSTED");
+    const lastAnte = events.findLastIndex((e) => e.type === "ANTE_POSTED");
+    expect(lastAnte).toBeLessThan(firstBlind);
+    expect(state.players.map((p) => p.totalCommitted)).toEqual([
+      5, 15, 25, 5, 5, 5,
+    ]);
+    expect(state.players.map((p) => p.streetCommitted)).toEqual([
+      0, 10, 20, 0, 0, 0,
+    ]);
+    expect(state.mainPotAnte).toBe(0);
+    expect(state.pot).toBe(60);
+  });
+
+  it("不正な Ante・Level は invalid_input で拒否する", () => {
+    for (const ante of [
+      { kind: "per_player", amount: 0 },
+      { kind: "per_player", amount: 1.5 },
+      { kind: "unknown", amount: 5 },
+    ]) {
+      const result = startHand(input({ config: withAnte(ante as AnteConfig) }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("invalid_input");
+    }
+    const result = startHand(
+      input({ tournament: { level: 0, handNumber: 1, playTimeMs: 0 } }),
+    );
+    expect(result.ok).toBe(false);
   });
 });
 

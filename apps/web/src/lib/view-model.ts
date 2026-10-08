@@ -321,6 +321,9 @@ export function describeEvent(
       const term = event.blind === "small" ? TERMS.smallBlind : TERMS.bigBlind;
       return `${nameOf(event.playerId)}: ${termLabel(term)} ${formatChips(event.amount)}`;
     }
+    case "ANTE_POSTED":
+      // Tournament の Hand の Ante（D128・#184）。卓の表示（Level・Ante の常時表示）は #190。
+      return `${nameOf(event.playerId)}: Ante ${formatChips(event.amount)}`;
     case "HOLE_CARD_DEALT":
       return `${nameOf(event.playerId)} に配られた札: ${event.cards.map(cardShortLabel).join(" ")}`;
     case "ACTION_TAKEN":

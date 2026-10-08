@@ -4,14 +4,17 @@
 import type { Card } from "./card.js";
 import type { HandEvent, PlayerChips, Street } from "./hand-events.js";
 import type { PendingOutOfTurn, PhysicalAction } from "./ruling.js";
-import type { OddChipRule, ReopenRule } from "./table-config.js";
+import type { AnteConfig, OddChipRule, ReopenRule } from "./table-config.js";
 
 export interface PlayerState {
   readonly playerId: string;
   readonly stack: number;
-  /** この Street で出した額。 */
+  /** この Street で出した額（Call / Raise の額に数える分。Ante は入れない。D128）。 */
   readonly streetCommitted: number;
-  /** この Hand で出した額の累計（返却された Uncalled Bet は引く）。 */
+  /**
+   * この Hand で出した額の累計（返却された Uncalled Bet は引く）。Pot の段（Side Pot の境目）を決める額で、per_player の Ante を含む。
+   * big_blind_ante の Ante は含めない（Main Pot の Dead Money。HandState の mainPotAnte）。
+   */
   readonly totalCommitted: number;
   /** 知らない（見えない）なら null。 */
   readonly holeCards: readonly Card[] | null;
@@ -33,6 +36,13 @@ export interface HandState {
   readonly bigBlind: number;
   readonly oddChipRule: OddChipRule;
   readonly reopenRule: ReopenRule;
+  /** この Hand の Ante（HAND_STARTED の ante）。Ante の無い Hand は null。 */
+  readonly ante: AnteConfig | null;
+  /**
+   * Main Pot に入れた Dead Money（big_blind_ante の Ante。D128）。誰の Commit にも数えず、Pot の組み立てで Main Pot に足す。
+   * Ante の無い Hand・per_player の Hand は 0。
+   */
+  readonly mainPotAnte: number;
   /** 席順（時計回り）。 */
   readonly players: readonly PlayerState[];
   readonly buttonIndex: number;
@@ -40,7 +50,7 @@ export interface HandState {
   readonly deck: readonly Card[];
   readonly board: readonly Card[];
   readonly street: Street;
-  /** 卓の中央にある Chip（全 Street の Commit の合計 − 返却 − 配分）。 */
+  /** 卓の中央にある Chip（全 Street の Commit の合計 ＋ Main Pot の Dead Money − 返却 − 配分）。 */
   readonly pot: number;
   /** この Street の最高 Commit 額。 */
   readonly currentBet: number;
@@ -92,6 +102,8 @@ export function initialState(event: HandEvent): HandState {
     bigBlind: event.bigBlind,
     oddChipRule: event.oddChipRule,
     reopenRule: event.reopenRule,
+    ante: event.ante ?? null,
+    mainPotAnte: 0,
     players: event.seats.map((s) => ({
       playerId: s.playerId,
       stack: s.stack,
@@ -148,6 +160,34 @@ function applyBody(state: HandState, event: HandEvent): HandState {
       return event.blind === "big"
         ? { ...withBet, actorIndex: nextActorAfter(withBet, index) }
         : withBet;
+    }
+
+    case "ANTE_POSTED": {
+      const ante = state.ante;
+      if (ante === null) {
+        throw new RangeError("Ante の無い Hand に ANTE_POSTED が現れた");
+      }
+      const index = indexOf(state, event.playerId);
+      if (ante.kind === "per_player") {
+        // 各自の拠出として Pot の段に入れる（totalCommitted）。Call / Raise の額（streetCommitted）には数えない。
+        // Blind より前に置くので、手番はまだ決まっていない（Big Blind の BLIND_POSTED で決まる）。
+        return updatePlayer(state, index, (p) =>
+          payAnte(p, event.amount, true),
+        );
+      }
+      // big_blind_ante: Main Pot の Dead Money。BB の Commit に数えないので、Side Pot の段も Uncalled の返却も変えない。
+      const paid = updatePlayer(state, index, (p) =>
+        payAnte(p, event.amount, false),
+      );
+      const after: HandState = {
+        ...paid,
+        pot: paid.pot + event.amount,
+        mainPotAnte: state.mainPotAnte + event.amount,
+      };
+      // BB の Blind の後に置くので、Ante で BB が All-in になったら最初の Actor を決め直す（BB は行動しなくなる）。
+      return state.actorIndex === null
+        ? after
+        : { ...after, actorIndex: nextActorAfter(after, index) };
     }
 
     case "HOLE_CARD_DEALT":
@@ -296,6 +336,21 @@ function addAwards(
     else existing.amount += a.amount;
   }
   return merged;
+}
+
+/**
+ * Stack から Ante を払う（D128）。Dead Money なので streetCommitted（Call / Raise の額）には数えない。
+ * tiered は per_player（各自の拠出として Pot の段に入れる＝totalCommitted に足す）。big_blind_ante は false（Main Pot の Dead Money）。
+ * Stack が 0 になったら All-in。
+ */
+function payAnte(p: PlayerState, amount: number, tiered: boolean): PlayerState {
+  const stack = p.stack - amount;
+  return {
+    ...p,
+    stack,
+    totalCommitted: tiered ? p.totalCommitted + amount : p.totalCommitted,
+    allIn: p.allIn || (amount > 0 && stack === 0),
+  };
 }
 
 /** Stack から amount を出して Commit する。Stack が 0 になったら All-in。 */

@@ -72,6 +72,22 @@ export interface RulingRules {
 }
 
 /**
+ * Hand で払う Ante の種類（D108・D128）。Ante の無い Hand（Cash・Ante なしの Tournament）は TableConfig に ante を持たせない。
+ * - per_player: 全員が Blind より先に 1 人分の額を払う。各自の拠出として Pot の段（Side Pot の境目）に入れる
+ * - big_blind_ante: BB の席が Blind を先に払い、残りの Stack で全員分の額を払う（Stack が足りなければ Ante が減る。TDA 準拠）。
+ *   Main Pot の Dead Money にする（BB の Commit に数えず、Side Pot の段に入れない）
+ * どちらも Dead Money で、Call / Raise の額（その Street の Commit）と Uncalled の返却に数えない。
+ * per_player で Stack が Ante と Blind の両方に足りないときは Ante を先に払う（伝統的な Ante の規則。OI-007 の暫定値）。
+ */
+export type PostedAnteKind = "per_player" | "big_blind_ante";
+
+/** Hand の Ante。amount は per_player は 1 人分、big_blind_ante は BB の席が払う額（Chip の最小単位の正の整数。D74）。 */
+export interface AnteConfig {
+  readonly kind: PostedAnteKind;
+  readonly amount: number;
+}
+
+/**
  * 卓の Betting 設定。Rule Profile は ID と、Engine が分岐に使う設定値を持つ（docs/02 §3）。
  * Hand の中で使う設定値（Blind・oddChipRule・reopenRule）は HAND_STARTED に残す。buttonRule は Hand と Hand の間
  * （nextHandSeating）でだけ使い、その結果は次 Hand の HAND_STARTED の席順・buttonPlayerId に残るので Event には持たせない。
@@ -89,6 +105,11 @@ export interface TableConfig {
   readonly buttonRule: ButtonRule;
   readonly chipDenominations: readonly ChipDenomination[];
   readonly ruling: RulingRules;
+  /**
+   * Ante（D128・#184）。Ante の無い Hand は持たない（Cash の Preset は持たないので、Cash の Hand の Event は変わらない）。
+   * Tournament の Hand だけ、その Level の額で持たせる（tournament.ts の tableConfigForLevel）。HAND_STARTED に残す。
+   */
+  readonly ante?: AnteConfig;
 }
 
 /**

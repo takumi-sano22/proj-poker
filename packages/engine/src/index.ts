@@ -35,8 +35,10 @@ export {
   isChipAmount,
 } from "./table-config.js";
 export type {
+  AnteConfig,
   ButtonRule,
   OddChipRule,
+  PostedAnteKind,
   ReopenRule,
   RulingRules,
   TableConfig,
@@ -103,12 +105,17 @@ export type {
 } from "./hand-engine.js";
 
 export {
+  FIRST_TOURNAMENT_PROGRESS,
   TOURNAMENT_CONFIG_VERSION,
   TOURNAMENT_PRESET_IDS,
   TOURNAMENT_PRESETS,
+  isTournamentHandContext,
   isTournamentPresetId,
+  levelAt,
+  nextTournamentProgress,
   sessionSettingsOf,
   tableConfigForLevel,
+  tournamentHandContext,
   validateTournamentConfig,
 } from "./tournament.js";
 export type {
@@ -119,7 +126,9 @@ export type {
   SessionMode,
   SessionSettings,
   TournamentConfig,
+  TournamentHandContext,
   TournamentPresetId,
+  TournamentProgress,
   TournamentSession,
 } from "./tournament.js";
 

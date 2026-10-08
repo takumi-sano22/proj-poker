@@ -5,6 +5,11 @@ import type { HandEvent } from "@proj-poker/engine";
 // 版 9 は SESSION_STARTED に Tournament の設定の Snapshot（項目 tournament。cash の Session は持たない。D129・#183）を足した。
 // 版 8 までの SESSION_STARTED は tournament を持たず、版 9 の cash の Session の SESSION_STARTED と同じ形なので、変換せずに読み、
 // cash の Session として読む（Engine の sessionSettingsOf）。版 8 の行は版 9 の行として読めるので、upcast の関数は足さない。
+// 版 10 は Tournament の Hand の Ante と Level（D128・D129・#184）として、HAND_STARTED に ante（Ante の種類と額）・tournament（Level と経過）を、
+// Event の種類に ANTE_POSTED を足した。どちらの項目も持たない Hand（Cash・Tournament でない Hand）は版 9 と同じ形で、Engine は ante の無い
+// HAND_STARTED を Ante なし（none）の Hand として畳み込む（hand-state.ts の initialState）。版 9 までの行は ante も ANTE_POSTED も持たない
+// ので、変換せずに Ante なしの Hand として読む。版 9 の行は版 10 の行として読めるので、upcast の関数は足さない（版 9 と同じ扱い）。
+// 版 9 で保存した Tournament の Hand（Level を持たない）の次の Hand の Level は、Orchestrator が Session の Hand の数から作る。
 
 /** 版 1〜7 に無い Event（Hero の User Read。版 8 で足した。D112・#115）。 */
 type UserReadEventV8 = Extract<HandEvent, { type: "USER_READ_RECORDED" }>;

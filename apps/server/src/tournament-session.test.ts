@@ -2,11 +2,13 @@
 // - mode を指定しない開始は既存の Cash の経路（Event・Stack・Blind を変えない）
 // - Tournament は Preset の Starting Stack と 1 Level 目の Blind で始め、設定の Snapshot を SESSION_STARTED に残す
 // - 同じ Session の Hand・Resume（再起動）は Snapshot の設定で続ける。続く Session に違う設定を求めたら拒否する
+// - Hand の開始時の Level（hand_count / time_base）と Ante（D128・#184）。Level と経過は HAND_STARTED に固定し、Resume でも作り直す
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   TOURNAMENT_PRESETS,
+  levelAt,
   type HandEvent,
   type HeroView,
   type PlayerAction,
@@ -26,7 +28,11 @@ const TOURNAMENT: SessionRequest = {
   presetId: "stt6_hand_count",
 };
 
-function orchestratorOn(store: EventStore, prefix = "t") {
+function orchestratorOn(
+  store: EventStore,
+  prefix = "t",
+  playClock?: () => number,
+) {
   let handNo = 0;
   let sessionNo = 0;
   return new HandOrchestrator({
@@ -38,6 +44,7 @@ function orchestratorOn(store: EventStore, prefix = "t") {
     nextSeed: () => 42 + handNo,
     nextHandId: () => `${prefix}-hand-${++handNo}`,
     nextSessionId: () => `${prefix}-session-${++sessionNo}`,
+    ...(playClock === undefined ? {} : { playClock }),
   });
 }
 
@@ -49,14 +56,26 @@ function passive(view: HeroView): PlayerAction {
   return { type: "fold" };
 }
 
-/** 1 Hand を始めて最後まで進め、Hand ID を返す。 */
+/** Check できれば Check、できなければ Fold（Hero の Stack を減らしにくく、多数の Hand を続けやすい）。 */
+function foldOrCheck(view: HeroView): PlayerAction {
+  const types = view.legalActions?.actions.map((a) => a.type) ?? [];
+  return types.includes("check") ? { type: "check" } : { type: "fold" };
+}
+
+/**
+ * 1 Hand を始めて最後まで進め、Hand ID を返す。onStarted は開始の直後（Hero の最初の Action の前）に呼ぶ
+ * （時計を進めて、Hand の途中で経過した時間を作る）。
+ */
 async function playHand(
   orchestrator: HandOrchestrator,
   afterHandId: string | null,
   request?: SessionRequest,
+  policy: (view: HeroView) => PlayerAction = passive,
+  onStarted?: () => void,
 ): Promise<string> {
   const started = await orchestrator.startHand(afterHandId, request);
   if (!started.ok) throw new Error(started.error.message);
+  onStarted?.();
   let view = started.value.view;
   for (let guard = 0; view.status !== "complete"; guard++) {
     expect(guard).toBeLessThan(100);
@@ -64,7 +83,7 @@ async function playHand(
     const result = await orchestrator.heroAction(
       started.value.handId,
       view.log.at(-1)?.seq ?? -1,
-      passive(view),
+      policy(view),
     );
     if (!result.ok) throw new Error(result.error.message);
     view = result.value;
@@ -219,6 +238,158 @@ describe("Session の mode の境界（#183）", () => {
   });
 });
 
+/** Hand の BB の席と、開始時の Stack から払える Big Blind Ante の額（BB を先に払い、残りで払う。D128）。 */
+function expectedBigBlindAnte(events: readonly HandEvent[]): {
+  readonly playerId: string;
+  readonly amount: number;
+} {
+  const started = startedOf(events);
+  const bb = events.find((e) => e.type === "BLIND_POSTED" && e.blind === "big");
+  if (bb?.type !== "BLIND_POSTED") throw new Error("BB が無い");
+  const stack =
+    started.seats.find((s) => s.playerId === bb.playerId)?.stack ?? 0;
+  const ante = started.ante?.amount ?? 0;
+  return { playerId: bb.playerId, amount: Math.min(ante, stack - bb.amount) };
+}
+
+describe("Tournament の Hand の Level と Ante（D128・#184）", () => {
+  const TIME_BASE: SessionRequest = {
+    mode: "tournament",
+    presetId: "stt6_time_base",
+  };
+  const MINUTE = 60 * 1_000;
+
+  it("hand_count: Session の Hand の数で 10 Hand ごとに Level を上げ、その Level の Blind と Big Blind Ante で始める（Chip は増減しない）", async () => {
+    const store = new InMemoryEventStore();
+    const orchestrator = orchestratorOn(store);
+    let previous: string | null = null;
+    for (let k = 1; k <= 11; k++) {
+      const handId = await playHand(
+        orchestrator,
+        previous,
+        k === 1 ? TOURNAMENT : undefined,
+        foldOrCheck,
+      );
+      const events = eventsOf(store, handId);
+      const started = startedOf(events);
+      // 1〜10 Hand 目は Level 1（10/20・Ante 20）、11 Hand 目は Level 2（15/30・Ante 30）。
+      const level = k <= 10 ? 1 : 2;
+      const blinds = STANDARD.levels[level - 1];
+      expect(started.tournament).toEqual({
+        level,
+        handNumber: k,
+        // hand_count でもプレイ時間は残す（Level には使わない）。
+        playTimeMs: started.tournament?.playTimeMs,
+      });
+      expect(started.smallBlind).toBe(blinds?.smallBlind);
+      expect(started.bigBlind).toBe(blinds?.bigBlind);
+      expect(started.ante).toEqual({
+        kind: "big_blind_ante",
+        amount: blinds?.ante,
+      });
+      // Ante は BB の席が Blind の後に払う（Stack が足りなければ減り、0 なら置かない）。
+      const expected = expectedBigBlindAnte(events);
+      const antes = events.filter((e) => e.type === "ANTE_POSTED");
+      expect(antes.map((e) => [e.playerId, e.amount])).toEqual(
+        expected.amount > 0 ? [[expected.playerId, expected.amount]] : [],
+      );
+      // Chip は Session を通して増減しない（INV-TEST-002。Ante は Pot に入って誰かへ配られる）。
+      const finished = events.find((e) => e.type === "HAND_FINISHED");
+      if (finished?.type !== "HAND_FINISHED") throw new Error("終わっていない");
+      expect(finished.stacks.reduce((sum, x) => sum + x.amount, 0)).toBe(
+        STANDARD.startingStack * PHASE1_TABLE_SETUP.players.length,
+      );
+      previous = handId;
+    }
+    orchestrator.close();
+  });
+
+  it("time_base: Hand の開始から終わりまでの時間だけを累計し（Hand の間は数えない）、累計で Level を決めて HAND_STARTED に固定する", async () => {
+    const TIME = TOURNAMENT_PRESETS.stt6_time_base;
+    let now = 1_000;
+    const store = new InMemoryEventStore();
+    const orchestrator = orchestratorOn(store, "t", () => now);
+    let previous: string | null = null;
+    let expectedPlayTime = 0;
+    let reachedLevel2 = false;
+    for (let k = 1; k <= 8; k++) {
+      // Hand と Hand の間（結果を見ている間）の 30 分は数えない。
+      now += 30 * MINUTE;
+      let startedView: HeroView | null = null;
+      const handId = await playHand(
+        orchestrator,
+        previous,
+        k === 1 ? TIME_BASE : undefined,
+        (view) => {
+          startedView ??= view;
+          return foldOrCheck(view);
+        },
+        // Hand の途中で 4 分経つ（Hero の Action で Hand が終わる）。
+        () => {
+          now += 4 * MINUTE;
+        },
+      );
+      const started = startedOf(eventsOf(store, handId));
+      expect(started.tournament?.handNumber).toBe(k);
+      expect(started.tournament?.playTimeMs).toBe(expectedPlayTime);
+      const level = levelAt(TIME, {
+        handNumber: k,
+        playTimeMs: expectedPlayTime,
+      });
+      expect(started.tournament?.level).toBe(level);
+      expect(started.bigBlind).toBe(TIME.levels[level - 1]?.bigBlind);
+      if (level >= 2) reachedLevel2 = true;
+      // Hero が行動した Hand は 4 分、Hero の行動の前に終わった Hand（開始の時点で終わった・Hero の前に決まった）は 0。
+      if (startedView !== null) expectedPlayTime += 4 * MINUTE;
+      previous = handId;
+    }
+    expect(reachedLevel2).toBe(true);
+    orchestrator.close();
+  });
+
+  it("time_base: 時計が巻き戻っても Hand のプレイ時間は負にならない（累計は減らない）", async () => {
+    let now = 10 * MINUTE;
+    let acted = 0;
+    const store = new InMemoryEventStore();
+    const orchestrator = orchestratorOn(store, "t", () => now);
+    const first = await playHand(
+      orchestrator,
+      null,
+      TIME_BASE,
+      (view) => {
+        acted++;
+        return passive(view);
+      },
+      () => {
+        now -= 5 * MINUTE;
+      },
+    );
+    // Hero の Action で Hand が終わる（終わりの時刻が開始より 5 分前になる）ことを前提にする。
+    expect(acted).toBeGreaterThan(0);
+    const second = await playHand(orchestrator, first, undefined, passive);
+    expect(startedOf(eventsOf(store, second)).tournament).toEqual({
+      level: 1,
+      handNumber: 2,
+      playTimeMs: 0,
+    });
+    orchestrator.close();
+  });
+
+  it("Cash の Hand は Level・Ante を持たない（HAND_STARTED の形と ANTE_POSTED の無さは今までと同じ）", async () => {
+    const store = new InMemoryEventStore();
+    const orchestrator = orchestratorOn(store);
+    const first = await playHand(orchestrator, null);
+    const second = await playHand(orchestrator, first);
+    for (const handId of [first, second]) {
+      const events = eventsOf(store, handId);
+      expect(startedOf(events)).not.toHaveProperty("ante");
+      expect(startedOf(events)).not.toHaveProperty("tournament");
+      expect(events.some((e) => e.type === "ANTE_POSTED")).toBe(false);
+    }
+    orchestrator.close();
+  });
+});
+
 describe("Tournament の Session の Resume（SQLite。#183・D129）", () => {
   let dir: string;
   const opened: SqliteEventStore[] = [];
@@ -264,6 +435,100 @@ describe("Tournament の Session の Resume（SQLite。#183・D129）", () => {
     expect(await after.startHand(third, { mode: "cash" })).toMatchObject({
       ok: false,
       error: { kind: "session_mode_mismatch" },
+    });
+    after.close();
+  });
+
+  it("再起動後は、最後の Hand の HAND_STARTED の Level と経過から、同じ数え方で次の Hand の Level を作り直す（D128）", async () => {
+    // 前のプロセス: 単調な時計で Hand のプレイ時間を測る。壁時計（記録時刻）も同じだけ進める。
+    let wall = Date.parse("2026-10-09T00:00:00.000Z");
+    let clock = 0;
+    const store = SqliteEventStore.open(join(dir, "poker.sqlite"), {
+      now: () => new Date(wall),
+    });
+    opened.push(store);
+    const before = orchestratorOn(store, "a", () => clock);
+    const advance = (ms: number) => () => {
+      wall += ms;
+      clock += ms;
+    };
+    let acted = 0;
+    const counting = (view: HeroView) => {
+      acted++;
+      return foldOrCheck(view);
+    };
+    const first = await playHand(
+      before,
+      null,
+      { mode: "tournament", presetId: "stt6_time_base" },
+      counting,
+      advance(6 * 60_000),
+    );
+    const firstActed = acted > 0;
+    acted = 0;
+    const second = await playHand(
+      before,
+      first,
+      undefined,
+      counting,
+      advance(7 * 60_000),
+    );
+    const secondActed = acted > 0;
+    before.close();
+    opened.splice(0).forEach((s) => s.close());
+
+    // 再起動: 前の Hand の長さは、保存した記録時刻の差から作る（この Process の時計は 0 から）。
+    const reopened = open();
+    const after = orchestratorOn(reopened, "b", () => 0);
+    const third = await playHand(after, second, undefined, foldOrCheck);
+    const secondStarted = startedOf(eventsOf(reopened, second)).tournament;
+    expect(secondStarted).toEqual({
+      level: 1,
+      handNumber: 2,
+      playTimeMs: firstActed ? 6 * 60_000 : 0,
+    });
+    const playTimeMs =
+      (secondStarted?.playTimeMs ?? 0) + (secondActed ? 7 * 60_000 : 0);
+    expect(startedOf(eventsOf(reopened, third)).tournament).toEqual({
+      level: playTimeMs >= 10 * 60_000 ? 2 : 1,
+      handNumber: 3,
+      playTimeMs,
+    });
+    after.close();
+  });
+
+  it("再起動の前の Hand の記録時刻が巻き戻っていても、プレイ時間は負にならない", async () => {
+    let wall = Date.parse("2026-10-09T00:00:00.000Z");
+    const store = SqliteEventStore.open(join(dir, "poker.sqlite"), {
+      now: () => new Date(wall),
+    });
+    opened.push(store);
+    const before = orchestratorOn(store, "a", () => 0);
+    let acted = 0;
+    const first = await playHand(
+      before,
+      null,
+      { mode: "tournament", presetId: "stt6_time_base" },
+      (view) => {
+        acted++;
+        return passive(view);
+      },
+      () => {
+        wall -= 60 * 60_000;
+      },
+    );
+    // HAND_FINISHED の記録時刻が最初の Event より 1 時間前になる（Hero の Action で Hand が終わる）ことを前提にする。
+    expect(acted).toBeGreaterThan(0);
+    before.close();
+    opened.splice(0).forEach((s) => s.close());
+
+    const reopened = open();
+    const after = orchestratorOn(reopened, "b", () => 0);
+    const second = await playHand(after, first, undefined, passive);
+    expect(startedOf(eventsOf(reopened, second)).tournament).toEqual({
+      level: 1,
+      handNumber: 2,
+      playTimeMs: 0,
     });
     after.close();
   });

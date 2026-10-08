@@ -39,7 +39,11 @@ import {
   isChipAmount,
   type TableConfig,
 } from "./table-config.js";
-import { validateTournamentConfig } from "./tournament.js";
+import {
+  isTournamentHandContext,
+  validateTournamentConfig,
+  type TournamentHandContext,
+} from "./tournament.js";
 
 /**
  * Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）のうち、呼び出し側（Server）が渡す値。
@@ -63,6 +67,11 @@ export interface StartHandInput {
    * 省略すると置かない（Scenario Test・Opponent Eval の Spot は Metadata なしで同じ Event 列のまま）。
    */
   readonly metadata?: HandMetadataInput;
+  /**
+   * Tournament の Hand の開始時の Level と経過（D128・#184）。渡したときだけ HAND_STARTED に残す（Cash の Hand は渡さない）。
+   * Blind・Ante の額は config（tableConfigForLevel でその Level の額にしたもの）で渡す。
+   */
+  readonly tournament?: TournamentHandContext;
 }
 
 /** Command の結果。events はこの Command で新たに発行した分だけ（呼び出し側が Event Log へ追記する）。 */
@@ -112,6 +121,19 @@ export function startHand(input: StartHandInput): EngineResult<HandProgress> {
     // 入力の配列を Event に共有させない（呼び出し側が後で書き換えても Event Log が変わらないように）。
     seats: seats.map((s) => ({ playerId: s.playerId, stack: s.stack })),
     buttonPlayerId: input.buttonPlayerId,
+    // Ante・Tournament の Level は持つ Hand だけに足す（Cash の Hand の Event の形は変えない）。
+    ...(config.ante === undefined
+      ? {}
+      : { ante: { kind: config.ante.kind, amount: config.ante.amount } }),
+    ...(input.tournament === undefined
+      ? {}
+      : {
+          tournament: {
+            level: input.tournament.level,
+            handNumber: input.tournament.handNumber,
+            playTimeMs: input.tournament.playTimeMs,
+          },
+        }),
   };
   const started = {
     ...startedBody,
@@ -137,8 +159,19 @@ export function startHand(input: StartHandInput): EngineResult<HandProgress> {
     });
   }
   acc = emit(acc, { type: "DECK_SHUFFLED", seed, deck });
+  const ante = config.ante;
+  // per_player の Ante は Blind より先に、Button の左から全員が払う（Stack が両方に足りなければ Ante が先。OI-007 の暫定値）。
+  if (ante?.kind === "per_player") {
+    for (let k = 0; k < n; k++) {
+      acc = postAnte(acc, (button + 1 + k) % n, ante.amount);
+    }
+  }
   acc = postBlind(acc, sb, "small", config.smallBlind);
   acc = postBlind(acc, bb, "big", config.bigBlind);
+  // big_blind_ante は BB の席が Blind を先に払い、残りの Stack で払う（足りなければ Ante が減る。TDA 準拠・D128）。
+  if (ante?.kind === "big_blind_ante") {
+    acc = postAnte(acc, bb, ante.amount);
+  }
   // 配布は Button の左から 1 枚ずつ 2 周する。k 番目に配られる Player の札は deck[k] と deck[n + k]。
   for (let k = 0; k < n; k++) {
     const seat = seats[(button + 1 + k) % n] as SeatInit;
@@ -463,6 +496,18 @@ function postBlind(
   });
 }
 
+/** Ante を払う（D128）。Stack が足りなければ Stack 全額（All-in）。払える額が 0（BB の Blind で Stack が尽きた）なら置かない。 */
+function postAnte(
+  acc: HandProgress,
+  index: number,
+  amount: number,
+): HandProgress {
+  const p = playerAt(acc.state, index);
+  const paid = Math.min(amount, p.stack);
+  if (paid === 0) return acc;
+  return emit(acc, { type: "ANTE_POSTED", playerId: p.playerId, amount: paid });
+}
+
 /**
  * 誰も行動できない間、Hand を自動で進める。
  * Betting Round が終わるたびに、誰も Call しなかった超過分（Uncalled Bet）を返す。
@@ -550,7 +595,8 @@ function dealNextStreet(acc: HandProgress): HandProgress {
 function awardPots(acc: HandProgress, showdown: boolean): HandProgress {
   const state = acc.state;
   // Button の左から時計回りの順で渡すので、eligible と winners もその順になる（端数を配る順）。
-  const pots = buildPots(seatsFromButton(state));
+  // big_blind_ante の Ante は Main Pot にだけ入れる（D128）。
+  const pots = buildPots(seatsFromButton(state), state.mainPotAnte);
   const values = new Map<string, HandValue>();
   if (showdown) {
     for (const p of state.players) {
@@ -650,6 +696,21 @@ function validateStartInput(input: StartHandInput): string | null {
     config.bigBlind < config.smallBlind
   ) {
     return `Blind は 0 < SB <= BB の整数: ${config.smallBlind}/${config.bigBlind}`;
+  }
+  if (config.ante !== undefined) {
+    const { kind, amount } = config.ante;
+    if (kind !== "per_player" && kind !== "big_blind_ante") {
+      return `未対応の Ante: ${String(kind)}`;
+    }
+    if (!isChipAmount(amount) || amount <= 0) {
+      return `Ante は正の整数: ${amount}`;
+    }
+  }
+  if (
+    input.tournament !== undefined &&
+    !isTournamentHandContext(input.tournament)
+  ) {
+    return "Tournament の Level と経過は 1 以上の Level・Hand の番号と 0 以上の整数のプレイ時間";
   }
   if (seats.some((s) => !isChipAmount(s.stack) || s.stack <= 0)) {
     return "Stack は正の整数";

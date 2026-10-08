@@ -92,6 +92,8 @@ interface HandScenario {
     readonly tailEvents?: readonly HandEventType[];
     /** 1 度も発行されてはいけない Event 種別。 */
     readonly absentEvents?: readonly HandEventType[];
+    /** ANTE_POSTED を発行順に [playerId, 額]（D128）。 */
+    readonly antes?: readonly (readonly [string, number])[];
   };
 }
 
@@ -141,6 +143,19 @@ const threeForRuling = (): SeatInit[] => [
   { playerId: "sb", stack: 1000 },
   { playerId: "hero", stack: 1000 },
 ];
+
+/** Ante のある卓の設定（D128・#184）。Rule Profile は Cash と共有し、Blind と Ante だけを変える。 */
+const withAnte = (
+  kind: "per_player" | "big_blind_ante",
+  smallBlind: number,
+  bigBlind: number,
+  amount: number,
+): TableConfig => ({
+  ...PHASE1_CASH_PRESET,
+  smallBlind,
+  bigBlind,
+  ante: { kind, amount },
+});
 
 const checkDown = (first: string, second: string): ScenarioStep[] =>
   [1, 2, 3].flatMap(() => [
@@ -1554,6 +1569,374 @@ const SCENARIOS: readonly HandScenario[] = [
       awards: { hero: 106 },
     },
   },
+  {
+    id: "SCN-ante-bba-fold-to-bb-001",
+    title:
+      "Big Blind Ante: BB が Blind と Ante を払い、全員 Fold。Call 額と Uncalled の返却に Ante を数えない",
+    source: "docs/02 §7 Ante の Pot での扱い（D128）/ #184",
+    seats: sixMax(1_500),
+    button: "btn",
+    config: withAnte("big_blind_ante", 10, 20, 20),
+    holes: {},
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // Call 額は BB の 20（Ante の 20 は数えない）。Minimum Raise は 20 + 20 = 40。
+        player: "utg",
+        action: fold,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 20 },
+          { type: "raise", min: 40, max: 1_500 },
+          { type: "all_in", amount: 1_500 },
+        ],
+      },
+      { player: "hj", action: fold },
+      { player: "co", action: fold },
+      { player: "btn", action: fold },
+      { player: "sb", action: fold },
+    ],
+    expect: {
+      status: "complete",
+      // Uncalled は Blind だけで数える: BB 20 − SB 10 = 10 を返す（Ante を数えると 30 になる）。
+      // Pot = SB 10 + BB 10 + Ante 20（Main Pot の Dead Money）= 40 → BB。
+      // BB 1500 − 20 − 20 + 10 + 40 = 1510 / SB 1490（計 9000）
+      stacks: {
+        btn: 1_500,
+        sb: 1_490,
+        bb: 1_510,
+        utg: 1_500,
+        hj: 1_500,
+        co: 1_500,
+      },
+      pot: 0,
+      awards: { bb: 40 },
+      pots: [
+        { total: 40, eligible: ["bb"], awards: { bb: 40 }, showdown: false },
+      ],
+      antes: [["bb", 20]],
+      tailEvents: ["UNCALLED_BET_RETURNED", "POT_AWARDED", "HAND_FINISHED"],
+    },
+  },
+  {
+    id: "SCN-ante-bba-hu-001",
+    title:
+      "Big Blind Ante の Heads-Up: Button = SB、BB の席が Blind の後に Ante を払う",
+    source: "docs/02 §7 Heads-Up・Ante の Pot での扱い（D128）/ #184",
+    seats: [
+      { playerId: "btn", stack: 1_000 },
+      { playerId: "bb", stack: 1_000 },
+    ],
+    button: "btn",
+    config: withAnte("big_blind_ante", 10, 20, 20),
+    holes: {},
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // Button（SB 10 を投入済み）の Call は 20 − 10 = 10。
+        player: "btn",
+        action: fold,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 10 },
+          { type: "raise", min: 40, max: 1_000 },
+          { type: "all_in", amount: 1_000 },
+        ],
+      },
+    ],
+    expect: {
+      status: "complete",
+      // BB へ 20 − 10 = 10 を返し、Pot = 10 + 10 + Ante 20 = 40 → BB。BB 1000 − 40 + 10 + 40 = 1010 / btn 990
+      stacks: { btn: 990, bb: 1_010 },
+      pot: 0,
+      awards: { bb: 40 },
+      antes: [["bb", 20]],
+    },
+  },
+  {
+    id: "SCN-ante-bba-short-bb-001",
+    title:
+      "Big Blind Ante で BB の Stack が足りない: Blind を先に払い、残りで Ante（減る）。Ante は Main Pot に入る",
+    source: "docs/02 §7 Ante の Pot での扱い（D128・TDA）/ #184",
+    seats: [
+      { playerId: "btn", stack: 1_000 },
+      { playerId: "sb", stack: 1_000 },
+      { playerId: "bb", stack: 30 },
+    ],
+    button: "btn",
+    config: withAnte("big_blind_ante", 10, 20, 20),
+    holes: { bb: "As Ad", btn: "Ks Kd", sb: "Qs Qd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // BB は Blind 20 の後の残り 10 で Ante を払って All-in。Call 額は Blind の 20 だけ。
+        player: "btn",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 20 },
+          { type: "raise", min: 40, max: 1_000 },
+          { type: "all_in", amount: 1_000 },
+        ],
+      },
+      { player: "sb", action: call },
+      // Flop 以降は All-in の BB を飛ばして SB → Button。
+      { player: "sb", action: check },
+      { player: "btn", action: bet(100) },
+      { player: "sb", action: call },
+      { player: "sb", action: check },
+      { player: "btn", action: check },
+      { player: "sb", action: check },
+      { player: "btn", action: check },
+    ],
+    expect: {
+      status: "complete",
+      // Main Pot = 20 × 3 + Ante 10 = 70（3 人が争える）→ BB の AA。Side Pot = 100 × 2 = 200（SB・Button）→ Button の KK。
+      // BB 70 / Button 1000 − 120 + 200 = 1080 / SB 1000 − 120 = 880（計 2030）
+      stacks: { btn: 1_080, sb: 880, bb: 70 },
+      pot: 0,
+      awards: { bb: 70, btn: 200 },
+      pots: [
+        {
+          total: 70,
+          eligible: ["sb", "bb", "btn"],
+          awards: { bb: 70 },
+          showdown: true,
+        },
+        {
+          total: 200,
+          eligible: ["sb", "btn"],
+          awards: { btn: 200 },
+          showdown: true,
+        },
+      ],
+      antes: [["bb", 10]],
+    },
+  },
+  {
+    id: "SCN-ante-bba-bb-allin-by-blind-001",
+    title:
+      "Big Blind Ante で BB が Blind だけで All-in: Ante は払えないので置かない",
+    source: "docs/02 §7 Ante の Pot での扱い（D128・TDA）/ #184",
+    seats: [
+      { playerId: "btn", stack: 1_000 },
+      { playerId: "sb", stack: 1_000 },
+      { playerId: "bb", stack: 20 },
+    ],
+    button: "btn",
+    config: withAnte("big_blind_ante", 10, 20, 20),
+    holes: { bb: "As Ad", sb: "Ks Kd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      { player: "btn", action: fold },
+      // 残りで行動できるのは SB だけなので、Call の後は Board を配り切って Showdown。
+      { player: "sb", action: call },
+    ],
+    expect: {
+      status: "complete",
+      // Pot = 20 + 20 = 40 → BB の AA。BB 40 / SB 980 / Button 1000（計 2020）
+      stacks: { btn: 1_000, sb: 980, bb: 40 },
+      pot: 0,
+      awards: { bb: 40 },
+      antes: [],
+      absentEvents: ["ANTE_POSTED"],
+    },
+  },
+  {
+    id: "SCN-ante-bba-short-allin-wins-main-001",
+    title:
+      "Big Blind Ante は全額 Main Pot: BB の Blind より短い All-in でも Ante の全額を取れる",
+    source: "docs/02 §7 Ante の Pot での扱い（D128・TDA）/ #184",
+    seats: [
+      { playerId: "btn", stack: 1_000 },
+      { playerId: "sb", stack: 1_000 },
+      { playerId: "bb", stack: 1_000 },
+      { playerId: "utg", stack: 15 },
+    ],
+    button: "btn",
+    config: withAnte("big_blind_ante", 10, 20, 20),
+    holes: { utg: "As Ad", bb: "Ks Kd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      { player: "utg", action: allIn },
+      { player: "btn", action: fold },
+      { player: "sb", action: fold },
+      // BB は行動できる相手がいないので Option は無く、Board を配り切る。
+    ],
+    expect: {
+      status: "complete",
+      // BB の Blind 20 は UTG の 15 を 5 超えるので返す。Pot = UTG 15 + BB 15 + SB 10 + Ante 20 = 60（UTG・BB が争える）→ UTG の AA。
+      // Ante を BB の段に入れると UTG が取れるのは 15 × 2 + 10 = 40 になる（D128 は Main Pot）。
+      // UTG 60 / BB 1000 − 20 − 20 + 5 = 965 / SB 990 / Button 1000（計 3015）
+      stacks: { btn: 1_000, sb: 990, bb: 965, utg: 60 },
+      pot: 0,
+      awards: { utg: 60 },
+      pots: [
+        {
+          total: 60,
+          eligible: ["bb", "utg"],
+          awards: { utg: 60 },
+          showdown: true,
+        },
+      ],
+      antes: [["bb", 20]],
+    },
+  },
+  {
+    id: "SCN-ante-per-player-001",
+    title:
+      "per_player の Ante: 全員が Blind より先に払い、Call 額と Uncalled の返却に数えない",
+    source: "docs/02 §7 Ante の Pot での扱い（D128）/ #184",
+    seats: [
+      { playerId: "btn", stack: 200 },
+      { playerId: "sb", stack: 200 },
+      { playerId: "bb", stack: 200 },
+      { playerId: "utg", stack: 200 },
+    ],
+    button: "btn",
+    config: withAnte("per_player", 1, 2, 1),
+    holes: {},
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // Call 額は BB の 2（Ante の 1 は数えない）。Raise の上限は Ante を払った後の Stack 199。
+        player: "utg",
+        action: raise(6),
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 2 },
+          { type: "raise", min: 4, max: 199 },
+          { type: "all_in", amount: 199 },
+        ],
+      },
+      { player: "btn", action: fold },
+      { player: "sb", action: fold },
+      { player: "bb", action: call },
+      { player: "bb", action: check },
+      { player: "utg", action: bet(10) },
+      { player: "bb", action: fold },
+    ],
+    expect: {
+      status: "complete",
+      // Flop の Bet 10 は誰も Call しないので返す（Ante は関係しない）。
+      // Pot = Ante 4 + SB 1 + BB 6 + UTG 6 = 17 → UTG。UTG 200 − 1 − 6 + 17 = 210 / BB 193 / SB 198 / Button 199（計 800）
+      stacks: { btn: 199, sb: 198, bb: 193, utg: 210 },
+      pot: 0,
+      awards: { utg: 17 },
+      pots: [
+        { total: 17, eligible: ["utg"], awards: { utg: 17 }, showdown: false },
+      ],
+      // Button の左から（SB → BB → UTG → Button）。
+      antes: [
+        ["sb", 1],
+        ["bb", 1],
+        ["utg", 1],
+        ["btn", 1],
+      ],
+      tailEvents: ["UNCALLED_BET_RETURNED", "POT_AWARDED", "HAND_FINISHED"],
+    },
+  },
+  {
+    id: "SCN-ante-per-player-short-bb-all-fold-001",
+    title:
+      "per_player の Ante で BB が Ante だけで All-in し相手が Fold: Fold した Player の Ante は返さず、残った BB が取る",
+    // Property（Ante・不均等 Stack）の縮小済みの反例を昇格した（poker-engine-testing §5）。
+    source: "docs/02 §7 Ante の Pot での扱い（D128）/ #184",
+    seats: [
+      { playerId: "bb", stack: 1 },
+      { playerId: "btn", stack: 4 },
+    ],
+    // Heads-Up は Button = SB。Ante は Button の左（BB）から: BB 1（All-in）・Button 2。Blind は SB 1・BB 0。
+    button: "btn",
+    config: withAnte("per_player", 1, 2, 2),
+    holes: {},
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      {
+        // BB は All-in なので Raise はできない。Call 額は BB の全額 2 − SB 1 = 1（Ante は数えない）で、残りの Stack 1 と同じ。
+        player: "btn",
+        action: fold,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 1 },
+          { type: "all_in", amount: 2 },
+        ],
+      },
+    ],
+    expect: {
+      status: "complete",
+      // SB の 1 は BB の Blind（0）を超えるので返す。Ante（Dead Money）は返さない（D128）ので、Pot = BB 1 + Button の Ante 2 = 3 → BB。
+      // BB 3 / Button 4 − 2 − 1 + 1 = 2（計 5）
+      stacks: { bb: 3, btn: 2 },
+      pot: 0,
+      awards: { bb: 3 },
+      pots: [
+        { total: 3, eligible: ["bb"], awards: { bb: 3 }, showdown: false },
+      ],
+      antes: [
+        ["bb", 1],
+        ["btn", 2],
+      ],
+    },
+  },
+  {
+    id: "SCN-ante-per-player-side-pot-001",
+    title:
+      "per_player の Ante で Short Stack が Ante だけで All-in: Ante が先で Blind は払えず、各自の Ante は Pot の段に入る",
+    source: "docs/02 §7 Ante の Pot での扱い（D128）・§5 Side Pot / #184",
+    seats: [
+      { playerId: "btn", stack: 100 },
+      { playerId: "sb", stack: 5 },
+      { playerId: "bb", stack: 100 },
+    ],
+    button: "btn",
+    config: withAnte("per_player", 10, 20, 10),
+    holes: { sb: "As Ad", btn: "Ks Kd", bb: "Qs Qd" },
+    board: "2c 7s 9d Jc 3h",
+    steps: [
+      // SB は Ante 5 で All-in（Blind は 0）。BB は Ante 10 と Blind 20。Call 額は 20。
+      {
+        player: "btn",
+        action: call,
+        legal: [
+          { type: "fold" },
+          { type: "call", amount: 20 },
+          { type: "raise", min: 40, max: 90 },
+          { type: "all_in", amount: 90 },
+        ],
+      },
+      { player: "bb", action: check },
+      ...checkDown("bb", "btn"),
+    ],
+    expect: {
+      status: "complete",
+      // Commit: SB 5 / BB 10 + 20 = 30 / Button 10 + 20 = 30。
+      // Main Pot = 5 × 3 = 15（3 人）→ SB の AA。Side Pot = 25 × 2 = 50（BB・Button）→ Button の KK。
+      // SB 15 / Button 100 − 30 + 50 = 120 / BB 70（計 205）
+      stacks: { btn: 120, sb: 15, bb: 70 },
+      pot: 0,
+      awards: { sb: 15, btn: 50 },
+      pots: [
+        {
+          total: 15,
+          eligible: ["sb", "bb", "btn"],
+          awards: { sb: 15 },
+          showdown: true,
+        },
+        {
+          total: 50,
+          eligible: ["bb", "btn"],
+          awards: { btn: 50 },
+          showdown: true,
+        },
+      ],
+      antes: [
+        ["sb", 5],
+        ["bb", 10],
+        ["btn", 10],
+      ],
+    },
+  },
 ];
 
 describe("Scenario Regression", () => {
@@ -1663,6 +2046,13 @@ function runScenario(s: HandScenario): void {
   }
   for (const absent of s.expect.absentEvents ?? []) {
     expect(events.some((e) => e.type === absent)).toBe(false);
+  }
+  if (s.expect.antes !== undefined) {
+    expect(
+      events.flatMap((e) =>
+        e.type === "ANTE_POSTED" ? [[e.playerId, e.amount]] : [],
+      ),
+    ).toEqual(s.expect.antes);
   }
 }
 

@@ -133,6 +133,10 @@ function outcomeOfPublic(
         if (e.playerId === playerId) committed += e.amount;
         level = Math.max(level, e.amount);
         break;
+      case "ANTE_POSTED":
+        // Ante（Tournament。D128）も自分が出した額に数える（収支から引く）。Call / Raise の額ではないので level は変えない。
+        if (e.playerId === playerId) committed += e.amount;
+        break;
       case "ACTION_TAKEN":
         if (e.playerId === playerId) committed += e.amount;
         if (e.street !== street) {

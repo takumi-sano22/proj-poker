@@ -35,11 +35,13 @@ export function checkInvariants(
       `INV-TEST-002: Σ Stack ${stacks} + Pot ${state.pot} ≠ ${initialTotal}`,
     );
   }
-  const committed = sum(state.players.map((p) => p.totalCommitted));
+  // Pot に入った額は Σ Commit と、誰の Commit にも数えない Main Pot の Dead Money（big_blind_ante の Ante。D128）。
+  const committed =
+    sum(state.players.map((p) => p.totalCommitted)) + state.mainPotAnte;
   const awarded = sum(state.awards.map((a) => a.amount));
   if (state.pot !== committed - awarded) {
     errors.push(
-      `INV-TEST-002: Pot ${state.pot} ≠ Σ Commit ${committed} − Σ 配分 ${awarded}`,
+      `INV-TEST-002: Pot ${state.pot} ≠ Σ Commit + Dead Money ${committed} − Σ 配分 ${awarded}`,
     );
   }
 
@@ -84,7 +86,9 @@ export function initialChipTotal(stacks: readonly { stack: number }[]): number {
  * - 各 Pot の Σ awards = potTotal で、受け取るのは争える Player だけ
  * - 争える Player は Fold していない。Side Pot ほど顔ぶれが狭まる（後の Pot の eligible は前の Pot の eligible に含まれる）
  * - 誰も、各 Player から「自分の Commit 額まで」しか受け取れない（Σ_q min(自分の Commit, q の Commit) 以下）。
- *   Pot の組み立てとは独立に、Short Stack が Side Pot を取っていないことを確かめる
+ *   Pot の組み立てとは独立に、Short Stack が Side Pot を取っていないことを確かめる。例外は Dead Money で、big_blind_ante の Ante
+ *   （Main Pot）と、Fold した Player の Chip のうち Fold していない誰の Commit も超える分（per_player の Ante は返さないので起きうる。
+ *   最後の Pot に入る。side-pots.ts）は、争える Player が取りうる額に足す（D128）
  */
 export function checkPotAwards(events: readonly HandEvent[]): string[] {
   const errors: string[] = [];
@@ -123,13 +127,20 @@ export function checkPotAwards(events: readonly HandEvent[]): string[] {
     }
   });
 
-  // Commit の累計を Event から数え直す（Blind・Action で出した額 − 返却された Uncalled Bet）。
+  // Pot の段を決める Commit の累計を Event から数え直す（Blind・Action・per_player の Ante で出した額 − 返却された Uncalled Bet）。
+  // big_blind_ante の Ante は誰の段にも入らない Main Pot の Dead Money で、争える誰もが取りうる（D128）。
+  const started = events[0];
+  const anteKind = started?.type === "HAND_STARTED" ? started.ante?.kind : null;
   const commits = new Map<string, number>();
+  let deadMoney = 0;
   const add = (id: string, amount: number) =>
     commits.set(id, (commits.get(id) ?? 0) + amount);
   for (const e of events) {
     if (e.type === "BLIND_POSTED" || e.type === "ACTION_TAKEN") {
       add(e.playerId, e.amount);
+    } else if (e.type === "ANTE_POSTED") {
+      if (anteKind === "big_blind_ante") deadMoney += e.amount;
+      else add(e.playerId, e.amount);
     } else if (e.type === "UNCALLED_BET_RETURNED") {
       add(e.playerId, -e.amount);
     }
@@ -140,9 +151,15 @@ export function checkPotAwards(events: readonly HandEvent[]): string[] {
       won.set(a.playerId, (won.get(a.playerId) ?? 0) + a.amount);
     }
   }
+  // Fold していない Player の Commit の最大（最後の Pot の段）と、それを超える Fold した Player の Chip。
+  const live = [...commits].filter(([id]) => !folded.has(id));
+  const top = Math.max(0, ...live.map(([, c]) => c));
+  const aboveTop = [...commits]
+    .filter(([id]) => folded.has(id))
+    .reduce((sum, [, c]) => sum + Math.max(0, c - top), 0);
   for (const [id, amount] of won) {
     const own = commits.get(id) ?? 0;
-    let cap = 0;
+    let cap = deadMoney + (own === top ? aboveTop : 0);
     for (const other of commits.values()) cap += Math.min(own, other);
     if (amount > cap) {
       errors.push(
@@ -157,7 +174,7 @@ export function checkPotAwards(events: readonly HandEvent[]): string[] {
  * 終わった Hand の Event Log だけで Chip の動きを数え直す（INV-TEST-002 / 005 の Hand 終了版。D37）。
  * - 最後の Event が HAND_FINISHED で、HAND_STARTED の席の全員の Stack を同じ順で持つ
  * - Σ HAND_FINISHED の Stack = 開始時の Chip 総量（Rake・Rebuy は無い）
- * - Σ POT_AWARDED の potTotal = Σ Commit（Blind + Action − 返却された Uncalled Bet）
+ * - Σ POT_AWARDED の potTotal = Σ Commit（Blind + Ante + Action − 返却された Uncalled Bet。Ante は Dead Money でも Pot に入る。D128）
  * - 各 Player の終了時 Stack = 開始時 Stack − Commit + 受け取った額
  * State を見ずに Event だけで確かめるので、Event Log から Stack を持ち越す Session の前提も確かめられる。
  */
@@ -192,7 +209,11 @@ export function checkHandFinished(
     m.set(id, (m.get(id) ?? 0) + amount);
   let potTotal = 0;
   for (const e of events) {
-    if (e.type === "BLIND_POSTED" || e.type === "ACTION_TAKEN") {
+    if (
+      e.type === "BLIND_POSTED" ||
+      e.type === "ANTE_POSTED" ||
+      e.type === "ACTION_TAKEN"
+    ) {
       add(commits, e.playerId, e.amount);
     } else if (e.type === "UNCALLED_BET_RETURNED") {
       add(commits, e.playerId, -e.amount);
