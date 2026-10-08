@@ -343,3 +343,47 @@ describe("heroRange: 相手から見た Hero の Range（#82: Solver に渡す H
     expect(heroRange(swapped)).toEqual(heroRange(turn.knowledge));
   });
 });
+
+describe("analyzeDecision: Big Blind Ante の Dead Money（D128・#184）", () => {
+  // 10/20・Big Blind Ante 20・Stack 1,500。Ante は BB の Commit に数えない Main Pot の Dead Money。
+  const anteSeats: SeatInit[] = seats.map((s) => ({ ...s, stack: 1_500 }));
+  const started = startHand({
+    handId: "analysis-bba",
+    seats: anteSeats,
+    buttonPlayerId: "hero",
+    config: {
+      ...PHASE1_CASH_PRESET,
+      smallBlind: 10,
+      bigBlind: 20,
+      ante: { kind: "big_blind_ante", amount: 20 },
+    },
+    deal: {
+      deck: stackedDeck(anteSeats, "hero", { hero: "Ah Qh" }, BOARD),
+    },
+  });
+  if (!started.ok) throw new Error(started.error.message);
+  const hand = play(
+    { state: started.value.state, events: [...started.value.events] },
+    [
+      ["utg", fold],
+      ["hj", fold],
+      ["co", fold],
+      ["hero", call],
+      ["sb", fold],
+      ["bb", check],
+    ],
+  );
+  const [preflop] = heroInformationSets(hand.events, "hero");
+  if (preflop === undefined) throw new Error("Preflop の判断が無い");
+  const analysis = analyzeDecision(preflop);
+
+  it("Call で取りうる Pot は各席の Commit に Main Pot の Ante を足した額（Call 額は Ante を数えない）", () => {
+    // 判断時点の Pot = SB 10 + BB 20 + Ante 20 = 50。Call 額は BB の 20。
+    expect(analysis.pot).toBe(50);
+    expect(analysis.callAmount).toBe(20);
+    // Call した後に取りうる Pot = Hero 20 + SB 10 + BB 20 + Ante 20 = 70。必要 Equity = 20 / 70。
+    const callAlt = analysis.alternatives.find((a) => a.action === "call");
+    expect(callAlt?.winnablePot).toBe(70);
+    expect(callAlt?.requiredEquity).toBe(20 / 70);
+  });
+});

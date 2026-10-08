@@ -1,12 +1,14 @@
 // Tournament の Session の型と、Tournament の設定（Versioned Config）・標準 Preset（D108・D127・D128・#183）。
 // Tournament は既存の Hand Engine を複製せず、その上に TournamentSession 層を置く（D108）。この Module は設定の型・Preset・検証と、
-// Session の開始の Event（SESSION_STARTED）に残した設定の Snapshot の読み方だけを持つ。
-// Level の進行・Ante の支払い（#184）、Elimination・順位（#185）、Payout の計算（#186）はここに入れない。
+// Session の開始の Event（SESSION_STARTED）に残した設定の Snapshot の読み方と、Hand の開始時の Level の決め方（#184）を持つ。
+// Ante の支払いと Pot での扱いは Hand Engine（hand-engine.ts・hand-state.ts。D128）。Elimination・順位（#185）、Payout の計算（#186）は
+// ここに入れない。
 import type { HandEvent } from "./hand-events.js";
 import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   isChipAmount,
+  type PostedAnteKind,
   type TableConfig,
 } from "./table-config.js";
 
@@ -18,9 +20,9 @@ export type SessionMode = "cash" | "tournament";
  * - none: Ante なし
  * - per_player: 各自が払う（各自の拠出として Pot の段に入れる）
  * - big_blind_ante: BB の席が全員分をまとめて払う（BB を先に払い、残りで Ante。Main Pot に入れる。TDA 準拠）
- * Pot での扱いの実装は #184。
+ * Pot での扱いは Hand Engine（table-config.ts の PostedAnteKind・hand-state.ts の ANTE_POSTED）。
  */
-export type AnteKind = "none" | "per_player" | "big_blind_ante";
+export type AnteKind = "none" | PostedAnteKind;
 
 /** Blind の 1 Level。ante は anteKind の 1 回分の額（big_blind_ante は BB の席が払う額、per_player は 1 人分の額）。 */
 export interface BlindLevel {
@@ -34,7 +36,7 @@ export interface BlindLevel {
  * - hand_count: Session 内の Hand の数（論理順序。D117）で handsPerLevel ごとに 1 Level 上げる
  * - time_base: プレイ時間（Hand の開始から終わりまでの累計。アプリを閉じていた時間は数えない）で levelDurationMs ごとに 1 Level 上げる。
  *   Level は Hand の開始時に決めて HAND_STARTED に固定する。壁時計は経過時間の計測にだけ使い、意味上の順序には使わない
- * 進行の実装は #184。
+ * Level の決め方は levelAt、Hand の開始時の値は HAND_STARTED の tournament（TournamentHandContext）。
  */
 export type BlindSchedule =
   | { readonly kind: "hand_count"; readonly handsPerLevel: number }
@@ -269,13 +271,126 @@ export function validateTournamentConfig(config: unknown): string | null {
 
 /**
  * Tournament の Hand の卓の設定。Rule Profile（Betting・Ruling の規則）は Cash と共有し（D108。Hand の Rule の Invariant を共有）、
- * Blind だけをその Level の額にする。Ante を Hand に入れるのは #184。
+ * Blind と Ante をその Level の額にする（D128）。Ante なし（none）・額が 0 の Level は Ante を持たせない。
+ * base は Ante を持たない卓の設定（Cash の卓の設定）にする。Ante を持つ設定を渡すのは呼び出し側の誤りなので投げる
+ * （Level の Ante と混ざった設定で Hand を始めない）。
  */
 export function tableConfigForLevel(
   base: TableConfig,
   level: BlindLevel,
+  anteKind: AnteKind,
 ): TableConfig {
-  return { ...base, smallBlind: level.smallBlind, bigBlind: level.bigBlind };
+  if (base.ante !== undefined) {
+    throw new RangeError(
+      "Tournament の Level の元にする卓の設定に Ante がある",
+    );
+  }
+  return {
+    ...base,
+    smallBlind: level.smallBlind,
+    bigBlind: level.bigBlind,
+    ...(anteKind !== "none" && level.ante > 0
+      ? { ante: { kind: anteKind, amount: level.ante } }
+      : {}),
+  };
+}
+
+/**
+ * Tournament の Hand の開始時の Level と経過（D128・#184）。HAND_STARTED に固定して残し、次の Hand と Resume はここから作り直す。
+ * 公開の情報（卓の全員が知る Blind の Level と、その Session で何 Hand 目か・どれだけ遊んだか）。
+ */
+export interface TournamentHandContext {
+  /** この Hand の Level（1 始まり。設定の levels の何番目か）。 */
+  readonly level: number;
+  /** Session の何 Hand 目か（1 始まり。Hand の論理順序。D117）。hand_count の Level はこれで決める。 */
+  readonly handNumber: number;
+  /**
+   * この Hand の開始までのプレイ時間の累計（ms。前の Hand までの「Hand の開始から終わりまで」の長さの合計で、Hand と Hand の間・
+   * アプリを閉じていた時間は数えない）。time_base の Level はこれで決める。Hand の長さは負にしない（壁時計の巻き戻りで減らさない）。
+   */
+  readonly playTimeMs: number;
+}
+
+/** Session の中の Hand の進み（Level を決める入力）。 */
+export interface TournamentProgress {
+  readonly handNumber: number;
+  readonly playTimeMs: number;
+}
+
+/** Session の最初の Hand の進み。 */
+export const FIRST_TOURNAMENT_PROGRESS: TournamentProgress = {
+  handNumber: 1,
+  playTimeMs: 0,
+};
+
+/**
+ * 前の Hand の開始時の値と、その Hand のプレイ時間（開始から終わりまで。ms）から、次の Hand の進みを作る。
+ * 前の Hand のプレイ時間が負・整数でない（壁時計の巻き戻り・計測の誤り）なら 0 として数える（累計を減らさない）。
+ */
+export function nextTournamentProgress(
+  previous: TournamentProgress,
+  previousHandPlayMs: number,
+): TournamentProgress {
+  const played =
+    Number.isFinite(previousHandPlayMs) && previousHandPlayMs > 0
+      ? Math.round(previousHandPlayMs)
+      : 0;
+  return {
+    handNumber: previous.handNumber + 1,
+    playTimeMs: previous.playTimeMs + played,
+  };
+}
+
+/**
+ * Hand の開始時の Level（1 始まり）。最後の Level は上げずに続ける（D127）。
+ * - hand_count: Session の Hand の数で handsPerLevel ごとに 1 つ上げる（1〜handsPerLevel Hand 目が Level 1）
+ * - time_base: プレイ時間の累計で levelDurationMs ごとに 1 つ上げる（Hand の途中では上げない。次の Hand の開始で上がる）
+ */
+export function levelAt(
+  config: TournamentConfig,
+  progress: TournamentProgress,
+): number {
+  const { schedule } = config;
+  const passed =
+    schedule.kind === "hand_count"
+      ? Math.floor((progress.handNumber - 1) / schedule.handsPerLevel)
+      : Math.floor(progress.playTimeMs / schedule.levelDurationMs);
+  return Math.min(passed, config.levels.length - 1) + 1;
+}
+
+/** Hand の開始時の Level と経過（HAND_STARTED に残す値）と、その Level の Blind / Ante。 */
+export function tournamentHandContext(
+  config: TournamentConfig,
+  progress: TournamentProgress,
+): { readonly context: TournamentHandContext; readonly level: BlindLevel } {
+  const level = levelAt(config, progress);
+  const blinds = config.levels[level - 1];
+  if (blinds === undefined) {
+    throw new RangeError(`Tournament の設定に Level ${level} が無い`);
+  }
+  return {
+    context: {
+      level,
+      handNumber: progress.handNumber,
+      playTimeMs: progress.playTimeMs,
+    },
+    level: blinds,
+  };
+}
+
+/** Hand の開始時の Level と経過として妥当か（1 以上の Level・Hand の番号と、0 以上の整数のプレイ時間）。 */
+export function isTournamentHandContext(
+  value: unknown,
+): value is TournamentHandContext {
+  if (typeof value !== "object" || value === null) return false;
+  const c = value as Partial<Record<keyof TournamentHandContext, unknown>>;
+  return (
+    isPositiveInteger(c.level) &&
+    isPositiveInteger(c.handNumber) &&
+    typeof c.playTimeMs === "number" &&
+    Number.isSafeInteger(c.playTimeMs) &&
+    c.playTimeMs >= 0
+  );
 }
 
 /**

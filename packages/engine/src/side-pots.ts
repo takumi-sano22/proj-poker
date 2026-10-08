@@ -22,8 +22,18 @@ export interface Pot {
  * Fold した Player の Chip は入った段の Pot に死に金として残る。最後の段より上に Fold した Player の Chip があれば
  * （Uncalled Bet を返した後は起きない想定）最後の Pot に入れ、Σ amount が Σ Commit と必ず一致するようにする（INV-TEST-005）。
  * contributors は Button の左から時計回りの順で渡す（eligible もその順になり、端数を配る順にそのまま使える）。
+ * mainPotDeadMoney は誰の Commit にも数えない Main Pot の Dead Money（big_blind_ante の Ante。D128）で、Main Pot にだけ足す
+ * （Side Pot の段は変えない。Σ amount = Σ Commit + mainPotDeadMoney）。
  */
-export function buildPots(contributors: readonly PotContributor[]): Pot[] {
+export function buildPots(
+  contributors: readonly PotContributor[],
+  mainPotDeadMoney = 0,
+): Pot[] {
+  if (!Number.isSafeInteger(mainPotDeadMoney) || mainPotDeadMoney < 0) {
+    throw new RangeError(
+      `Main Pot の Dead Money は 0 以上の整数: ${mainPotDeadMoney}`,
+    );
+  }
   for (const c of contributors) {
     if (!Number.isSafeInteger(c.totalCommitted) || c.totalCommitted < 0) {
       throw new RangeError(
@@ -54,7 +64,10 @@ export function buildPots(contributors: readonly PotContributor[]): Pot[] {
     const eligible = contributors
       .filter((c) => !c.folded && c.totalCommitted >= level)
       .map((c) => c.playerId);
-    pots.push({ amount, eligible });
+    pots.push({
+      amount: i === 0 ? amount + mainPotDeadMoney : amount,
+      eligible,
+    });
     previous = level;
   });
   return pots;

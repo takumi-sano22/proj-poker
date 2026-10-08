@@ -218,7 +218,7 @@ function alternativesOf(
         chosen: chosen.action === "fold",
       });
     } else if (a.type === "check") {
-      const pot = winnablePot(knowledge.seats, hero, hero.totalCommitted, null);
+      const pot = winnablePot(knowledge, hero, hero.totalCommitted, null);
       result.push({
         action: "check",
         toAmount: null,
@@ -231,7 +231,7 @@ function alternativesOf(
       });
     } else if (a.type === "call") {
       const total = hero.totalCommitted + a.amount;
-      const pot = winnablePot(knowledge.seats, hero, total, null);
+      const pot = winnablePot(knowledge, hero, total, null);
       result.push({
         action: "call",
         toAmount: null,
@@ -311,7 +311,7 @@ function aggressive(
     Math.max(...opponents.map(calledTotal)),
   );
   const risk = heroTotal - hero.totalCommitted;
-  const pot = winnablePot(knowledge.seats, hero, heroTotal, calledTotal);
+  const pot = winnablePot(knowledge, hero, heroTotal, calledTotal);
   return {
     action,
     toAmount: to,
@@ -327,14 +327,17 @@ function aggressive(
 /**
  * Hero の Hand 全体の Commit が heroTotal になったときに Hero が取りうる Pot（各席の Commit の heroTotal 以下の部分の合計）。
  * calledTotal を渡すと、Fold していない相手はその額まで出した前提で数える（渡さなければ今の Commit のまま）。
+ * 誰の Commit にも数えない Main Pot の Dead Money（big_blind_ante の Ante。D128）は、Fold していない誰もが取りうるので足す
+ * （判断の時点の Pot − Σ 各席の Commit。Pot を配る前なので、この差がその額になる）。
  */
 function winnablePot(
-  seats: readonly SeatView[],
+  knowledge: KnowledgeState,
   hero: SeatView,
   heroTotal: number,
   calledTotal: ((s: SeatView) => number) | null,
 ): number {
-  let pot = 0;
+  const { seats } = knowledge;
+  let pot = knowledge.pot - seats.reduce((sum, s) => sum + s.totalCommitted, 0);
   for (const s of seats) {
     const total =
       s.playerId === hero.playerId

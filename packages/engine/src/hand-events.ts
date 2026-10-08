@@ -3,12 +3,13 @@
 // Hero の宣言・物理的な Chip の操作・Dealer の裁定（PLAYER_DECLARED / PHYSICAL_CHIP_ACTION / DEALER_RULING。D90）と、
 // Session の開始・終了、Hand の打ち切り、Emergency Bot への切り替え（SESSION_STARTED / SESSION_ENDED / HAND_ABORTED /
 // EMERGENCY_BOT_ENGAGED。D95）と、Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）と、
-// Hero が判断の前に記録した読み（USER_READ_RECORDED。D112・#115）を持つ（統合した種別は docs/04 §3 の構成表を参照）。
+// Hero が判断の前に記録した読み（USER_READ_RECORDED。D112・#115）と、Tournament の Hand の Ante（ANTE_POSTED。D128・#184）を持つ
+// （統合した種別は docs/04 §3 の構成表を参照）。
 import type { Card } from "./card.js";
 import type { CanonicalAction } from "./legal-actions.js";
 import type { Declaration, RulingCode } from "./ruling.js";
-import type { OddChipRule, ReopenRule } from "./table-config.js";
-import type { TournamentConfig } from "./tournament.js";
+import type { AnteConfig, OddChipRule, ReopenRule } from "./table-config.js";
+import type { TournamentConfig, TournamentHandContext } from "./tournament.js";
 
 /**
  * 誰がその Event を読めるか（docs/04 §4）。
@@ -118,6 +119,17 @@ export type HandEventBody =
       /** 席順（時計回り）。Button の位置もここで決まる（BUTTON_ASSIGNED を統合）。 */
       readonly seats: readonly SeatInit[];
       readonly buttonPlayerId: string;
+      /**
+       * Ante の種類と額（D128・#184。schema_version 10 で足した）。Ante の無い Hand（Cash・Ante なしの Tournament・版 9 までの行）は
+       * 項目ごと持たない（Ante なしとして読む）。Pot での扱い（per_player は各自の拠出として Pot の段、big_blind_ante は Main Pot の
+       * Dead Money）を Event Log だけで再現できるよう残す。
+       */
+      readonly ante?: AnteConfig;
+      /**
+       * Tournament の Hand の開始時の Level と経過（D128・#184。schema_version 10 で足した）。Cash の Hand は項目ごと持たない。
+       * 次の Hand と Resume の Level はここ（と、この Hand のプレイ時間）から作り直す。
+       */
+      readonly tournament?: TournamentHandContext;
     }
   | {
       readonly type: "DECK_SHUFFLED";
@@ -130,6 +142,14 @@ export type HandEventBody =
       readonly type: "BLIND_POSTED";
       readonly playerId: string;
       readonly blind: "small" | "big";
+      readonly amount: number;
+    }
+  | {
+      // Ante の支払い（D128・#184）。Dead Money で、Call / Raise の額（その Street の Commit）と Uncalled の返却に数えない。
+      // per_player は DECK_SHUFFLED の直後・Blind より前に、Button の左から全員が 1 つずつ置く（Stack が足りなければ Stack 全額）。
+      // big_blind_ante は BB の BLIND_POSTED の直後に BB の席が 1 つ置く（Blind の残りの Stack で払う。0 になるなら置かない）。
+      readonly type: "ANTE_POSTED";
+      readonly playerId: string;
       readonly amount: number;
     }
   | {
@@ -334,6 +354,7 @@ export function visibilityOf(body: HandEventBody): Visibility {
     case "DEALER_RULING":
     case "HAND_STARTED":
     case "BLIND_POSTED":
+    case "ANTE_POSTED":
     case "ACTION_TAKEN":
     case "BOARD_DEALT":
     case "CARDS_TABLED":
