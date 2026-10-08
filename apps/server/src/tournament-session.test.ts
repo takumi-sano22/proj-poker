@@ -200,8 +200,9 @@ describe("Session の mode の境界（#183）", () => {
       error: { kind: "tournament_unavailable" },
     });
     expect(store.listHands(10)).toHaveLength(0);
+    // 拒否では Hand ID を採番しない（次の開始が最初の ID を使う）。
     const cash = await orchestrator.startHand(null, { mode: "cash" });
-    expect(cash.ok).toBe(true);
+    expect(cash).toMatchObject({ ok: true, value: { handId: "hu-hand-1" } });
     orchestrator.close();
   });
 

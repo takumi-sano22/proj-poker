@@ -496,13 +496,13 @@ export class HandOrchestrator {
         },
       };
     }
+    // 続く Session に違う設定・卓の人数に合わない Preset を求められたら、Hand を作る前に拒否する（seed・Hand ID は使わない）。
+    const rejection = this.startRejection(request);
+    if (rejection !== null) return { ok: false, error: rejection };
     const handId = this.options.nextHandId();
     if (this.hands.has(handId) || store.read(handId).length > 0) {
       throw new Error(`Hand ID が重複した: ${handId}`);
     }
-    // 続く Session に違う設定・卓の人数に合わない Preset を求められたら、Hand を作る前に拒否する（seed・Hand ID は使わない）。
-    const rejection = this.startRejection(request);
-    if (rejection !== null) return { ok: false, error: rejection };
     const seed = this.options.nextSeed();
     const plan = this.planNextHand(seed, request);
     // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
