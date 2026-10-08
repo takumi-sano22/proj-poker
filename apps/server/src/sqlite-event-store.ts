@@ -332,15 +332,21 @@ export class SqliteEventStore implements EventStore {
     return toProjection(row);
   }
 
-  sessionHandIds(handId: string): readonly string[] {
+  sessionIdOfHand(handId: string): string | null {
     // 進行中の Hand（メモリだけ）は、最初の追記で決まった Session を使う。終わった Hand は hands の行から引く。
-    const sessionId =
+    return (
       this.pending.get(handId)?.sessionId ??
       (
         this.selectSessionOfHand.get(handId) as
           { session_id: string } | undefined
-      )?.session_id;
-    if (sessionId === undefined) return [];
+      )?.session_id ??
+      null
+    );
+  }
+
+  sessionHandIds(handId: string): readonly string[] {
+    const sessionId = this.sessionIdOfHand(handId);
+    if (sessionId === null) return [];
     return (
       this.selectSessionHands.all(sessionId) as unknown as HandOrdinalRow[]
     ).map(savedHandId);

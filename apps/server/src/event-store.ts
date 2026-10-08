@@ -81,6 +81,11 @@ export interface EventStore {
    * （Session Review。#116）。handId が進行中の Hand でも、その Session の終わった Hand を返す。未知の Hand なら空配列。
    */
   sessionHandIds(handId: string): readonly string[];
+  /**
+   * Hand が属する Session の ID（Hand の最初の追記で決まった値。進行中の Hand も返す）。未知の Hand なら null。
+   * CPU の Observation の抽出（memory/observation.ts。#137）が、Hand ごとにその Session の参加者を引くために使う。
+   */
+  sessionIdOfHand(handId: string): string | null;
   /** 終わった Hand の handId を、保存の古い順（論理順序。D117）にすべて返す（Recent / Long-term の Player Profile。#116）。 */
   finishedHandIds(): readonly string[];
   /**
@@ -227,6 +232,10 @@ export class InMemoryEventStore implements EventStore {
     return this.finishedHandIds().filter(
       (id) => this.sessions.get(id)?.sessionId === sessionId,
     );
+  }
+
+  sessionIdOfHand(handId: string): string | null {
+    return this.sessions.get(handId)?.sessionId ?? null;
   }
 
   finishedHandIds(): readonly string[] {
