@@ -521,4 +521,4 @@
 - id: D130
   choice: "ICM は全席の Equity・Bubble Factor・All-in の必要 Equity まで構造化して CPU と Review に渡す（推奨案、AskUserQuestion）"
   status: "採用済み"
-  decision: "CPUのPublic Tournament Contextには、全席のStackとBB換算・ICM Equity（ptと%）・Stage（bubble / in the money / heads-up）・自分から見た相手ごとのBubble Factorを構造化して足す（すべて公開のStackから決定論で計算する）。Reviewでは判断時点のICM Equityを常にEvidenceとして出し、All-inが関わる判断（Shove・All-inへのCall）ではChip EVの必要Equity（Pot Odds）とICMの必要Equityを別の項目として並べる。ICMの数値は決定論のICM Calculatorが正本で、Review AIとCPUは計算しない。D109の具体化。実装は#187〜#189。"
+  decision: "CPUのPublic Tournament Contextには、全席のStackとBB換算・ICM Equity（ptと%）・Stage（bubble / in the money / heads-up）・自分から見た相手ごとのBubble Factorを構造化して足す（すべて公開のStackから決定論で計算する）。Reviewでは判断時点のICM Equityを常にEvidenceとして出し、All-inが関わる判断（Shove・All-inへのCall）ではChip EVの必要Equity（Pot Odds）とICMの必要Equityを別の項目として並べる。All-inへのCallは相手の額が決まっているのでそのまま計算する。Shoveは「特定の1人にCallされ、ほかはFoldした場合」の条件付きの必要EquityをCallしうる相手ごとに出し、Fold Equity・Callの頻度は含めない（その前提をEvidenceと画面に明記し、Review AIへ前提ごと渡す。Push/Fold Solverを暗黙に入れない。#192のCodexの指摘を受けた人間判断）。ICMの数値は決定論のICM Calculatorが正本で、Review AIとCPUは計算しない。D109の具体化。実装は#187〜#189。"

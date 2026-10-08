@@ -25,6 +25,7 @@
 - Ante は TDA 準拠の Dead Money（BBA は Blind を先に払う・Main Pot へ）。time-base は Core に加えて UI でも選べる Preset にする（推奨案ではなく「時間も UI で選べる」を選択。D128）
 - Hero の Bust で Tournament を終える。Tournament は Event Log だけに残し、Projection は都度計算。終了理由は既存の値を使う（推奨案。D129）
 - ICM は全席の Equity・Bubble Factor・All-in の必要 Equity まで構造化して CPU と Review に渡す（推奨案。D130）
+- （#192 の Codex の P1 を受けた追加の AskUserQuestion）Shove の ICM 必要 Equity は「特定の 1 人に Call され、ほかは Fold した場合」の条件付きで相手ごとに出し、Fold Equity・Call の頻度は含めない。前提を明記する（推奨案。D130 に追記）
 
 ## 質問せずに暫定値とした項目（OI-007 の Version 付き暫定 Policy。確定ではない）
 
