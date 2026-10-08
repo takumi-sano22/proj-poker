@@ -126,7 +126,7 @@ export type SessionRequest =
 
 /**
  * Hand の開始の失敗。Orchestrator の失敗に、求めた Session の設定が今の Session と違う（今の Session が続いている）を足したもの。
- * Session を途中で終える経路は無いので、黙って設定を無視したり今の Session を捨てたりせずに拒否する。
+ * Hero が Hand の合間に Session を終える経路は無い（Session の終了は Bust・勝ち残り・障害の後の選択だけ）ので、黙って設定を無視したり今の Session を捨てたりせずに拒否する。
  */
 export type StartHandError =
   | OrchestratorError

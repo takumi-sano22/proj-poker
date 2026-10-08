@@ -19,7 +19,7 @@ Session に mode（`cash` / `tournament`）の境界を足し、`TournamentSessi
 - **Snapshot**: `SESSION_STARTED` に任意項目 `tournament`（設定一式）を足した。cash の Session は項目ごと持たない（既存の Cash の Event を変えない）。項目の無い `SESSION_STARTED` は cash として読む（`sessionSettingsOf`）。`recordSessionEvent` が Snapshot を検証してから置き、読むときも検証して壊れた Snapshot を cash として扱わない。
 - **版**: 任意項目の追加で、旧版の行（項目の無い行）を cash と読む意味が変わらないので、docs/04 §3 の規則どおり `schema_version` は 8 のままにした（親の指示「任意項目の追加なら版を上げない」。版を上げると既存のテスト 1 件が落ちる＝「既存テストは修正なしで通す」に反する）。`HAND_STARTED` に必須の項目を足す #184 で版を上げる（#184 の本文の「9 に上げる」はそのまま当てはまる）。
 - **Hand の卓の設定**: Rule Profile は Cash と共有し（D108。Hand Engine を複製しない）、Blind だけを Level の額にする（`tableConfigForLevel`）。Level の進行は #184 なので、それまでは 1 Level 目の Blind で続ける。Ante も #184 まで Hand に入れない。
-- **続く Session と違う設定**: Session を途中で終える経路が無いので、続く Session に違う mode / Preset を求めた開始は `session_mode_mismatch`（409）で拒否する（黙って無視しない・今の Session を捨てない）。開始の再送で、まだ結果を見ていない Hand を返す場合は比べない。
+- **続く Session と違う設定**: Hero が Hand の合間に Session を終える経路が無い（Session の終了は Bust・勝ち残り・障害の後の選択だけ）ので、続く Session に違う mode / Preset を求めた開始は `session_mode_mismatch`（409）で拒否する（黙って無視しない・今の Session を捨てない）。開始の再送で、まだ結果を見ていない Hand を返す場合は比べない。
 - **Resume**: 最後の Hand の Session の最初の保存済みの Hand の `SESSION_STARTED` から設定を戻す。Snapshot が壊れていれば Resume しない（新しい Session。warn を残す）。DB のテーブル・列・マイグレーションは足していない（D129）。
 - **D117**: 意味上の順序に壁時計を使っていない（Session の最初の Hand は `sessionHandIds`＝`ordinals.ord` の順）。
 
