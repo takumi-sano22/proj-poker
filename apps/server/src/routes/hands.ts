@@ -241,6 +241,7 @@ const outageChoiceBodySchema = {
 const STATUS_BY_ERROR: Record<StartHandError["kind"], number> = {
   hand_not_found: 404,
   session_mode_mismatch: 409,
+  tournament_unavailable: 422,
   stale_view: 409,
   stale_outage: 409,
   not_spectating: 409,

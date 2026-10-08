@@ -13,7 +13,7 @@ import {
 } from "@proj-poker/engine";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
-import { PHASE1_TABLE_SETUP } from "./config.js";
+import { PHASE1_TABLE_SETUP, buildTableSetup } from "./config.js";
 import { InMemoryEventStore, type EventStore } from "./event-store.js";
 import { HandOrchestrator, type SessionRequest } from "./hand-orchestrator.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
@@ -181,6 +181,28 @@ describe("Session の mode の境界（#183）", () => {
       });
     }
     tournament.close();
+  });
+
+  it("Preset の参加人数と卓の人数が違う卓では Tournament を始めず、tournament_unavailable で拒否する（cash は始められる）", async () => {
+    const store = new InMemoryEventStore();
+    let handNo = 0;
+    const orchestrator = new HandOrchestrator({
+      store,
+      setup: buildTableSetup(2),
+      createOpponent: createRuleBot,
+      botDelayMs: 0,
+      opponentTimeoutMs: 1000,
+      nextSeed: () => 42,
+      nextHandId: () => `hu-hand-${++handNo}`,
+    });
+    expect(await orchestrator.startHand(null, TOURNAMENT)).toMatchObject({
+      ok: false,
+      error: { kind: "tournament_unavailable" },
+    });
+    expect(store.listHands(10)).toHaveLength(0);
+    const cash = await orchestrator.startHand(null, { mode: "cash" });
+    expect(cash.ok).toBe(true);
+    orchestrator.close();
   });
 
   it("開始の再送（まだ結果を見ていない Hand）は、設定が違っても新しく作らずその Hand を返す", async () => {

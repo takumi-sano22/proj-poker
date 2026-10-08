@@ -130,7 +130,9 @@ export type SessionRequest =
  */
 export type StartHandError =
   | OrchestratorError
-  | { readonly kind: "session_mode_mismatch"; readonly message: string };
+  | { readonly kind: "session_mode_mismatch"; readonly message: string }
+  /** 求めた Tournament の Preset の参加人数と、卓の人数（設定）が違う（6-max の Preset を別の人数の卓で始めない）。 */
+  | { readonly kind: "tournament_unavailable"; readonly message: string };
 
 /** Session が終わった理由（D80・D86）。SESSION_ENDED の Event にも残すので、型は Engine の Event と共有する（D95）。 */
 export type { SessionEndReason };
@@ -498,9 +500,9 @@ export class HandOrchestrator {
     if (this.hands.has(handId) || store.read(handId).length > 0) {
       throw new Error(`Hand ID が重複した: ${handId}`);
     }
-    // 続く Session に違う設定を求められたら、Hand を作る前に拒否する（seed・Hand ID は使わない）。
-    const mismatch = this.sessionMismatch(request);
-    if (mismatch !== null) return { ok: false, error: mismatch };
+    // 続く Session に違う設定・卓の人数に合わない Preset を求められたら、Hand を作る前に拒否する（seed・Hand ID は使わない）。
+    const rejection = this.startRejection(request);
+    if (rejection !== null) return { ok: false, error: rejection };
     const seed = this.options.nextSeed();
     const plan = this.planNextHand(seed, request);
     // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
@@ -1156,16 +1158,30 @@ export class HandOrchestrator {
   }
 
   /**
-   * 開始の要求が求める Session の設定が、続く今の Session の設定と違えばその失敗（#183）。違わない・要求が無い・
-   * 今の Session が続かない（次の Hand は新しい Session）なら null。Tournament は Preset の ID で比べる
-   * （Resume した Session は開始時の Snapshot で続けるので、Preset の版が変わっていても同じ Preset なら続ける）。
+   * 開始の要求を受け付けられなければその失敗（#183）。受け付けられる・要求が無いなら null。
+   * - 今の Session が続くとき: 求めた設定が今の Session の設定と違えば session_mode_mismatch。Tournament は Preset の ID で比べる
+   *   （Resume した Session は開始時の Snapshot で続けるので、Preset の版が変わっていても同じ Preset なら続ける）
+   * - 次の Hand が新しい Session のとき: Tournament の Preset の参加人数が卓の人数と違えば tournament_unavailable
    */
-  private sessionMismatch(
+  private startRejection(
     request: SessionRequest | undefined,
   ): StartHandError | null {
     const current = this.session;
-    if (request === undefined || current === null) return null;
-    if (this.sessionAfter(current.lastHandId).next === null) return null;
+    if (request === undefined) return null;
+    if (
+      current === null ||
+      this.sessionAfter(current.lastHandId).next === null
+    ) {
+      // 次の Hand は新しい Session。Tournament は Preset の参加人数の卓でだけ始める（Payout・Prize Pool の前提）。
+      if (request.mode !== "tournament") return null;
+      const { tableSize } = TOURNAMENT_PRESETS[request.presetId];
+      const seats = this.options.setup.players.length;
+      if (seats === tableSize) return null;
+      return {
+        kind: "tournament_unavailable",
+        message: `Preset ${request.presetId} は ${tableSize} 人の卓で始める（今の卓は ${seats} 人）`,
+      };
+    }
     const { settings } = current;
     const same =
       request.mode === settings.mode &&

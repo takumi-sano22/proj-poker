@@ -38,6 +38,7 @@ describe("標準 Preset（OI-007 の暫定値。D127・D128）", () => {
       presetId: "stt6_hand_count",
       version: TOURNAMENT_CONFIG_VERSION,
       startingStack: 1_500,
+      tableSize: 6,
       levels: [
         { smallBlind: 10, bigBlind: 20, ante: 20 },
         { smallBlind: 15, bigBlind: 30, ante: 30 },
@@ -118,6 +119,15 @@ describe("validateTournamentConfig", () => {
       { payout: { kind: "percentages", percentages: [50.5, 49.5] } },
     ],
     ["参加費が 0", { entryFee: 0 }],
+    ["参加人数が 1", { tableSize: 1 }],
+    ["参加人数が 9", { tableSize: 9 }],
+    [
+      "入賞の数が参加人数より多い",
+      {
+        tableSize: 2,
+        payout: { kind: "percentages", percentages: [50, 30, 20] },
+      },
+    ],
   ];
 
   it.each(broken)("%s は理由を返す", (_name, change) => {

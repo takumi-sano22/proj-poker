@@ -3,7 +3,12 @@
 // Session の開始の Event（SESSION_STARTED）に残した設定の Snapshot の読み方だけを持つ。
 // Level の進行・Ante の支払い（#184）、Elimination・順位（#185）、Payout の計算（#186）はここに入れない。
 import type { HandEvent } from "./hand-events.js";
-import { isChipAmount, type TableConfig } from "./table-config.js";
+import {
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  isChipAmount,
+  type TableConfig,
+} from "./table-config.js";
 
 /** Session の mode（D108・D129）。mode を指定しない Session と、Tournament の設定の無い旧版の Session は cash。 */
 export type SessionMode = "cash" | "tournament";
@@ -56,6 +61,11 @@ export interface TournamentConfig {
   readonly version: string;
   /** Session の最初の Hand の全員の Stack（Chip。D74）。 */
   readonly startingStack: number;
+  /**
+   * 参加人数（卓の人数。STT は 1 卓に全員が座って同時に始める）。Tournament はこの人数の卓でだけ始められる
+   * （6-max の Payout・Prize Pool〔参加費 × 参加人数〕を別の人数の卓に当てない）。入賞の数はこれ以下。
+   */
+  readonly tableSize: number;
   /** Blind の Level 表（1 Level 目から順）。 */
   readonly levels: readonly BlindLevel[];
   readonly schedule: BlindSchedule;
@@ -130,7 +140,7 @@ const STT6_PAYOUT: PayoutStructure = {
 
 /**
  * 標準 Preset（OI-007 の暫定値。永久仕様ではない）。
- * - stt6_hand_count: 標準の 6-max STT（D127）。Starting Stack 1,500・10 Hand ごとに 1 Level・BBA・参加費 100pt
+ * - stt6_hand_count: 標準の 6-max STT（D127）。6 人卓・Starting Stack 1,500・10 Hand ごとに 1 Level・BBA・参加費 100pt
  * - stt6_time_base: time-base の Preset（D128）。標準と同じ Stack・Blind 表で、1 Level 10 分（プレイ時間）
  */
 export const TOURNAMENT_PRESETS: Readonly<
@@ -140,6 +150,7 @@ export const TOURNAMENT_PRESETS: Readonly<
     presetId: "stt6_hand_count",
     version: TOURNAMENT_CONFIG_VERSION,
     startingStack: 1_500,
+    tableSize: 6,
     levels: STT6_LEVELS,
     schedule: { kind: "hand_count", handsPerLevel: 10 },
     anteKind: "big_blind_ante",
@@ -150,6 +161,7 @@ export const TOURNAMENT_PRESETS: Readonly<
     presetId: "stt6_time_base",
     version: TOURNAMENT_CONFIG_VERSION,
     startingStack: 1_500,
+    tableSize: 6,
     levels: STT6_LEVELS,
     schedule: { kind: "time_base", levelDurationMs: 10 * 60 * 1_000 },
     anteKind: "big_blind_ante",
@@ -238,6 +250,16 @@ export function validateTournamentConfig(config: unknown): string | null {
   }
   if (percentages.some((p, i) => i > 0 && p > (percentages[i - 1] as number))) {
     return `Payout は上位ほど多いか同じ: ${percentages.join(" / ")}`;
+  }
+  if (
+    !isPositiveInteger(c.tableSize) ||
+    c.tableSize < MIN_PLAYERS ||
+    c.tableSize > MAX_PLAYERS
+  ) {
+    return `参加人数は ${MIN_PLAYERS}〜${MAX_PLAYERS}: ${String(c.tableSize)}`;
+  }
+  if (percentages.length > c.tableSize) {
+    return `入賞の数（${percentages.length}）が参加人数（${c.tableSize}）より多い`;
   }
   if (!isPositiveInteger(c.entryFee)) {
     return `参加費は 1 以上の整数: ${String(c.entryFee)}`;

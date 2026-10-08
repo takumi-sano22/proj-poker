@@ -21,6 +21,7 @@ Session に mode（`cash` / `tournament`）の境界を足し、`TournamentSessi
 - **Hand の卓の設定**: Rule Profile は Cash と共有し（D108。Hand Engine を複製しない）、Blind だけを Level の額にする（`tableConfigForLevel`）。Level の進行は #184 なので、それまでは 1 Level 目の Blind で続ける。Ante も #184 まで Hand に入れない。
 - **続く Session と違う設定**: Hero が Hand の合間に Session を終える経路が無い（Session の終了は Bust・勝ち残り・障害の後の選択だけ）ので、続く Session に違う mode / Preset を求めた開始は `session_mode_mismatch`（409）で拒否する（黙って無視しない・今の Session を捨てない）。開始の再送で、まだ結果を見ていない Hand を返す場合は比べない。
 - **Resume**: 最後の Hand の Session の最初の保存済みの Hand の `SESSION_STARTED` から設定を戻す。Snapshot が壊れていれば Resume しない（新しい Session。warn を残す）。DB のテーブル・列・マイグレーションは足していない（D129）。
+- **参加人数**: Codex round 2 の P1（6-max の Preset を 2〜8 人のどの卓でも始められ、Payout の前提が崩れる）を受け、設定に `tableSize`（参加人数＝卓の人数。標準 6）を足し、入賞の数は参加人数以下と検証する。卓の人数（`TABLE_SIZE`）が違う卓では Tournament を始めず `tournament_unavailable`（422）で拒否する（cash は始められる）。
 - **D117**: 意味上の順序に壁時計を使っていない（Session の最初の Hand は `sessionHandIds`＝`ordinals.ord` の順）。
 
 ## 変更内容
