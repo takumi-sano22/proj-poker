@@ -638,3 +638,85 @@ describe("POST /api/hands の session（#183）", () => {
     });
   });
 });
+
+/** All-in できれば All-in、できなければ Call / Check（Tournament を早く終わらせる）。 */
+function shove(view: HeroView): PlayerAction {
+  const types = view.legalActions?.actions.map((a) => a.type) ?? [];
+  if (types.includes("all_in")) return { type: "all_in" };
+  return passive(view);
+}
+
+describe("Tournament の Elimination と順位（D129・#185）", () => {
+  it("Hero の Bust（か Hero が最後の 1 人）で Tournament を終え、Hero の順位を Event Log から計算する。Bust した席は次の Hand に座らない", async () => {
+    const store = new InMemoryEventStore();
+    const orchestrator = orchestratorOn(store);
+    const handIds: string[] = [];
+    let previous: string | null = null;
+    for (let guard = 0; ; guard++) {
+      expect(guard).toBeLessThan(200);
+      const handId = await playHand(
+        orchestrator,
+        previous,
+        previous === null ? TOURNAMENT : undefined,
+        shove,
+      );
+      handIds.push(handId);
+      previous = handId;
+      if (orchestrator.sessionStatus(handId)?.state === "ended") break;
+    }
+    const last = handIds.at(-1) as string;
+    const ended = eventsOf(store, last).find((e) => e.type === "SESSION_ENDED");
+    if (ended?.type !== "SESSION_ENDED") throw new Error("終わっていない");
+    // 1 つの Session（Tournament）の Hand だけで終わる。
+    expect(store.sessionHandIds(last)).toEqual(handIds);
+
+    const standings = orchestrator.tournamentStandingsOf(last);
+    if (standings === null) throw new Error("Tournament の順位が無い");
+    expect(standings.status).toBe("finished");
+    expect(standings.entrants).toBe(PHASE1_TABLE_SETUP.players.length);
+    const hero = standings.placements.find((p) => p.playerId === HERO);
+    const undecided = standings.placements.filter((p) => p.place === null);
+    if (ended.reason === "hero_last_standing") {
+      expect(hero).toEqual({
+        playerId: HERO,
+        place: 1,
+        eliminatedInHandId: null,
+      });
+      expect(undecided).toEqual([]);
+    } else {
+      expect(ended.reason).toBe("hero_busted");
+      expect(hero?.eliminatedInHandId).toBe(last);
+      // Hero の順位は、Bust した Hand の後に残った人数より下（同じ Hand の Bust は開始時の Stack で並べる）。
+      expect(hero?.place).toBeGreaterThan(standings.remaining);
+      // 残った CPU の順位は、残りが 1 人でも未決（D129）。
+      expect(undecided).toHaveLength(standings.remaining);
+    }
+    // Bust した席は次の Hand に座らない（nextHandSeating）。各 Hand の席は、その前までに Bust していない Player だけ。
+    for (const [k, handId] of handIds.entries()) {
+      const seated = startedOf(eventsOf(store, handId)).seats.map(
+        (s) => s.playerId,
+      );
+      const bustedBefore = standings.placements.filter(
+        (p) =>
+          p.eliminatedInHandId !== null &&
+          handIds.indexOf(p.eliminatedInHandId) < k,
+      );
+      expect(seated).toHaveLength(
+        PHASE1_TABLE_SETUP.players.length - bustedBefore.length,
+      );
+      for (const p of bustedBefore) expect(seated).not.toContain(p.playerId);
+    }
+    // 同じ Event Log からは同じ順位（決定論。保存せず都度計算する）。
+    expect(orchestrator.tournamentStandingsOf(last)).toEqual(standings);
+    orchestrator.close();
+  });
+
+  it("cash の Session には Tournament の順位が無い（Cash の経路は変えない）", async () => {
+    const store = new InMemoryEventStore();
+    const orchestrator = orchestratorOn(store);
+    const handId = await playHand(orchestrator, null);
+    expect(orchestrator.tournamentStandingsOf(handId)).toBeNull();
+    expect(orchestrator.tournamentStandingsOf("unknown")).toBeNull();
+    orchestrator.close();
+  });
+});
