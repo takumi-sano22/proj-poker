@@ -5,6 +5,8 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "types": ["node"],
+    // Phase 7 の E2E は apps/server の Projection の関数を src から読む（Engine も build せずに src から。apps/server と同じ条件）。
+    "customConditions": ["@proj-poker/source"],
     "noEmit": true
   },
   "include": ["playwright.config.ts", "tests", "support"]

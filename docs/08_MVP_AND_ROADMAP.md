@@ -222,6 +222,8 @@ Phase 7 → Phase 8:
 - Cash / Tournament contextのStrategy Hypothesisが分離される
 - Phase 7のCritical E2E / Evalが通る
 
+Phase 7 → Phase 8の各項目と、それを確かめるテスト（Critical E2Eは`e2e/tests/opponent-memory.spec.ts`）の対応は`docs/09` §8・§11にあります。
+
 各PhaseのDefinition of DoneはParent Issue（#105・#106・#107）が一次情報です。
 
 ## 4. Scope Creep防止
