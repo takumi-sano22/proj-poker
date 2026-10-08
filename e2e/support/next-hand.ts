@@ -16,8 +16,14 @@ async function handComplete(page: Page, handId: string): Promise<boolean> {
   return hand !== undefined && (hand.complete || hand.aborted);
 }
 
-/** 「次の Hand へ」を押し、新しい Hand の handId を返す（画面が新しい Hand を映すまで待つ）。 */
-export async function startNextHand(page: Page): Promise<string> {
+/**
+ * 「次の Hand へ」（Session が終わった後は「新しい Session を始める」）を押し、新しい Hand の handId を返す
+ * （画面が新しい Hand を映すまで待つ）。
+ */
+export async function startNextHand(
+  page: Page,
+  buttonName: "次の Hand へ" | "新しい Session を始める" = "次の Hand へ",
+): Promise<string> {
   const dock = page.getByRole("region", { name: "Hero" });
   const done = dock.getByText(/Hand が終了しました。|Session が終了しました。/);
   const [res] = await Promise.all([
@@ -26,7 +32,7 @@ export async function startNextHand(page: Page): Promise<string> {
         r.request().method() === "POST" &&
         new URL(r.url()).pathname === "/api/hands",
     ),
-    page.getByRole("button", { name: "次の Hand へ" }).click(),
+    page.getByRole("button", { name: buttonName }).click(),
   ]);
   expect(res.ok(), "次の Hand の開始").toBe(true);
   const { handId } = (await res.json()) as { handId: string };
