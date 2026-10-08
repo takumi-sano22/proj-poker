@@ -17,12 +17,15 @@ import type {
   MemoryItemSummary,
   OpponentMemorySummary,
 } from "../memory/memory-summary.js";
+import type { TableTendency } from "../memory/table-tendency.js";
 import type { OpponentInput } from "./opponent-agent.js";
 import {
   memoryAdjustedTuning,
   memoryReadingOf,
   RULEBOT_MEMORY_V1,
+  RULEBOT_TABLE_TENDENCY_V1,
   RuleBot,
+  tableTendencyAdjustedTuning,
   tiltedPersona,
   tuningFromPersona,
 } from "./rule-bot.js";
@@ -500,6 +503,104 @@ describe("RuleBot と Tilt（#140・D107・D119）", () => {
     );
     expect(decisions(PERSONA_PRESETS.lag, tilt(2), 50)).toEqual(
       decisions(PERSONA_PRESETS.lag, tilt(2), 50),
+    );
+  });
+});
+
+describe("RuleBot と Table Tendency（#141）", () => {
+  /** vpip と aggression_frequency の割合で Table Tendency を作る（sufficient は両方に同じ値）。 */
+  const tendency = (
+    vpip: number,
+    aggression: number,
+    sufficient = true,
+  ): TableTendency => ({
+    policyVersion: "phase7_table_tendency_v1",
+    hands: 20,
+    items: [
+      { item: "vpip", rate: vpip },
+      { item: "aggression_frequency", rate: aggression },
+    ].map(({ item, rate }) => ({
+      item: item as "vpip" | "aggression_frequency",
+      policyVersion: "phase7_table_tendency_v1",
+      numerator: rate * 100,
+      denominator: 100,
+      hands: 20,
+      sufficient,
+    })),
+  });
+  const base = tuningFromPersona(PERSONA_PRESETS.tag_regular);
+  const withTendency = (t: TableTendency) => {
+    const input = firstDecisionInput(1);
+    return { ...input.knowledge, tableTendency: t };
+  };
+
+  it("攻める卓では medium の Call を広げ、緩い卓では weak の Bluff を減らす（ずれは maxShift × Adaptability まで）", () => {
+    const wild = tableTendencyAdjustedTuning(
+      base,
+      withTendency(tendency(0.9, 0.9)),
+      1,
+    );
+    expect(wild.mediumLooseCall).toBeCloseTo(
+      base.mediumLooseCall + RULEBOT_TABLE_TENDENCY_V1.maxShift,
+      10,
+    );
+    expect(wild.weakBluffFrequency).toBeCloseTo(
+      Math.max(0, base.weakBluffFrequency - RULEBOT_TABLE_TENDENCY_V1.maxShift),
+      10,
+    );
+    const tight = tableTendencyAdjustedTuning(
+      base,
+      withTendency(tendency(0.1, 0.1)),
+      0.5,
+    );
+    expect(tight.mediumLooseCall).toBeLessThan(base.mediumLooseCall);
+    expect(tight.weakBluffFrequency).toBeGreaterThan(base.weakBluffFrequency);
+    expect(
+      base.weakBluffFrequency + 0.5 * RULEBOT_TABLE_TENDENCY_V1.maxShift,
+    ).toBeGreaterThanOrEqual(tight.weakBluffFrequency);
+    // ほかのしきい値は変えない。
+    expect({ ...wild, mediumLooseCall: 0, weakBluffFrequency: 0 }).toEqual({
+      ...base,
+      mediumLooseCall: 0,
+      weakBluffFrequency: 0,
+    });
+  });
+
+  it("Table Tendency が無い・Sample が足りない・Adaptability が 0 なら元のまま", () => {
+    const input = firstDecisionInput(1);
+    expect(tableTendencyAdjustedTuning(base, input.knowledge, 1)).toEqual(base);
+    expect(
+      tableTendencyAdjustedTuning(
+        base,
+        withTendency(tendency(0.9, 0.9, false)),
+        1,
+      ),
+    ).toEqual(base);
+    expect(
+      tableTendencyAdjustedTuning(base, withTendency(tendency(0.9, 0.9)), 0),
+    ).toEqual(base);
+  });
+
+  it("Table Tendency があっても選ぶ Action は Legal Action の中。Persona なしは判断を変えない。同じ入力なら同じ判断列", () => {
+    const run = (persona: Persona | undefined, t: TableTendency | undefined) =>
+      Array.from({ length: 100 }, (_, i) => {
+        const input = firstDecisionInput(i + 1);
+        const knowledge =
+          t === undefined
+            ? input.knowledge
+            : { ...input.knowledge, tableTendency: t };
+        const action = new RuleBot(500 + i, persona).choose({
+          ...input,
+          knowledge,
+        });
+        expect(input.legal.actions.map((a) => a.type)).toContain(action.type);
+        return action;
+      });
+    expect(run(undefined, tendency(0.9, 0.9))).toEqual(
+      run(undefined, undefined),
+    );
+    expect(run(PERSONA_PRESETS.lag, tendency(0.9, 0.9))).toEqual(
+      run(PERSONA_PRESETS.lag, tendency(0.9, 0.9)),
     );
   });
 });

@@ -1,6 +1,6 @@
 // Claude の Opponent Agent（Model Adapter。docs/03 §3・D87）。
 // Claude Agent SDK の query() を「1 回の判断」として使い、ローカルでログイン済みの Claude Code の OAuth（サブスク枠）で呼ぶ。API キーは使わない。
-// 渡すのはその CPU の KnowledgeState（その CPU 自身の Memory の要約〔D121〕と Tilt〔D107〕を含む）・Legal Action・Persona だけ（D28・docs/05 §1）。出力の検証・Retry・Fallback は Orchestrator（D40・D41）。
+// 渡すのはその CPU の KnowledgeState（その CPU 自身の Memory の要約〔D121〕・Tilt〔D107〕・その CPU から見た Table Tendency〔#141〕を含む）・Legal Action・Persona だけ（D28・docs/05 §1）。出力の検証・Retry・Fallback は Orchestrator（D40・D41）。
 // ログイン切れ・利用枠の上限・子プロセスの失敗は例外（＝障害。D86）にし、形の崩れた出力は不正な出力として Orchestrator の検証に回す。
 import { cardToString, type Card } from "@proj-poker/engine";
 import {
@@ -63,6 +63,20 @@ const MEMORY_GUIDE = [
 
 const MEMORY_PERSONA_LINE =
   "あなたの性格の「相手への適応」と「相手の読みの精度」の程度に合わせて使ってください。";
+
+/**
+ * Table Tendency の節の見出しと読み方（D106・#141）。中身は構造化データ（memory/table-tendency.ts）で、ここは固定の説明だけ。
+ * 数えた Hand が 0 のときは KnowledgeState に項目が無く、節ごと入れない（Prompt を変えない）。
+ * Persona の節を指す 1 行は、Persona の節があるときだけ足す（TABLE_TENDENCY_PERSONA_LINE。条件付きの指示を文で書かない）。
+ */
+const TABLE_TENDENCY_GUIDE = [
+  "## 卓の傾向（この Session の過去の Hand で、あなたが座っていた卓の公開の Action から数えた、あなた以外の参加者全体の傾向）",
+  "hands は数えた Hand の数です。items の割合は numerator / denominator です（vpip: 自分から Pot に入れた / pfr: Preflop で Raise した / aggression_frequency: Postflop で Bet か Raise をした / showdown: 札を比べて決着した Hand）。",
+  "sufficient が false の項目は Sample が足りない推測です。個々の相手の傾向ではなく、卓全体の傾向です。",
+].join("\n");
+
+const TABLE_TENDENCY_PERSONA_LINE =
+  "あなたの性格の「相手への適応」の程度に合わせて使ってください。";
 
 /**
  * Tilt の節（D107・#140）。その CPU 自身の Internal State で、1 以上のときだけ節ごと入れる（0 のときは Prompt を変えない。
@@ -134,7 +148,8 @@ export function buildOpponentPrompt(
   // Memory は Hand の中の情報と分けて、説明付きの節に出す。Memory の無い CPU では節ごと入れず、この Hand の情報の節は
   // Memory を足す前（#139 より前）と同じ文字列にする（条件付きの指示を文で書かない。Opponent Eval の録画の引数も変えない）。
   // Tilt もその CPU 自身の Internal State なので、この Hand の情報の節に混ぜず、1 以上のときだけ別の節に出す（#140）。
-  const { memory, tilt, ...table } = input.knowledge;
+  // Table Tendency（#141）も過去の Hand から作った値なので、この Hand の情報の節に混ぜず、あるときだけ別の節に出す。
+  const { memory, tilt, tableTendency, ...table } = input.knowledge;
   sections.push(
     `## あなたに見えている情報（あなたの ID は ${input.knowledge.viewerId}。Card は 2 文字で、As はスペードの A、Td はダイヤの 10）`,
     JSON.stringify(table, cardReplacer),
@@ -143,6 +158,14 @@ export function buildOpponentPrompt(
     sections.push(
       hasPersona ? `${MEMORY_GUIDE}\n${MEMORY_PERSONA_LINE}` : MEMORY_GUIDE,
       JSON.stringify(memory),
+    );
+  }
+  if (tableTendency !== undefined) {
+    sections.push(
+      hasPersona
+        ? `${TABLE_TENDENCY_GUIDE}\n${TABLE_TENDENCY_PERSONA_LINE}`
+        : TABLE_TENDENCY_GUIDE,
+      JSON.stringify(tableTendency),
     );
   }
   if (tilt !== undefined) {

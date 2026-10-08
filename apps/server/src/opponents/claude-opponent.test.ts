@@ -26,6 +26,7 @@ import {
   type ClaudeQuery,
 } from "./claude-opponent.js";
 import type { OpponentMemorySummary } from "../memory/memory-summary.js";
+import type { TableTendency } from "../memory/table-tendency.js";
 import { OpponentOutageError, type OpponentInput } from "./opponent-agent.js";
 import { checkOpponentOutput } from "./opponent-output.js";
 
@@ -416,6 +417,50 @@ describe("buildOpponentPrompt", () => {
     expect(withTilt.replace(sections[at] + "\n\n", "")).toBe(prompt);
     expect(withTilt).not.toContain("phase7_tilt_v1");
     expect(withTilt).not.toContain('"tilt"');
+  });
+
+  it("Table Tendency（#141）はあるときだけ節ごと入れる: 無ければ今と同じ文字列、あれば Hand の情報の節に混ぜず構造化データのまま入れる", () => {
+    const { input } = firstDecisionInput();
+    const prompt = buildOpponentPrompt(input, "タイトで慎重");
+    expect(prompt).not.toContain("卓の傾向");
+    const tableTendency: TableTendency = {
+      policyVersion: "phase7_table_tendency_v1",
+      hands: 12,
+      items: [
+        {
+          item: "vpip",
+          policyVersion: "phase7_table_tendency_v1",
+          numerator: 21,
+          denominator: 55,
+          hands: 12,
+          sufficient: true,
+        },
+      ],
+    };
+    const withTendency = buildOpponentPrompt(
+      { ...input, knowledge: { ...input.knowledge, tableTendency } },
+      "タイトで慎重",
+    );
+    const sections = withTendency.split("\n\n");
+    const at = sections.findIndex((s) => s.startsWith("## 卓の傾向"));
+    expect(at).toBeGreaterThan(0);
+    expect(JSON.parse(sections[at + 1] ?? "")).toEqual(tableTendency);
+    // 節を除けば Table Tendency の無い Prompt と同じ（Hand の情報の JSON に混ぜない）。
+    expect(
+      withTendency.replace(
+        sections[at] + "\n\n" + sections[at + 1] + "\n\n",
+        "",
+      ),
+    ).toBe(prompt);
+    expect(sections[at - 1]).not.toContain("tableTendency");
+    // Persona の節を指す行は、Persona の節があるときだけ入れる。
+    expect(sections[at]).toContain("「相手への適応」の程度に合わせて");
+    expect(
+      buildOpponentPrompt({
+        ...input,
+        knowledge: { ...input.knowledge, tableTendency },
+      }),
+    ).not.toContain("相手への適応");
   });
 
   it("選べる Action と bet / raise の額の範囲を書き、自分の札は表記で入れる", () => {
