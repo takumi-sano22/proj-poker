@@ -20,6 +20,7 @@ import { SqliteDrillStore } from "./drill/drill-store.js";
 import { loadKb } from "./kb/index.js";
 import { SqliteHypothesisSnapshotStore } from "./learning/hypothesis-snapshot.js";
 import { SqliteLearningResetStore } from "./learning/learning-reset.js";
+import { SqliteOpponentMemoryResetStore } from "./memory/memory-reset.js";
 import {
   buildClaudeEnv,
   createClaudeOpponentFactory,
@@ -95,6 +96,8 @@ const app = buildApp({
   drillStore: new SqliteDrillStore(db),
   // Learning Reset（#118）は同じ DB の learning_resets（v8）に区切りの行を足す（正本は消さない。D114）。
   learningResetStore: new SqliteLearningResetStore(db),
+  // Opponent Memory Reset（#143）は同じ DB の opponent_memory_resets（v11）に区切りの行を足す（正本は消さない。D120）。
+  opponentMemoryResetStore: new SqliteOpponentMemoryResetStore(db),
   createOpponent,
   opponentInfo,
   ...(fixedSeed === null ? {} : { nextSeed: fixedSeedSequence(fixedSeed) }),

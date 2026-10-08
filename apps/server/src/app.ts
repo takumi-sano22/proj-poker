@@ -16,6 +16,7 @@ import { DrillService } from "./drill/drill-service.js";
 import { InMemoryDrillStore, type DrillStore } from "./drill/drill-store.js";
 import { InMemoryEventStore, type EventStore } from "./event-store.js";
 import { HandOrchestrator } from "./hand-orchestrator.js";
+import { PHASE7_CPU_POOL } from "./opponents/cpu-pool.js";
 import type { OpponentFactory } from "./opponents/opponent-agent.js";
 import { createRuleBot } from "./opponents/rule-bot.js";
 import { loadKb, type LoadedKb } from "./kb/index.js";
@@ -28,6 +29,10 @@ import {
   type LearningResetStore,
 } from "./learning/learning-reset.js";
 import { LearningService } from "./learning/learning-service.js";
+import {
+  InMemoryOpponentMemoryResetStore,
+  type OpponentMemoryResetStore,
+} from "./memory/memory-reset.js";
 import { InMemoryNoteStore, type NoteStore } from "./notes/note-store.js";
 import { ReplayService } from "./replay.js";
 import {
@@ -45,6 +50,7 @@ import { registerDrillRoutes } from "./routes/drills.js";
 import { registerHandRoutes } from "./routes/hands.js";
 import { registerLearningRoutes } from "./routes/learning.js";
 import { registerNoteRoutes } from "./routes/notes.js";
+import { registerOpponentRoutes } from "./routes/opponents.js";
 import { registerReplayRoutes } from "./routes/replay.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
 import { createAmaster97Adapter } from "./solver/amaster97-adapter.js";
@@ -92,6 +98,8 @@ export interface AppOptions {
   readonly drillStore?: DrillStore;
   /** Learning Reset の区切り（#118・D114）。起動時は SQLite（v8）、省略時のメモリ内実装はテスト用。 */
   readonly learningResetStore?: LearningResetStore;
+  /** Opponent Memory Reset の区切り（#143・D120）。起動時は SQLite（v11）、省略時のメモリ内実装はテスト用。 */
+  readonly opponentMemoryResetStore?: OpponentMemoryResetStore;
 }
 
 // listen と分けて組み立てだけを export する。テストから起動せずに叩けるようにするため。
@@ -114,6 +122,10 @@ export function buildApp(options: AppOptions = {}) {
   // seed はサーバーだけが持つ。クライアントから受け取らず、レスポンスにも出さない（Deck を推測させない）。
   const nextSeed = options.nextSeed ?? (() => randomInt(0, 2 ** 32));
   const nextHandId = options.nextHandId ?? randomUUID;
+  // Opponent Memory Reset（#143・D120）は区切りの行を足すだけで、正本（Event Log・reviews・Note / Tag）と Learning Reset を変えない。
+  // 区切りは Event Store と同じ順序の源の番号（D117。起動時は同じ DB の ordinals、省略時はプロセスのカウンタ）。
+  const memoryResets =
+    options.opponentMemoryResetStore ?? new InMemoryOpponentMemoryResetStore();
   const orchestrator = new HandOrchestrator({
     store,
     setup,
@@ -126,6 +138,7 @@ export function buildApp(options: AppOptions = {}) {
     nextSeed,
     nextHandId,
     excludeFromResume: drillHandIds,
+    memoryResets,
     logger: app.log,
   });
   app.addHook("onClose", (_instance, done) => {
@@ -134,6 +147,12 @@ export function buildApp(options: AppOptions = {}) {
   });
 
   registerHandRoutes(app, orchestrator);
+  // Reset できるのは Fixed Pool の CPU（Guest は Session 限りで、次の Session では読まない。D118）。
+  registerOpponentRoutes(
+    app,
+    memoryResets,
+    new Set(PHASE7_CPU_POOL.fixed.map((p) => p.cpuProfileId)),
+  );
   // Note / Tag は Hero だけの記録で、Orchestrator（CPU の入力）・Review へは渡さない（不変条件 2）。
   registerNoteRoutes(
     app,
