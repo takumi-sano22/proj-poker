@@ -22,14 +22,20 @@
 //   Best-effort な Debug / Re-analysis 用で、AI の Request / Response の生データは残さない（D100）。
 // - Session の mode（cash / tournament。D108・D129・#183）は新しい Session の開始で決め、Tournament の設定の Snapshot を SESSION_STARTED に
 //   残す。同じ Session の Hand・Resume はその Snapshot で続ける（mode を指定しない開始は cash で、既存の Cash の経路・Event は変えない）。
+// - Tournament の Hand の Level（D128・#184）は Hand の開始時に、前の Hand の HAND_STARTED に残した Level と経過（Session の何 Hand 目か・
+//   プレイ時間の累計）と、前の Hand のプレイ時間（開始から終わりまで）から決め、その Level の Blind / Ante で始めて HAND_STARTED に固定する。
+//   Hand の長さはプロセスの中の単調な時計（playClock）で測る。前のプロセスで終わった Hand（Resume の直後）だけは、保存した記録時刻の差
+//   （壁時計。負なら 0）で測る。どちらも経過時間の計測にだけ使い、順序には使わない（Hand の順は論理順序。D117）。
 import { randomUUID } from "node:crypto";
 import {
+  FIRST_TOURNAMENT_PROGRESS,
   applyAction,
   applyPhysicalActions,
   foldHandEvents,
   getLegalActions,
   MAX_PLAYERS,
   nextHandSeating,
+  nextTournamentProgress,
   projectHeroView,
   projectKnowledgeState,
   recordAiEvent,
@@ -40,6 +46,7 @@ import {
   startDrillHand,
   startHand,
   tableConfigForLevel,
+  tournamentHandContext,
   TOURNAMENT_PRESETS,
   type CpuSeatMetadata,
   type DrillSpot,
@@ -56,7 +63,9 @@ import {
   type SessionEndReason,
   type SessionSettings,
   type TableConfig,
+  type TournamentHandContext,
   type TournamentPresetId,
+  type TournamentProgress,
 } from "@proj-poker/engine";
 import { APP_VERSION } from "./app-version.js";
 import {
@@ -225,6 +234,11 @@ export interface HandOrchestratorOptions {
    * Event Log から都度抽出する（メモリ内の Event Store）。Cache の有無で Memory は変わらない。
    */
   readonly observationCache?: ObservationCacheStore;
+  /**
+   * Hand のプレイ時間（Tournament の time_base の Level。D128・#184）を測る単調な時計（ms）。壁時計の巻き戻りで戻らない時計を渡す。
+   * 省略時は performance.now()。テストでは進め方を決めた時計を渡す。
+   */
+  readonly playClock?: () => number;
   readonly logger?: OrchestratorLogger;
 }
 
@@ -273,6 +287,10 @@ interface HandRuntime {
    * 同じ Session の Hand は同じ Map を共有する（SessionPointer.emergencyBots）。
    */
   readonly emergencyBots: Map<string, OutageKind>;
+  /** Hand を始めた時点の playClock の値（Hand のプレイ時間の起点。D128）。 */
+  readonly playStartedAt: number;
+  /** Hand が終わった（HAND_FINISHED を追記した）時点の playClock の値。まだ終わっていなければ null。 */
+  playFinishedAt: number | null;
   /** CPU の手番を進めている最中ならその Promise（同じ Hand で 2 本同時に進めない）。 */
   running: Promise<void> | null;
   /** 今の待ち（思考待ち・判断待ち）を打ち切る（アプリ終了時）。待っていなければ null。 */
@@ -352,6 +370,7 @@ export class HandOrchestrator {
   private readonly hands = new Map<string, HandRuntime>();
   private readonly heroId: string;
   private readonly logger: OrchestratorLogger;
+  private readonly playClock: () => number;
   private session: SessionPointer | null = null;
   private closed = false;
 
@@ -374,6 +393,7 @@ export class HandOrchestrator {
     }
     this.heroId = hero.playerId;
     this.logger = options.logger ?? silentLogger;
+    this.playClock = options.playClock ?? (() => performance.now());
     this.session = this.resumeSession();
   }
 
@@ -510,15 +530,19 @@ export class HandOrchestrator {
       this.session?.sessionId === plan.sessionId
         ? this.session.emergencyBots
         : new Map<string, OutageKind>();
+    // Tournament の Hand は、開始時の Level の Blind / Ante で始め、Level と経過を HAND_STARTED に固定する（D128）。
+    const tournament = this.tournamentHandOf(plan);
     const started = startHand({
       handId,
       seats: plan.seats,
       buttonPlayerId: plan.buttonPlayerId,
-      config: this.tableConfigOf(plan.settings),
+      config: tournament?.config ?? this.options.setup.table,
       deal: { seed },
       metadata: this.handMetadata(plan.seats, emergencyBots),
+      ...(tournament === null ? {} : { tournament: tournament.context }),
     });
     if (!started.ok) return started;
+    const playStartedAt = this.playClock();
     // CPU の Memory は、この Hand を書く前に保存済みの Hand だけから作る（決まった時点・同じ入力なら同じ要約。D121・D117）。
     const memories = this.opponentMemories(plan);
     // Tilt も同じ時点で、今の Session の保存済みの Hand だけから作る（新しい Session は 0 から。D107・D117）。
@@ -546,6 +570,8 @@ export class HandOrchestrator {
       personas: plan.personas,
       participants: plan.participants,
     });
+    // 開始直後に終わった Hand（Blind で All-in が決まる）のプレイ時間は 0。
+    const endedAtStart = opening.some((e) => e.type === "HAND_FINISHED");
     this.session = {
       sessionId: plan.sessionId,
       lastHandId: handId,
@@ -586,6 +612,8 @@ export class HandOrchestrator {
       listeners: new Set(),
       outageListeners: new Set(),
       emergencyBots,
+      playStartedAt,
+      playFinishedAt: endedAtStart ? playStartedAt : null,
       running: null,
       cancelWait: null,
       failure: null,
@@ -673,6 +701,8 @@ export class HandOrchestrator {
       listeners: new Set(),
       outageListeners: new Set(),
       emergencyBots: new Map(),
+      playStartedAt: this.playClock(),
+      playFinishedAt: null,
       running: null,
       cancelWait: null,
       failure: null,
@@ -1196,17 +1226,68 @@ export class HandOrchestrator {
   }
 
   /**
-   * Hand の卓の設定。cash は卓の設定のまま（既存の経路）。Tournament は Rule Profile を共有し、Blind を Level の額にする（D108）。
-   * Level の進行と Ante は #184 で足す。それまでは 1 Level 目の Blind で続ける。
+   * Tournament の Hand の卓の設定と、開始時の Level と経過（D108・D128・#184）。cash の Hand は null（卓の設定のまま。既存の経路）。
+   * Rule Profile は Cash と共有し、Blind / Ante をその Level の額にする。Level は Session の最初の Hand なら 1 Hand 目・プレイ時間 0 から、
+   * 続く Hand なら前の Hand の HAND_STARTED の値にその Hand のプレイ時間を足した進みから決める（levelAt）。
    */
-  private tableConfigOf(settings: SessionSettings): TableConfig {
-    const { table } = this.options.setup;
-    if (settings.mode === "cash") return table;
-    const [first] = settings.tournament.levels;
-    if (first === undefined) {
-      throw new Error("Tournament の設定に Level が無い");
+  private tournamentHandOf(plan: HandPlan): {
+    readonly config: TableConfig;
+    readonly context: TournamentHandContext;
+  } | null {
+    const { settings } = plan;
+    if (settings.mode !== "tournament") return null;
+    const last = this.session?.lastHandId;
+    const progress =
+      plan.newSession || last === undefined
+        ? FIRST_TOURNAMENT_PROGRESS
+        : nextTournamentProgress(
+            this.progressAtStartOf(last),
+            this.handPlayTimeMs(last),
+          );
+    const { context, level } = tournamentHandContext(
+      settings.tournament,
+      progress,
+    );
+    return {
+      config: tableConfigForLevel(
+        this.options.setup.table,
+        level,
+        settings.tournament.anteKind,
+      ),
+      context,
+    };
+  }
+
+  /**
+   * Tournament の Hand の開始時の進み（HAND_STARTED の tournament）。版 9 で保存した Tournament の Hand（#183。Level を持たない）は、
+   * Session の終わった Hand の数（論理順序。D117）を Hand の番号とし、プレイ時間は数えていなかったので 0 から数える。
+   */
+  private progressAtStartOf(handId: string): TournamentProgress {
+    const started = this.events(handId)[0];
+    if (started?.type === "HAND_STARTED" && started.tournament !== undefined) {
+      return started.tournament;
     }
-    return tableConfigForLevel(table, first);
+    const index = this.options.store.sessionHandIds(handId).indexOf(handId);
+    return { handNumber: index < 0 ? 1 : index + 1, playTimeMs: 0 };
+  }
+
+  /**
+   * 終わった Hand のプレイ時間（Hand の開始から終わりまで。ms。D128）。このプロセスで始めて終えた Hand は playClock（単調な時計）で測る。
+   * 前のプロセスで終わった Hand（Resume の直後の最初の Hand の計算）は、保存した最初の Event と HAND_FINISHED の記録時刻の差で測る
+   * （壁時計なので、巻き戻っていれば 0 として数える。nextTournamentProgress）。終わっていない Hand は 0。
+   */
+  private handPlayTimeMs(handId: string): number {
+    const rt = this.hands.get(handId);
+    if (rt !== undefined) {
+      return rt.playFinishedAt === null
+        ? 0
+        : rt.playFinishedAt - rt.playStartedAt;
+    }
+    const stored = this.options.store.read(handId);
+    const first = stored[0];
+    const finished = stored.find((s) => s.event.type === "HAND_FINISHED");
+    if (first === undefined || finished === undefined) return 0;
+    return Date.parse(finished.recordedAt) - Date.parse(first.recordedAt);
   }
 
   /**
@@ -1343,8 +1424,11 @@ export class HandOrchestrator {
       this.withSessionEnd(rt.handId, rt.sessionId, events),
       { sessionId: rt.sessionId },
     );
-    // Hand が終わったら通常の速さに戻す（Fast Forward はその Hand だけ）。
-    if (events.some((e) => e.type === "HAND_FINISHED")) rt.fastForward = false;
+    // Hand が終わったら通常の速さに戻し（Fast Forward はその Hand だけ）、プレイ時間の終わりを記録する（D128）。
+    if (events.some((e) => e.type === "HAND_FINISHED")) {
+      rt.fastForward = false;
+      rt.playFinishedAt ??= this.playClock();
+    }
     if (rt.listeners.size === 0) return;
     const view = this.heroViewOf(rt.handId);
     for (const listener of rt.listeners) {

@@ -231,14 +231,18 @@ function etiquetteItems(notes: readonly RulingCode[]): DealerFeedbackItem[] {
 }
 
 /**
- * 判断の直前の Pot（公開 Event の Blind・Action の額の合計から、戻った Bet を引く）。
+ * 判断の直前の Pot（公開 Event の Blind・Ante・Action の額の合計から、戻った Bet を引く。Ante は Dead Money でも Pot に入る。D128）。
  * before は判断より前の Event だけ（呼び出し側が log を裁定の位置で切って渡す）。公開 Event だけを読む（whitelist）。
  */
 export function potBefore(before: readonly HandEvent[]): number {
   let pot = 0;
   for (const e of before) {
     if (e.visibility.type !== "public") continue;
-    if (e.type === "BLIND_POSTED" || e.type === "ACTION_TAKEN") {
+    if (
+      e.type === "BLIND_POSTED" ||
+      e.type === "ANTE_POSTED" ||
+      e.type === "ACTION_TAKEN"
+    ) {
       pot += e.amount;
     } else if (e.type === "UNCALLED_BET_RETURNED") {
       pot -= e.amount;

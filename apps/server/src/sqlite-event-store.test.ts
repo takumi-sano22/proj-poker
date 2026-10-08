@@ -714,6 +714,83 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
+  it("Ante と Level のある Hand（HAND_STARTED の ante・tournament と ANTE_POSTED）を現在の版（版 10 以降）で保存し、開き直しても同じ Event を読む（D128・D129）", () => {
+    const started = startHand({
+      handId: "h1",
+      seats: [
+        { playerId: "a", stack: 1_500 },
+        { playerId: "b", stack: 1_500 },
+        { playerId: "c", stack: 1_500 },
+      ],
+      buttonPlayerId: "a",
+      config: {
+        ...PHASE1_CASH_PRESET,
+        smallBlind: 15,
+        bigBlind: 30,
+        ante: { kind: "big_blind_ante", amount: 30 },
+      },
+      deal: { seed: 7 },
+      tournament: { level: 2, handNumber: 11, playTimeMs: 123_456 },
+    });
+    if (!started.ok) throw new Error(started.error.message);
+    // 3 人卓は Button（a）が Preflop の先手。a・SB（b）が Fold して BB（c）が取る。
+    let state = started.value.state;
+    const all: HandEvent[] = [...started.value.events];
+    while (state.status !== "complete") {
+      const legal = getLegalActions(state);
+      if (legal === null) throw new Error("手番が無い");
+      const result = applyAction(state, legal.playerId, { type: "fold" });
+      if (!result.ok) throw new Error(result.error.message);
+      state = result.value.state;
+      all.push(...result.value.events);
+    }
+    open().append("h1", all);
+    const read = reopen()
+      .read("h1")
+      .map((s) => s.event);
+    expect(read).toEqual(all);
+    expect(read[0]).toMatchObject({
+      ante: { kind: "big_blind_ante", amount: 30 },
+      tournament: { level: 2, handNumber: 11, playTimeMs: 123_456 },
+    });
+    expect(foldHandEvents(read)).toEqual(state);
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT DISTINCT schema_version FROM events WHERE type = 'ANTE_POSTED'",
+          )
+          .all(),
+      ).toEqual([{ schema_version: EVENT_SCHEMA_VERSION }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("版 9 の行（ante を持たない HAND_STARTED）は変換せずに読み、Ante なし（none）の Hand として畳み込む。行は書き換えない（D76・D128・D129）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const v9 = [...started, ...rest];
+    insertRows("h1", 9, v9);
+    const read = open()
+      .read("h1")
+      .map((s) => s.event);
+    expect(read).toEqual(v9);
+    expect(read[0]).not.toHaveProperty("ante");
+    const state = foldHandEvents(read);
+    expect(state.ante).toBeNull();
+    expect(state.mainPotAnte).toBe(0);
+    expect(state.status).toBe("complete");
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
+      ).toEqual([{ schema_version: 9 }]);
+    } finally {
+      db.close();
+    }
+  });
+
   it("版 8 の行（Tournament の設定の無い SESSION_STARTED）は変換せずに読み、cash の Session として読む。行は書き換えない（D76・D129・#183）", () => {
     const { started, rest } = showdownHandEvents("h1");
     const session = recordSessionEvent(foldHandEvents(started), {
