@@ -263,9 +263,11 @@ Phase 7（Rich Opponent Simulation）の通しは、Fixed CPUとGuestの卓で�
 4. CPU-to-CPUのPrivate Memoryが第三者のCPUに漏れない: どのObserverのMemoryも、見たHandの数がそのObserverとSubjectが同じ卓にいたHandの数と一致し、EvidenceはObserverが座っていたHandだけ。前のSessionから座るFixed CPU AがFixed CPU Bを見ていても、次のSessionで初めて座るFixed CPU Cから見たBは0
 5. TiltはSessionの終わりでResetされる: 前のSessionの終わりにTiltが1以上で、次のSessionにも座るFixed CPUがいて、次のSessionの最初のHandの開始時のTiltは全員0（Memoryは持ち越す）
 6. Opponent Memory Reset（`POST /api/opponents/memory-resets`・`{ "scope": "all" }`）の後は、Resetより前のHandをMemoryに使わない（Resetの後の最初のHandは全員が空のMemory、その次のHandはResetより後のHandだけから作る）。User Note / Tag（Resetの前に画面から残したもの）は変わらない
-7. Heroの画面と、Replay・HandのSSE（終わったHand）・Note / TagのAPIの応答に、Memory・Tilt・Table Tendencyの値、PoolのIdentity（`cpuProfileId`・Guestのid・名前）・Persona・`phase7_`のPolicyの版が出ない
+7. Heroの画面と、Playの間に画面が受け取った応答（Handの開始・操作・Note / Tag・進行中のSSEの各Event）と、終わった後のReplay・HandのSSE・Note / TagのAPIの応答に、Memory・Tilt・Table Tendencyの値、PoolのIdentity（`cpuProfileId`・Guestのid・名前）・Persona・`phase7_`のPolicyの版が出ない
 
 - HiddenのMemory・Persona・TiltはHeroの画面・APIに出さない（D105・D107）ので、確認用のAPIを本番に足しません。2〜6はテストプロセス（Node）からserverの一時DBを読み取り専用で開き、serverがHandの開始時に使うのと同じProjectionの関数（`buildOpponentMemoriesFromStore`・`buildTiltsFromStore`。入力はそのHandより前に保存されたHandだけ）で作り直して確かめます（`e2e/support/opponent-memory.ts`）。そのため`pnpm e2e`は`NODE_OPTIONS=--conditions=@proj-poker/source`でPlaywrightを動かし、`apps/server`・Engineをbuildせずに`src`から読みます。
+- E2Eが確かめるのは、実際のserverのプロセス・SQLite・画面の経路を通したSessionの流れで、Memory・Tiltの値はEvent Logから作り直したものです。CPUに実際に渡った層の値が、同じ入力からProjectionで作った値と一致すること（評価ハーネスと本番の組み立ての一致）は、本番のHand Orchestratorを使う`apps/server/src/testing/opponent-eval/memory-eval.test.ts`（§5「Opponent MemoryのEval」）と`apps/server/src/memory/memory-reset.test.ts`（Resetの後の注入）で確かめます。
+- 進行中のSSEはPlaywrightの応答から本文を読めないので、テストの手順でページの`EventSource`を包み、受け取った`data`を残して検査します（画面の挙動は変えない）。
 - serverの設定は1本目と同じ（`e2e/support/server.ts`）に、`POKER_SEED=20261042`を足します。このseedでは、1つ目のSessionが数HandでHeroのBustで終わり、両方のSessionにGuestが座り、2つ目のSessionで初めて座るFixed CPUと、1つ目の終わりにTiltが1以上で2つ目にも座るFixed CPUがいます。編成が変わってこの前提が崩れたら、検査を空振りさせずに前提のassertで落とします（seedを選び直す）。
 - 画面は1280×900で動かします。既定の1280×720では、Sessionの終わりの「新しい Session を始める」がHeroの席に覆われて押せません（#158。このE2Eでは直さない）。
 - HandはReplayの一覧の並びに頼らず、開始の応答のhandIdで特定します。「次の Hand へ」「新しい Session を始める」の後は、画面が新しいHandに切り替わるまで待ちます（`e2e/support/next-hand.ts`。#133）。

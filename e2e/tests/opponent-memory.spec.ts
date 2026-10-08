@@ -208,6 +208,59 @@ function hiddenTermsIn(payload: unknown): string[] {
   ];
 }
 
+/**
+ * Play の間に画面が受け取った Hero 向けの応答を全部集める（Hand の開始・操作・Note / Tag の応答と、進行中の SSE の各 Event）。
+ * 終わった後の View・Replay だけを見ると、進行中の応答にだけ混ざって終わると消える漏れを見逃すため。
+ * SSE は EventSource の本文を Playwright の応答から読めないので、ページの EventSource を包んで受け取った data を残す（テストの手順だけの観測で、
+ * 画面の挙動は変えない）。
+ */
+async function captureHeroTraffic(
+  page: Page,
+): Promise<() => Promise<{ name: string; body: unknown }[]>> {
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      __heroSse: string[];
+      EventSource: typeof EventSource;
+    };
+    w.__heroSse = [];
+    const Original = w.EventSource;
+    w.EventSource = class extends Original {
+      constructor(url: string | URL, init?: EventSourceInit) {
+        super(url, init);
+        for (const type of ["view", "session", "outage", "message"]) {
+          this.addEventListener(type, (event) => {
+            w.__heroSse.push((event as MessageEvent<string>).data);
+          });
+        }
+      }
+    };
+  });
+  const responses: Promise<{ name: string; body: unknown }>[] = [];
+  page.on("response", (res) => {
+    const url = new URL(res.url());
+    const type = res.headers()["content-type"] ?? "";
+    if (!url.pathname.startsWith("/api/") || !type.includes("json")) return;
+    responses.push(
+      res.json().then((body: unknown) => ({
+        name: `${res.request().method()} ${url.pathname}`,
+        body,
+      })),
+    );
+  });
+  return async () => {
+    const sse = await page.evaluate(
+      () => (window as unknown as { __heroSse: string[] }).__heroSse,
+    );
+    return [
+      ...(await Promise.all(responses)),
+      ...sse.map((data, i) => ({
+        name: `SSE #${i}`,
+        body: JSON.parse(data) as unknown,
+      })),
+    ];
+  };
+}
+
 /** SSE の本文の data 行（JSON）。 */
 function sseData(text: string): unknown[] {
   return text
@@ -226,6 +279,9 @@ test("Fixed CPU と Guest の卓で複数 Session を Play し、Memory の持�
   // 読み取り専用の接続は server の書き込みと並べて使える（SQLite）。Hand の保存は Hand の終わりに 1 トランザクションで行われる。
   probe = openOpponentMemoryProbe(dbPath);
   const p = probe;
+
+  // 画面が Play の間に受け取る応答（進行中の SSE を含む）を、最初のページの読み込みの前から集める。
+  const heroTraffic = await captureHeroTraffic(page);
 
   // Hand は一覧の並びではなく、開始の応答の handId で特定する（#129・D117）。
   const session1: string[] = [];
@@ -565,7 +621,17 @@ test("Fixed CPU と Guest の卓で複数 Session を Play し、Memory の持�
     // Reset の応答は、要求の対象を返す cpuProfileId の項目（all は null）だけを持つ。中身は上で確かめた。
     expect(forbiddenKeys(resetPayload)).toEqual([]);
 
-    const payloads: { name: string; body: unknown }[] = [];
+    // Play の間に画面が受け取った応答（Hand の開始・操作・Note / Tag・進行中の SSE の各 View）。
+    const live = await heroTraffic();
+    expect(
+      live.filter((x) => x.name.startsWith("SSE")).length,
+      "進行中の SSE を受け取った",
+    ).toBeGreaterThan(session1.length + session2.length);
+    expect(
+      live.filter((x) => x.name === "POST /api/hands").length,
+      "Hand の開始の応答",
+    ).toBe(session1.length + session2.length);
+    const payloads: { name: string; body: unknown }[] = [...live];
     const getJson = async (path: string) => {
       const res = await page.request.get(path);
       expect(res.ok(), path).toBe(true);
