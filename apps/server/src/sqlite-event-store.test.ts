@@ -8,7 +8,9 @@ import {
   foldHandEvents,
   getLegalActions,
   PHASE1_CASH_PRESET,
+  recordSessionEvent,
   recordUserRead,
+  sessionSettingsOf,
   startHand,
   type HandEvent,
   type HeroView,
@@ -677,7 +679,7 @@ describe("SqliteEventStore（保存の経路）", () => {
     }
   });
 
-  it("User Read（USER_READ_RECORDED）を含む Hand を版 8 で保存し、開き直しても同じ Event を読む（D112）", () => {
+  it("User Read（USER_READ_RECORDED）を含む Hand を現在の版（版 8 以降）で保存し、開き直しても同じ Event を読む（D112）", () => {
     const { started, rest } = showdownHandEvents("h1");
     const state = foldHandEvents(started);
     const hero = getLegalActions(state)?.playerId;
@@ -706,6 +708,31 @@ describe("SqliteEventStore（保存の経路）", () => {
             "SELECT DISTINCT schema_version FROM events WHERE type = 'USER_READ_RECORDED'",
           )
           .all(),
+      ).toEqual([{ schema_version: EVENT_SCHEMA_VERSION }]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("版 8 の行（Tournament の設定の無い SESSION_STARTED）は変換せずに読み、cash の Session として読む。行は書き換えない（D76・D129・#183）", () => {
+    const { started, rest } = showdownHandEvents("h1");
+    const session = recordSessionEvent(foldHandEvents(started), {
+      type: "SESSION_STARTED",
+      sessionId: "s1",
+    });
+    // SESSION_STARTED の分だけ後ろの Event の seq をずらす（卓の State は変えないので、続きの Event はそのまま置ける）。
+    const shifted = rest.map((e) => ({ ...e, seq: e.seq + 1 }));
+    const v8 = [...started, ...session.events, ...shifted];
+    insertRows("h1", 8, v8);
+    const read = open()
+      .read("h1")
+      .map((s) => s.event);
+    expect(read).toEqual(v8);
+    expect(sessionSettingsOf(read)).toEqual({ mode: "cash" });
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      expect(
+        db.prepare("SELECT DISTINCT schema_version FROM events").all(),
       ).toEqual([{ schema_version: 8 }]);
     } finally {
       db.close();

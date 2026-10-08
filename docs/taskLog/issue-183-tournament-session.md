@@ -17,7 +17,7 @@ Session に mode（`cash` / `tournament`）の境界を足し、`TournamentSessi
 - **置き場所**: 型・Preset・検証・Snapshot の読み方は Engine の `packages/engine/src/tournament.ts`（純粋。Cash の Preset `PHASE1_CASH_PRESET` と同じ層）。Level の進行・Ante（#184）、Elimination・順位（#185）、Payout の計算（#186）は入れない。
 - **Preset**: `stt6_hand_count`（D127: Starting Stack 1,500・10/20 から 12 Level・10 Hand ごと・BBA の額は BB・50/30/20・参加費 100pt）と `stt6_time_base`（D128: 同じ値で 1 Level 10 分＝600,000ms）。版は `phase8_provisional_v1`。どちらも OI-007 の暫定値とコメントに書いた。
 - **Snapshot**: `SESSION_STARTED` に任意項目 `tournament`（設定一式）を足した。cash の Session は項目ごと持たない（既存の Cash の Event を変えない）。項目の無い `SESSION_STARTED` は cash として読む（`sessionSettingsOf`）。`recordSessionEvent` が Snapshot を検証してから置き、読むときも検証して壊れた Snapshot を cash として扱わない。
-- **版**: 任意項目の追加で、旧版の行（項目の無い行）を cash と読む意味が変わらないので、docs/04 §3 の規則どおり `schema_version` は 8 のままにした（親の指示「任意項目の追加なら版を上げない」。版を上げると既存のテスト 1 件が落ちる＝「既存テストは修正なしで通す」に反する）。`HAND_STARTED` に必須の項目を足す #184 で版を上げる（#184 の本文の「9 に上げる」はそのまま当てはまる）。
+- **版**: 当初は docs/04 §3（任意項目の追加は版を上げない）に従って版 8 のままにしたが、Codex の P1（D129「Event の形を変えるときは schema_version を上げる」に反する）を受け、親の判断（D129 を文字どおり守る。briefing の「既存テストは修正なし」は「Cash の挙動を確かめるテストの期待値を変えない」に緩める）で `EVENT_SCHEMA_VERSION` を 9 に上げた。版 8 までの行は変換せずに読み、`tournament` の無い `SESSION_STARTED` は cash として読む（upcast の関数は足さない）。版の値をリテラル 8 で確かめていた既存テスト 1 件は `EVENT_SCHEMA_VERSION` 参照に直し、版 8 の行の読み込みテストを足した。#184 は版 10 になる。
 - **Hand の卓の設定**: Rule Profile は Cash と共有し（D108。Hand Engine を複製しない）、Blind だけを Level の額にする（`tableConfigForLevel`）。Level の進行は #184 なので、それまでは 1 Level 目の Blind で続ける。Ante も #184 まで Hand に入れない。
 - **続く Session と違う設定**: Hero が Hand の合間に Session を終える経路が無い（Session の終了は Bust・勝ち残り・障害の後の選択だけ）ので、続く Session に違う mode / Preset を求めた開始は `session_mode_mismatch`（409）で拒否する（黙って無視しない・今の Session を捨てない）。開始の再送で、まだ結果を見ていない Hand を返す場合は比べない。
 - **Resume**: 最後の Hand の Session の最初の保存済みの Hand の `SESSION_STARTED` から設定を戻す。Snapshot が壊れていれば Resume しない（新しい Session。warn を残す）。DB のテーブル・列・マイグレーションは足していない（D129）。
@@ -34,15 +34,15 @@ Session に mode（`cash` / `tournament`）の境界を足し、`TournamentSessi
 - Server（`apps/server`）
   - `src/hand-orchestrator.ts`: `SessionRequest`・`StartHandError`、`startHand(afterHandId, request?)`、Session の設定の保持（`SessionPointer.settings`・`HandPlan.settings`）・Resume での復元・不一致の拒否・Tournament の Hand の卓の設定。
   - `src/routes/hands.ts`: `POST /api/hands` の任意の `session`（JSON Schema で `cash` か `tournament` + 既知の Preset）と 409 `session_mode_mismatch`。
-  - `src/sqlite-event-store.ts`: 版 8 のまま任意項目を足したことのコメント。
-  - テスト: `src/tournament-session.test.ts`（新規 13 件。Cash の経路が変わらないこと・Tournament の開始と Snapshot・同じ Session の継続・不一致の拒否・再送・SQLite の再起動後の Resume〔Tournament / Cash〕・API の 201 / 400 / 409）。
+  - `src/sqlite-event-store.ts`・`src/event-upcast.ts`: `EVENT_SCHEMA_VERSION` を 9 にし、版 8 の行を変換せずに読む説明を足した（Observation の Cache は抽出の Version に Event の版を含むので、版を上げた後の最初の読み込みで作り直される。docs/04 §12）。
+  - テスト: `src/sqlite-event-store.test.ts`（版の値をリテラル 8 で見ていた 1 件を `EVENT_SCHEMA_VERSION` 参照に直し、版 8 の `SESSION_STARTED` を変換せずに cash として読むテストを足した）・`src/tournament-session.test.ts`（新規 13 件。Cash の経路が変わらないこと・Tournament の開始と Snapshot・同じ Session の継続・不一致の拒否・再送・SQLite の再起動後の Resume〔Tournament / Cash〕・API の 201 / 400 / 409）。
 - Docs: `docs/03_SYSTEM_ARCHITECTURE.md` §1（Session の mode・`POST /api/hands` の表）、`docs/04_DATA_AND_EVENTS.md` §3（`SESSION_STARTED` の項目・版の節）と §12（Phase 8 の Tournament）。
 
 ## 実行した確認
 
 - `pnpm lint`: 成功
 - `pnpm typecheck`: 成功（e2e / engine / web / server）
-- `pnpm test`: 成功（engine 33 files / 393 tests、web 9 files / 147 tests、server 62 files / 789 tests）。既存のテストは変更していない
+- `pnpm test`: 成功（engine 33 files / 393 tests、web 9 files / 147 tests、server 62 files / 789 tests）。Cash の挙動を確かめる既存のテストの期待値は変えていない（版の値のリテラル 1 件だけ直した）
 - `pnpm format:check`: 成功
 - 1 回目の `pnpm test` で `ruling.property.test.ts` の Property Test が 5.6 秒で失敗し、単体の再実行・全体の再実行では成功した（負荷による時間切れ。今回の変更は Ruling に触れていない）。
 - UI は変えていないので画面の実測はしていない（UI は #190）。e2e は実行していない（Cash の画面の経路は変えていない）。

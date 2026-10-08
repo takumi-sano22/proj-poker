@@ -53,10 +53,12 @@ import {
  *   変換せずに読む（版 1〜6 の行にこの種類は無く、作り直しもしない）
  * - 8: Hero の User Read USER_READ_RECORDED を足す（D112・#115）。既存の Event の形は変えていないので、版 7 の行も変換せずに読む
  *   （版 1〜7 の行にこの種類は無い）
- * 版 8 のまま SESSION_STARTED に任意項目 tournament（Tournament の設定の Snapshot。D129・#183）を足した。cash の Session は項目を
- * 持たず、項目の無い SESSION_STARTED は cash として読む（旧版の行の読み方が変わらない）ので、任意項目の追加として版を上げない（docs/04 §3）。
+ * - 9: SESSION_STARTED に Tournament の設定の Snapshot（項目 tournament。cash の Session は持たない）を足す（D129・#183）。
+ *   版 8 までの SESSION_STARTED は tournament を持たず、cash の Session として読む（sessionSettingsOf）ので、版 8 の行も変換せずに読む。
+ *   D129（Event の形を変えるときは版を上げる）に従って版を上げた。版 8 までの読み手は版 9 の行を読めない版として拒否する
+ *   （Tournament の Session を黙って cash として読まない）
  */
-export const EVENT_SCHEMA_VERSION = 8;
+export const EVENT_SCHEMA_VERSION = 9;
 
 /** 保存済みの Event の schema_version を、このアプリが読めない。 */
 export class UnsupportedEventSchemaError extends Error {
@@ -475,7 +477,7 @@ export class SqliteEventStore implements EventStore {
     // 版 1 の行は Hand の前の Event（Fold の有無）を見て upcast するので、Hand 単位でまとめて変換し、
     // 版 1 の行にだけ変換結果を使う（1 Hand は 1 トランザクションで同じ版で書くが、混在しても新しい版の行を変えない）。
     // 版 2 → 3 は 1 Event ずつ変換できるので、版 3 未満の行にだけ通す。版 3 → 4・4 → 5・5 → 6・6 → 7・7 → 8 は変換が要らない
-    // （Event の種類を足しただけ）。
+    // （Event の種類を足しただけ）。8 → 9 も変換が要らない（版 8 までの SESSION_STARTED は tournament を持たず、そのまま cash として読む。D129）。
     const parsed = rows.map((row) => JSON.parse(row.payload) as HandEventV1);
     const asV2 = rows.some((row) => row.schema_version === 1)
       ? upcastV1ToV2(parsed)

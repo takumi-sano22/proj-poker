@@ -237,7 +237,7 @@ export type HandEventBody =
       readonly type: "SESSION_STARTED";
       readonly sessionId: string;
       /**
-       * Tournament の Session の設定の Snapshot（D129・#183。任意項目なので schema_version は上げていない。docs/04 §3）。cash の Session は項目ごと持たない
+       * Tournament の Session の設定の Snapshot（D129・#183。schema_version 9 で足した）。cash の Session は項目ごと持たない
        * （mode を指定しない既存の Cash の Event は変えない）。項目の無い SESSION_STARTED は cash として読む（tournament.ts の sessionSettingsOf）。
        */
       readonly tournament?: TournamentConfig;

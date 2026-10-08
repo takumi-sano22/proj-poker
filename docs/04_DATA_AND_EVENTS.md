@@ -110,7 +110,7 @@ Handごとの Metadata（#97・D100）は、OrchestratorがHandの開始時に�
 
 保存した Event は、後から Engine の `HandEvent` の形が変わっても読み出せる必要があります（Replay・Review は保存済み Event だけを使う。D38）。方針は次のとおりです（D76）。
 
-- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `8`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
+- `events` の行ごとに、payload の形の版 `schema_version` を持ちます。現在の版は `9`（`apps/server/src/sqlite-event-store.ts` の `EVENT_SCHEMA_VERSION`）です。
   - 版 1: Phase 1（単一Pot）。`POT_AWARDED` に `potIndex`・`eligible` が無い
   - 版 2: `POT_AWARDED` をPotごとに発行し、`potIndex`・`eligible` を持つ（D78）。版 1 の行は読み込み時に `apps/server/src/event-upcast.ts` の `upcastV1ToV2` で補います（`potIndex` は 0、`eligible` はその時点でFoldしていないPlayer。版 1 は単一Potなので、Main Potとして読めば版 2 のEngineが発行する形と一致します）
   - 版 3: `HAND_STARTED` に `reopenRule` を持つ（D79・D81）。版 1・2 の行は読み込み時に（版 1 は `upcastV1ToV2` の後で）`upcastV2ToV3` が `reopenRule: cumulative_full_raise` を補います。`reopenRule` は Event の畳み込み（State 遷移）に使わず Legal Action の計算だけに使うので、保存済み Event の再生結果は変わりません。また版 2 までの Server は全員同じ Stack で Hand を始めるため、最高額を上げる All-in は 1 Street に 1 回までで、累積と単発の Reopen 判定は一致します
@@ -119,7 +119,7 @@ Handごとの Metadata（#97・D100）は、OrchestratorがHandの開始時に�
   - 版 6: `SESSION_STARTED` / `SESSION_ENDED` / `HAND_ABORTED` / `EMERGENCY_BOT_ENGAGED` を足す（D95）。既存のEventの形は変えていないので、版 5 の行も変換せずに読みます（版 1〜5 の行にこの 4 種類はありません）。版 5 までに保存したSessionには `SESSION_STARTED` / `SESSION_ENDED` もSession Projectionも無く、作り直しません（再起動後のResumeの対象にならない）。DBは §10 の `session_projections` を足しただけで、既存のテーブル・列・行は変えていません
   - 版 7: `HAND_METADATA_RECORDED` を足す（#97・D100）。既存のEventの形は変えていないので、版 6 の行も変換せずに読みます（版 1〜6 の行にこの種類は無く、Metadataを補って作り直しもしません）。DBのテーブル・列・行は変えていません
   - 版 8: `USER_READ_RECORDED` を足す（#115・D112）。既存のEventの形は変えていないので、版 7 の行も変換せずに読みます（版 1〜7 の行にこの種類はありません）。`events` のテーブル・列・行は変えていません（Note / Tag のテーブルはマイグレーション v5 で別に足した。§12）
-  - 版 8 のまま、`SESSION_STARTED` に任意項目 `tournament`（Tournamentの設定のSnapshot。#183・D129）を足しました。cashのSessionは項目を持たず、項目の無い `SESSION_STARTED`（保存済みの行を含む）はcashとして読むので、旧版の行の読み方は変わりません（下の「任意項目の追加」に当たるので版を上げない）。`events` のテーブル・列・行は変えていません
+  - 版 9: `SESSION_STARTED` に `tournament`（TournamentのSessionの設定のSnapshot。cashのSessionは項目を持たない）を足す（#183・D129）。版 8 までの `SESSION_STARTED` は `tournament` を持たず、版 9 のcashのSessionと同じ形なので、版 8 の行は変換せずに読み、cashのSessionとして読みます（`sessionSettingsOf`）。D129（Eventの形を変えるときは版を上げる）に従って版を上げたので、版 8 までの読み手は版 9 の行を読めない版として拒否します（TournamentのSessionを黙ってcashとして読まない）。`events` のテーブル・列・行は変えていません
 - 読み出しは現在の版と upcast を持つ旧版だけを受け付け、知らない版の行は `UnsupportedEventSchemaError` で失敗させます。旧形式を黙って新形式として扱いません（例: `oddChipRule` の無い旧 `HAND_STARTED` を、既定値で補って別の結果を再生しない）。
 - 互換の無い形の変更（必須項目の追加・意味の変更）をするときは版を上げ、旧版の行を読み込み時に新しい形へそろえる変換（upcast）を同じ PR で足します。保存済みの行は書き換えません（append-only）。任意項目の追加など、旧版の読み手が誤らない変更は版を上げません。
 
@@ -484,7 +484,7 @@ Phase 6以降で足すデータは、次の方針で置きます。具体的な�
   - **確かめること**（`memory/observation-cache.test.ts`）: Cacheあり（初回・温まった状態）/ なし / 全部消した後 / メモリ内のEvent Storeで、観察とMemory（注入の要約まで）が同じこと。Versionの違う行・形の合わない行を使わないこと。Reset・Guest・Observerが座っていないHand・参加者の無いSessionの扱いがCache前と同じこと。時計が後ろへ戻った記録でも同じこと。Cacheの失敗で結果が変わらないこと。Hand OrchestratorがCacheの有無で同じMemoryをCPUに渡すこと。
 - **Phase 8のTournament（D129）**: TournamentはEvent Logだけに残し、テーブルを足しません。TournamentのProjection（順位・Payout・Result・現在のLevel）はEvent Logから都度計算します（D111と同じ。遅くなった時点でCacheを別Issueで足す）。
   - **Eventに残すもの**: Tournamentの設定のSnapshot（Preset・Starting Stack・Blind構造・Ante・Payout・参加費）をSessionの開始のEvent（`SESSION_STARTED`の`tournament`。#183で実装。形は§3）に、Handごとの現在のLevel・Blind・Ante（と`ANTE_POSTED`）を`HAND_STARTED`の側に、Elimination・Tournamentの終了をHandの終わりの側に置きます。具体的な形は#183〜#186で決め、その時点で§3を更新します。
-  - **版**: Eventの形を変えるPRごとに`schema_version`を上げ、旧版の行はupcastで読みます（Anteの無い旧版の`HAND_STARTED`はAnte無しとして読む）。旧版のSession（Tournamentの設定の無いSession）はCashとして読みます。保存済みの行は書き換えません（D76）。#183の`SESSION_STARTED`の`tournament`は任意項目の追加で、項目の無い行をcashとして読む意味が変わらないため、§3の規則どおり版を上げていません（版 8 のまま）。`HAND_STARTED`に必須の項目を足す#184で版を上げます。
+  - **版**: Eventの形を変えるPRごとに`schema_version`を上げ、旧版の行はupcastで読みます（Anteの無い旧版の`HAND_STARTED`はAnte無しとして読む）。旧版のSession（Tournamentの設定の無いSession）はCashとして読みます。保存済みの行は書き換えません（D76）。#183で`SESSION_STARTED`に`tournament`を足して版を9にしました（版 8 までの行は変換せずcashとして読む。§3）。Anteを足す#184は版10です。
   - **Sessionのmode（#183）**: Sessionのmode（`cash` / `tournament`）と設定は`SESSION_STARTED`のSnapshotだけから読みます（`session_projections`の行・列とテーブルは変えない）。Resumeは最後のHandのSessionの最初の保存済みのHandを`sessionHandIds`で引き、その`SESSION_STARTED`から設定を戻します。Snapshotが壊れていればcashとして扱わずにResumeしません（新しいSessionで始め、理由をwarnに残す）。
   - **終了理由**: HeroのBustは既存の`hero_busted`、Heroの優勝は`hero_last_standing`を使い、`session_projections`の`end_reason`のCHECKは変えません（D129）。
   - **Resume**: 最後のHandのEventから、席・Button・Stackに加えて現在のLevelと経過（hand-countはSession内のHandの数、time-baseはプレイ時間の累計。D128）を作り直します。
