@@ -249,7 +249,7 @@ MVPは「ポーカーが遊べる」だけでは完成としません。
 6. [人間判断のトレーサビリティ](./docs/10_DECISION_TRACEABILITY.md)
 7. [Research Pack](./docs/research/README.md)
 
-D01〜D123の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
+D01〜D124の確定した人間判断は、機械可読な [`docs/decision_log.yaml`](./docs/decision_log.yaml) にも保存しています。
 
 ## ドキュメント言語
 
@@ -285,7 +285,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 できていること:
 
-- 設計ドキュメント（`docs/`）と人間判断（D01〜D123）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
+- 設計ドキュメント（`docs/`）と人間判断（D01〜D124）、Claude Code Skills / Harness（`.claude/`）、Lint / Typecheck / Test / Format と CI（Phase 0）
 - 決定論的なPoker Engine（`packages/engine`）: NLHE Cash の 2〜8 人（Heads-Up は Button = SB）・不均等Stackで、Fold / Check / Call / Bet / Raise / All-in・Minimum Raise・Short All-in と累積 Short All-in の Reopen（TDA準拠。D79・OI-008 の暫定値）・Multi Side Pot（D78）・Showdown・Hand Ranking・Split Pot（端数はButtonの左から。D75）を扱います（Phase 2）
 - Position Engine（D80・OI-008 の暫定値）と Session: Stack を Hand 間で持ち越し、Bust した CPU は退席。Hero の Bust か、Hero だけが残ったら Session を終えます
 - テスト: `docs/02` §5 の必須 Scenario のうち Phase 2 範囲を固定 Scenario（期待値は手計算）で揃え、2〜8 人・不均等Stackのランダム Hand と、Stack を持ち越す複数 Hand の Session で Chip 保存・Pot と Commit の一致を Property Test で確かめます（対応表は [`docs/taskLog/issue-36-phase2-scenarios.md`](./docs/taskLog/issue-36-phase2-scenarios.md)）。Ruling も固定 Scenario と Property Test で確かめます
@@ -339,7 +339,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - Claude の CPU は 1 手に数秒〜十数秒かかります。利用枠は開発で使う Claude Code と共有です
 - Persona の数値（OI-005）・モデル名（`claude-haiku-4-5` / `claude-sonnet-5-5` / `claude-opus-5-5`）と判断待ち・Review・Solver の上限（OI-001）・Primary Solver（OI-002）・Eval の合格ライン（`docs/09` §5・§6）は暫定値です（永久仕様ではありません）
 - **Fixed Pool の人数・名前・Persona の内訳と Guest の出やすさ（`phase7_pool_v1`）は OI-005 の暫定値、Memory の recency decay・十分な Sample の基準・注入の上限・Tilt の Trigger と幅・Table Tendency・層の合成と Memory の Eval の合格ライン（`phase7_*` の各 Policy）は OI-011 の暫定値**です（永久仕様ではありません）
-- CPU の Memory・Tilt・Table Tendency は Hand の開始時に毎回 Event Log から計算します（Cache は無い。Cache を足すかは測って決める: #150）。卓の傾向の入った Hero の Review の実モデルの品質は、まだ録画で測っていません（Review Eval の録画は卓の傾向の入らない固定 Hand のまま。#153）。Memory の節が入った Prompt の Claude の CPU の Eval は、D123 により API キーを使わず OAuth 経路で最大 36 Decision を録画する予定で、まだ録画していません（#155）
+- CPU の Memory・Tilt・Table Tendency は Hand の開始時に毎回 Event Log から計算します（今は Cache が無く、実 SQLite で 5,000 Hand のとき Hand の開始に約 1 秒かかる: #150。Hand ごとの観察を作り直せる派生の表に Cache することが D124 で決まり、実装待ちです: #165）。卓の傾向の入った Hero の Review の実モデルの品質は、まだ録画で測っていません（Review Eval の録画は卓の傾向の入らない固定 Hand のまま。#153）。Memory の節が入った Prompt の Claude の CPU の Eval は、D123 により API キーを使わず OAuth 経路で 36 Decision（36 呼び出し）を録画し、CI は再生だけで回します（#155。戦略への反映の向きは 1 判断ずつで結論にならず、測り直すかは #171）
 - Opponent Memory Reset は API だけで、画面の入口はありません（Hero に Fixed CPU の名前・`cpuProfileId` を見せていないため）。1 つの Fixed CPU を対象にする Reset は、`cpuProfileId` を知っている場合だけ使えます
 - テスト用の組み立て（`buildApp` に Event Store だけを独自の順序の源で渡す経路）では、既定の Learning Reset Store の区切りの番号が Event Store と別の源になります（本番の起動は同じ SQLite の DB を使うので影響しません: #157）
 - **Solver は Heads-Up の Turn / River だけ**です。Preflop・Flop・Multiway（3 人以上）・Side Pot あり・Rake ありの Spot は Unsupported で、Math・Range・KB で Review します（Multiway の Deep Solver は OI-009）。Solver の結果は Street の最初の判断（OOP）の頻度だけで、Action EV は出しません
