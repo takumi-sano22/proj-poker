@@ -192,7 +192,20 @@ MVP Parent #2はPhase 5の完了でCloseしました（再オープンしない�
 - ICM（2〜8人の決定論Calculator）
 - Tournament-aware CPU / Review
 
-子Issueの分解（#107の推奨）: P8-1 Tournament Mode / Session Model / Preset・P8-2 Blind / Ante Engine Integration・P8-3 Elimination / Position / Tournament Progression・P8-4 Payout / Result・P8-5 Deterministic ICM Calculator・P8-6 Tournament KnowledgeState / CPU Adaptation・P8-7 Tournament Review / ICM Evidence・P8-8 Tournament UI・P8-9 Tournament Critical E2E / README。
+子Issue（#107の推奨にP8-0を足して直列に進める。判断はD127〜D130）:
+
+| 子 | Issue |
+|---|---|
+| P8-0 | 人間判断の記録とdocsの同期（#182） |
+| P8-1 | Tournament Mode / Session Model / Preset（#183） |
+| P8-2 | Blind / Ante Engine Integration（#184） |
+| P8-3 | Elimination / Position / Tournament Progression（#185） |
+| P8-4 | Payout / Result（#186） |
+| P8-5 | Deterministic ICM Calculator（#187） |
+| P8-6 | Tournament KnowledgeState / CPU Adaptation（#188） |
+| P8-7 | Tournament Review / ICM Evidence（#189） |
+| P8-8 | Tournament UI（#190） |
+| P8-9 | Tournament Critical E2E / README（#191） |
 
 ## 3.2 Post-MVPのPhase Gate（#104）
 

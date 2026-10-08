@@ -289,6 +289,9 @@ Session Deep Analysisでは通常Reviewより重いSolveを使っても構いま
 - ICMは決定論のICM Calculator（2〜8人）が計算し、Chip EVとは別のEvidenceとして渡します。Review AIはICMを説明しますが、数値の正本になりません（LLMにICMを計算させない）。
 - Pass A / Pass Bの情報境界は変えません（判断時点の情報だけでPass Aを作る）。
 - Important SpotにBubble / Pay Jump / Short Stack等を足せるようにします。
+- ICMのEvidenceの粒度（D130）: 判断時点のICM Equityを常にEvidenceとして出し、All-inが関わる判断（Shove・All-inへのCall）ではChip EVの必要Equity（Pot Odds）とICMの必要Equityを別の項目として並べます。どちらにもEvidence IDを付けます。
+- CPUのPublic Tournament Context（D130。`docs/02` §7）: 全席のStackとBB換算・ICM Equity・Stage・自分から見た相手ごとのBubble Factor。CashのKnowledgeState / Promptは変えず、Tournamentのときだけ足します。
+- CPUのMemory: TournamentのHandのObservationは`tournament`のcontextで抽出し、TournamentのHandではそのcontextのStrategy Hypothesisを使います（D106。Raw Observationは共通・Hypothesisは分離）。Private Memoryの分離とLearning-only Revealを入れない規則は変えません。
 
 ## 11. Web Fallback
 

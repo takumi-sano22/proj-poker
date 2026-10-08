@@ -1,4 +1,4 @@
-# D01〜D126の採用済み人間判断。
+# D01〜D130の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -506,3 +506,19 @@
   choice: "River の代表 Spot だけで Claude CPU の実モデル Eval を追加測定する（最大 36 Decision・72 呼び出し。#171 の人間判断）"
   status: "採用済み"
   decision: "#155の初回（D123）でRiverのCallの割合がloose < tightになったのが少数標本の揺れかを確かめるため、river_facing_big_betの1 Spot × Persona 6 × 条件3（baseline・loose・tight）× 追加repeat 2の最大36 Decision（Retryを含む呼び出しは最大72回）を追加で録画する。経路はD123と同じ（Claude Agent SDK・Claude CodeのOAuth〔サブスク枠〕・buildClaudeEnv。API キー不使用。Bedrock / Vertex / Foundry等へ切り替えない）。D123の録画は残し、追加分は別の録画（または別のVersion）として管理し、CIは再生だけ。既存の録画と追加分を合わせてRiverを集計する。結果が意図した向きにならなくても、その場でPrompt / Policyを変えず、十分なサンプルでも逆向きが続くなら事実を記録して新しいIssueに分け、人間判断に返す。OAuth・利用枠で実行できなければAPI キーへ切り替えず停止する。D87・D123の具体化。"
+- id: D127
+  choice: "標準 6-max STT は Starting Stack 1,500・10 Hand ごとに上がる Blind 表・参加費 100pt（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "標準の6-max STT（hand-count）の暫定値を、Starting Stack 1,500、Blind（SB / BB）を10/20 → 15/30 → 25/50 → 50/100 → 75/150 → 100/200 → 150/300 → 200/400 → 300/600 → 400/800 → 600/1,200 → 1,000/2,000（最後のLevelは続ける）とし、10 Handごとに1 Level上げる。Big Blind Anteの額はBBと同じ。Prize Poolは参加費100pt × 参加人数（6人で600pt。50 / 30 / 20で300 / 180 / 120）。いずれもOI-007の暫定値でVersion付きのConfigに置き、Playtest後に変えられる（永久仕様にしない）。D108の具体化。実装は#183・#184・#186。"
+- id: D128
+  choice: "Ante は TDA 準拠の Dead Money、time-base は Core と UI の両方で選べるようにする（AskUserQuestion）"
+  status: "採用済み"
+  decision: "AnteはDead Moneyとし、Call / Raiseの額とUncalledの返却に数えない。Big Blind AnteはBBの席がBlindを先に払い、残りでAnteを払う（Stackが足りなければAnteが減る。TDA準拠）。Big Blind AnteはMain Potに入れる。per_playerのAnteは各自の拠出としてPotの段に入れる。time-baseのBlind StructureはCoreとテストに加えてUIでも選べるPresetにする（暫定値は標準と同じStackとBlind表で1 Level 10分。OI-007）。経過時間はプレイ時間（Handの開始から終わりまでの累計。アプリを閉じていた時間は数えない）で測り、LevelはHandの開始時に決めてHAND_STARTEDに固定する。壁時計は経過時間の計測にだけ使い、意味上の順序には使わない（D117）。D108の具体化。実装は#184・#190。"
+- id: D129
+  choice: "Hero の Bust で Tournament を終え、Tournament は Event Log だけに残して Projection は都度計算する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "HeroがBustした時点でそのTournamentを終え、Heroの順位とPayoutを確定する。残ったCPUの順位は未決として表示し、CPUだけで続けない（Claudeの呼び出しを増やさない）。Heroが最後の1人になれば優勝。Sessionの終了理由は既存のhero_busted / hero_last_standingを使い、session_projectionsのCHECKを変えない。Tournamentの設定のSnapshot・Level・Ante・Elimination・終了はEvent Logに残し（Eventの形を変えるときはschema_versionを上げ、旧版の行をupcastで読む。保存済みの行は書き換えない）、順位・Payout・ResultなどのTournamentのProjectionはEvent Logから都度計算する（テーブルを足さない。遅くなった時点でCacheを別Issueで足す）。旧版のSessionはCashとして読む。D37・D76・D95・D111の具体化。実装は#183〜#186。"
+- id: D130
+  choice: "ICM は全席の Equity・Bubble Factor・All-in の必要 Equity まで構造化して CPU と Review に渡す（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "CPUのPublic Tournament Contextには、全席のStackとBB換算・ICM Equity（ptと%）・Stage（bubble / in the money / heads-up）・自分から見た相手ごとのBubble Factorを構造化して足す（すべて公開のStackから決定論で計算する）。Reviewでは判断時点のICM Equityを常にEvidenceとして出し、All-inが関わる判断（Shove・All-inへのCall）ではChip EVの必要Equity（Pot Odds）とICMの必要Equityを別の項目として並べる。ICMの数値は決定論のICM Calculatorが正本で、Review AIとCPUは計算しない。D109の具体化。実装は#187〜#189。"
