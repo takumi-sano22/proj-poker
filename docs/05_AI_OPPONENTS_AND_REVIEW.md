@@ -151,6 +151,8 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 
 卓全体の傾向（aggression・looseness等）は、Public / 観察可能なEvidenceだけから作るProjectionです。個々のCPUのPrivate Memoryを集約して作りません。CPUが使える情報と、HeroのReviewが使える情報の境界を分けます。D10の「ユーザーが選ぶ卓の傾向（卓の編成）」とは別のものです。
 
+HeroのReviewでの扱い（D122。実装は#153）: Decision ReviewのEvidenceに、判断時点より前の保存済みのHandのpublicのEventだけから作ったTable Tendencyを構造化Evidence（Evidence ID付き）として足します。判断時点より後の情報・Learning-only Reveal・CPUのPrivate Memory / Private Hypothesis・Persona・Tiltは使いません。数値は決定論のコードが正本で、Review AIは説明だけを行います。
+
 実装（#141。`apps/server/src/memory/table-tendency.ts`・`table-tendency-policy.ts`。数値と定義はすべてOI-011の暫定値で、確定ではない）:
 
 - **作り方**: 今のSessionの保存済み（終わった）Handを論理順序（`ordinals.ord`）で並べ、`public`のEvent（Observationと同じwhitelist）だけから都度数えます（保存しない。D111）。Version付きのPolicy`phase7_table_tendency_v1`で、項目はviewer以外の席の`vpip`（looseness）・`pfr`・`aggression_frequency`（Postflopのaggression）と、卓全体の`showdown`（札を比べて決着したHandの割合）です。範囲はviewerが座っていたHandの新しい100 Handまでで、項目ごとにnumerator / denominator・Handの数・十分か（Handが10以上かつ機会が20以上）・PolicyのVersionを持ちます（形は`docs/04` §12）。壁時計を使いません（D117）。
