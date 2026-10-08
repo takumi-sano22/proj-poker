@@ -149,7 +149,7 @@ export function composeSessionParticipants(input: {
       );
     }
     chosen.set(i, take(unused));
-    // 席の Persona が無い席は上書きではないので、満たせなかった席に数えない（2 で必ず満たされる）。
+    // 席に Persona が無い席は 2 で残りの誰でも選べるので、ここへ来るのは Persona を求めた席だけ（念のため型の上でも確かめる）。
     if (seat.persona !== undefined) {
       unmatched.push({ playerId: seat.playerId, requested: seat.persona });
     }

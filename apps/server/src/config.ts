@@ -27,7 +27,9 @@ export interface TableSetup {
   readonly players: readonly SeatPlayer[];
   /**
    * CPU の playerId → Persona の Preset（#51）。CPU 自身の判断にだけ使うサーバー内の設定で、
-   * players（Hero への応答に載る）・Event・DB には入れない（Secret Persona。D28）。載っていない CPU は Persona なし。
+   * players（Hero への応答に載る）・Event・DB には入れない（Secret Persona。D28）。
+   * Phase 7（#136・D118）では席に求める Persona で（載っていない席の Guest は Persona なし）、実際の Persona は Session の編成で決まる（Fixed CPU は常に Fixed Pool の Persona。
+   * 既定の割り当て順では同じ値。opponents/cpu-pool.ts の composeSessionParticipants）。
    */
   readonly personas: Readonly<Record<string, PersonaPresetId>>;
 }
