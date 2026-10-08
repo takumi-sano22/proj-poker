@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D126の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D130の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -36,6 +36,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D122〜D123 | Phase 7 の派生の人間判断。Hero の Review の Evidence に、判断時点より前の public の Table Tendency を構造化 Evidence として入れる（Learning-only Reveal・CPU の Private Memory / Persona・Tilt は使わず、数値は決定論のコードが正本。D122）、Memory 付き Prompt の Claude CPU の実モデル Eval は API キーを使わず OAuth 経路で最大 36 Decision・CI は録画の再生だけ（D123） |
 | D124 | CPU Memory の永続 Cache は、Hand ごとに抽出した Observation（Observer 別・抽出の Version 付き）をマイグレーション v12 の派生の表に持ち、Hand の開始で読むときに足りない Hand だけ補う。Hypothesis の集計は都度計算・表は DELETE 可で正本にしない（#150・#165） |
 | D125〜D126 | Review の自然言語中の数値 Grounding は Phase 7 では実装せず Blocker にしない・横断の品質課題として #104 に残す（D125）、River の代表 Spot だけで Claude CPU の実モデル Eval を追加測定（最大 36 Decision・72 呼び出し・OAuth・既存の録画は残し CI は再生だけ・逆向きでも Prompt / Policy は変えない。D126） |
+| D127〜D130 | Phase 8 の実装前判断: 標準6-max STTの暫定値（Starting Stack 1,500・10 HandごとのBlind表・参加費100pt。D127）、AnteのDead MoneyとBBAのBlind優先・time-baseのプレイ時間とUIでの選択（D128）、HeroのBustでTournamentを終えEvent Logだけに残しProjectionは都度計算（D129）、ICM EquityとBubble FactorとAll-inの必要Equity（ShoveはCallされた場合の条件付き）をCPUとReviewへ構造化して渡す（D130） |
 
 ## 特に重要なClosed Decision
 

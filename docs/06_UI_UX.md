@@ -267,3 +267,12 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 - Drillの卓にはCPUのNote / Tagの欄を出しません（Drillの相手はDrillの設定のRuleBot）。Handが終わったら、結果の欄（広い画面は卓の中央、狭い画面はHeroの欄。§1）に獲得の行と「卓に戻る」を出し、Heroの欄に「練習した判断の Review」を出します（既存のReviewの画面。Pass Aの経路そのまま）。「次の Hand へ」は出しません。通常の卓のSessionはDrillの間もそのまま残り、「卓に戻る」で続きに戻ります。
 - 上の席の札は卓の枠より上へはみ出すので、説明の面の下を広い画面で32px・狭い画面で20px空けます。1280×900・375×760・320×568で、説明の面と席の札が重ならないこと・横スクロールが出ないことを確かめました。
 
+
+## 15. Tournament（Phase 8。#107・D108・D127〜D130）
+
+- 新しいSessionの開始でCash / Tournamentと、TournamentのPreset（標準のhand-countの6-max STTとtime-base。D128）を選べます。Cashの画面と流れは変えません。
+- 卓には現在のBlind / Ante / Levelと、次のLevelまでの残り（hand-countはHandの数、time-baseはプレイ時間）を出します。
+- 残人数・Payout・Eliminationを出し、Stackは実額を常時表示してBBを補助にします（D49）。
+- HeroのBustか優勝でTournamentを終え、Result（Heroの順位とPayout・確定した他の順位。残ったCPUの順位は未決）を出します（D129）。
+- ReviewではICM / Prize EquityとChip EVを別の項目として表示し、混同させません（D130）。
+- 具体的な配置は#190で決めます（`ui-design-recipes`）。
