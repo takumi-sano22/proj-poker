@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { startNextHand } from "../support/next-hand.js";
 import {
   startServer,
   stopServer,
@@ -183,7 +184,8 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
     for (let hand = 0; hand < 40; hand++) {
       await playToHandEnd(page, true);
       if (await dock.getByText("Session が終了しました。").isVisible()) break;
-      await page.getByRole("button", { name: "次の Hand へ" }).click();
+      // 前の Hand の終了表示を新しい Hand の終わりと読み違えないよう、画面が新しい Hand に切り替わるまで待つ（#133）。
+      await startNextHand(page);
     }
     await expect(dock.getByText("Session が終了しました。")).toBeVisible();
     const hands = await getJson<{ hands: { handId: string }[] }>(

@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { startNextHand } from "../support/next-hand.js";
 import {
   startServer,
   stopServer,
@@ -241,7 +242,8 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
   let secondHandId = "";
   await test.step("卓に戻って次の Hand を Play する", async () => {
     await page.getByRole("button", { name: "卓に戻る" }).click();
-    await page.getByRole("button", { name: "次の Hand へ" }).click();
+    // 前の Hand の終了表示を新しい Hand の終わりと読み違えないよう、画面が新しい Hand に切り替わるまで待つ（#133）。
+    await startNextHand(page);
     await playHand(page, false);
     await expect(
       page
