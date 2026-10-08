@@ -58,6 +58,13 @@ import {
   type TableSetup,
 } from "./config.js";
 import type { EventStore } from "./event-store.js";
+import {
+  buildOpponentMemoriesFromStore,
+  type MemoryObserverSeat,
+  type MemoryTableSeat,
+  type OpponentMemorySummary,
+} from "./memory/memory-summary.js";
+import { participantRefOf } from "./memory/observation.js";
 import type { SessionPlayerSubject } from "./notes/subject.js";
 import {
   composeSessionParticipants,
@@ -195,6 +202,11 @@ interface HandRuntime {
   readonly handId: string;
   readonly sessionId: string;
   readonly opponents: ReadonlyMap<string, OpponentAgent>;
+  /**
+   * CPU ごとの、その CPU 自身の Memory の要約（D121・#139）。Hand の開始時に保存済みの Hand だけから作り、Hand の間は変えない。
+   * 参加者の引けない CPU（v10 より前の Session・Drill）は持たない。
+   */
+  readonly memories: ReadonlyMap<string, OpponentMemorySummary>;
   /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
   readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
@@ -269,6 +281,9 @@ interface SessionAfter {
     "sessionId" | "newSession" | "personas" | "participants"
   > | null;
 }
+
+/** Persona の無い CPU の Skill（Persona の軸の平均。docs/05 §2）。Memory の十分な Sample の基準に使う。 */
+const AVERAGE_SKILL = 0.5;
 
 const silentLogger: OrchestratorLogger = { warn: () => {}, error: () => {} };
 
@@ -424,6 +439,8 @@ export class HandOrchestrator {
       metadata: this.handMetadata(plan.seats, emergencyBots),
     });
     if (!started.ok) return started;
+    // CPU の Memory は、この Hand を書く前に保存済みの Hand だけから作る（決まった時点・同じ入力なら同じ要約。D121・D117）。
+    const memories = this.opponentMemories(plan);
     // 新しい Session の最初の Hand には、開始の Event に続けて SESSION_STARTED を置く（D95）。
     // Session の最初の Hand は全員が均等 Stack（Big Blind より多い）で始まるので、開始の時点では終わっていない。
     const opening = plan.newSession
@@ -473,6 +490,7 @@ export class HandOrchestrator {
       handId,
       sessionId: plan.sessionId,
       opponents,
+      memories,
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -554,6 +572,8 @@ export class HandOrchestrator {
       handId,
       sessionId,
       opponents,
+      // Drill の専用の Session は参加者の行を持たないので、CPU の Memory も持たない（D116・D118）。
+      memories: new Map(),
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -880,6 +900,54 @@ export class HandOrchestrator {
   }
 
   /**
+   * 座っている CPU ごとに、その CPU 自身の Memory の要約を作る（D121・#139）。Event Store へこの Hand を書く前に呼ぶ。
+   * - Observer は session_participants の参加者（Fixed CPU / Guest）。参加者の引けない CPU（v10 より前の Session）は作らない
+   * - Subject は今の Hand の他の参加者（Hero と他 CPU）で、席の playerId との対応はこの Hand の中だけのもの
+   * - Skill は Observer の Persona（Fixed CPU は Pool の Persona、Guest は席の Persona）。Persona が無ければ平均（0.5）
+   */
+  private opponentMemories(
+    plan: HandPlan,
+  ): ReadonlyMap<string, OpponentMemorySummary> {
+    const participantOf = new Map(
+      plan.participants.map((p) => [p.playerId, p] as const),
+    );
+    const seats: MemoryTableSeat[] = plan.seats.map((s) => {
+      const p = participantOf.get(s.playerId);
+      return {
+        playerId: s.playerId,
+        participant:
+          s.playerId === this.heroId
+            ? { kind: "hero" }
+            : p === undefined
+              ? null
+              : participantRefOf(p),
+      };
+    });
+    const observers: MemoryObserverSeat[] = plan.seats.flatMap((s) => {
+      const p = participantOf.get(s.playerId);
+      if (s.playerId === this.heroId || p === undefined) return [];
+      const presetId = plan.personas[s.playerId];
+      return [
+        {
+          playerId: s.playerId,
+          observer: participantRefOf(p),
+          observerSkill:
+            presetId === undefined
+              ? AVERAGE_SKILL
+              : PERSONA_PRESETS[presetId].traits.skill,
+        },
+      ];
+    });
+    if (observers.length === 0) return new Map();
+    return buildOpponentMemoriesFromStore(this.options.store, {
+      heroPlayerId: this.heroId,
+      currentSessionId: plan.sessionId,
+      seats,
+      observers,
+    });
+  }
+
+  /**
    * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
@@ -1191,8 +1259,11 @@ export class HandOrchestrator {
 
     // CPU に渡すのはその CPU の KnowledgeState と Legal Action だけ（global State・他者の札・Deck を渡さない）。
     // AI_ACTION_INVALID は誰の Projection にも入らないので、再要求でも KnowledgeState は同じ。
+    // Memory はその CPU 自身のもの（Hand の開始時に作った要約）だけを足す。無い CPU では項目ごと持たない（D121）。
+    const projected = projectKnowledgeState(events, playerId);
+    const memory = rt.memories.get(playerId);
     const base: OpponentInput = {
-      knowledge: projectKnowledgeState(events, playerId),
+      knowledge: memory === undefined ? projected : { ...projected, memory },
       legal,
     };
     const emergency = rt.emergencyBots.get(playerId);

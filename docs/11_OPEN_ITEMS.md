@@ -171,6 +171,7 @@ Evidence Gateの振る舞いは確定。
 - 十分なSampleの基準
 - PersonaごとのHypothesisの更新の速さ・早合点の傾向
 - TiltのTrigger・しきい値・増減・減衰の値と、Personaへの反映の大きさ
+- KnowledgeStateへ注入するMemoryの要約のEvidence IDの数（暫定値3。`phase7_memory_injection_v1`。Subjectごと5項目はD121）と、RuleBotへの反映の大きさ（`phase7_rulebot_memory_v1`。#139）
 
 Phase 7でVersion付きのConfig / Policyに暫定値を置き、Eval / Playtestで見直します。
 

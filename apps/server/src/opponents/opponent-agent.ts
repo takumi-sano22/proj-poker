@@ -8,6 +8,7 @@ import type {
   LegalActionSet,
   PlayerAction,
 } from "@proj-poker/engine";
+import type { OpponentMemorySummary } from "../memory/memory-summary.js";
 import type { Persona } from "./persona.js";
 
 /** 出力の検証で不正と判定した段。AI_ACTION_INVALID の Event にも残すので、型は Engine の Event と共有する（D83）。 */
@@ -19,10 +20,20 @@ export interface OpponentCorrection {
   readonly reason: string;
 }
 
+/**
+ * CPU の KnowledgeState。Engine の Projection（その Hand の中で見えたもの）に、その CPU 自身の Memory の要約を足したもの
+ * （D121・#139。docs/05 §1・docs/04 §5）。Memory はその CPU が Observer の観察から作った Hypothesis だけで、
+ * 他 CPU の Hypothesis・Hidden の Persona・Hero の弱点・Learning-only Reveal は入らない。
+ * Memory を作れない CPU（参加者の行が無い Session・Drill）では項目ごと持たない（Prompt を変えない）。
+ */
+export interface CpuKnowledgeState extends KnowledgeState {
+  readonly memory?: OpponentMemorySummary;
+}
+
 /** CPU に渡す入力。global な HandState・他者の Hole Cards・Deck は型の上でも渡せない。 */
 export interface OpponentInput {
-  /** projectKnowledgeState の結果（その CPU に見える Event だけを畳み込み、Position・Math を足したもの）。 */
-  readonly knowledge: KnowledgeState;
+  /** projectKnowledgeState の結果（その CPU に見える Event だけを畳み込み、Position・Math を足したもの）と、その CPU 自身の Memory。 */
+  readonly knowledge: CpuKnowledgeState;
   /** 今の手番の Legal Action（Engine が計算したもの。D40）。 */
   readonly legal: LegalActionSet;
   /** 直前の出力が不正だったときの理由。最初の要求には付かない。 */

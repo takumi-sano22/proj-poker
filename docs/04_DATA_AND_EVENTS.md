@@ -163,6 +163,8 @@ Phase 1 Engineでは、`public` と自分宛ての `private` のEventだけを�
 
 Learning-only Revealを読み込んで構築してはいけません。
 
+Phase 7（#139・D121）: 過去のObservation / Hypothesisは、`apps/server`がEngineの`KnowledgeState`にそのCPU自身のMemoryの要約（`memory`。`OpponentInput.knowledge`の型は`CpuKnowledgeState`）として足します。EngineのProjection（`projectKnowledgeState`）はHandの中のEventだけを畳み込むままで、Memoryは保存済みのHandから作るので、Handの途中のEventはMemoryに入りません。形・作る時点・上限は§12「Memoryの注入（#139）」です。Memoryを作れないCPU（参加者の行が無いSession・Drill）では項目ごと持たず、CPUへの入力（Prompt）を変えません。
+
 ## 6. Opponent Observation
 
 Observationの事実と、そこからの解釈を分けます。
@@ -443,6 +445,12 @@ Phase 6以降で足すデータは、次の方針で置きます。具体的な�
     - **recency decay**: ObserverがそのSubjectを同じcontextで見たHand（両者が座っていて終わったHand）を`ord`の順に並べ、最新のHandをage 0として`0.5^(age / 150)`の重みを掛けます（半減期150 Hand）。壁時計を使わないので、時計が後ろへ戻った記録でも結果は変わりません（D117。メモリ内とSQLiteのStoreで確かめる）。
     - **十分なSample**: 重み付きの機会数（denominator）が`15 × (0.5 + Skill)`以上（ObserverのPersonaのSkill 0〜1で0.5〜1.5倍。弱いCPUは少ないSampleで早合点し、強いCPUは保留しやすい）。Skillは呼び出し側が渡します（Fixed CPUはPoolのPersona、Guestは席のPersona）。
     - **Isolation**: 入力は1人のObserverの観察だけで、別のObserverの観察を混ぜた入力は拒否します（CPU AのBへの仮説をCの観察から作らない）。Observer自身と誰か引けない席はSubjectにしません。GuestはObservationの抽出と同じく次のSessionでは読まないので、Hypothesisも持ち越しません。打ち切ったHand（`HAND_FINISHED`の無いHand）はStatsと同じく数えません。
+  - **Memoryの注入（#139・D121）**: `apps/server/src/memory/memory-summary.ts`が、1人のObserverのHypothesisを、そのCPUの`KnowledgeState`に足す上限付きの構造化した要約（`OpponentMemorySummary`）に決定論で畳みます。テーブル・列・Eventの形・`schema_version`は足していません（保存しない）。
+    - **作る時点**: Hand OrchestratorがHandの開始時、そのHandをEvent Storeへ書く前に、座っているCPUごとに作ります（`buildOpponentMemoriesFromStore`。CPUの数だけ同じHandを読み直さないよう、1回の計算の間だけ読み出しを使い回す）。入力は保存済みの（終わった）Handだけで、Handの途中のEventはそのHandの`KnowledgeState`が持ちます。Handの間は同じ要約を使います（再要求・Fallback・Emergency Botも同じ入力）。順序は`ordinals.ord`と`events.seq`で、壁時計を使いません（D117）。同じEvent Storeからは同じ要約になります（メモリ内とSQLiteのStoreで確かめる）。
+    - **Observer**: そのSessionの`session_participants`の参加者（Fixed CPU / Guest）。参加者の行が無いCPU（v10より前のSession・Drillの専用のSession）には作りません。ObserverのSkillはPersona（Fixed CPUはPoolのPersona、Guestは席のPersona。無ければ平均の0.5）で、十分なSampleの基準に使います（D119）。
+    - **Subject**: 今のHandの他の参加者（Heroと他のCPU）を席順に並べ、その席の`playerId`（このHandの中だけの対応）・参加者の参照・ObserverがそのSubjectを見たHandの数（0は初めての相手）・項目を持ちます。Observer自身と誰か引けない席は入れません。`context`は`cash`のHypothesisだけを使います（`tournament`はPhase 8）。
+    - **上限（`phase7_memory_injection_v1`）**: 項目は機会のあるものを重み付きの機会の多い順（同じならPolicyの項目の順）にSubjectごと5つまで（D121）。項目ごとに割合（重み付き。小数第2位で丸める）・重み付きの機会の数・機会の数・十分か（不十分は保留）・Evidenceの全件の数・新しいEvidence ID（`<hand_id>#<events.seq>`）3件までを持ちます（3件はOI-011の暫定値）。自然言語のMemoryは作らず、Claudeの CPUにはこの構造化データをそのままPromptで渡します（`docs/05` §1）。
+    - **Isolation**: 入力は1人のObserverのHypothesisだけで、別のObserverのHypothesisが混ざった入力は拒否します。Hidden のPersona・他CPUのHypothesis・Heroの弱点（`learning/`）・Learning-only Reveal・Tiltは入りません。`memory/memory-injection-isolation.test.ts`が、`opponents/`・`hand-orchestrator.ts`・`memory/memory-summary.ts`からのimportで`learning/`に届かず、Learning-only Revealを参照しないことと、Fakeの`query()`で複数のSessionを進めたClaudeのCPUの全Promptで、Memoryの全EvidenceがObserver自身の座っていたHandのSubjectのpublicの`ACTION_TAKEN`であること・前のSessionのGuestが出ないこと・他者の札・Persona・Pass Bの文・Heroの弱点のHypothesisが出ないことを確かめます。
   - Note / Tag（D105）: Subjectに`{ kind: "cpu_profile", cpuProfileId }`を足しました（鍵は`["cpu_profile", cpuProfileId]`）。既存の`session_player`の鍵（`["session_player", sessionId, playerId]`）はバイト単位で変えず、保存済みの行は書き換えません。`session_player`の対象は`persistentSubjectOf`でそのSessionの`session_participants`から永続のCPUへ引きます（Fixed CPUなら`cpu_profile`、Guest・v10より前のSessionはnull）。Note / TagのAPIの対象は今も`session_player`です。
 - **意味上の順序（D117）**: 「どちらが先か」で結果が変わる判定（Learning Resetの前後・Replayの新しい順・Session内のHandの順・Recentの順・最新のSession Projectionの選択・Resume）は、永続的な単調増加の論理順序で決めます。`created_at`・`started_at`・`recorded_at`等の壁時計の列は表示・監査のMetadataとして残しますが、順序の正本にしません（OSの時刻は後ろへ戻ることがある）。具体（#132）は、マイグレーションv9の追記型の`ordinals`と各順序の表現・レガシーの扱いが§10「論理順序」、Learning Resetの前後が§11です。
 - **マイグレーション**: 既存のテーブル・列・保存済みのEventは書き換えず、足すだけにします（D76）。Eventの形を変えるときはschema_versionを上げてupcastを足します。

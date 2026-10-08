@@ -13,7 +13,6 @@ import {
   type StatDefinition,
   type StatsHand,
 } from "@proj-poker/engine";
-import type { EventStore } from "../event-store.js";
 import {
   DEFAULT_MEMORY_POLICY,
   type HypothesisItemId,
@@ -24,6 +23,7 @@ import {
   participantKey,
   type ObservationContext,
   type ObservationQuery,
+  type ObservationStore,
   type ObservedHand,
   type ObserverRef,
   type ParticipantRef,
@@ -230,7 +230,7 @@ export function buildOpponentHypotheses(
 
 /** Event Store から Observer の観察を抽出し、Private Hypothesis を作る（都度計算。保存しない）。 */
 export function buildOpponentHypothesesFromStore(
-  store: EventStore,
+  store: ObservationStore,
   query: ObservationQuery,
   options: Omit<HypothesisOptions, "observer">,
 ): OpponentHypothesis[] {

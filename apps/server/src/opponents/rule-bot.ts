@@ -2,6 +2,8 @@
 // 戦略の質は求めない（Phase 1 は 1 Hand を最後まで進められることが目的）。不正な出力が続いたときの Deterministic Fallback（D41）にも使い、将来の Emergency Bot（D42）の土台にもなる。
 // 入力は OpponentInput（自分の KnowledgeState と Legal Action）だけで、乱数は seed から作る（Math.random を使わない）。
 // Persona（#51）を渡すと、参加 Range と Aggression のしきい値だけを変える。Persona なしの挙動は D71 のときのまま。
+// KnowledgeState にその CPU 自身の Memory の要約（D121・#139）があれば、Persona の Skill・Adaptability・Opponent Reading Quality の
+// 範囲で 2 つのしきい値だけを少しずらす（memoryAdjustedTuning）。合法性は Legal Action の中から選ぶことで守る（D40）。
 import {
   HandCategory,
   createRng,
@@ -11,7 +13,9 @@ import {
   type PlayerAction,
   type Rng,
 } from "@proj-poker/engine";
+import type { MemorySubjectSummary } from "../memory/memory-summary.js";
 import type {
+  CpuKnowledgeState,
   OpponentAgent,
   OpponentFactory,
   OpponentInput,
@@ -25,7 +29,7 @@ type Strength = "strong" | "medium" | "weak";
 type PreflopRange = "tight" | "standard" | "loose";
 
 /** 判断のしきい値。Persona なしは DEFAULT_TUNING（D71 の暫定 Bot の値）。 */
-interface RuleBotTuning {
+export interface RuleBotTuning {
   /** strong の手で Bet / Raise する確率。 */
   readonly strongAggression: number;
   /** medium の手で（Check できるとき）Bet する確率。 */
@@ -107,6 +111,111 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+/**
+ * Memory の反映の係数（phase7_rulebot_memory_v1。D121・#139）。数値はすべて OI-011 の暫定値で、確定ではない。
+ * - maxShift: しきい値をずらす幅の上限（Persona の読みの強さが 1 のとき）
+ * - aggressionReference: 相手の aggression_frequency の基準。これより攻める相手には medium の手の Call を広げ、攻めない相手には狭める
+ * - foldToCbetReference: 相手の fold_to_cbet_flop の基準。これより降りる相手には weak の手の Bluff を増やし、降りない相手には減らす
+ * - deviationScale: 基準からのずれをこの幅で割って -1〜1 に丸める
+ */
+export const RULEBOT_MEMORY_V1 = {
+  version: "phase7_rulebot_memory_v1",
+  maxShift: 0.15,
+  aggressionReference: 0.35,
+  foldToCbetReference: 0.45,
+  deviationScale: 0.5,
+} as const;
+
+/**
+ * Persona の「相手を読んで使う力」（Skill・Adaptability・Opponent Reading Quality の平均。0〜1）。
+ * Persona なしの RuleBot は 0（Memory を読まない。D71 の挙動のまま）。
+ */
+export function memoryReadingOf(persona: Persona | undefined): number {
+  if (persona === undefined) return 0;
+  const t = persona.traits;
+  return clamp01((t.skill + t.adaptability + t.opponentReadingQuality) / 3);
+}
+
+/** Subject の項目の割合。十分な Sample の項目だけを読む（不十分な推測は使わない）。 */
+function sufficientFrequency(
+  subject: MemorySubjectSummary | undefined,
+  item: string,
+): number | null {
+  const found = subject?.items.find((i) => i.item === item);
+  return found !== undefined && found.sufficient ? found.frequency : null;
+}
+
+/** 基準からのずれを -1〜1 にする。 */
+function deviation(frequency: number, reference: number): number {
+  return Math.min(
+    1,
+    Math.max(-1, (frequency - reference) / RULEBOT_MEMORY_V1.deviationScale),
+  );
+}
+
+/**
+ * Memory の要約で、medium の手の Call（mediumLooseCall）と weak の手の Bluff（weakBluffFrequency）のしきい値だけをずらす。
+ * 決定論で、乱数を引かない（引く回数を変えると seed の再現性が崩れる）。reading が 0 か Memory が無ければ元のまま。
+ * - この Street で最後に額を引き上げた相手（同額までの All-in は除く）が自分でなく、その aggression_frequency が十分なら、Call をずらす
+ * - Postflop でまだ降りていない（All-in でない）相手全員の fold_to_cbet_flop が十分なら、その最小（一番降りない相手）で Bluff をずらす
+ */
+export function memoryAdjustedTuning(
+  base: RuleBotTuning,
+  knowledge: CpuKnowledgeState,
+  reading: number,
+): RuleBotTuning {
+  const memory = knowledge.memory;
+  if (memory === undefined || reading <= 0) return base;
+  const subjectOf = (playerId: string) =>
+    memory.subjects.find((s) => s.playerId === playerId);
+  const shift = reading * RULEBOT_MEMORY_V1.maxShift;
+  let { mediumLooseCall, weakBluffFrequency } = base;
+
+  // この Street で最後に額を引き上げた相手。同額までの All-in（Call と同じ）は額を引き上げないので Aggressor にしない。
+  let level = 0;
+  let aggressor: { playerId: string } | undefined;
+  for (const a of knowledge.actionHistory) {
+    if (a.street !== knowledge.street) continue;
+    const raises =
+      (a.action === "bet" || a.action === "raise" || a.action === "all_in") &&
+      a.toAmount > level;
+    if (raises) aggressor = a;
+    level = Math.max(level, a.toAmount);
+  }
+  if (aggressor !== undefined && aggressor.playerId !== knowledge.viewerId) {
+    const aggression = sufficientFrequency(
+      subjectOf(aggressor.playerId),
+      "aggression_frequency",
+    );
+    if (aggression !== null) {
+      mediumLooseCall = clamp01(
+        mediumLooseCall +
+          shift * deviation(aggression, RULEBOT_MEMORY_V1.aggressionReference),
+      );
+    }
+  }
+
+  const live = knowledge.seats.filter(
+    (s) => s.playerId !== knowledge.viewerId && !s.folded && !s.allIn,
+  );
+  if (knowledge.board.length > 0 && live.length > 0) {
+    const folds = live.map((s) =>
+      sufficientFrequency(subjectOf(s.playerId), "fold_to_cbet_flop"),
+    );
+    if (folds.every((f): f is number => f !== null)) {
+      weakBluffFrequency = clamp01(
+        weakBluffFrequency +
+          shift *
+            deviation(
+              Math.min(...folds),
+              RULEBOT_MEMORY_V1.foldToCbetReference,
+            ),
+      );
+    }
+  }
+  return { ...base, mediumLooseCall, weakBluffFrequency };
+}
+
 /** RuleBot を作る OpponentFactory。Persona があればそのしきい値で判断する。 */
 export const createRuleBot: OpponentFactory = (seed, _playerId, persona) =>
   new RuleBot(seed, persona);
@@ -114,12 +223,15 @@ export const createRuleBot: OpponentFactory = (seed, _playerId, persona) =>
 export class RuleBot implements OpponentAgent {
   private readonly rng: Rng;
   private readonly tuning: RuleBotTuning;
+  /** Memory を使う強さ（memoryReadingOf）。Persona なしは 0。 */
+  private readonly reading: number;
 
-  /** persona を省くと既定のしきい値（D71 の暫定 Bot のまま）。 */
+  /** persona を省くと既定のしきい値（D71 の暫定 Bot のまま。Memory も読まない）。 */
   constructor(seed: number, persona?: Persona) {
     this.rng = createRng(seed);
     this.tuning =
       persona === undefined ? DEFAULT_TUNING : tuningFromPersona(persona);
+    this.reading = memoryReadingOf(persona);
   }
 
   /** OpponentAgent としての出力。中身は choose と同じ判断を OpponentOutput の形にしたもの。 */
@@ -137,7 +249,7 @@ export class RuleBot implements OpponentAgent {
    * （待ち時間も障害も無く、seed だけで結果が決まる）。
    */
   choose({ knowledge, legal }: OpponentInput): PlayerAction {
-    const tuning = this.tuning;
+    const tuning = memoryAdjustedTuning(this.tuning, knowledge, this.reading);
     const strength = rateStrength(
       knowledge.holeCards,
       knowledge.board,
