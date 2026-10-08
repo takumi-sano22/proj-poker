@@ -193,7 +193,7 @@ Phase 7（D106）では、Observationは観察できたPublic / Showdown Evidenc
 D118で形を決めました（実装は#136・#137。テーブル・列の具体は§12。Identityは#136で実装）。
 
 - **Identity**: マイグレーションv10で追記型の`session_participants`（Session×席 → Fixed CPUの`cpuProfileId`、またはGuestのSession限りのid）を足し、席・player idと永続Identityを分けます。Fixed Pool（`cpuProfileId`・名前・Persona）はDBに置かず、コードのVersion付きConfigに置きます（OI-005の暫定値）。席の編成はSessionの最初のHandのseedから決定論で決め、Resumeでは同じSessionの参加者を戻します（#136。列と編成の決め方は§12）。
-- **Observation**: 別の表やEventに書かず、正本のEvent LogからそのObserverが見えたEvent（Publicと、自分が見たShowdown）だけを決定論で抽出します。provenanceは`hand_id`・`events.seq`・`ordinals.ord`で持ちます。Event Logがappend-onlyなので、Raw Observationもappend-onlyです。抽出は`apps/server/src/memory/observation.ts`（#137）で、正本はEvent Logです。#150の測定を受け、Handごとの抽出結果を作り直せる派生の表（v12）にCacheします（D124。実装は#165。§12）。形と除外の規則は§12「Observation（#137）」です。
+- **Observation**: 正本はEvent Logで、Observationの正本となる別の表やEventは作りません。正本のEvent LogからそのObserverが見えたEvent（Publicと、自分が見たShowdown）だけを決定論で抽出します。provenanceは`hand_id`・`events.seq`・`ordinals.ord`で持ちます。Event Logがappend-onlyなので、Raw Observationもappend-onlyです。抽出は`apps/server/src/memory/observation.ts`（#137）で、正本はEvent Logです。#150の測定を受け、Handごとの抽出結果を作り直せる派生の表（v12）にCacheします（D124。実装は#165。§12）。形と除外の規則は§12「Observation（#137）」です。
 - **Guest**: IdentityがSession限りなので、次のSessionでは読みません（これを破棄とし、Event Logの行は消さない）。
 
 ## 7. User Learning Hypothesis
