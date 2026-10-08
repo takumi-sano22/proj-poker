@@ -123,9 +123,13 @@ export function buildApp(options: AppOptions = {}) {
   const nextSeed = options.nextSeed ?? (() => randomInt(0, 2 ** 32));
   const nextHandId = options.nextHandId ?? randomUUID;
   // Opponent Memory Reset（#143・D120）は区切りの行を足すだけで、正本（Event Log・reviews・Note / Tag）と Learning Reset を変えない。
-  // 区切りは Event Store と同じ順序の源の番号（D117。起動時は同じ DB の ordinals、省略時はプロセスのカウンタ）。
+  // 区切りは Event Store と同じ順序の源の番号（D117。起動時は同じ DB の ordinals）。省略時のメモリ内実装は、渡された Event Store の
+  // 最後の番号を読む（Event Store だけを差し替えても、Hand の番号と比べられる区切りになる）。
   const memoryResets =
-    options.opponentMemoryResetStore ?? new InMemoryOpponentMemoryResetStore();
+    options.opponentMemoryResetStore ??
+    new InMemoryOpponentMemoryResetStore({
+      lastOrdinal: () => store.lastOrdinal(),
+    });
   const orchestrator = new HandOrchestrator({
     store,
     setup,

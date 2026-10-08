@@ -13,7 +13,7 @@ Opponent Memory Reset（全 CPU / 1 つの Fixed CPU）を、正本を消さな�
 
 ## 設計方針
 
-- **区切り**: `opponent_memory_resets`（`seq`・`reset_id`・`created_at`〔表示用〕・`scope`〔`all` / `cpu_profile`〕・`cpu_profile_id`〔`cpu_profile` のときだけ〕・`ord`）。`ord` は `INSERT … SELECT COALESCE(MAX(ord), 0) FROM ordinals` で挿入と同じ文・同じトランザクション（`BEGIN IMMEDIATE`）で取る。挿入の Trigger `opponent_memory_resets_ord` で「その時点の最大」以外の値を拒否する。`UPDATE` / `DELETE` は Trigger で拒否。メモリ内の Store は `OrdinalCounter.current()`（今回足した、番号を振らずに最後の番号を返すメソッド）で同じ意味にした。
+- **区切り**: `opponent_memory_resets`（`seq`・`reset_id`・`created_at`〔表示用〕・`scope`〔`all` / `cpu_profile`〕・`cpu_profile_id`〔`cpu_profile` のときだけ〕・`ord`）。`ord` は `INSERT … SELECT COALESCE(MAX(ord), 0) FROM ordinals` で挿入と同じ文・同じトランザクション（`BEGIN IMMEDIATE`）で取る。挿入の Trigger `opponent_memory_resets_ord` で「その時点の最大」以外の値を拒否する。`UPDATE` / `DELETE` は Trigger で拒否。メモリ内の Store は、Memory を作る Event Store の最後の番号（今回足した `EventStore.lastOrdinal()`。メモリ内は `OrdinalCounter.current()`、SQLite は `MAX(ordinals.ord)`）を必須の引数で受け取る（Codex の指摘で、プロセスの既定のカウンタを既定値にする形から変えた。Event Store だけを独自のカウンタで差し替えると区切りがずれるため）。
 - **判定**: Fixed CPU X に効くのは `scope = all` と `cpu_profile_id = X` の行のうち `ord` が大きい方（同じなら `seq` が大きい方）。Hand の保存の `ord` が区切りより**大きい** Hand だけを使う。`created_at` では比べない（D117）。
 - **Subject 側は消さない**: Reset は Observer としての Memory を区切る。「X について他の CPU が持つ Memory」は D120 に書かれていないので消さない（範囲を広げない。親の指示どおり）。人間判断が要るほどの論点ではないと判断し、NEEDS_HUMAN にはしていない（消す必要が出たら、Subject の区切りを足す形で後から足せる。正本は残っている）。
 - **Guest**: Guest は Session 限りで次の Session では読まないので、後始末は無し。`all` は「全 CPU」なので今の Session の Guest にも効かせた（Guest の Observer には `scope = all` の行だけが効く）。
@@ -25,6 +25,7 @@ Opponent Memory Reset（全 CPU / 1 つの Fixed CPU）を、正本を消さな�
 
 - `apps/server/src/db/database.ts`: マイグレーション v11（`opponent_memory_resets` と 3 つの Trigger）
 - `apps/server/src/logical-order.ts`: `OrdinalCounter.current()`
+- `apps/server/src/event-store.ts`・`apps/server/src/sqlite-event-store.ts`: `EventStore.lastOrdinal()`
 - `apps/server/src/memory/memory-reset.ts`（新規）: `OpponentMemoryResetStore`（`InMemoryOpponentMemoryResetStore`・`SqliteOpponentMemoryResetStore`）・`boundaryFor(observer)`
 - `apps/server/src/memory/observation.ts`: `ObservationQuery.afterOrd`（区切り以前の Hand を `loadObservationSources` で読まず、`extractObservedHands` でも外す）
 - `apps/server/src/memory/memory-summary.ts`: `MemoryObserverSeat.afterOrd` を Observation の条件へ渡す
@@ -35,7 +36,7 @@ Opponent Memory Reset（全 CPU / 1 つの Fixed CPU）を、正本を消さな�
 
 ## 実行した確認
 
-- `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`: すべて通過（server 57 files / 725 tests、web 9 / 141、engine 32 / 363）
+- `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`: すべて通過（server 57 files / 726 tests、web 9 / 141、engine 32 / 363）
 - マイグレーション: 版 10 の DB に版 11 を当てても既存のテーブルの定義・行（events・hands・sessions・session_participants・user_tags〔cpu_profile の Subject〕・learning_resets・ordinals）は変わらず、`ordinals` の CHECK は `('hand_saved', 'learning_reset')` のまま。区切りの表は追記だけで、`scope` と `cpu_profile_id` の組・空の id・知らない `scope`・その時点の最大でない `ord` を拒否
 - Store（メモリ内・SQLite）: 区切りは追加した時点の最大の ord（Hand 0 件なら 0）。Fixed CPU には all と自分の cpu_profile のうち ord が大きい方、Guest には all だけ。Hand を挟まない次の区切りは追加の順で後の行
 - Memory: 1 つの Fixed CPU の Reset でその CPU の Memory だけが空になり（初めての相手と同じ）、他の CPU の Memory（Reset した CPU についての Memory を含む）は同じ。Reset 後の Hand だけが Evidence になる。all で全員が空
@@ -46,8 +47,11 @@ Opponent Memory Reset（全 CPU / 1 つの Fixed CPU）を、正本を消さな�
 - Hand Orchestrator: RuleBot の CPU の入力を記録し、Reset の後の最初の Hand ではどの CPU の Memory も前の Hand を含まず、次の Hand では Reset の後に保存した Hand だけを含む
 - API: 全 CPU / 1 つの Fixed CPU の区切りを足し、応答は 4 つの項目だけ（Pool の名前・Persona・`forbiddenKeys` の語を含まない）。知らない CPU は 404、形の不正（7 通り）は 400 で、どちらも何も足さない
 - 変異の確認（手元で入れて戻した）: Hand Orchestrator で区切りを渡さないようにすると、Orchestrator の Memory の注入のテストが落ちる
+- App の配線（Codex の指摘の回帰）: Reset Store を省き、Event Store だけを独自のカウンタで渡した App で、API で Hand を進めて Reset すると、次の Hand の CPU の Memory は前の Hand を含まず、その次の Hand は Reset 後の Hand を含む。既定の Store がプロセスのカウンタを読むように戻すと落ちることを確認
 
 ## 残課題
+
+- **Learning Reset の同根（範囲外）**: `buildApp` で Event Store だけを独自のカウンタで渡し `learningResetStore` を省くと、既定の `InMemoryLearningResetStore` はプロセスのカウンタで番号を振り、Hand の番号と比べられない（テスト用の経路だけ。起動時は同じ DB）。`learning/learning-reset.ts` はこの Issue で触らない範囲なので別 Issue にした。
 
 - **画面の入口が無い**: API だけ。全 CPU だけの入口にするか、1 つの Fixed CPU を選ばせる（Fixed CPU の名前・`cpuProfileId` を Hero に見せる）かは別 Issue で決める。
 - **Subject 側の Memory は消さない**: 「Reset した CPU について他の CPU が持つ Memory」も消したい場合は、Subject 側の区切りを足す別の変更になる（D120 の範囲外。正本は残っているので後から足せる）。

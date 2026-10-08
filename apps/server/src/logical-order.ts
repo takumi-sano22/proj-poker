@@ -3,7 +3,7 @@
 // 単調増加の番号（論理順序）で決める。壁時計の列（started_at・recorded_at・created_at 等）は表示・監査の Metadata として残す。
 // - SQLite: マイグレーション v9 の追記型の ordinals（ord は AUTOINCREMENT）。Hand の保存と Learning Reset の追加の同じトランザクションで 1 行足す
 // - メモリ内の実装（テスト用）: このモジュールのカウンタ。Event Store と Learning Reset Store が同じカウンタを使うと、番号どうしを比べられる
-// - Opponent Memory Reset（v11・D120）は番号を振らず、追加した時点の最大の番号を区切りに持つ（SQLite は MAX(ordinals.ord)、メモリ内は current()）
+// - Opponent Memory Reset（v11・D120）は番号を振らず、追加した時点の最大の番号を区切りに持つ（SQLite は MAX(ordinals.ord)、メモリ内は current()。EventStore.lastOrdinal）
 
 /** 論理順序の番号を振るカウンタ（メモリ内の実装用）。 */
 export interface OrdinalCounter {

@@ -14,7 +14,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import { inTransaction } from "../db/database.js";
-import { processOrdinals, type OrdinalCounter } from "../logical-order.js";
 import type { ObserverRef } from "./observation.js";
 
 /** Reset の対象。並びは API・画面の順。 */
@@ -58,10 +57,10 @@ export interface OpponentMemoryResetStoreOptions {
 
 export interface InMemoryOpponentMemoryResetStoreOptions extends OpponentMemoryResetStoreOptions {
   /**
-   * 区切りに使う論理順序のカウンタ（D117）。Event Store と同じカウンタを渡す（番号を比べられるように）。
-   * 省略時はプロセスで 1 つのカウンタ（メモリ内の Event Store の既定と共有する）。
+   * 区切りに使う、今までに振った論理順序の最後の番号（D117）。Memory を作る Event Store の `lastOrdinal` を渡す
+   * （別の順序の源を既定にすると、Hand の番号と比べられない区切りができるので、省略させない）。
    */
-  readonly ordinals?: OrdinalCounter;
+  readonly lastOrdinal: () => number;
 }
 
 /** 対象を検査して記録の形にする（cpu_profile の id は空にしない）。 */
@@ -107,12 +106,12 @@ export class InMemoryOpponentMemoryResetStore implements OpponentMemoryResetStor
   })[] = [];
   private readonly now: () => Date;
   private readonly newResetId: () => string;
-  private readonly ordinals: OrdinalCounter;
+  private readonly lastOrdinal: () => number;
 
-  constructor(options: InMemoryOpponentMemoryResetStoreOptions = {}) {
+  constructor(options: InMemoryOpponentMemoryResetStoreOptions) {
     this.now = options.now ?? (() => new Date());
     this.newResetId = options.newResetId ?? randomUUID;
-    this.ordinals = options.ordinals ?? processOrdinals;
+    this.lastOrdinal = options.lastOrdinal;
   }
 
   add(target: OpponentMemoryResetTarget): OpponentMemoryResetRecord {
@@ -121,7 +120,7 @@ export class InMemoryOpponentMemoryResetStore implements OpponentMemoryResetStor
       this.newResetId(),
       this.now().toISOString(),
     );
-    this.rows.push({ ...record, ord: this.ordinals.current() });
+    this.rows.push({ ...record, ord: this.lastOrdinal() });
     return record;
   }
 

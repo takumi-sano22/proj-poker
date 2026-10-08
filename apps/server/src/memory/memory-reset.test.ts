@@ -188,7 +188,9 @@ function stores(
       now === undefined ? { ordinals } : { ordinals, now },
     ),
     resets: new InMemoryOpponentMemoryResetStore(
-      now === undefined ? { ordinals } : { ordinals, now },
+      now === undefined
+        ? { lastOrdinal: () => ordinals.current() }
+        : { lastOrdinal: () => ordinals.current(), now },
     ),
     db: null,
     ordinals,
@@ -255,6 +257,8 @@ describe("OpponentMemoryResetStore", () => {
 
       saveHands(events, "s1", ["h1", "h2"], S1_SEATS, S1_PARTICIPANTS, true);
       const h2 = events.savedOrder("h2") ?? -1;
+      // Event Store の最後の番号（メモリ内の Reset Store の既定の区切り。SQLite は MAX(ordinals.ord)）。
+      expect(events.lastOrdinal()).toBe(h2);
       const aki = resets.add({
         scope: "cpu_profile",
         cpuProfileId: "fixed_aki",
@@ -616,7 +620,9 @@ describe("Hand Orchestrator の Memory の注入", () => {
   it("Reset の後の Hand は、その時点の区切りより後に保存された Hand だけで Memory を作る", async () => {
     const ordinals = createOrdinalCounter();
     const store = new InMemoryEventStore({ ordinals });
-    const resets = new InMemoryOpponentMemoryResetStore({ ordinals });
+    const resets = new InMemoryOpponentMemoryResetStore({
+      lastOrdinal: () => store.lastOrdinal(),
+    });
     const seen = new Map<
       string,
       Map<string, OpponentMemorySummary | undefined>
