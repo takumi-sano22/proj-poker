@@ -13,11 +13,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import type { OpponentMemorySummary } from "../../apps/server/src/memory/memory-summary.js";
 import { PHASE7_CPU_POOL } from "../../apps/server/src/opponents/cpu-pool.js";
 import { forbiddenKeys } from "../../apps/server/src/testing/leaks.js";
 import { startNextHand } from "../support/next-hand.js";
+import {
+  playToHandEnd,
+  sessionEnded,
+  startFirstHand,
+} from "../support/play.js";
 import {
   evidenceHandIds,
   openOpponentMemoryProbe,
@@ -39,10 +44,6 @@ import {
  * 編成が変わってこの前提が崩れたら、検査を空振りさせずに前提の expect で落とす（seed を選び直す）。
  */
 const SEED = "20261042";
-
-// 既定の 1280×720 では、Session の終わりの「新しい Session を始める」が Hero の席に覆われて押せない（#158。この PR では直さない）。
-// この E2E は Memory の流れを確かめるものなので、席と重ならない高さの画面で動かす。
-test.use({ viewport: { width: 1280, height: 900 } });
 
 let dir = "";
 let server: RunningServer | null = null;
@@ -70,66 +71,6 @@ test.afterEach(async ({}, testInfo) => {
   }
   rmSync(dir, { recursive: true, force: true });
 });
-
-/** 宣言 Button の補助の額（Call は Legal Action の額。合法でなければ出ない）。 */
-async function declaredAmount(button: Locator): Promise<number | null> {
-  const amount = button.locator(".declaration__amount");
-  if ((await amount.count()) === 0) return null;
-  const text = (await amount.innerText()).replace(/[,，]/g, "");
-  const match = /^\d+/.exec(text);
-  return match === null ? null : Number(match[0]);
-}
-
-/** Hand の終わりまで、Hero は Call できれば Call、できなければ Check で進める（Fold しないので、数 Hand で Bust しうる）。 */
-async function playToHandEnd(page: Page): Promise<void> {
-  const dock = page.getByRole("region", { name: "Hero" });
-  const log = page.getByRole("region", { name: "Hand の進行" }).locator("li");
-  for (let turn = 0; turn < 30; turn++) {
-    const done = dock.getByText(
-      /Hand が終了しました。|Session が終了しました。/,
-    );
-    await expect(dock.getByText("Hero の手番です。").or(done)).toBeVisible({
-      timeout: 30_000,
-    });
-    if (await done.isVisible()) return;
-
-    const before = await log.count();
-    const call = dock.getByRole("button", { name: /^コール（Call）/ });
-    if ((await declaredAmount(call)) !== null) {
-      await call.click();
-    } else {
-      await dock.getByRole("button", { name: /^チェック（Check）/ }).click();
-    }
-    // 操作が裁定されて卓の状態が進む（ログの行が増える）まで待ってから、次の手番を読む（古い画面で二重に操作しない）。
-    await expect
-      .poll(() => log.count(), { timeout: 30_000 })
-      .toBeGreaterThan(before);
-  }
-  throw new Error("Hand が 30 手番で終わらなかった");
-}
-
-/** 最初の Hand を始め、その handId を返す。 */
-async function startFirstHand(page: Page): Promise<string> {
-  const [res] = await Promise.all([
-    page.waitForResponse(
-      (r) =>
-        r.request().method() === "POST" &&
-        new URL(r.url()).pathname === "/api/hands",
-    ),
-    page.getByRole("button", { name: "Hand を始める" }).click(),
-  ]);
-  expect(res.ok(), "最初の Hand の開始").toBe(true);
-  return ((await res.json()) as { handId: string }).handId;
-}
-
-/** Session が終わったか（Hero の欄の表示）。 */
-async function sessionEnded(page: Page): Promise<boolean> {
-  return page
-    .getByRole("region", { name: "Hero" })
-    .getByText("Session が終了しました。")
-    .first()
-    .isVisible();
-}
 
 /** Memory の要約の Subject（参加者の鍵）ごとの「見た Hand の数」。 */
 function observedCounts(summary: OpponentMemorySummary): Map<string, number> {

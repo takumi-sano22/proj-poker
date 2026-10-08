@@ -57,7 +57,7 @@
 ## 画面幅と卓の配置規則
 
 - **境界は 719px / 720px の 1 本**（`max-width: 719px` が狭い画面）。ほかに `min-width: 1024px`（進行ログを右に出す 2 列）、`max-width: 359px`（320px 級の詰め）、`hover: hover`（hover の演出）。**同じ閾値を CSS と JS で別々に書かない**。JS で要るときは `useNarrowScreen` を使う。
-- **席と重なる欄は卓の中央に重ねない**。狭い画面では、Hand の結果・Session 終了の案内・CPU 障害のダイアログを Hero 欄に置く。広い画面では卓の中央に置く。同じ内容を 2 か所に描かないので、CSS で隠し分けず、`useNarrowScreen` で描く場所を 1 か所に決める。
+- **席と重なる欄は卓の中央に重ねない**。狭い画面では、Hand の結果・Session 終了の案内・CPU 障害のダイアログを Hero 欄に置く。広い画面では卓の中央に置く。ただし Session 終了の案内（理由と 2 つの Button）は、結果の欄が縦に 2 つの Button で背高になり 1280×720 で Hero の席に覆われたので（#158）、広い画面でも Hero 欄に置く（卓の中央は獲得額の一覧だけ。`sessionEndInDock`）。同じ内容を 2 か所に描かないので、CSS で隠し分けず、`useNarrowScreen` で描く場所を 1 か所に決める。
 - **Bet の札**: 広い画面では卓の上、席の前に置く（`--bet-rx` / `--bet-ry`）。狭い画面では席の面の中、Stack の Chip の下に置く（`BetPill` を `Seat` の `betInside` で切り替える。`.bet--inside`）。卓の上に置くと、席数によっては中央や隣の席と重なる。
 - **卓の中央**: 狭い画面の 2・3・6 人卓は、1 行目を Board、2 行目を Street と Pot にする。中央の高さに席の面が来る 4・5・7・8 人卓は、Street・Board・Pot を縦に積む（`data-center-stacked`。`CENTER_STACKED_SEAT_COUNTS` の 1 か所で決める）。
 - **卓の縦横比**: 広い画面は 16:10。狭い画面は縦長で、値は `styles.css` と `docs/06` §1 にある。席の面に要素を足すと、`.seat` は面ごと中心に合わせている（`translate(-50%, -50%)`）ため、中央の側にも同じだけ伸びる。足したときは縦横比・`--seat-ry`・面の幅を一緒に見直す。
@@ -74,13 +74,14 @@
 
 ## 重なりの測り方（UI を変えたら）
 
-- Playwright で 1280×900・375×760・375×667・320×568 を測る。**席数（2〜8 人）× 画面幅 × 何 Hand も**測る（1 点だけでは、席数と額によって外れる）。
+- Playwright で 1280×720（既定。卓の高さが `70vh` で頭打ちになり、中央の欄が席に最も近い）・1280×900・375×760・375×667・320×568 を測る。**席数（2〜8 人）× 画面幅 × 何 Hand も**測る（1 点だけでは、席数と額によって外れる）。
 - 測る項目:
   - 席の面・札・Bet・Board・Pot・Street・結果・進行ログ・見出しの矩形が交差しないか
   - 操作 Button の中心で `elementFromPoint` を取り、他の要素に覆われていないか
   - `scrollWidth − innerWidth` が 0 か（横スクロールの有無）
   - Hero 欄の高さ
 - 絶対配置がはみ出す要素は、卓の外の隣接要素（見出し・進行ログ）まで含めて測る。
+- Session 終了後の配置は `e2e/tests/session-end-layout.spec.ts`（1280×720・1024×768・375×667・320×568 で矩形の交差と Button の中心の hit-test）。
 - E2E（`e2e/tests/session.spec.ts`）の 375px のテストは、Playwright の `click()` が覆われた Button で失敗するので、そのまま重なりの検査になる。
 - 手順と過去の数値は作業ログにある: `docs/taskLog/issue-5-table-ui-narrow-overlap.md`、`docs/taskLog/issue-5-bet-placement-seat-count.md`。
 
