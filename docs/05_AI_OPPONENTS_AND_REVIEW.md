@@ -160,7 +160,7 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 
 ### 層の合成とOpponent Memory Eval（#106 P7-7。#142）
 
-- **合成**: RuleBotは、Persona（固定の性格）・Tilt（§4のtransientな状態）・Table Tendency・Long-term Memory（Hypothesisの要約）を`composeTuning`（`apps/server/src/opponents/rule-bot.ts`）の1か所で、決まった順に合成します。順序は Persona → Tilt（PersonaのLooseness / Aggressionをずらしてしきい値を作り直す）→ Table Tendency（卓全体の傾向）→ Memory（相手ごとの傾向。卓全体より個別の相手の情報を後に当てる）です。最後に、確率のしきい値ごとに、Personaだけのしきい値からのずれを±0.2までに丸めます（`phase7_rulebot_composition_v1`。OI-011の暫定値）。今の6つのPresetと各層の上限（Tilt 3段・Table Tendency 0.1・Memory 0.15 × 読みの強さ）では上限に届かないので、Presetの判断は#141までと同じです（軸の大きいPersonaや、層の係数を上げたVersionで1つのしきい値がPersonaの性格から大きく離れないための上限）。合成は乱数を引かず、選ぶActionはLegal Actionの中からなので、Illegal / RandomなActionを作りません（D27・D40）。PersonaなしのRuleBotはどの層も読みません（D71の挙動のまま）。
+- **合成**: RuleBotは、Persona（固定の性格）・Tilt（§4のtransientな状態）・Table Tendency・Long-term Memory（Hypothesisの要約）を`composeTuning`（`apps/server/src/opponents/rule-bot.ts`）の1か所で、決まった順に合成します。順序は Persona → Tilt（PersonaのLooseness / Aggressionをずらしてしきい値を作り直す）→ Table Tendency（卓全体の傾向）→ Memory（相手ごとの傾向。卓全体より個別の相手の情報を後に当てる）です。最後に、確率のしきい値ごとに、Personaだけのしきい値からのずれを±0.2までに丸めます（`phase7_rulebot_composition_v1`。OI-011の暫定値）。今の6つのPresetと各層の上限（Tilt 3段・Table Tendency 0.1 × Adaptability・Memory 0.15 × 読みの強さ）では上限に届かないので、Presetの判断は#141までと同じです（軸の大きいPersonaや、層の係数を上げたVersionで1つのしきい値がPersonaの性格から大きく離れないための上限）。合成は乱数を引かず、選ぶActionはLegal Actionの中からなので、Illegal / RandomなActionを作りません（D27・D40）。PersonaなしのRuleBotはどの層も読みません（D71の挙動のまま）。
 - **Eval**: Memoryが戦略に効くこと・Fixed CPUの継続性・Guestの一時性・Personaの分布が潰れないこと・計算時間・Leakage 0を、RuleBotの決定論で測ります（APIキーを使わない。`docs/09` §5「Opponent MemoryのEval」）。ClaudeのCPUについては、Memory / Table Tendency / Tilt の節の入った新しい録画はまだ取っていません（APIの呼び出しが要るため）。
 
 ## 6. Review Evidence Model

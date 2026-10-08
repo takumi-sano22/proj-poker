@@ -301,7 +301,7 @@ export function tiltedPersona(persona: Persona, tilt: CpuTilt): Persona {
 /**
  * 4 つの層の合成の係数（phase7_rulebot_composition_v1。#142）。数値は OI-011 の暫定値で、確定ではない。
  * - maxTotalShift: Persona だけのしきい値（tuningFromPersona）からの、Tilt・Table Tendency・Memory を合わせたずれの上限
- *   （しきい値ごと。確率の差）。今の Preset と各層の上限（Tilt 3 段・Table Tendency 0.1・Memory 0.15 × 読みの強さ）では届かず、
+ *   （しきい値ごと。確率の差）。今の Preset と各層の上限（Tilt 3 段・Table Tendency 0.1 × Adaptability・Memory 0.15 × 読みの強さ）では届かず、
  *   軸の大きい Persona や、層の係数を上げた Version でも、1 つのしきい値が Persona の性格から大きく離れないようにする
  */
 export const RULEBOT_COMPOSITION_V1 = {

@@ -85,7 +85,7 @@ describe("Opponent Memory の Eval: 代表 Spot（RuleBot。#142）", () => {
     const t = MEMORY_EVAL_TARGETS;
     const base = summarizeLayerCondition(condition("none"));
     for (const c of LAYER_CONDITIONS) {
-      const s = c.id === "none" ? base : summarizeLayerCondition(c, undefined);
+      const s = c.id === "none" ? base : summarizeLayerCondition(c);
       expect(s.illegal, c.id).toBe(0);
       expect(s.foldWhenCheck, c.id).toBe(0);
       expect(s.personaDifferentiation, c.id).toBeGreaterThanOrEqual(

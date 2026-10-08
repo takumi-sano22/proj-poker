@@ -112,7 +112,8 @@ export function memoryFor(
             weightedOpportunities: 60,
             opportunities: 80,
             sufficient,
-            evidenceCount: 80,
+            // Evidence は RuleBot が読まないので持たせない（Spot の Memory は Eval の固定値で、元の Hand が無い）。
+            evidenceCount: 0,
             evidenceIds: [],
           }),
         ),
