@@ -16,6 +16,7 @@
     "eval:opponent": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/run.ts",
     "eval:opponent-memory": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/memory-run.ts",
     "eval:opponent-memory-prompt": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/memory-prompt-run.ts",
+    "eval:opponent-memory-river": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/river-repeat-run.ts",
     "bench:memory": "tsx --conditions=@proj-poker/source src/testing/memory-bench.ts",
     "eval:review": "tsx --conditions=@proj-poker/source src/testing/review-eval/run.ts"
   },

@@ -1,0 +1,793 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-08T13:35:05.124Z",
+  "model": "claude-haiku-4-5",
+  "sdkVersion": "0.3.289",
+  "baseRecording": "opponent-memory-prompt-eval.json",
+  "spots": [
+    "river_facing_big_bet@baseline",
+    "river_facing_big_bet@loose",
+    "river_facing_big_bet@tight"
+  ],
+  "personas": [
+    "tag_regular",
+    "lag",
+    "calling_station",
+    "nit",
+    "maniac",
+    "weak_tight_recreational"
+  ],
+  "addedRepeats": [2, 3],
+  "totalRepeats": 3,
+  "concurrency": 1,
+  "limits": {
+    "maxDecisions": 36,
+    "maxCalls": 72
+  },
+  "modelCalls": 36,
+  "runs": 1,
+  "cases": [
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "7fc465e51361fee6",
+          "output": {
+            "action": "call",
+            "rationale": "River でのペアは十分な showdown value があり、ポットオッズ 3.88:1 でコールが正当化され、相手の River ベットは必ずしも強いハンドではない可能性があるため。"
+          },
+          "ms": 11495
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "7fc465e51361fee6",
+          "output": {
+            "action": "fold",
+            "rationale": "河でのフロップ・ターンチェック後の突然のベットは相手が改善された手を持つ可能性が高く、Qペアの相対的な弱さと相手のレンジを考慮するとfoldが規律あるプレイである。"
+          },
+          "ms": 11316
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "8ef96c071e0c123a",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "トップペアで相手のリバーベットに対して攻撃性高くレイズし、相手の手の強さを確認しながら主導権を取ります。"
+          },
+          "ms": 8716
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "8ef96c071e0c123a",
+          "output": {
+            "action": "call",
+            "rationale": "相手がフロップターンでチェックしたことからペアやエアは弱い可能性が高く、QsJsペアで勝つ可能性があり、ポットオッズ3:1で十分なコールバリューがある。"
+          },
+          "ms": 9415
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "2abd985121af8ed6",
+          "output": {
+            "action": "call",
+            "rationale": "Calling Station のクセとして River での Overcall 傾向があり、Pair of Queens でポットオッズも支持しているため Call する。"
+          },
+          "ms": 9116
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "2abd985121af8ed6",
+          "output": {
+            "action": "call",
+            "rationale": "River での Overcall クセと Call Range の広さから、ペア以上の確実な手を持つ自分は相手の小さめなベットに対して無制限にコールすべき。"
+          },
+          "ms": 7440
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "340ef421b1545717",
+          "output": {
+            "action": "fold",
+            "rationale": "River で相手の大きなベットに対し、ペアは弱く、タイトで規律の高いプレイスタイルに合わせてリバー Overfold の傾向に従い折る。"
+          },
+          "ms": 9736
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "340ef421b1545717",
+          "output": {
+            "action": "fold",
+            "rationale": "River での弱いハンド（Queen-high）に対する大きなベットへのコールは期待値がマイナスであり、Nit プレイヤーとしての規律を守るべき。"
+          },
+          "ms": 8452
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "08176fcf82af98a1",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "Bluff Tendency と Aggression が高いマニアックプレイヤーとして、クイーンハイで相手の bet に積極的に raise で対抗する。"
+          },
+          "ms": 7904
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "08176fcf82af98a1",
+          "output": {
+            "action": "raise",
+            "amount": 65,
+            "rationale": "攻撃性とブラフ傾向が高いManiaxプレイヤーとして、相手の弱そうなベットに対して積極的にraiseでプレッシャーをかけて支配権を取る。"
+          },
+          "ms": 8991
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "47b2743a4a9c73ce",
+          "output": {
+            "action": "fold",
+            "rationale": "Weak-tight スタイルで River での Overfold 傾向があり、ペア・クイーンは弱い手札なため、相手の確定的なベットに対してはフォールドが特性に合致する。"
+          },
+          "ms": 8722
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@baseline",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "47b2743a4a9c73ce",
+          "output": {
+            "action": "fold",
+            "rationale": "リスク許容が低く River で Overfold する傾向があり、相手の後発ベットを強い手と解釈してフォールドします。"
+          },
+          "ms": 8709
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "545e4528b20114d9",
+          "output": {
+            "action": "call",
+            "rationale": "Queen high で river を迎えており、相手の river bet に対して適切な pot odds が存在するため、showdown value で call が正当化される。"
+          },
+          "ms": 12615
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "545e4528b20114d9",
+          "output": {
+            "action": "call",
+            "rationale": "Queen high は River での十分な強さであり、34.7% の Pot Odds で Call は EV+ です。"
+          },
+          "ms": 8628
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "935424bff16bd93b",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "cpu2の check-check-bet のパターンは中程度ハンドまたはブラフ示唆し、高攻撃性で相手の読み精度が高いキャラ設定と Tilt を活かして強気で raise し pot を奪うか相手の弱いハンドから価値を獲得する。"
+          },
+          "ms": 11708
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "935424bff16bd93b",
+          "output": {
+            "action": "call",
+            "rationale": "ペアQはターン後の相手の弱いベットに対して十分な価値があり、ポットオッズも合致しているためコールが正当"
+          },
+          "ms": 9923
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "ff623eb2ffe37c7b",
+          "output": {
+            "action": "call",
+            "rationale": "Calling Station として River で広い Call Range を持ち、Qs Js のペアと Pot Odds を勘案して call する。"
+          },
+          "ms": 8854
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "ff623eb2ffe37c7b",
+          "output": {
+            "action": "call",
+            "rationale": "Queen High を持つ弱い手でも、River での Overcall 癖と Calling Station 的な広い Call Range から、相手の強さを疑わずに Pot Odds が合致する Call を選ぶ。"
+          },
+          "ms": 10673
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "22c310cac284eed5",
+          "output": {
+            "action": "fold",
+            "rationale": "River での相手のベットは強いハンドを示唆しており、Queen High では負けの可能性が高く、Pot Odds も悪いため、自分の低リスク志向と River Overfold 傾向に従い fold する。"
+          },
+          "ms": 9933
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "22c310cac284eed5",
+          "output": {
+            "action": "fold",
+            "rationale": "River での Overfold傾向とNitなスタイル、相手の River ベットの強さから規律を持ってフォールド。"
+          },
+          "ms": 9176
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "851b883f30769118",
+          "output": {
+            "action": "raise",
+            "amount": 70,
+            "rationale": "Maniacなスタイルで攻撃性が非常に高く、Qs Jsのペアとフラッシュを持つハンドで相手にプレッシャーをかけるべき。"
+          },
+          "ms": 10527
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "851b883f30769118",
+          "output": {
+            "action": "raise",
+            "amount": 78,
+            "rationale": "高い攻撃性と過度なブラフの傾向を持つManiacs性格として、Tilt状態でもあるため、リバーでの相手のベットに対して積極的にレイズして相手にプレッシャーをかける。"
+          },
+          "ms": 10537
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "e29b886cfc3073e5",
+          "output": {
+            "action": "fold",
+            "rationale": "Weak-tight プレイヤーとしてリバーで Overfold する傾向に従い、相手のベットに対して一ペアでのコールを避けるべき判断。"
+          },
+          "ms": 9658
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@loose",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "e29b886cfc3073e5",
+          "output": {
+            "action": "fold",
+            "rationale": "River での不確実性が高く、弱いペアではリスク許容度の低いあなたのキャラクターに相手のベットに対してフォールドするのが適切です。"
+          },
+          "ms": 11366
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "tag_regular",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "1c6aa45722d926f9",
+          "output": {
+            "action": "fold",
+            "rationale": "相手の強いベットに対してQsハイは勝率が低く、ポッドオッズも足りないため、高い規律を持つこのプレイヤーはフォールドが最適判断。"
+          },
+          "ms": 10023
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "tag_regular",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "1c6aa45722d926f9",
+          "output": {
+            "action": "call",
+            "rationale": "Turn での Check から River でのベットは相手のハンドに矛盾があり、Queen-High の Showdown 価値と Pot Odds（約3:1）から Fold せず、相手の脆弱性を読んで Call すべき。"
+          },
+          "ms": 10451
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "lag",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "4c0ef363aab95457",
+          "output": {
+            "action": "raise",
+            "amount": 75,
+            "rationale": "相手の低い攻撃性と Turn での check を看破し、高い攻撃性で再レイズして相手にプレッシャーをかけ、Fold または弱いハンドでの call を誘う。"
+          },
+          "ms": 10454
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "lag",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "4c0ef363aab95457",
+          "output": {
+            "action": "call",
+            "rationale": "River のチェック後ベットは polarized な範囲を示唆し、TopPair のQsJsはコールで十分な価値を持つ。"
+          },
+          "ms": 10325
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "calling_station",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "4a24c94ee202246e",
+          "output": {
+            "action": "call",
+            "rationale": "Call Rangeが広く、River での Overcall クセがあるため、Queen High で対手のベットに追従する。"
+          },
+          "ms": 9618
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "calling_station",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "4a24c94ee202246e",
+          "output": {
+            "action": "call",
+            "rationale": "ペアのクイーンでリバーの過度なコールクセが出ており、技術が低く賞金獲得欲が強いため、相手のベット26に応じる。"
+          },
+          "ms": 9584
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "7d9d64773798702f",
+          "output": {
+            "action": "fold",
+            "rationale": "River でのペア上位取得が困難で、River での Overfold 傾向と高い Discipline に従い、相手のベットに対して Qハイペアでは Call できない。"
+          },
+          "ms": 10169
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "nit",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "7d9d64773798702f",
+          "output": {
+            "action": "fold",
+            "rationale": "Nit スタイルで River Overfold 傾向があり、Q-high は相手の River ベットに対して弱すぎるため。"
+          },
+          "ms": 9531
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "9d53f0ced67b1d18",
+          "output": {
+            "action": "raise",
+            "amount": 80,
+            "rationale": "高い Bluff 傾向と攻撃性で、相手の弱さに対して raise で圧力をかけるマニアックなプレイ"
+          },
+          "ms": 9232
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "maniac",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "9d53f0ced67b1d18",
+          "output": {
+            "action": "fold",
+            "rationale": "Qs Js は River で Queen High のみで勝ち目がなく、Bluff raise も根拠薄いため fold。"
+          },
+          "ms": 9146
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "weak_tight_recreational",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "a3f15472621d14ee",
+          "output": {
+            "action": "fold",
+            "rationale": "River で相手に大きく bet された QJ のペアでは、実力不足の weak-tight プレイヤーとしてリスクを避けるため Fold するのが一貫性のある判断。"
+          },
+          "ms": 11363
+        }
+      ]
+    },
+    {
+      "spotId": "river_facing_big_bet@tight",
+      "personaId": "weak_tight_recreational",
+      "repeat": 3,
+      "attempts": [
+        {
+          "paramsHash": "a3f15472621d14ee",
+          "output": {
+            "action": "fold",
+            "rationale": "Top Pair は弱く、リバーでの強いベットに対して、低スキル Weak-tight プレイヤーとしての River Overfold 傾向に従います。"
+          },
+          "ms": 10453
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "decisions": 54,
+    "calls": 54,
+    "structuredOutputValidRate": 1,
+    "illegalActionRate": 0,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "outages": 0,
+    "hiddenInformationLeakage": 0,
+    "latencyMs": {
+      "min": 7440,
+      "median": 9923,
+      "p90": 11366,
+      "max": 14280
+    },
+    "personaDifferentiation": 0.711,
+    "personaDifferentiationBySpot": {
+      "river_facing_big_bet@baseline": 0.733,
+      "river_facing_big_bet@loose": 0.756,
+      "river_facing_big_bet@tight": 0.644
+    },
+    "actionDiversity": {
+      "tag_regular": 0.764,
+      "lag": 1.392,
+      "calling_station": 0,
+      "nit": 0,
+      "maniac": 0.503,
+      "weak_tight_recreational": 0.503
+    },
+    "actionCounts": {
+      "tag_regular": {
+        "river_facing_big_bet@baseline": {
+          "call": 2,
+          "fold": 1
+        },
+        "river_facing_big_bet@loose": {
+          "call": 3
+        },
+        "river_facing_big_bet@tight": {
+          "call": 2,
+          "fold": 1
+        }
+      },
+      "lag": {
+        "river_facing_big_bet@baseline": {
+          "call": 2,
+          "raise": 1
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 1,
+          "raise": 1,
+          "call": 1
+        },
+        "river_facing_big_bet@tight": {
+          "raise": 2,
+          "call": 1
+        }
+      },
+      "calling_station": {
+        "river_facing_big_bet@baseline": {
+          "call": 3
+        },
+        "river_facing_big_bet@loose": {
+          "call": 3
+        },
+        "river_facing_big_bet@tight": {
+          "call": 3
+        }
+      },
+      "nit": {
+        "river_facing_big_bet@baseline": {
+          "fold": 3
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 3
+        },
+        "river_facing_big_bet@tight": {
+          "fold": 3
+        }
+      },
+      "maniac": {
+        "river_facing_big_bet@baseline": {
+          "raise": 3
+        },
+        "river_facing_big_bet@loose": {
+          "raise": 3
+        },
+        "river_facing_big_bet@tight": {
+          "raise": 2,
+          "fold": 1
+        }
+      },
+      "weak_tight_recreational": {
+        "river_facing_big_bet@baseline": {
+          "fold": 3
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 3
+        },
+        "river_facing_big_bet@tight": {
+          "call": 1,
+          "fold": 2
+        }
+      }
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  },
+  "addedSummary": {
+    "decisions": 36,
+    "calls": 36,
+    "structuredOutputValidRate": 1,
+    "illegalActionRate": 0,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "outages": 0,
+    "hiddenInformationLeakage": 0,
+    "latencyMs": {
+      "min": 7440,
+      "median": 9736,
+      "p90": 11366,
+      "max": 12615
+    },
+    "personaDifferentiation": 0.711,
+    "personaDifferentiationBySpot": {
+      "river_facing_big_bet@baseline": 0.733,
+      "river_facing_big_bet@loose": 0.767,
+      "river_facing_big_bet@tight": 0.633
+    },
+    "actionDiversity": {
+      "tag_regular": 0.918,
+      "lag": 1,
+      "calling_station": 0,
+      "nit": 0,
+      "maniac": 0.65,
+      "weak_tight_recreational": 0
+    },
+    "actionCounts": {
+      "tag_regular": {
+        "river_facing_big_bet@baseline": {
+          "call": 1,
+          "fold": 1
+        },
+        "river_facing_big_bet@loose": {
+          "call": 2
+        },
+        "river_facing_big_bet@tight": {
+          "fold": 1,
+          "call": 1
+        }
+      },
+      "lag": {
+        "river_facing_big_bet@baseline": {
+          "raise": 1,
+          "call": 1
+        },
+        "river_facing_big_bet@loose": {
+          "raise": 1,
+          "call": 1
+        },
+        "river_facing_big_bet@tight": {
+          "raise": 1,
+          "call": 1
+        }
+      },
+      "calling_station": {
+        "river_facing_big_bet@baseline": {
+          "call": 2
+        },
+        "river_facing_big_bet@loose": {
+          "call": 2
+        },
+        "river_facing_big_bet@tight": {
+          "call": 2
+        }
+      },
+      "nit": {
+        "river_facing_big_bet@baseline": {
+          "fold": 2
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 2
+        },
+        "river_facing_big_bet@tight": {
+          "fold": 2
+        }
+      },
+      "maniac": {
+        "river_facing_big_bet@baseline": {
+          "raise": 2
+        },
+        "river_facing_big_bet@loose": {
+          "raise": 2
+        },
+        "river_facing_big_bet@tight": {
+          "raise": 1,
+          "fold": 1
+        }
+      },
+      "weak_tight_recreational": {
+        "river_facing_big_bet@baseline": {
+          "fold": 2
+        },
+        "river_facing_big_bet@loose": {
+          "fold": 2
+        },
+        "river_facing_big_bet@tight": {
+          "fold": 2
+        }
+      }
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  }
+}
