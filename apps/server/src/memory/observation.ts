@@ -163,9 +163,9 @@ function actorOf(event: HandEvent): string | null {
 
 /**
  * Observer が卓で見聞きした Event か。保存された Event の visibility と、Engine が種類から決める Visibility の両方が public のときだけ通す
- * （保存された値だけを信じない。Hole Cards・Deck・system の Event は種類で落ちる）。
+ * （保存された値だけを信じない。Hole Cards・Deck・system の Event は種類で落ちる）。Table Tendency（#141）も同じ whitelist を使う。
  */
-function isObservable(event: HandEvent): boolean {
+export function isObservable(event: HandEvent): boolean {
   return (
     event.visibility.type === "public" && visibilityOf(event).type === "public"
   );

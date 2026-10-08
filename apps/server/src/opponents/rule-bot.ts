@@ -6,6 +6,8 @@
 // 範囲で 2 つのしきい値だけを少しずらす（memoryAdjustedTuning）。合法性は Legal Action の中から選ぶことで守る（D40）。
 // KnowledgeState にその CPU 自身の Tilt（D107・#140）があれば、Persona の Preflop Looseness と Aggression を段階ごとに上限付きで
 // 少しずらした Persona でしきい値を作る（tiltedPersona）。乱数の引き方は変えず、Illegal / Random な Action は作らない。
+// KnowledgeState にその CPU から見た Table Tendency（D106・#141）があれば、Persona の Adaptability の範囲で同じ 2 つのしきい値だけを
+// 少しずらす（tableTendencyAdjustedTuning。十分な Sample の項目だけ）。
 import {
   HandCategory,
   createRng,
@@ -16,6 +18,7 @@ import {
   type Rng,
 } from "@proj-poker/engine";
 import type { MemorySubjectSummary } from "../memory/memory-summary.js";
+import type { TableTendency } from "../memory/table-tendency.js";
 import type {
   CpuKnowledgeState,
   OpponentAgent,
@@ -220,6 +223,63 @@ export function memoryAdjustedTuning(
 }
 
 /**
+ * Table Tendency の反映の係数（phase7_rulebot_table_tendency_v1。#141）。数値はすべて OI-011 の暫定値で、確定ではない。
+ * - maxShift: しきい値をずらす幅の上限（Persona の Adaptability が 1 のとき）
+ * - loosenessReference: 卓の vpip の基準。これより緩い（よく参加する）卓では weak の手の Bluff を減らし、締まった卓では増やす
+ * - aggressionReference: 卓の aggression_frequency の基準。これより攻める卓では medium の手の Call を広げ、攻めない卓では狭める
+ * - deviationScale: 基準からのずれをこの幅で割って -1〜1 に丸める
+ */
+export const RULEBOT_TABLE_TENDENCY_V1 = {
+  version: "phase7_rulebot_table_tendency_v1",
+  maxShift: 0.1,
+  loosenessReference: 0.3,
+  aggressionReference: 0.35,
+  deviationScale: 0.5,
+} as const;
+
+/** 卓の傾向の項目の割合。十分な Sample の項目だけを読む（不十分な推測は使わない）。 */
+function sufficientTableRate(
+  tendency: TableTendency,
+  item: TableTendency["items"][number]["item"],
+): number | null {
+  const found = tendency.items.find((i) => i.item === item);
+  return found !== undefined && found.sufficient && found.denominator > 0
+    ? found.numerator / found.denominator
+    : null;
+}
+
+/**
+ * Table Tendency で、medium の手の Call（mediumLooseCall）と weak の手の Bluff（weakBluffFrequency）のしきい値だけをずらす。
+ * 決定論で、乱数を引かない。幅は Persona の Adaptability（0〜1）× maxShift。Adaptability が 0 か Table Tendency が無ければ元のまま。
+ */
+export function tableTendencyAdjustedTuning(
+  base: RuleBotTuning,
+  knowledge: CpuKnowledgeState,
+  adaptability: number,
+): RuleBotTuning {
+  const tendency = knowledge.tableTendency;
+  if (tendency === undefined || adaptability <= 0) return base;
+  const p = RULEBOT_TABLE_TENDENCY_V1;
+  const shift = clamp01(adaptability) * p.maxShift;
+  const dev = (rate: number, reference: number) =>
+    Math.min(1, Math.max(-1, (rate - reference) / p.deviationScale));
+  let { mediumLooseCall, weakBluffFrequency } = base;
+  const aggression = sufficientTableRate(tendency, "aggression_frequency");
+  if (aggression !== null) {
+    mediumLooseCall = clamp01(
+      mediumLooseCall + shift * dev(aggression, p.aggressionReference),
+    );
+  }
+  const looseness = sufficientTableRate(tendency, "vpip");
+  if (looseness !== null) {
+    weakBluffFrequency = clamp01(
+      weakBluffFrequency - shift * dev(looseness, p.loosenessReference),
+    );
+  }
+  return { ...base, mediumLooseCall, weakBluffFrequency };
+}
+
+/**
  * Tilt の段階で Persona の Preflop Looseness と Aggression だけを上げた Persona（D119。1 段あたりの幅は Policy。上限は maxLevel 倍）。
  * 他の軸・Leak は変えない。軸は 0〜1 に丸める。
  */
@@ -277,7 +337,16 @@ export class RuleBot implements OpponentAgent {
       this.persona !== undefined && knowledge.tilt !== undefined
         ? tuningFromPersona(tiltedPersona(this.persona, knowledge.tilt))
         : this.tuning;
-    const tuning = memoryAdjustedTuning(base, knowledge, this.reading);
+    // 卓全体の傾向（Table Tendency）を先に、相手ごとの Memory を後に当てる（どちらも 2 つのしきい値を上限付きでずらすだけ）。
+    const tuning = memoryAdjustedTuning(
+      tableTendencyAdjustedTuning(
+        base,
+        knowledge,
+        this.persona?.traits.adaptability ?? 0,
+      ),
+      knowledge,
+      this.reading,
+    );
     const strength = rateStrength(
       knowledge.holeCards,
       knowledge.board,

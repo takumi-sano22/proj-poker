@@ -65,6 +65,10 @@ import {
   type OpponentMemorySummary,
 } from "./memory/memory-summary.js";
 import { participantRefOf } from "./memory/observation.js";
+import {
+  buildCpuTableTendenciesFromStore,
+  type TableTendency,
+} from "./memory/table-tendency.js";
 import type { SessionPlayerSubject } from "./notes/subject.js";
 import {
   composeSessionParticipants,
@@ -217,6 +221,11 @@ interface HandRuntime {
    * 1 以上の CPU だけが持つ。Persona の無い CPU・Drill は持たない。
    */
   readonly tilts: ReadonlyMap<string, CpuTilt>;
+  /**
+   * CPU ごとの、その CPU から見た卓の傾向（Table Tendency。D106・#141）。Hand の開始時に今の Session の、その CPU が座っていた
+   * 保存済みの Hand の public の Event だけから作り、Hand の間は変えない。数えた Hand が 0 の CPU・Drill は持たない。
+   */
+  readonly tableTendencies: ReadonlyMap<string, TableTendency>;
   /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
   readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
@@ -453,6 +462,8 @@ export class HandOrchestrator {
     const memories = this.opponentMemories(plan);
     // Tilt も同じ時点で、今の Session の保存済みの Hand だけから作る（新しい Session は 0 から。D107・D117）。
     const tilts = this.opponentTilts(plan);
+    // Table Tendency も同じ時点で、今の Session の保存済みの Hand の public の Event だけから作る（D106・D117）。
+    const tableTendencies = this.opponentTableTendencies(plan);
     // 新しい Session の最初の Hand には、開始の Event に続けて SESSION_STARTED を置く（D95）。
     // Session の最初の Hand は全員が均等 Stack（Big Blind より多い）で始まるので、開始の時点では終わっていない。
     const opening = plan.newSession
@@ -504,6 +515,7 @@ export class HandOrchestrator {
       opponents,
       memories,
       tilts,
+      tableTendencies,
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -589,6 +601,8 @@ export class HandOrchestrator {
       memories: new Map(),
       // Drill の専用の Session はその Hand だけなので、Tilt も持たない（D116）。
       tilts: new Map(),
+      // Drill の専用の Session はその Hand だけなので、Table Tendency も持たない（D116）。
+      tableTendencies: new Map(),
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -984,6 +998,22 @@ export class HandOrchestrator {
   }
 
   /**
+   * 座っている CPU ごとに、その CPU から見た Table Tendency を作る（D106・#141）。Event Store へこの Hand を書く前に呼ぶ。
+   * 今の Session の Hand だけを読み、各 CPU はその CPU が座っていた Hand の public の Event だけを数える（Persona・Memory・Tilt は使わない）。
+   */
+  private opponentTableTendencies(
+    plan: HandPlan,
+  ): ReadonlyMap<string, TableTendency> {
+    if (plan.newSession) return new Map();
+    return buildCpuTableTendenciesFromStore(this.options.store, {
+      sessionId: plan.sessionId,
+      playerIds: plan.seats
+        .map((s) => s.playerId)
+        .filter((playerId) => playerId !== this.heroId),
+    });
+  }
+
+  /**
    * 次 Hand の席・Button・Session を決める（呼ぶのは最後の Hand を返さないと決めた後だけ）。
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
@@ -1300,11 +1330,14 @@ export class HandOrchestrator {
     const projected = projectKnowledgeState(events, playerId);
     const memory = rt.memories.get(playerId);
     const tilt = rt.tilts.get(playerId);
+    // Table Tendency もその CPU が座っていた Hand から作った値だけを足す（Hand が 0 の CPU では項目ごと持たない。#141）。
+    const tableTendency = rt.tableTendencies.get(playerId);
     const base: OpponentInput = {
       knowledge: {
         ...projected,
         ...(memory === undefined ? {} : { memory }),
         ...(tilt === undefined ? {} : { tilt }),
+        ...(tableTendency === undefined ? {} : { tableTendency }),
       },
       legal,
     };

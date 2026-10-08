@@ -9,6 +9,7 @@ import type {
   PlayerAction,
 } from "@proj-poker/engine";
 import type { OpponentMemorySummary } from "../memory/memory-summary.js";
+import type { TableTendency } from "../memory/table-tendency.js";
 import type { Persona } from "./persona.js";
 import type { CpuTilt } from "./tilt.js";
 
@@ -34,6 +35,12 @@ export interface CpuKnowledgeState extends KnowledgeState {
    * transient な状態で、1 以上のときだけ持つ（0 のときは項目ごと持たず、Prompt を変えない）。他の CPU の Tilt は入らない。
    */
   readonly tilt?: CpuTilt;
+  /**
+   * その CPU から見た卓の傾向（Table Tendency。D106・#141。docs/05 §5・docs/04 §12）。今の Session の、その CPU が座っていた
+   * 保存済みの Hand の public の Event だけから Hand の開始時に作る。数えた Hand が 0 のときは項目ごと持たない（Prompt を変えない）。
+   * 個々の CPU の Private Memory・Persona・Tilt は入らない。
+   */
+  readonly tableTendency?: TableTendency;
 }
 
 /** CPU に渡す入力。global な HandState・他者の Hole Cards・Deck は型の上でも渡せない。 */
