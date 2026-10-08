@@ -123,7 +123,7 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 
 ### Phase 7のIdentityとMemory（D106。#106）
 
-- **Identity**: Fixed CPUは、席・player id（`cpu1`等）と別の永続`cpuProfileId`を持ちます。Fixed CPUのMemoryはSessionを跨いで持続し、Guestの一時IdentityとMemoryはSession終了時に破棄します（D11・D63）。DBのSchemaを固定人数にCoupleしません（OI-005）。実装（#136）はSession×席の`session_participants`（`docs/04` §12）と、Fixed Poolのコードの Config（`apps/server/src/opponents/cpu-pool.ts`）です。Fixed CPUは席のPersonaと同じPresetを持つ者から選ばれるので、既定の割り当てでは同じCPUが毎回同じPersonaで打ちます。
+- **Identity**: Fixed CPUは、席・player id（`cpu1`等）と別の永続`cpuProfileId`を持ちます。Fixed CPUのMemoryはSessionを跨いで持続し、Guestの一時IdentityとMemoryはSession終了時に破棄します（D11・D63）。DBのSchemaを固定人数にCoupleしません（OI-005）。実装（#136）はSession×席の`session_participants`（`docs/04` §12）と、Fixed Poolのコードの Config（`apps/server/src/opponents/cpu-pool.ts`）です。Fixed CPUは常にPoolのPersonaで打ち（同じCPUは毎回同じPersona）、席のPersonaと同じPresetを持つ者から選ばれるので、既定の割り当てでは席のPersonaも従来と同じです。`CPU_PERSONAS`の上書きはFixed Poolで満たせる範囲で効きます。
 - **Observation**: そのCPUが実際に観察できたPublic / Showdown Evidenceだけを、provenance付きでappend-onlyに記録します（`docs/02` INV-INFO-003・`docs/04` §6）。Learning-only Reveal・他者のHidden Cards・Future Cardsは入れません。
 - **Hypothesis**: Observer × Subject × Contextごとに、Raw Observationから再生成できるProjectionとして作り、集計にrecency decayをかけます（Raw Observationは消さない）。Sample不足の扱いと更新の速さ・早合点の傾向は、上のSkillの差としてPersona Policyで変えられます。decayの係数等はVersion付きの暫定値です（OI-011）。
 - **CPU-to-CPU Memory**: Observer CPUがSubject（Heroや他CPU）について持つPrivate Memoryです。他のCPUへ共有しません（CPU AのBへの仮説をCへ渡さない）。

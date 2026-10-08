@@ -14,7 +14,8 @@
 ## 設計方針
 
 - **Pool と編成（`apps/server/src/opponents/cpu-pool.ts`）**: `PHASE7_CPU_POOL`（`phase7_pool_v1`）に Fixed 8 人（TAG Regular 2・LAG 2・Nit・Calling Station・Weak-tight Recreational・Maniac）・`maxGuestSeats: 1`・`guestSeatChance: 0.5` を置いた（OI-005 の暫定値。コードコメントに「確定ではない」と明記）。`composeSessionParticipants` は seed で決定論に、Guest の有無と席 → 席順に席の Persona と同じ Persona の Fixed CPU（いなければまだ座っていない Fixed CPU 全体）を選ぶ。
-- **席の Persona は変えない**: Pool の Persona を席へ当てると、既定の割り当て（D85）・`CPU_PERSONAS` の上書き・E2E の RuleBot の判断が変わる。そこで席の Persona は従来のまま、Identity の側を「席の Persona と同じ Preset を持つ Fixed CPU」から選ぶ形にした。既定の割り当てでは同じ Fixed CPU が毎回同じ Persona で打つ。`CPU_PERSONAS` で偏らせたときだけ、足りない席に Persona の違う Fixed CPU が座る（上書きを優先）。
+- **Persona と Identity**: Pool の Persona を無条件に席へ当てると、既定の割り当て（D85）・E2E の RuleBot の判断が変わる。そこで Identity の側を「席の Persona と同じ Preset を持つ Fixed CPU」から選ぶ形にし、既定の割り当てでは席の Persona は従来のまま。Fixed CPU は常に Pool の Persona で打つ（同じ `cpuProfileId` は同じ Persona。D118）。
+  - 最初の版は、`CPU_PERSONAS` で偏らせたときに足りない席へ Persona の違う Fixed CPU を座らせ、上書きの Persona で打たせていた。Codex の P1（同じ `cpuProfileId` が Session ごとに違う Persona で打つ）を受け、親の判断（B）で、満たせない席は Fixed CPU が Pool の Persona のまま座り、上書きはその席では効かない形に直した（warn に残す）。Guest は 1 卓に最大 1 席のまま。編成は「席の Persona に合う Fixed CPU を全席で先に選ぶ → 満たせない席を残りから選ぶ」の 2 段にし、満たせない席が後ろの席の求める Fixed CPU を先に取らないようにした。`composeSessionParticipants` はその Session で使う Persona の割り当て（`personas`）と満たせなかった席（`unmatched`）も返す。
 - **seed**: 新しい Session の最初の Hand の seed から `deriveSeed(seed, MAX_PLAYERS)` で導く（CPU の seed の席番号 0〜7 と重ならない）。編成は乱数を消費しても山札・CPU の乱数に影響しない。
 - **保存（v10）**: 列は `seq`・`session_id`（`sessions` 参照）・`player_id`・`kind`（`fixed` / `guest`）・`cpu_profile_id`・`guest_id`（一意）・`pool_version`。`kind` と ID の列の組を CHECK、`(session_id, player_id)` と `(session_id, cpu_profile_id)` を一意、UPDATE / DELETE を Trigger で拒否。#137 で Fixed CPU の Session を跨いだ参照に使う `(cpu_profile_id, seq)` の索引を足した。ID の一覧・人数・Persona は列に持たない（OI-005・D28）。
 - **書き込みの時点**: Session の行と同じく、Session の最初の Hand の保存の 1 トランザクションで足す（`AppendContext.participants`。2 Hand 目以降の値は見ない）。Guest の id が重なれば一意制約で Hand ごと保存しない。Drill の専用の Session と v10 より前の Session には行が無い（推測で Identity を作らない。backfill しない）。
@@ -51,3 +52,11 @@
 - Pool の名前・Avatar を画面に出すかは未定（UI の Issue が無い。OI-005）。
 - Note / Tag の UI・API を `cpu_profile` の対象で読む・書くかは後続の判断（今は `session_player` のまま。`persistentSubjectOf` で引ける）。
 - Observation の抽出（#137）は `session_participants` と `(cpu_profile_id, seq)` の索引を使う。
+
+## 追記: Codex round 1 の P1 の修正（B）
+
+- 指摘: `CPU_PERSONAS` で同じ Persona を Pool の人数より多い席に当てると、Persona の違う Fixed CPU が上書きの Persona で打ち、同じ `cpuProfileId` が Session ごとに違う Persona になる（D118 の前提が崩れる）。
+- 親の判断（PR #146 のコメント）: B。満たせない席は Fixed CPU が Pool の Persona のまま座り、上書きはその席では効かない（warn に残す）。Guest は最大 1 席のまま。「上書きを全席で効かせる」制約は撤回。
+- 変更: `composeSessionParticipants` は `{ participants, personas, unmatched }` を返す 2 段の編成にし、Orchestrator は新しい Session の Persona の割り当てに `personas` を使い、`unmatched` を warn に残す。README の `CPU_PERSONAS` の行・docs/03・04 §12・05 §5・11 OI-005 に「Fixed Pool で満たせる範囲で効く暫定の挙動」と書いた。
+- テスト: 偏った上書き（6-max・8 人卓で全席 maniac）で、Fixed CPU は Pool の Persona・同じ `cpuProfileId` は Session を跨いで同じ Persona・Guest は 1 席以下・効かなかった席を返す / warn に残す（`cpu-pool.test.ts`・`hand-orchestrator.test.ts`）。既定の割り当て順では効かない席が無く Persona の割り当てが卓の設定と同じ。満たせない席が後ろの席の求める Fixed CPU を先に取らない。
+- 確認: `pnpm lint` / `typecheck` / `test`（server 585・engine 363・web 141）/ `format:check` と `pnpm e2e`（5 件）が通過。

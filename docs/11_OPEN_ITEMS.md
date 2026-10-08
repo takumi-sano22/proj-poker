@@ -86,7 +86,7 @@ D106で確定（Identityと寿命。人数等は未確定のまま）: Fixed CPU
 
 D118の暫定値（確定ではない）: Fixed Poolはコードの Version付きConfigに置き、Fixed 8人＋Guestは1卓に最大1席とする。Name・Avatar・Persona DistributionもそのConfigの暫定値で、DB Schemaは人数にCoupleしない。
 
-#136で置いた暫定値（確定ではない。詳細は `docs/04` §12「Identity（#136）」）: `phase7_pool_v1`（`apps/server/src/opponents/cpu-pool.ts`）は Fixed 8人で、Persona の内訳は TAG Regular 2・LAG 2・Nit 1・Calling Station 1・Weak-tight Recreational 1・Maniac 1（既定の割り当て順で最大の卓〔CPU 7人〕を Fixed CPU だけで埋められる内訳）、名前は仮の英字名、Avatar は持たない。Guest は Session の始まりに確率 0.5 で CPU の席のどれか 1 つに座る。席の Persona は従来の割り当て（D85・`CPU_PERSONAS`）のままで、同じ Persona の Fixed CPU から seed で選ぶ。名前は画面に出していない。Playtest で見直す。
+#136で置いた暫定値（確定ではない。詳細は `docs/04` §12「Identity（#136）」）: `phase7_pool_v1`（`apps/server/src/opponents/cpu-pool.ts`）は Fixed 8人で、Persona の内訳は TAG Regular 2・LAG 2・Nit 1・Calling Station 1・Weak-tight Recreational 1・Maniac 1（既定の割り当て順で最大の卓〔CPU 7人〕を Fixed CPU だけで埋められる内訳）、名前は仮の英字名、Avatar は持たない。Guest は Session の始まりに確率 0.5 で CPU の席のどれか 1 つに座る。Fixed CPU は常に Pool の Persona で打つ。席の Persona（D85 の既定の割り当て順・`CPU_PERSONAS`）と同じ Persona の Fixed CPU を seed で選ぶので、既定の割り当て順では席の Persona は従来と同じ。`CPU_PERSONAS` の上書きは Fixed Pool で満たせる範囲で効く暫定の挙動で、同じ Persona を Pool の人数より多い席に当てると、残りの席には Fixed CPU が Pool の Persona のまま座る（その席では上書きが効かず、server の warn に残す）。名前は画面に出していない。Playtest で見直す。
 
 暫定値は D85（確定ではない）: Persona は TAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreational の 6 Preset。各 Preset の 11 軸の数値・RuleBot への反映の係数・卓への既定の割り当て順（TAG Regular・LAG・Nit・Calling Station・Weak-tight Recreational・Maniac を席順に）も暫定値で、`apps/server/src/opponents/persona.ts`・`rule-bot.ts`・`config.ts` に置く（#51。環境変数 `CPU_PERSONAS` で割り当て順を変えられる）。Playtest で見直す。
 

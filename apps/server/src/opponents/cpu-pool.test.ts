@@ -31,6 +31,11 @@ const fixedIds = (participants: readonly SessionParticipant[]) =>
 const guests = (participants: readonly SessionParticipant[]) =>
   participants.filter((p) => p.kind === "guest");
 
+/** 編成の参加者だけ（Persona の割り当てを見ない検査用）。 */
+const participantsOf = (
+  input: Parameters<typeof composeSessionParticipants>[0],
+): SessionParticipant[] => composeSessionParticipants(input).participants;
+
 const SEEDS = Array.from({ length: 200 }, (_, i) => i);
 const TABLE_SIZES = Array.from(
   { length: MAX_PLAYERS - MIN_PLAYERS + 1 },
@@ -54,16 +59,14 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
   it("同じ Session・席・seed なら同じ編成になる（決定論）", () => {
     const seats = cpuSeatsOf(6);
     for (const seed of SEEDS) {
-      expect(
-        composeSessionParticipants({ sessionId: "s1", seats, seed }),
-      ).toEqual(composeSessionParticipants({ sessionId: "s1", seats, seed }));
+      expect(participantsOf({ sessionId: "s1", seats, seed })).toEqual(
+        participantsOf({ sessionId: "s1", seats, seed }),
+      );
     }
     // seed が違えば編成も変わりうる（Guest の有無・同じ Persona の Fixed CPU の選び方）。
     const distinct = new Set(
       SEEDS.map((seed) =>
-        JSON.stringify(
-          composeSessionParticipants({ sessionId: "s1", seats, seed }),
-        ),
+        JSON.stringify(participantsOf({ sessionId: "s1", seats, seed })),
       ),
     );
     expect(distinct.size).toBeGreaterThan(1);
@@ -74,7 +77,7 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
       const seats = cpuSeatsOf(size);
       let withGuest = 0;
       for (const seed of SEEDS) {
-        const participants = composeSessionParticipants({
+        const participants = participantsOf({
           sessionId: `s${seed}`,
           seats,
           seed,
@@ -108,7 +111,7 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
     for (const size of TABLE_SIZES) {
       const seats = cpuSeatsOf(size);
       for (const seed of SEEDS) {
-        const participants = composeSessionParticipants({
+        const participants = participantsOf({
           sessionId: "s",
           seats,
           seed,
@@ -127,16 +130,15 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
     // 同じ seed で 2 つの Session を始めると、Fixed CPU は同じ ID、Guest は Session の id から作った別の id になる。
     const seed = SEEDS.find(
       (s) =>
-        guests(composeSessionParticipants({ sessionId: "x", seats, seed: s }))
-          .length === 1,
+        guests(participantsOf({ sessionId: "x", seats, seed: s })).length === 1,
     );
     if (seed === undefined) throw new Error("Guest の座る seed が無い");
-    const first = composeSessionParticipants({
+    const first = participantsOf({
       sessionId: "session-1",
       seats,
       seed,
     });
-    const second = composeSessionParticipants({
+    const second = participantsOf({
       sessionId: "session-2",
       seats,
       seed,
@@ -154,7 +156,7 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
     // 多くの Session を通して、Guest の id は 1 度しか現れない。
     const seen = new Set<string>();
     for (const s of SEEDS) {
-      for (const p of composeSessionParticipants({
+      for (const p of participantsOf({
         sessionId: `session-${s}`,
         seats,
         seed: s,
@@ -166,18 +168,82 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
     }
   });
 
-  it("CPU_PERSONAS で Persona を偏らせても止まらず、足りない席は Persona の違う Fixed CPU で埋める（席の Persona は上書きのまま）", () => {
-    const seats = cpuSeatsOf(MAX_PLAYERS, ["maniac"]);
+  it("既定の割り当て順では、上書きの効かない席は無く、Persona の割り当ては卓の設定のまま", () => {
+    for (const size of TABLE_SIZES) {
+      const setup = buildTableSetup(size);
+      const seats = cpuSeatsOf(size);
+      for (const seed of SEEDS) {
+        const composed = composeSessionParticipants({
+          sessionId: "s",
+          seats,
+          seed,
+        });
+        expect(composed.unmatched).toEqual([]);
+        expect(composed.personas).toEqual(setup.personas);
+      }
+    }
+  });
+
+  it("CPU_PERSONAS で偏らせても（全席 maniac）止まらず、同じ cpuProfileId の Persona は Session を跨いで変わらず、Guest は 1 席以下で、効かなかった席を返す", () => {
+    const personaOf = new Map(
+      PHASE7_CPU_POOL.fixed.map((p) => [p.cpuProfileId, p.persona]),
+    );
+    for (const size of [6, MAX_PLAYERS]) {
+      const seats = cpuSeatsOf(size, ["maniac"]);
+      for (const seed of SEEDS) {
+        const composed = composeSessionParticipants({
+          sessionId: `s${seed}`,
+          seats,
+          seed,
+        });
+        const { participants, personas, unmatched } = composed;
+        expect(participants).toHaveLength(size - 1);
+        expect(new Set(fixedIds(participants)).size).toBe(
+          fixedIds(participants).length,
+        );
+        expect(guests(participants).length).toBeLessThanOrEqual(1);
+        // Fixed CPU は常に Pool の Persona（どの Session・seed でも同じ cpuProfileId は同じ Persona）。
+        for (const p of participants) {
+          if (p.kind === "fixed") {
+            expect(personas[p.playerId]).toBe(personaOf.get(p.cpuProfileId));
+          } else {
+            expect(personas[p.playerId]).toBe("maniac");
+          }
+        }
+        // maniac の Fixed CPU は 1 人なので、Guest と合わせて最大 2 席だけが maniac。残りは上書きが効かない席として返る。
+        const maniacSeats = participants.filter(
+          (p) => personas[p.playerId] === "maniac",
+        );
+        expect(maniacSeats.length).toBeLessThanOrEqual(2);
+        expect(unmatched.map((u) => u.playerId)).toEqual(
+          participants
+            .filter((p) => personas[p.playerId] !== "maniac")
+            .map((p) => p.playerId),
+        );
+        expect(unmatched.every((u) => u.requested === "maniac")).toBe(true);
+      }
+    }
+  });
+
+  it("満たせない席が、後ろの席の求める Persona の Fixed CPU を先に取らない", () => {
+    // 席 1・2 が maniac（Fixed は 1 人）、席 3 が nit（Fixed は 1 人）。席 2 が先に nit の Fixed CPU を取ると席 3 も満たせなくなる。
+    const seats: CpuSeat[] = [
+      { playerId: "cpu1", persona: "maniac" },
+      { playerId: "cpu2", persona: "maniac" },
+      { playerId: "cpu3", persona: "nit" },
+    ];
+    const noGuest: CpuPool = { ...PHASE7_CPU_POOL, maxGuestSeats: 0 };
     for (const seed of SEEDS) {
-      const participants = composeSessionParticipants({
+      const composed = composeSessionParticipants({
         sessionId: "s",
         seats,
         seed,
+        pool: noGuest,
       });
-      expect(participants).toHaveLength(MAX_PLAYERS - 1);
-      expect(new Set(fixedIds(participants)).size).toBe(
-        fixedIds(participants).length,
-      );
+      expect(composed.personas["cpu3"]).toBe("nit");
+      expect(composed.unmatched).toEqual([
+        { playerId: "cpu2", requested: "maniac" },
+      ]);
     }
   });
 
@@ -190,7 +256,7 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
     };
     // CPU 2 席: Guest 1 席 + Fixed 1 人で埋まる。
     expect(
-      composeSessionParticipants({
+      participantsOf({
         sessionId: "s",
         seats: cpuSeatsOf(3),
         seed: 1,
@@ -198,7 +264,7 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
       }).map((p) => p.kind),
     ).toEqual(expect.arrayContaining(["guest", "fixed"]));
     expect(() =>
-      composeSessionParticipants({
+      participantsOf({
         sessionId: "s",
         seats: cpuSeatsOf(4),
         seed: 1,
@@ -210,7 +276,7 @@ describe("composeSessionParticipants（席の編成。D118）", () => {
     for (const seed of SEEDS) {
       expect(
         guests(
-          composeSessionParticipants({
+          participantsOf({
             sessionId: "s",
             seats: cpuSeatsOf(6),
             seed,

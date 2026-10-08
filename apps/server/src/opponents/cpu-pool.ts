@@ -11,7 +11,7 @@ export interface FixedCpuProfile {
   readonly cpuProfileId: string;
   /** 名前（OI-005 の暫定値）。今は画面に出さない（席の表示名は従来どおり「CPU n」）。 */
   readonly name: string;
-  /** その CPU の Persona Preset（席の Persona と同じなら優先して座る。下の composeSessionParticipants）。 */
+  /** その CPU の Persona Preset。この CPU は常にこの Persona で打つ（席の Persona と同じ Fixed CPU を優先して座らせる。下の composeSessionParticipants）。 */
   readonly persona: PersonaPresetId;
 }
 
@@ -79,22 +79,45 @@ export function guestIdOf(sessionId: string, playerId: string): string {
   return `guest/${sessionId}/${playerId}`;
 }
 
+/** 席の Persona（卓の設定・CPU_PERSONAS）を満たす Fixed CPU が残っておらず、上書きが効かなかった席。 */
+export interface UnmatchedSeat {
+  readonly playerId: string;
+  /** 席に求めた Persona（卓の設定・CPU_PERSONAS の割り当て）。 */
+  readonly requested: PersonaPresetId;
+}
+
+/** 新しい Session の編成。 */
+export interface SessionComposition {
+  /** CPU の席の参加者（席順）。 */
+  readonly participants: SessionParticipant[];
+  /**
+   * その Session で実際に使う CPU の playerId → Persona。Fixed CPU は常に Pool の Persona（同じ cpuProfileId は Session を跨いで
+   * 同じ Persona。D118）、Guest は席の Persona のまま（席に Persona が無ければ入れない）。
+   */
+  readonly personas: Record<string, PersonaPresetId>;
+  /** 上書きが効かなかった席（席順）。呼び出し側が warn に残す。 */
+  readonly unmatched: UnmatchedSeat[];
+}
+
 /**
  * 新しい Session の CPU の席の参加者を seed で決定論に決める（同じ入力なら同じ編成）。
- * 1. Guest: guestSeatChance の確率で、CPU の席のどれか 1 つ（maxGuestSeats が 0 なら座らせない）
- * 2. 残りの席を席順に、まだ座っていない Fixed CPU で埋める。席の Persona と同じ Persona の Fixed CPU がいればその中から、
- *    いなければ（CPU_PERSONAS で偏らせたとき）まだ座っていない Fixed CPU 全体から seed で選ぶ
- * 席の Persona は変えない（CPU_PERSONAS の上書きと既存の割り当てを保つ）。Fixed CPU が足りなければ RangeError（Pool の設定の誤り）。
+ * 1. Guest: guestSeatChance の確率で、CPU の席のどれか 1 つ（maxGuestSeats が 0 なら座らせない。1 卓に最大 1 席）
+ * 2. 残りの席を席順に、席の Persona と同じ Persona のまだ座っていない Fixed CPU から seed で選ぶ（席に Persona が無ければ全体から）
+ * 3. 2 で満たせなかった席（CPU_PERSONAS で同じ Persona を Pool の人数より多い席に当てたとき）を席順に、残りの Fixed CPU から seed で選ぶ。
+ *    その Fixed CPU は Pool の Persona のまま打ち、その席では上書きが効かない（unmatched に残す）
+ * Fixed CPU の Persona は常に Pool の値（同じ cpuProfileId は Session を跨いで同じ Persona）。2 を先に全席で済ませるので、
+ * 満たせない席が、後ろの席が求める Persona の Fixed CPU を先に取ることはない。
+ * Fixed CPU が足りなければ RangeError（Pool の設定の誤り。既定の Pool は Fixed 8 人で、CPU は最大 7 席）。
  */
 export function composeSessionParticipants(input: {
   readonly sessionId: string;
   readonly seats: readonly CpuSeat[];
   readonly seed: number;
   readonly pool?: CpuPool;
-}): SessionParticipant[] {
+}): SessionComposition {
   const pool = input.pool ?? PHASE7_CPU_POOL;
   const rng = createRng(input.seed);
-  // 乱数を引く順（Guest の有無 → Guest の席 → 席順の Fixed CPU）を固定し、同じ seed で同じ編成にする。
+  // 乱数を引く順（Guest の有無 → Guest の席 → 席順の Persona の合う Fixed CPU → 席順の残りの席）を固定し、同じ seed で同じ編成にする。
   const guestSeat =
     input.seats.length > 0 &&
     pool.maxGuestSeats > 0 &&
@@ -102,8 +125,41 @@ export function composeSessionParticipants(input: {
       ? randomInt(rng, input.seats.length)
       : null;
   const unused = [...pool.fixed];
-  return input.seats.map((seat, i): SessionParticipant => {
-    if (i === guestSeat) {
+  const take = (candidates: readonly FixedCpuProfile[]): FixedCpuProfile => {
+    const chosen = candidates[
+      randomInt(rng, candidates.length)
+    ] as FixedCpuProfile;
+    unused.splice(unused.indexOf(chosen), 1);
+    return chosen;
+  };
+  const chosen = new Map<number, FixedCpuProfile>();
+  input.seats.forEach((seat, i) => {
+    if (i === guestSeat) return;
+    const matching = unused.filter(
+      (p) => seat.persona === undefined || p.persona === seat.persona,
+    );
+    if (matching.length > 0) chosen.set(i, take(matching));
+  });
+  const unmatched: UnmatchedSeat[] = [];
+  input.seats.forEach((seat, i) => {
+    if (i === guestSeat || chosen.has(i)) return;
+    if (unused.length === 0) {
+      throw new RangeError(
+        `Fixed Pool（${pool.version}）の人数 ${pool.fixed.length} では CPU の席 ${input.seats.length} を埋められない`,
+      );
+    }
+    chosen.set(i, take(unused));
+    // 席の Persona が無い席は上書きではないので、満たせなかった席に数えない（2 で必ず満たされる）。
+    if (seat.persona !== undefined) {
+      unmatched.push({ playerId: seat.playerId, requested: seat.persona });
+    }
+  });
+
+  const personas: Record<string, PersonaPresetId> = {};
+  const participants = input.seats.map((seat, i): SessionParticipant => {
+    const fixed = chosen.get(i);
+    if (fixed === undefined) {
+      if (seat.persona !== undefined) personas[seat.playerId] = seat.persona;
       return {
         playerId: seat.playerId,
         kind: "guest",
@@ -111,24 +167,13 @@ export function composeSessionParticipants(input: {
         poolVersion: pool.version,
       };
     }
-    const matching = unused.filter(
-      (p) => seat.persona === undefined || p.persona === seat.persona,
-    );
-    const candidates = matching.length > 0 ? matching : unused;
-    if (candidates.length === 0) {
-      throw new RangeError(
-        `Fixed Pool（${pool.version}）の人数 ${pool.fixed.length} では CPU の席 ${input.seats.length} を埋められない`,
-      );
-    }
-    const chosen = candidates[
-      randomInt(rng, candidates.length)
-    ] as FixedCpuProfile;
-    unused.splice(unused.indexOf(chosen), 1);
+    personas[seat.playerId] = fixed.persona;
     return {
       playerId: seat.playerId,
       kind: "fixed",
-      cpuProfileId: chosen.cpuProfileId,
+      cpuProfileId: fixed.cpuProfileId,
       poolVersion: pool.version,
     };
   });
+  return { participants, personas, unmatched };
 }

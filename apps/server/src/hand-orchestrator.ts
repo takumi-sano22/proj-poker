@@ -884,8 +884,8 @@ export class HandOrchestrator {
    * - 今の Session の最後の Hand が終わり、Session が続くなら: Position Engine の結果で Stack を持ち越す
    * - それ以外（最初の Hand・Session 終了後・最後の Hand が内部エラーで止まった・障害の後に Session 終了を選んだ）: 新しい Session。
    *   均等 Stack で、Button は席順の先頭（止まった Hand は持ち越す Stack が決まらないので、Session ごと始め直す）。
-   *   Persona は今の卓の設定の割り当てを使う。CPU の席の参加者（Fixed CPU / Guest。D118）は、その Hand の seed から導いた seed で
-   *   決定論に決める（席の Persona は変えない）
+   *   CPU の席の参加者（Fixed CPU / Guest。D118）は、その Hand の seed から導いた seed で決定論に決め、Persona は Fixed CPU なら
+   *   Pool の Persona、Guest なら今の卓の設定の割り当て（既定の割り当てでは両者は同じ。composeSessionParticipants）
    */
   private planNextHand(seed: number): HandPlan {
     const current = this.session;
@@ -903,21 +903,28 @@ export class HandOrchestrator {
     }
     const { players, startingStack, personas } = this.options.setup;
     const sessionId = (this.options.nextSessionId ?? randomUUID)();
+    // 席番号（0〜MAX_PLAYERS - 1。CPU の seed に使う）と重ならない番号で導き、山札・CPU の乱数と別の列にする。
+    const composition = composeSessionParticipants({
+      sessionId,
+      seats: players
+        .filter((p) => p.kind === "cpu")
+        .map((p) => ({ playerId: p.playerId, persona: personas[p.playerId] })),
+      seed: deriveSeed(seed, MAX_PLAYERS),
+    });
+    if (composition.unmatched.length > 0) {
+      // 席の Persona（CPU_PERSONAS）を満たす Fixed CPU が Pool に残っていない席は、Fixed CPU が Pool の Persona のまま座る
+      // （同じ cpuProfileId は常に同じ Persona。D118）。上書きが効かなかった席を残す（座った CPU の Persona は書かない）。
+      this.logger.warn(
+        { sessionId, seats: composition.unmatched },
+        "CPU_PERSONAS の割り当てを満たす Fixed CPU が足りない席は、Fixed Pool の Persona で座らせる（上書きはその席では効かない）",
+      );
+    }
     return {
       sessionId,
       newSession: true,
-      personas,
-      // 席番号（0〜MAX_PLAYERS - 1。CPU の seed に使う）と重ならない番号で導き、山札・CPU の乱数と別の列にする。
-      participants: composeSessionParticipants({
-        sessionId,
-        seats: players
-          .filter((p) => p.kind === "cpu")
-          .map((p) => ({
-            playerId: p.playerId,
-            persona: personas[p.playerId],
-          })),
-        seed: deriveSeed(seed, MAX_PLAYERS),
-      }),
+      // Fixed CPU は Pool の Persona、Guest は席の Persona（Session Projection に残り、Resume でも同じ）。
+      personas: composition.personas,
+      participants: composition.participants,
       seats: players.map((p) => ({
         playerId: p.playerId,
         stack: startingStack,
