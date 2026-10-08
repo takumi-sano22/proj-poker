@@ -59,7 +59,7 @@
 - **Tilt と Table Tendency は今の Session の Hand 数にも比例する**（Session は約 220 Hand で一定）が、保存済みの全 Hand の数でも伸びる（Tilt: 1,000 Hand 37 ms → 5,000 Hand 74 ms、Session の Hand 数はほぼ同じ）。原因は `finishedHandIds()` の全走査と Hand ごとの `sessionIdOfHand` の引き（Event を読むのは今の Session の Hand だけ）。保存済みの Hand が増えても Session の Hand が増えなければ、この分の伸びはあるが小さい（5,000 Hand で 2 層合計 約 147 ms）。
 - (5) の `startHand` の基準との差（957 ms）は、(4) の合計（982 ms）とほぼ一致する。Hand の開始の遅さの大半は層の計算で、CPU を Hero の手番まで進める分（序盤の基準 約 27 ms）は小さい。
 - 目安との突き合わせ: 1,000 Hand（合計 約 220 ms）・2,000 Hand（約 434 ms）は 500 ms 未満で十分。**5,000 Hand（約 982 ms、最大 約 1.1 秒）は線を超える**。Hand の開始のたびに約 1 秒待つ（CPU の手番の演出の前の、Hand が始まらない待ち）。
-- どの Hand 数から目安を超えるか: Memory がほぼ線形なので、合計 500 ms は保存済みの Hand が約 2,500 前後。
+- どの Hand 数から目安を超えるか: Memory がほぼ線形なので、合計 500 ms は保存済みの Hand が約 2,400 前後（2,000 Hand の 434 ms と 5,000 Hand の 982 ms の線形補間）。
 - #142 の見積もり（400 Hand で Hand ごとに約 14 ms）は、メモリ内の Store で測った値。実 SQLite では同じ 400 Hand で合計 約 99 ms（Memory 約 58 ms）で、約 7 倍。
 
 ## 判断
