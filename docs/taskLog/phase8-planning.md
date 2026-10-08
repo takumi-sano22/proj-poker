@@ -26,7 +26,9 @@
 - Hero の Bust で Tournament を終える。Tournament は Event Log だけに残し、Projection は都度計算。終了理由は既存の値を使う（推奨案。D129）
 - ICM は全席の Equity・Bubble Factor・All-in の必要 Equity まで構造化して CPU と Review に渡す（推奨案。D130）
 
-## 質問せずに既定とした項目（標準的な規則で一意に決まる）
+## 質問せずに暫定値とした項目（OI-007 の Version 付き暫定 Policy。確定ではない）
+
+Codex の P1（#192）を受け、「一意に決まる」とは扱わず、人間判断を経ていない暫定値として docs/02 §7・docs/11 OI-007 に明記した。
 
 - 同じ Hand の複数 Bust の順位（開始時の Stack が多い方が上位・同じなら同順位で賞金を合算して等分。TDA）
 - Payout の端数（切り捨て・余りは上位から。同順位の余りは席順。D75 と同じ考え方）

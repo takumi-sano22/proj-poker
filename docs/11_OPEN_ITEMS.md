@@ -129,7 +129,7 @@ Playtest後に決定します。
 
 暫定値は D108（確定ではない。永久仕様にしない）: 最初の標準Presetは6-max STT。Blind StructureはCoreで時間base / Hand数baseの両方を扱い、標準PresetはHand数base。標準STTのAnteはBig Blind Ante。初期6-max STTのPayoutは50% / 30% / 20%（Custom Payoutを後から足せる構造）。Starting Stack・Blind Levelの値は、P8-1でVersion付きConfigに暫定値を置く（`docs/02` §7）。
 
-P8-0（#182）で置いた暫定値は D127・D128（確定ではない。永久仕様にしない）: 標準6-max STTはStarting Stack 1,500・Blind 10/20 → 15/30 → 25/50 → 50/100 → 75/150 → 100/200 → 150/300 → 200/400 → 300/600 → 400/800 → 600/1,200 → 1,000/2,000を10 Handごと・BBAの額はBBと同じ・参加費100pt × 参加人数。time-baseのPresetは同じStackとBlind表で1 Level 10分。Playtest後にVersionを上げて見直す。
+P8-0（#182）で置いた暫定値は D127・D128（確定ではない。永久仕様にしない）: 標準6-max STTはStarting Stack 1,500・Blind 10/20 → 15/30 → 25/50 → 50/100 → 75/150 → 100/200 → 150/300 → 200/400 → 300/600 → 400/800 → 600/1,200 → 1,000/2,000を10 Handごと・BBAの額はBBと同じ・参加費100pt × 参加人数。time-baseのPresetは同じStackとBlind表で1 Level 10分。Playtest後にVersionを上げて見直す。あわせて、人間判断を経ていない次の3つもVersion付きの暫定Policyとして置く（確定ではない）: 同じHandで複数人がBustしたときの順位（開始時のStackの多い方が上位・同じなら同順位で賞金を合算して等分）、Payoutの端数（切り捨てて余りを上位から・同順位の余りは席順）、ICMの方式（Malmuth-Harville）。
 
 ## OI-008 — Live Ruling完全範囲
 
