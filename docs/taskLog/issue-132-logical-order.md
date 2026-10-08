@@ -62,6 +62,15 @@ Learning Reset の区切りを、Hand の終わりの Event の `recorded_at` �
 - backfill の併合を再帰 CTE にしたのは、Hand どうし・Reset どうしの順を保ったまま時刻で併合する手順を SQL だけで（マイグレーションの仕組みを変えずに）表すため。件数はローカル単一ユーザーの Hand 数で、1 回だけ流れる。
 - API の `resets` / `score.since` の形を変えなかったのは、web の表示（区切りの時刻の注記）がそのまま使えるため。番号は API に出さない。
 
+## 追記: #133 をこの PR で直す（親の追加指示）
+
+#132 の完了条件「Critical E2E が複数回安定して通る」の根拠にするため、#133 をこの PR で直した。
+
+- 原因（trace で確認）: `learning.spec.ts` の Play のループで「次の Hand へ」を押した直後、開始の応答（`POST /api/hands`）を待つ間（Button は disabled）も前の Hand の「Hand が終了しました。」が出たままになる。続く `playToHandEnd` はこの古い表示を見て即座に「終わった」と返し、ループはもう一度「次の Hand へ」を押そうとする。応答が来て新しい Hand（Hero の手番）が描画されると Button が消え、click が 5 分待ち続けた。trace の最後の API は `POST /api/hands`（201）→ `GET .../stream` で、画面は新しい Hand の Hero の手番だった。
+- 修正（テストの手順だけ。プロダクトコードは変えていない）: `e2e/support/next-hand.ts` の `startNextHand(page)` を足した。「次の Hand へ」を押して開始の応答（新しい Hand の handId）を受け取り、前の Hand の終了表示が消える（新しい Hand の画面になる）か、新しい Hand が Hero の手番なしに終わった（`/api/replay/hands` で complete / aborted）まで待つ。後者は、表示が消えた瞬間を poll が見逃すほど速く Hand が終わる場合に待ち続けないため。
+- 呼び出し側: `learning.spec.ts` の Play のループと、`session.spec.ts` の「卓に戻って次の Hand を Play する」（「次の Hand へ」の直後に `playHand` を呼ぶ同じ形の競合）を `startNextHand` に置き換えた。`session.spec.ts` の狭い画面の検査（「次の Hand へ」の後に終了表示が消えることを `toBeHidden()` で確かめるだけで、続けて Hand を進めない）は検査の意図そのものなので変えていない。
+- 確認: `pnpm e2e --repeat-each=10` を続けて 3 回流し、run1 50 passed（5.4m）・run2 50 passed（5.9m）・run3 50 passed（5.5m）。`pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 363・web 141・server 562）/ `pnpm format:check` も通過。
+
 ## 残課題
 
-- #133: `e2e/tests/learning.spec.ts` の Play のループの待ち方（一度だけの失敗。この PR の範囲外）
+- なし（#133 はこの PR で直した）
