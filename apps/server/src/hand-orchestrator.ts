@@ -20,6 +20,8 @@
 // - Hand の開始時に、App Version・Rule Profile・Persona の Preset 一式の版と、席ごとの CPU の実装（RuleBot / Claude と
 //   Model Role・具体モデル / Emergency Bot）を HAND_METADATA_RECORDED（system Visibility）として残す（#97・docs/04 §9）。
 //   Best-effort な Debug / Re-analysis 用で、AI の Request / Response の生データは残さない（D100）。
+// - Session の mode（cash / tournament。D108・D129・#183）は新しい Session の開始で決め、Tournament の設定の Snapshot を SESSION_STARTED に
+//   残す。同じ Session の Hand・Resume はその Snapshot で続ける（mode を指定しない開始は cash で、既存の Cash の経路・Event は変えない）。
 import { randomUUID } from "node:crypto";
 import {
   applyAction,
@@ -34,8 +36,11 @@ import {
   recordSessionEvent,
   recordUserRead,
   resolvePendingOutOfTurn,
+  sessionSettingsOf,
   startDrillHand,
   startHand,
+  tableConfigForLevel,
+  TOURNAMENT_PRESETS,
   type CpuSeatMetadata,
   type DrillSpot,
   type EngineError,
@@ -49,6 +54,9 @@ import {
   type PlayerAction,
   type SeatInit,
   type SessionEndReason,
+  type SessionSettings,
+  type TableConfig,
+  type TournamentPresetId,
 } from "@proj-poker/engine";
 import { APP_VERSION } from "./app-version.js";
 import {
@@ -107,6 +115,24 @@ export type OrchestratorError =
   | { readonly kind: "stale_outage"; readonly message: string }
   /** Fast Forward は Hero が Hand から外れている間（Fold 後）だけ入れられる。Hero がまだ Hand にいる、または Hand が終わっている。 */
   | { readonly kind: "not_spectating"; readonly message: string };
+
+/**
+ * Hand の開始で、新しい Session に求める設定（#183）。Session が続くときは今の Session の設定と同じでなければならない（違えば
+ * session_mode_mismatch）。省略すると、続く Session はそのまま続け、新しい Session は cash で始める（既存の経路）。
+ */
+export type SessionRequest =
+  | { readonly mode: "cash" }
+  | { readonly mode: "tournament"; readonly presetId: TournamentPresetId };
+
+/**
+ * Hand の開始の失敗。Orchestrator の失敗に、求めた Session の設定が今の Session と違う（今の Session が続いている）を足したもの。
+ * Hero が Hand の合間に Session を終える経路は無い（Session の終了は Bust・勝ち残り・障害の後の選択だけ）ので、黙って設定を無視したり今の Session を捨てたりせずに拒否する。
+ */
+export type StartHandError =
+  | OrchestratorError
+  | { readonly kind: "session_mode_mismatch"; readonly message: string }
+  /** 求めた Tournament の Preset の参加人数と、卓の人数（設定）が違う（6-max の Preset を別の人数の卓で始めない）。 */
+  | { readonly kind: "tournament_unavailable"; readonly message: string };
 
 /** Session が終わった理由（D80・D86）。SESSION_ENDED の Event にも残すので、型は Engine の Event と共有する（D95）。 */
 export type { SessionEndReason };
@@ -283,6 +309,8 @@ interface HandPlan {
   readonly sessionId: string;
   /** 新しい Session の最初の Hand（SESSION_STARTED を置く）。 */
   readonly newSession: boolean;
+  /** Session の設定（mode と Tournament の設定の Snapshot。D129）。 */
+  readonly settings: SessionSettings;
   readonly personas: Readonly<Record<string, PersonaPresetId>>;
   /** CPU の席の参加者（Fixed CPU / Guest。D118）。新しい Session では seed で決め、続く Session では Session の値を使う。 */
   readonly participants: readonly SessionParticipant[];
@@ -302,6 +330,8 @@ interface SessionPointer {
   readonly personas: Readonly<Record<string, PersonaPresetId>>;
   /** CPU の席の参加者（Session の開始時に決めた値。Resume では Event Store の session_participants から戻す。D118）。 */
   readonly participants: readonly SessionParticipant[];
+  /** Session の設定（Session の開始時の値。Resume では Session の最初の Hand の SESSION_STARTED から戻す。D129）。 */
+  readonly settings: SessionSettings;
 }
 
 /** Hand の終わりから見た Session の状態と、続くなら次 Hand の席。 */
@@ -309,7 +339,7 @@ interface SessionAfter {
   readonly status: SessionStatus;
   readonly next: Omit<
     HandPlan,
-    "sessionId" | "newSession" | "personas" | "participants"
+    "sessionId" | "newSession" | "personas" | "participants" | "settings"
   > | null;
 }
 
@@ -363,12 +393,15 @@ export class HandOrchestrator {
     const known = new Set(this.options.setup.players.map((p) => p.playerId));
     let resumable = false;
     let cause: unknown = null;
+    let settings: SessionSettings = { mode: "cash" };
     try {
       const started = this.events(projection.lastHandId)[0];
       const seated =
         started?.type === "HAND_STARTED"
           ? started.seats.map((s) => s.playerId)
           : [];
+      // Session の設定は Session の最初の Hand の SESSION_STARTED の Snapshot から戻す（D129）。Snapshot が壊れていれば続けない。
+      settings = this.sessionSettingsOfSession(projection.lastHandId);
       resumable =
         seated.includes(this.heroId) &&
         seated.every((id) => known.has(id)) &&
@@ -405,7 +438,17 @@ export class HandOrchestrator {
       participants: this.options.store.sessionParticipants(
         projection.sessionId,
       ),
+      settings,
     };
+  }
+
+  /**
+   * ある Hand の Session の設定（D129）。Session の最初の保存済みの Hand の SESSION_STARTED の Snapshot から読む。
+   * Tournament の設定の無い Session（mode を指定しない Session・旧版の行）は cash。Snapshot が壊れていれば例外。
+   */
+  private sessionSettingsOfSession(handId: string): SessionSettings {
+    const first = this.options.store.sessionHandIds(handId)[0] ?? handId;
+    return sessionSettingsOf(this.events(first)) ?? { mode: "cash" };
   }
 
   get players(): readonly SeatPlayer[] {
@@ -431,12 +474,15 @@ export class HandOrchestrator {
    *   Session が終わっていたら（D80）新しい Session として均等 Stack で始める
    * - 最後の Hand が内部エラーで止まっていたら、新しい Session として均等 Stack で始める
    */
-  async startHand(afterHandId: string | null): Promise<
-    OrchestratorResult<{
-      handId: string;
-      view: HeroView;
-      created: boolean;
-    }>
+  async startHand(
+    afterHandId: string | null,
+    request?: SessionRequest,
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly value: { handId: string; view: HeroView; created: boolean };
+      }
+    | { readonly ok: false; readonly error: StartHandError }
   > {
     const { setup, store } = this.options;
     const unseen = this.unseenLatestHand(afterHandId);
@@ -450,12 +496,15 @@ export class HandOrchestrator {
         },
       };
     }
+    // 続く Session に違う設定・卓の人数に合わない Preset を求められたら、Hand を作る前に拒否する（seed・Hand ID は使わない）。
+    const rejection = this.startRejection(request);
+    if (rejection !== null) return { ok: false, error: rejection };
     const handId = this.options.nextHandId();
     if (this.hands.has(handId) || store.read(handId).length > 0) {
       throw new Error(`Hand ID が重複した: ${handId}`);
     }
     const seed = this.options.nextSeed();
-    const plan = this.planNextHand(seed);
+    const plan = this.planNextHand(seed, request);
     // Emergency Bot の選択は Session の終わりまで続く（D86）。新しい Session では空から始める。
     const emergencyBots =
       this.session?.sessionId === plan.sessionId
@@ -465,7 +514,7 @@ export class HandOrchestrator {
       handId,
       seats: plan.seats,
       buttonPlayerId: plan.buttonPlayerId,
-      config: setup.table,
+      config: this.tableConfigOf(plan.settings),
       deal: { seed },
       metadata: this.handMetadata(plan.seats, emergencyBots),
     });
@@ -484,6 +533,10 @@ export class HandOrchestrator {
           ...recordSessionEvent(started.value.state, {
             type: "SESSION_STARTED",
             sessionId: plan.sessionId,
+            // Tournament の Session だけ、設定の Snapshot を残す（D129）。cash の Session の Event は変えない。
+            ...(plan.settings.mode === "tournament"
+              ? { tournament: plan.settings.tournament }
+              : {}),
           }).events,
         ]
       : started.value.events;
@@ -499,6 +552,7 @@ export class HandOrchestrator {
       emergencyBots,
       personas: plan.personas,
       participants: plan.participants,
+      settings: plan.settings,
     };
 
     // 座っている CPU にだけ Opponent（と Fallback 用の RuleBot）を割り当てる。CPU の seed は卓の設定上の席番号から導く
@@ -1043,7 +1097,7 @@ export class HandOrchestrator {
    *   CPU の席の参加者（Fixed CPU / Guest。D118）は、その Hand の seed から導いた seed で決定論に決め、Persona は Fixed CPU なら
    *   Pool の Persona、Guest なら今の卓の設定の割り当て（既定の割り当てでは両者は同じ。composeSessionParticipants）
    */
-  private planNextHand(seed: number): HandPlan {
+  private planNextHand(seed: number, request?: SessionRequest): HandPlan {
     const current = this.session;
     if (current !== null) {
       const after = this.sessionAfter(current.lastHandId);
@@ -1053,11 +1107,24 @@ export class HandOrchestrator {
           newSession: false,
           personas: current.personas,
           participants: current.participants,
+          settings: current.settings,
           ...after.next,
         };
       }
     }
-    const { players, startingStack, personas } = this.options.setup;
+    const { players, personas } = this.options.setup;
+    // 新しい Session の設定は開始の要求で決める（省略は cash）。Tournament は Preset の設定をそのまま Snapshot にする（D129）。
+    const settings: SessionSettings =
+      request?.mode === "tournament"
+        ? {
+            mode: "tournament",
+            tournament: TOURNAMENT_PRESETS[request.presetId],
+          }
+        : { mode: "cash" };
+    const startingStack =
+      settings.mode === "tournament"
+        ? settings.tournament.startingStack
+        : this.options.setup.startingStack;
     const sessionId = (this.options.nextSessionId ?? randomUUID)();
     // 席番号（0〜MAX_PLAYERS - 1。CPU の seed に使う）と重ならない番号で導き、山札・CPU の乱数と別の列にする。
     const composition = composeSessionParticipants({
@@ -1078,6 +1145,7 @@ export class HandOrchestrator {
     return {
       sessionId,
       newSession: true,
+      settings,
       // Fixed CPU は Pool の Persona、Guest は席の Persona（Session Projection に残り、Resume でも同じ）。
       personas: composition.personas,
       participants: composition.participants,
@@ -1087,6 +1155,58 @@ export class HandOrchestrator {
       })),
       buttonPlayerId: (players[0] as SeatPlayer).playerId,
     };
+  }
+
+  /**
+   * 開始の要求を受け付けられなければその失敗（#183）。受け付けられる・要求が無いなら null。
+   * - 今の Session が続くとき: 求めた設定が今の Session の設定と違えば session_mode_mismatch。Tournament は Preset の ID で比べる
+   *   （Resume した Session は開始時の Snapshot で続けるので、Preset の版が変わっていても同じ Preset なら続ける）
+   * - 次の Hand が新しい Session のとき: Tournament の Preset の参加人数が卓の人数と違えば tournament_unavailable
+   */
+  private startRejection(
+    request: SessionRequest | undefined,
+  ): StartHandError | null {
+    const current = this.session;
+    if (request === undefined) return null;
+    if (
+      current === null ||
+      this.sessionAfter(current.lastHandId).next === null
+    ) {
+      // 次の Hand は新しい Session。Tournament は Preset の参加人数の卓でだけ始める（Payout・Prize Pool の前提）。
+      if (request.mode !== "tournament") return null;
+      const { tableSize } = TOURNAMENT_PRESETS[request.presetId];
+      const seats = this.options.setup.players.length;
+      if (seats === tableSize) return null;
+      return {
+        kind: "tournament_unavailable",
+        message: `Preset ${request.presetId} は ${tableSize} 人の卓で始める（今の卓は ${seats} 人）`,
+      };
+    }
+    const { settings } = current;
+    const same =
+      request.mode === settings.mode &&
+      (settings.mode === "cash" ||
+        (request.mode === "tournament" &&
+          request.presetId === settings.tournament.presetId));
+    if (same) return null;
+    return {
+      kind: "session_mode_mismatch",
+      message: `今の Session（${settings.mode === "cash" ? "cash" : `tournament: ${settings.tournament.presetId}`}）が続いているので、違う設定の Session は始められない`,
+    };
+  }
+
+  /**
+   * Hand の卓の設定。cash は卓の設定のまま（既存の経路）。Tournament は Rule Profile を共有し、Blind を Level の額にする（D108）。
+   * Level の進行と Ante は #184 で足す。それまでは 1 Level 目の Blind で続ける。
+   */
+  private tableConfigOf(settings: SessionSettings): TableConfig {
+    const { table } = this.options.setup;
+    if (settings.mode === "cash") return table;
+    const [first] = settings.tournament.levels;
+    if (first === undefined) {
+      throw new Error("Tournament の設定に Level が無い");
+    }
+    return tableConfigForLevel(table, first);
   }
 
   /**

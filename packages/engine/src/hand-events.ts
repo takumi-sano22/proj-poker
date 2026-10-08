@@ -8,6 +8,7 @@ import type { Card } from "./card.js";
 import type { CanonicalAction } from "./legal-actions.js";
 import type { Declaration, RulingCode } from "./ruling.js";
 import type { OddChipRule, ReopenRule } from "./table-config.js";
+import type { TournamentConfig } from "./tournament.js";
 
 /**
  * 誰がその Event を読めるか（docs/04 §4）。
@@ -235,6 +236,11 @@ export type HandEventBody =
       // 卓の State は変えない。席・Stack・Button は HAND_STARTED に残る。
       readonly type: "SESSION_STARTED";
       readonly sessionId: string;
+      /**
+       * Tournament の Session の設定の Snapshot（D129・#183。schema_version 9 で足した）。cash の Session は項目ごと持たない
+       * （mode を指定しない既存の Cash の Event は変えない）。項目の無い SESSION_STARTED は cash として読む（tournament.ts の sessionSettingsOf）。
+       */
+      readonly tournament?: TournamentConfig;
     }
   | {
       // Session の終了（D80・D86・D95）。Session の最後の Hand の終わり（HAND_FINISHED か HAND_ABORTED）の直後に、同じ追記で置く。

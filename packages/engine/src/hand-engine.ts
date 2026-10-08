@@ -39,6 +39,7 @@ import {
   isChipAmount,
   type TableConfig,
 } from "./table-config.js";
+import { validateTournamentConfig } from "./tournament.js";
 
 /**
  * Hand ごとの Best-effort Metadata（HAND_METADATA_RECORDED。#97）のうち、呼び出し側（Server）が渡す値。
@@ -330,6 +331,7 @@ export type SessionEventBody = Extract<
  * - SESSION_STARTED / HAND_ABORTED: Hand の途中（HAND_ABORTED で Hand は終わる）
  * - EMERGENCY_BOT_ENGAGED: Hand の途中で、その CPU の手番（障害で止まった手番）
  * - SESSION_ENDED: Hand が終わった後（HAND_FINISHED か HAND_ABORTED の直後）
+ * SESSION_STARTED に Tournament の設定の Snapshot を持たせるときは、その設定を検証する（読めない Snapshot を Event Log に残さない。D129）。
  */
 export function recordSessionEvent(
   state: HandState,
@@ -346,6 +348,12 @@ export function recordSessionEvent(
         : inProgress;
   if (!allowed) {
     throw new RangeError(`${body.type} はこの時点では置けない`);
+  }
+  if (body.type === "SESSION_STARTED" && body.tournament !== undefined) {
+    const invalid = validateTournamentConfig(body.tournament);
+    if (invalid !== null) {
+      throw new RangeError(`Tournament の設定が不正: ${invalid}`);
+    }
   }
   return emit({ state, events: [] }, body);
 }
