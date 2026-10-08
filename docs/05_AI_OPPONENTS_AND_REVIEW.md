@@ -151,14 +151,14 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 
 卓全体の傾向（aggression・looseness等）は、Public / 観察可能なEvidenceだけから作るProjectionです。個々のCPUのPrivate Memoryを集約して作りません。CPUが使える情報と、HeroのReviewが使える情報の境界を分けます。D10の「ユーザーが選ぶ卓の傾向（卓の編成）」とは別のものです。
 
-HeroのReviewでの扱い（D122。実装は#153）: Decision ReviewのEvidenceに、判断時点より前の保存済みのHandのpublicのEventだけから作ったTable Tendencyを構造化Evidence（Evidence ID付き）として足します。判断時点より後の情報・Learning-only Reveal・CPUのPrivate Memory / Private Hypothesis・Persona・Tiltは使いません。数値は決定論のコードが正本で、Review AIは説明だけを行います。
+HeroのReviewでの扱い（D122・#153）: Decision ReviewのEvidenceに、判断時点より前の保存済みのHandのpublicのEventだけから作ったTable Tendencyを構造化Evidence（Evidence ID付き）として足します。判断時点より後の情報・Learning-only Reveal・CPUのPrivate Memory / Private Hypothesis・Persona・Tiltは使いません。数値は決定論のコードが正本で、Review AIは説明だけを行います。
 
 実装（#141。`apps/server/src/memory/table-tendency.ts`・`table-tendency-policy.ts`。数値と定義はすべてOI-011の暫定値で、確定ではない）:
 
 - **作り方**: 今のSessionの保存済み（終わった）Handを論理順序（`ordinals.ord`）で並べ、`public`のEvent（Observationと同じwhitelist）だけから都度数えます（保存しない。D111）。Version付きのPolicy`phase7_table_tendency_v1`で、項目はviewer以外の席の`vpip`（looseness）・`pfr`・`aggression_frequency`（Postflopのaggression）と、卓全体の`showdown`（札を比べて決着したHandの割合）です。範囲はviewerが座っていたHandの新しい100 Handまでで、項目ごとにnumerator / denominator・Handの数・十分か（Handが10以上かつ機会が20以上）・PolicyのVersionを持ちます（形は`docs/04` §12）。壁時計を使いません（D117）。
 - **境界**: CPUが使えるのは、そのCPUが座っていたHandのpublicのEventから作った値です（座っていないHandを入れない）。HeroのReviewが使える範囲は、Heroが座って見えたHandのpublicのEventから作った値で、入り口を分けます（`buildCpuTableTendenciesFromStore` / `buildHeroTableTendencyFromStore`）。どちらにもHidden Cards・Future Cards・Learning-only Reveal・Persona・Tilt・Private Hypothesisは入りません（`memory/table-tendency-isolation.test.ts`・`table-tendency.test.ts`）。
 - **CPUへの反映**: Hand OrchestratorがHandの開始時に作り、数えたHandが1以上のCPUだけ`KnowledgeState`に`tableTendency`として足します。ClaudeのCPUは「卓の傾向」の節で、固定の読み方の説明と構造化データのままのJSONを受け取ります（Handが0のときは節ごと無く、Promptは#141より前と同じ文字列。LLMの呼び出しの回数・経路は変えない）。RuleBotは、PersonaのAdaptabilityに比例する幅（最大0.1）で、卓の`aggression_frequency`でmediumの手のCallを、卓の`vpip`でweakの手のBluffのしきい値をずらすだけです（十分なSampleの項目だけ。`phase7_rulebot_table_tendency_v1`）。合法性はLegal Actionの中から選ぶことで守ります（D40）。
-- **HeroのReviewへの接続**: D122で入れることに決まり、実装は#153です（上の「HeroのReviewでの扱い」）。#153のマージまでは、まだ入れていません。§6のOpponent Observationは`unavailable`のままで、Table Tendencyを入れるとEvidence・Promptの契約（Review Evalの録画の指紋を含む）が変わるためです。Hero用の入り口（判断より前のHandに絞る`beforeOrd`付き）だけを用意しています。
+- **HeroのReviewへの接続（#153）**: `ReviewService`がPass AのEvidenceを作るとき、判断のHandと同じSessionの、そのHandより前（論理順序。D117）に保存したHandだけを、Hero用の入り口`buildHeroTableTendencyFromStore`（`beforeOrd`にそのHandの`ord`）で数え、§6のOpponent Observationに入れます（そのHand自身・後のHand・別のSessionのHandは入らない）。十分な項目が1つも無ければ`unavailable`のままで、Evidence・Promptは#153より前と同じ文字列です（Review Evalの録画の指紋を変えない）。形とPromptでの扱いは§6です。Pass B（Reveal Review）のEvidenceには入れません（§7。Pass Bの契約は変えない）。
 
 ### 層の合成とOpponent Memory Eval（#106 P7-7。#142）
 
@@ -194,14 +194,14 @@ Evidenceの組み立て（#82。`apps/server/src/review/evidence.ts`）: 判断�
 - Decision Context（`ctx:`）: Street・Blind・HeroのPositionと札・判断時点のBoard・Pot・各席の表示名（Heroの画面に出ている名前。CPU 3など。Personaは入れない。#96）/ Position / Stack / Commit / Fold / All-in（他者の札は持たない）・Public Actionの履歴・裁定の履歴・Legal Action・Heroが選んだAction・Important Spotの理由。
 - Math（`math:`）: `analyzeDecision`の値（Pot・Call額・Pot Odds・有効Stack・SPR・Equity・Alternative Action・前提）。Monte Carloのseedは入れません。
 - Range（`range:`）: 相手ごとのRangeのAssumption。Important Spotだけ、Rangeの想定（標準・狭い・広い）ごとのEquityの比較（`compareRangeProfiles`）。
-- Opponent Observation: 相手の過去の傾向の記録はまだ無いので`unavailable`（Exploitは根拠なしとして書かせる）。Phase 6以降でHeroが観察可能だった範囲のStats（`docs/07` §3・§8）を入れるときも、Hidden Persona・Learning-only Reveal・CPUのPrivate Memory / Tiltは入れません。
+- Opponent Observation（`tendency:<handId>/d<判断の番号>/<項目>`。D122・#153）: Heroが観察できた相手の傾向は、今はTable Tendency（§5）だけです。判断のHandより前に保存した、今のSessionのHeroが座っていたHandのpublicのEventだけから決定論で作り（そのHand自身・後のHand・Learning-only Reveal・CPUのPrivate Memory / Hypothesis・Persona・Tiltは入らない）、十分な項目（Policyの基準以上）が1つ以上あるときだけ`available`として`tableTendency`（Policyの版・数えたHandの数・項目ごとのid・割合・回数・機会の数・Handの数・十分か）を入れます。割合は`numerator / denominator`を決定論で小数第3位まで計算した値で、Review AIに計算させません。不十分な項目も`sufficient: false`のまま残し、保留として読ませます。十分な項目が無ければ`unavailable`のままで（Exploitは根拠なしとして書かせる）、Evidence・Prompt・Schemaは#153より前と同じ文字列です（Review Evalの録画の指紋が変わらない。`docs/09` §6）。あるときだけ、Promptに読み方（卓全体の傾向で個々の相手の傾向ではない／数値はEvidenceの値をそのまま使う／保留の項目は根拠にしない／特定の相手の傾向として断定しない。`review-ai.ts`の`TABLE_TENDENCY_GUIDE`）と項目の説明を添え、`exploitBasis`に`observation`を選べるようにします（構造ゲート）。数値は決定論のコードが正本で、Review AIは説明だけを行います。Groundingは、`exploitBasis`が`observation`なら、サンプルが十分な項目のidを1つ以上`evidenceIds`に挙げることを求めます（Review AIの文の中の数値をEvidenceと照合する検証はまだ無い）。idはReview AIが根拠に挙げてよいIDで、Review Recordの`evidence_ids.tableTendency`に残ります（`docs/04` §8）。Hero自身の弱点のProfile（`docs/07`）は入れません。
 - Solver（`solver:`）: Capability Gateを通って解けたときだけ`supported`（`docs/03` §7）。それ以外はUnsupported / 当てはまらないNode / 失敗の理由を前提として渡します。
 - Knowledge（`kb:<KB Version>:<id>@<version>`）: 判断時点のSpotの特徴（Street・HeroのPosition・Heads-Up / Multiway・Spotの種類・相手のPreflopのAction列）で`searchKb`した上位4項目。
 - User Read / Intent（`read:<handId>/<seq>`。#115・D112）: その判断の`ACTION_TAKEN`より前にHeroが記録した読み（`docs/07` §8）を、Street・対象の席（`playerId`と表示名）・本文と一緒に`collected`として入れます（Information Setの`userReads`。判断より後の読みは入らない。`docs/04` §1）。読みが無い判断は`not_collected`のままで、Evidence・Prompt・Schemaは読みの無いHandと同じ文字列です（Review Evalの録画の指紋が変わらない。`docs/09` §6）。読みがあるときだけ、Promptに「読みはHeroの主張で、相手の観察の記録ではない／判断が読みに沿っているか・判断時点の公開情報と整合するかをpracticalで触れる／読みの当たり外れは書かない」の扱い方を添えます（構造ゲート。`review-ai.ts`の`USER_READ_GUIDE`）。読みのIDはReview AIが根拠に挙げてよいIDで、Review Recordの`evidence_ids.userRead`に残ります（`docs/04` §8）。Exploitの根拠（`observation`）にはしません。Review Interview（§12）で後から聞く経路はまだありません。
 
 **内部の識別子を文に出さない**（#96・D101）: Reviewは Hero が読む学習用の文なので、`cpu3` のようなplayerIdや`inAssumedRange=false`のようなEvidenceの項目名を、そのまま出しません（内部実装を前面に出さない方針。`docs/06` §11）。対策は3段で、①Evidenceの席に表示名を添える、②Promptで識別子を書かないよう指示し、「Evidenceの項目の説明」（項目名 → 自然な言葉。`apps/server/src/review/identifiers.ts`の`EVIDENCE_TERMS`が1か所の正本。Pass Aには判断時点の項目だけ、Pass Bにはreveal側の項目も出す）を添える、③出力の文を保存の前に機械的に置換する（playerId → 表示名、項目名 → 説明、`monte_carlo`のような値 → 書き方。根拠のidとenumは触らない）。識別子が見つかっても**Retryはしません**（言い直しを求めても残ることがあり、呼び出しと利用枠が増えるだけのため）。置換するのは対応表にある既知のものだけで、未知の識別子は残り、Review Evalの「識別子の残存率」で数えて対応表に足します（`docs/09` §6）。Pass B・Follow-upにも同じ置換を通します。
 
-Evidenceに他者のHidden Cards・未来のCard・`system`のEvent・CPUのPersonaが入らないこと、判断より後のEventを切り落としても見えないEventの中身を差し替えてもEvidenceが変わらないことをテストで確かめます（`evidence.test.ts`）。
+Evidenceに他者のHidden Cards・未来のCard・`system`のEvent・CPUのPersonaが入らないこと、判断より後のEventを切り落としても見えないEventの中身を差し替えてもEvidenceが変わらないことをテストで確かめます（`evidence.test.ts`）。Table Tendencyが判断のHandより前のHandのpublicのEventだけから作られること（後のHand・別のSession・見えないEventの差し替え・Pass Bの有無で変わらない）・CPUのMemory / Tilt / PersonaがReviewのPromptに入らないことは、`review-table-tendency.test.ts`と`memory/table-tendency-isolation.test.ts`で確かめます。
 
 ## 7. Two-pass Review
 
@@ -209,7 +209,7 @@ Evidenceに他者のHidden Cards・未来のCard・`system`のEvent・CPUのPers
 
 判断時点で利用可能だった情報だけを使います。
 
-入力の元は、Engineの`heroInformationSets`（#78）が作る判断時点のHero Information Setです（判断時点までにHeroに見えたEventとHeroのKnowledgeState。作り方は`docs/04` §1）。Reviewの対象にするImportant Spotも、判断時点の情報だけから決定論で選びます（`extractImportantSpots`）。
+入力の元は、Engineの`heroInformationSets`（#78）が作る判断時点のHero Information Setです（判断時点までにHeroに見えたEventとHeroのKnowledgeState。作り方は`docs/04` §1）。前のHandから作るTable Tendency（§5・§6。D122）は、判断のHandより前に保存したHandのpublicのEventだけから作ります。Reviewの対象にするImportant Spotも、判断時点の情報だけから決定論で選びます（`extractImportantSpots`）。
 
 ### Pass B — Reveal Review
 
