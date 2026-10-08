@@ -616,7 +616,7 @@ try {
     `\n## A. 層ごとの計算時間（ミリ秒。中央値 / 最大。CPU 5 人分・孤立して繰り返し。(1)〜(4) は Cache が温まった状態）`,
   );
   console.log(
-    "| 保存済みの Hand | 今の Session の Hand | Event 行数 | DB (MiB) | Cache の行数 / JSON (MiB) | (1) Memory | Memory（Cache なし）| Memory（Cache を消した直後の 1 回）| うち Event の読み出し（1 Observer 分）| (2) Tilt | (3) Table Tendency | (4) 合計 |",
+    "| 保存済みの Hand | 今の Session の Hand | Event 行数 | DB (MiB) | Cache の行数 / JSON (MiB)（層の測定の全削除→作り直しの後 = 今の卓の Observer の分だけ。全 Observer の分は C1b）| (1) Memory | Memory（Cache なし）| Memory（Cache を消した直後の 1 回）| うち Event の読み出し（1 Observer 分）| (2) Tilt | (3) Table Tendency | (4) 合計 |",
   );
   console.log("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of results) {
