@@ -5,6 +5,7 @@ import type { ImportantSpotReason, PreflopSpot } from "@proj-poker/engine";
 import { ACTION_TERMS, termLabel, type Term } from "./format.js";
 import { describeAction } from "./view-model.js";
 import type { ReplayDecision } from "./api.js";
+import { STAT_TERMS } from "./learning.js";
 import type {
   Assessment,
   Confidence,
@@ -14,6 +15,8 @@ import type {
   SolverActionFrequency,
   SolverEvidence,
   SolverUnsupportedReason,
+  TableTendencyItem,
+  TableTendencyItemId,
 } from "./review-api.js";
 
 /** 段階評価の表記（日本語 + docs/05 §8 の語）。点数にはしない。 */
@@ -208,6 +211,39 @@ export const MADE_HAND_LABELS: Readonly<Record<MadeHand, string>> = {
   four_of_a_kind: "フォーカード（Four of a Kind）",
   straight_flush: "ストレートフラッシュ（Straight Flush）",
 };
+
+/**
+ * 卓の傾向の項目の表記（#169）。割合で読む指標は Stats と同じ名前（STAT_TERMS）を使い、Showdown は Hand 単位の割合。
+ * 値の意味は Hero 以外の卓全体の傾向で、個々の相手の傾向ではない。
+ */
+export const TABLE_TENDENCY_TERMS: Readonly<Record<TableTendencyItemId, Term>> =
+  {
+    vpip: STAT_TERMS.vpip,
+    pfr: STAT_TERMS.pfr,
+    aggression_frequency: STAT_TERMS.aggression_frequency,
+    showdown: { ja: "札を比べて決着した Hand の割合", term: "Showdown" },
+  };
+
+/** 卓の傾向の項目の表記。知らない項目（新しい Policy の項目）は ID のまま出す（画面を壊さない）。 */
+export function tendencyItemLabel(item: string): string {
+  const term = (
+    TABLE_TENDENCY_TERMS as Readonly<Record<string, Term | undefined>>
+  )[item];
+  return term === undefined ? item : termLabel(term);
+}
+
+/**
+ * 卓の傾向の割合の表記。割合は Evidence の値をそのまま使い、分子 / 分母を必ず併記する（2 / 3 と 200 / 300 を同じに見せない）。
+ * 機会が 0（割合が無い）なら値を出さない。
+ */
+export function tendencyValueText(
+  item: Pick<TableTendencyItem, "rate" | "numerator" | "denominator">,
+): string {
+  const fraction = `${item.numerator} / ${item.denominator}`;
+  return item.rate === null
+    ? `—（${fraction}）`
+    : `${Math.round(item.rate * 100)}%（${fraction}）`;
+}
 
 /** Follow-up の答えの範囲の注記。answered は null。 */
 export function followUpScopeNote(

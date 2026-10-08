@@ -35,6 +35,7 @@ import {
   MathView,
   RangeView,
   SolverView,
+  TableTendencyView,
 } from "./ReviewEvidence.js";
 
 type NameOf = (playerId: string) => string;
@@ -152,6 +153,18 @@ export function DecisionReviewBody({
         <EvidenceSection title="相手の Range の仮定" cited={citedAny("range:")}>
           <RangeView range={evidence.range} nameOf={nameOf} />
         </EvidenceSection>
+        {evidence.opponentObservation !== undefined && (
+          // 判断より前の Hand から数えた卓の傾向（D122・#169）。保存された Evidence をそのまま読む。無い Review は「無い」と出す。
+          <EvidenceSection
+            title="卓の傾向（Table Tendency）"
+            cited={citedAny("tendency:")}
+          >
+            <TableTendencyView
+              observation={evidence.opponentObservation}
+              cited={cited}
+            />
+          </EvidenceSection>
+        )}
         <EvidenceSection title="Solver" cited={citedAny("solver:")}>
           <SolverView solver={evidence.solver} />
         </EvidenceSection>

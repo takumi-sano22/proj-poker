@@ -176,11 +176,50 @@ export interface UserReadItem {
   readonly text: string;
 }
 
+/** Table Tendency の項目 id（サーバーの TableTendencyItemId と同じ。D122・#153）。 */
+export type TableTendencyItemId =
+  "vpip" | "pfr" | "aggression_frequency" | "showdown";
+
+/**
+ * 卓の傾向の項目 1 つ（サーバーの TableTendencyEvidenceItem と同じ形。#169）。Review の Evidence に入っている決定論の値を、
+ * そのまま読む（画面で計算しない）。rate は numerator / denominator を小数第 3 位まで丸めた値で、機会が 0 なら null。
+ */
+export interface TableTendencyItem {
+  /** `tendency:<handId>/d<判断の番号>/<項目>`（Review の説明が根拠に挙げる id）。 */
+  readonly id: string;
+  readonly item: TableTendencyItemId;
+  readonly rate: number | null;
+  readonly numerator: number;
+  readonly denominator: number;
+  /** その項目の機会があった Hand の数。 */
+  readonly hands: number;
+  /** false の項目は保留（サンプルが足りない）。 */
+  readonly sufficient: boolean;
+}
+
+/**
+ * Hero の Review の Evidence の Opponent Observation（D122・#153）。十分な項目が 1 つも無い Review（#153 より前の Review を含む）は
+ * unavailable。available のときだけ、判断より前の Hand の public の Event から数えた卓の傾向を持つ。
+ */
+export type OpponentObservation =
+  | { readonly status: "unavailable" }
+  | {
+      readonly status: "available";
+      readonly tableTendency: {
+        readonly policyVersion: string;
+        /** 数えた Hand の数。 */
+        readonly hands: number;
+        readonly items: readonly TableTendencyItem[];
+      };
+    };
+
 /** Pass A の Evidence（判断時点の情報だけ）。 */
 export interface ReviewEvidence {
   readonly context: DecisionContext;
   readonly math: MathEvidence;
   readonly range: RangeEvidence;
+  /** 卓の傾向（#169）。古い Review の記録には無いことがある（無ければ欄を出さない）。 */
+  readonly opponentObservation?: OpponentObservation;
   readonly solver: SolverEvidence;
   readonly knowledge: { readonly items: readonly KnowledgeItem[] };
   /** 判断の前の Hero の読み（D112）。読みの無い判断は not_collected。 */

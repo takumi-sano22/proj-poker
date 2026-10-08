@@ -239,6 +239,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - **Math / Range / KB / Solver**: MathがEngineの`analyzeDecision`と同じ値であること、Important SpotだけRangeの想定の比較を持つこと、KBのEvidence IDがKBのVersionを含むこと、SolverはPreflop / Multiway / 未導入をFallbackし、HUのRootの判断だけを解き（Betへの直面・IPは解かない）、失敗の本文をEvidenceに入れないこと（`solver-evidence.test.ts`）。
 - **識別子の置換**（`identifiers.test.ts`・`generate.test.ts`・`reveal.test.ts`・`harness.test.ts`。#96）: playerId → 表示名・項目名 → 説明（値付きのboolean・`cpu1`と`cpu10`・別の語の一部・未知の識別子は残す）、根拠のidとenumを触らないこと、Pass Aの項目の説明にHand後の項目を出さないこと、識別子があってもRetryしないこと（Pass A・Pass B・Follow-up）、置換前後の指標（出現率・残存率）。
 - **Table Tendency（D122・#153）**（`review-table-tendency.test.ts`・`generate.test.ts`・`identifiers.test.ts`）: Pass AのEvidenceの卓の傾向が、判断のHandと同じSessionの、そのHandより前に保存したHandのpublicのEventだけから作られること（そのHand自身・後のHand・別のSessionのHandを入れない。見えないEvent〔他者の札・Deck。Learning-only Revealの元〕を差し替えても、前のHandのPass Bを先に作っても変わらない）、項目ごとのEvidence IDと決定論の割合、十分な項目が無い・Handが0・無いときEvidence・Prompt・Schemaが#153より前と同じ文字列であること、あるときだけPromptに読み方と項目の説明を添え`exploitBasis`に`observation`を選べること、Grounding（`observation`ならサンプルが十分な項目のidを挙げる）、Pass A へのFollow-upの項目の説明、Pass BのEvidenceに入らないこと、項目名・値の置換。
+- **Table Tendencyの表示（D122・#169）**（`apps/web/src/components/review.test.tsx`・`review-table-tendency.test.ts`・`e2e/tests/review-tendency.spec.ts`）: 根拠の欄が保存済みのEvidenceの値（割合・分子 / 分母・機会があったHand・十分か保留か）をそのまま出すこと、`unavailable`は「卓の傾向はありません」、`opponentObservation`の無い古い記録は欄を出さずエラーにしないこと、Evidenceに紛れたPersona・Memory・Tilt・Revealの値が画面に出ないこと（項目を読む実装の検査）、APIが返す保存済みのReview（status・version）の応答に、作った時のTable Tendencyがそのまま入り、Memory・Hypothesis・Tilt・Personaを指す語と判断時点に見えない札が無いこと、E2E（Heroが毎Hand Foldして11 Hand以上を重ね、Handは`handId`で特定）で画面の値がAPIのEvidenceと一致し、375×667・320×568・1280×720で横スクロールと項目の重なりが無いこと。
 - **出力の検証と生成**（`generate.test.ts`）: Schema（形・enum・文字数）とGrounding（実在しないEvidence ID・Solverの結果が無いのに`solver`・Observationが無いのに`observation`）の不正、1回のRetry、2回続けて不正ならInsufficient Evidence（失敗の記録）、Evidence Sufficiency GateでReview AIを呼ばないこと、`depth`ごとのModel Role、Claudeの呼び出しの失敗を例外のまま伝えること。
 - **保存とAPI**（`review-store.test.ts`・`review-service.test.ts`・`routes/reviews.test.ts`）: Versionの追記と上書きの拒否（メモリ内とSQLiteの両方）、非同期の生成（202・pending）、二重の要求で1回だけ作ること、上限の超過（timeout）・アプリの終了で子プロセスを止めること、生成を1つずつ順に進めること、失敗の種類だけを返すこと、404 / 409 / 400。
 
@@ -336,6 +337,18 @@ Phase 7（Rich Opponent Simulation）の通しは、Fixed CPUとGuestの卓で�
 - serverの設定は1本目と同じ（`e2e/support/server.ts`）に、`POKER_SEED=20261042`を足します。このseedでは、1つ目のSessionが数HandでHeroのBustで終わり、両方のSessionにGuestが座り、2つ目のSessionで初めて座るFixed CPUと、1つ目の終わりにTiltが1以上で2つ目にも座るFixed CPUがいます。編成が変わってこの前提が崩れたら、検査を空振りさせずに前提のassertで落とします（seedを選び直す）。
 - 画面は1280×900で動かします。既定の1280×720では、Sessionの終わりの「新しい Session を始める」がHeroの席に覆われて押せません（#158。このE2Eでは直さない）。
 - HandはReplayの一覧の並びに頼らず、開始の応答のhandIdで特定します。「次の Hand へ」「新しい Session を始める」の後は、画面が新しいHandに切り替わるまで待ちます（`e2e/support/next-hand.ts`。#133）。
+
+### Reviewの根拠の欄の卓の傾向のE2E（Issue #169）
+
+`e2e/tests/review-tendency.spec.ts`（1本。Review AIは固定応答）は、Heroが毎Hand Foldして6人卓の1つのSessionで11 Hand以上を重ね、Reviewの根拠の欄の卓の傾向（D122）を確かめます。
+
+1. Heroが判断した最初のHand（前のHandが無い）のReview: 根拠の欄「卓の傾向（Table Tendency）」は「卓の傾向はありません」と出し、項目は出さない（APIのEvidenceは`unavailable`）
+2. 十分なHandを重ねた後の、Heroが判断したHandのReview: 項目（VPIP・PFR・攻めの頻度・Showdown）ごとの割合と分子 / 分母・機会があったHandの数・十分か保留かが、`/api/reviews/hands/<handId>/decisions/0`が返す保存済みのEvidenceの値と一致する（HandはhandIdで特定し、説明文から値を拾わない）
+3. 画面とAPIの応答に、Persona・Memory・Tilt・Hypothesisの語が無く、Pass B（全員の札）に切り替えていない
+4. 1280×720・375×667・320×568で、横スクロールが無く、項目が画面の中に収まり、項目同士・項目の中の要素同士が重ならない
+
+- Heroは毎HandのFoldで、Stackをほぼ減らさずSessionを続ける（Call / Checkだけだと数HandでBustしうる）。Heroが判断しないHand（BBで全員がFoldした等）は、判断のあるHandまで進めてからReviewする。
+- `pnpm e2e --repeat-each=10`で10回続けて通ることを、作業ログ（`docs/taskLog/issue-169-review-tendency-ui.md`）に残しています。
 
 ## 9. Property / Fuzz
 

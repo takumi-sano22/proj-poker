@@ -10,6 +10,7 @@ import { PHASE1_TABLE_SETUP } from "../config.js";
 import { InMemoryEventStore } from "../event-store.js";
 import { loadKb } from "../kb/index.js";
 import { buildHeroTableTendencyFromStore } from "../memory/table-tendency.js";
+import { forbiddenKeys, leakedCards } from "../testing/leaks.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
 import {
   BTN_VS_UTG,
@@ -228,6 +229,48 @@ describe("Review の Evidence の Table Tendency（D122・#153）", () => {
         reason:
           "相手の過去の傾向（Observation）の記録はまだ無い。この Hand の公開された Action 以外に、相手の読みの根拠は無い。",
       });
+    }
+  });
+
+  it("API が返す保存済みの Review（status・version）の Evidence に、作った時の Table Tendency がそのまま入り、CPU の内部状態・Reveal を指す語が無い（#169）", async () => {
+    const events = storeWith({ priorHands: 11 });
+    const { service, reviews } = serviceFor(events);
+    service.request(REVIEWED_ID, 3, "standard");
+    await service.idle();
+    const saved = reviews.list(REVIEWED_ID, 3, "decision").at(-1);
+    if (saved === undefined) throw new Error("Review が作られていない");
+
+    // 画面が読む応答（最新の状態と、Version を指定した読み）は、保存した Evidence を作り直さずそのまま返す。
+    const status = service.status(REVIEWED_ID, 3);
+    const version = service.version(REVIEWED_ID, 3, saved.version);
+    if (!status.ok || !version.ok) throw new Error("応答が読めない");
+    expect(status.value.latest?.evidence.opponentObservation).toEqual(
+      saved.evidence.opponentObservation,
+    );
+    expect(version.value.evidence.opponentObservation).toEqual(
+      saved.evidence.opponentObservation,
+    );
+    expect(saved.evidence.opponentObservation.status).toBe("available");
+
+    // 応答に、CPU の Private Memory / Hypothesis・Persona・Tilt を指す語が無く、判断時点で Hero に見えない札（Learning-only Reveal の元）も無い。
+    for (const payload of [status.value, version.value]) {
+      const json = JSON.stringify(payload).toLowerCase();
+      expect(forbiddenKeys(payload)).toEqual([]);
+      for (const word of [
+        "memory",
+        "hypothesis",
+        "tilt",
+        "persona",
+        "phase7_memory",
+        "phase7_tilt",
+      ]) {
+        const at = json.indexOf(word);
+        expect(
+          at < 0 ? "" : json.slice(Math.max(0, at - 60), at + 60),
+          word,
+        ).toBe("");
+      }
+      expect(leakedCards(payload, REVIEWED, HERO, saved.actionSeq)).toEqual([]);
     }
   });
 

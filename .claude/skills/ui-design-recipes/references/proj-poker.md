@@ -51,7 +51,7 @@
 | Hand の結果・Session 終了 | `App.tsx` の `HandResult` / `SessionEnded`（狭い画面は `.result--docked`） |
 | Hero 欄 | `App.tsx` の `HeroDock`（`.dock`・画面下に sticky） |
 | Replay | `components/ReplayScreen.tsx` + `hooks/useReplay.ts` + `lib/replay.ts`（卓・進行ログ・Hero 欄は卓の画面と同じ部品） |
-| Review | `components/ReviewScreen.tsx` / `ReviewPass.tsx` / `ReviewEvidence.tsx` / `FollowUp.tsx` |
+| Review | `components/ReviewScreen.tsx` / `ReviewPass.tsx` / `ReviewEvidence.tsx` / `FollowUp.tsx`。根拠の欄の卓の傾向は `ReviewEvidence.tsx` の `TableTendencyView`（`.tendency`。項目ごとに名前・割合と分子 / 分母・機会があった Hand・十分か保留かの 1 つの面。560px 以上は列をそろえ、狭い画面は折り返す。十分か保留かは色と文字の両方で示す） |
 | 狭い画面の判定（JS） | `hooks/useNarrowScreen.ts`（`NARROW_SCREEN_QUERY`。テストが CSS の `@media` と同じ値かを検査） |
 
 ## 画面幅と卓の配置規則
