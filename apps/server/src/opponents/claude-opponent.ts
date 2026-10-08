@@ -52,14 +52,17 @@ const SYSTEM_PROMPT = [
 /**
  * Memory の節の見出しと読み方（D121・#139）。中身は構造化データ（memory-summary.ts）で、ここは固定の説明だけ。
  * 使い方の強さは Persona の「相手への適応」「相手の読みの精度」に任せる（数値の反映を LLM に計算させない）。
+ * Persona の節を指す 1 行は、Persona の節があるときだけ足す（MEMORY_PERSONA_LINE。条件付きの指示を文で書かない）。
  */
 const MEMORY_GUIDE = [
   "## あなたの記憶（過去の Hand で、あなた自身が卓で観察した相手の傾向）",
   "subjects の playerId はこの Hand での相手の席、handsObserved はあなたがその相手を見た Hand の数（0 は初めての相手）です。",
   "items の frequency は最近の Hand ほど重く数えた割合です（vpip: 自分から Pot に入れた / pfr: Preflop で Raise した / three_bet: 3-bet した / fold_to_three_bet: 3-bet に Fold した / cbet_flop: Flop で C-bet した / fold_to_cbet_flop: Flop の C-bet に Fold した / aggression_frequency: Postflop で Bet か Raise をした）。",
   "sufficient が false の項目は Sample が足りない推測です。evidenceIds は元になった Action（hand_id#seq）です。",
-  "あなたの性格の「相手への適応」と「相手の読みの精度」の程度に合わせて使ってください。",
 ].join("\n");
+
+const MEMORY_PERSONA_LINE =
+  "あなたの性格の「相手への適応」と「相手の読みの精度」の程度に合わせて使ってください。";
 
 export class ClaudeOpponent implements OpponentAgent {
   constructor(private readonly options: ClaudeOpponentOptions) {}
@@ -110,7 +113,8 @@ export function buildOpponentPrompt(
 ): string {
   const sections: string[] = [];
   // Persona は中身があるときだけ節ごと入れる（条件付きの指示を文で書かない）。
-  if (persona !== undefined && persona.trim() !== "") {
+  const hasPersona = persona !== undefined && persona.trim() !== "";
+  if (hasPersona) {
     sections.push(`## あなたの性格\n${persona.trim()}`);
   }
   // Memory は Hand の中の情報と分けて、説明付きの節に出す。Memory の無い CPU では節ごと入れず、この Hand の情報の節は
@@ -121,7 +125,10 @@ export function buildOpponentPrompt(
     JSON.stringify(table, cardReplacer),
   );
   if (memory !== undefined) {
-    sections.push(MEMORY_GUIDE, JSON.stringify(memory));
+    sections.push(
+      hasPersona ? `${MEMORY_GUIDE}\n${MEMORY_PERSONA_LINE}` : MEMORY_GUIDE,
+      JSON.stringify(memory),
+    );
   }
   sections.push(
     "## 選べる Action",

@@ -388,6 +388,15 @@ describe("buildOpponentPrompt", () => {
     expect(
       withMemory.replace(sections[at] + "\n\n" + sections[at + 1] + "\n\n", ""),
     ).toBe(prompt);
+    // Persona の節を指す行は、Persona の節があるときだけ入れる。
+    expect(withMemory).not.toContain("相手への適応");
+    const withPersona = buildOpponentPrompt(
+      { ...input, knowledge: { ...input.knowledge, memory } },
+      "タイトで慎重",
+    );
+    expect(withPersona).toContain(
+      "「相手への適応」と「相手の読みの精度」の程度に合わせて",
+    );
   });
 
   it("選べる Action と bet / raise の額の範囲を書き、自分の札は表記で入れる", () => {
