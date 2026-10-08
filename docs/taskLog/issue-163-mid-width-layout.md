@@ -49,7 +49,13 @@ User Read（読みを記録）を開いた 720×600 でも欄は約 292px（卓�
 
 ## 実行した確認
 
-E2E_RESULTS_PLACEHOLDER
+- ルートで `pnpm lint` / `pnpm typecheck` / `pnpm test`（web・server 含む全 package）/ `pnpm format:check` を通した。
+- 修正前の `styles.css`（`origin/main`）に戻すと `table-layout.spec.ts` が 720×600 の Hand の途中で失敗する（`Error: Hand の途中 720×600: 「戻す」の中心が別の要素に覆われている`）。修正後は通る（約 8 秒）。
+- 画面の確認（スクリーンショット）: 720×600・900×700・1023×768・1024×768・1280×720・375×667・320×568 の Hero の手番、720×600 と 900×700 の User Read を開いた状態、720×600 の Hand の終わりを Playwright の一時スクリプトで撮って見た（リポジトリには入れていない）。
+- `pnpm e2e --repeat-each=10`（全 10 本 × 10 = 100 件。新しい検査 1 本を含む）を 3 回流した:
+  - 1 回目: 100 passed（11.4m）
+  - 2 回目: 100 passed（11.3m）
+  - 3 回目: 100 passed（11.3m）
 
 ## 残課題
 
