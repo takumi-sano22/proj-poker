@@ -4,9 +4,10 @@
 // Fallback・Emergency Bot）を時々置き、時々 Hand を打ち切る（HAND_ABORTED。D95）。その Event Log の全判断について、
 // Information Set に未来の Card・他者の Hidden Cards・system / engine の Event・Learning-only Reveal が入らないことを確かめる。
 // fast-check の seed は実行ごとに変わる（POKER_PROPERTY_SEED で固定。testing/property.ts）。失敗時は fast-check が seed と縮小済みの反例を出すので、Scenario へ昇格させる。
+// この Property は「任意の入力で不変条件が崩れない」だけを担当する。「River まで進む Hand・Out-of-Turn の拘束・打ち切り等を通したか」の
+// 網羅は random の seed に期待せず、固定 Scenario（hand-summary.test.ts。検査は testing/hand-summary-checks.ts を共有）が担当する（#167）。
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
-import { cardToString } from "./card.js";
+import { describe, it } from "vitest";
 import type { HandEvent, SeatInit } from "./hand-events.js";
 import {
   applyAction,
@@ -17,28 +18,16 @@ import {
   startHand,
   type HandProgress,
 } from "./hand-engine.js";
-import {
-  extractImportantSpots,
-  heroInformationSets,
-  projectHandSummary,
-} from "./hand-summary.js";
-import { foldHandEvents, type HandState } from "./hand-state.js";
-import { projectLearningReveal } from "./learning-reveal.js";
+import type { HandState } from "./hand-state.js";
 import {
   getLegalActions,
   type LegalAction,
   type PlayerAction,
 } from "./legal-actions.js";
-import { projectKnowledgeState } from "./projection.js";
 import type { PhysicalAction } from "./ruling.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
-import {
-  collectCards,
-  hiddenMarkers,
-  leakedCards,
-  tamperHiddenEvents,
-  testMetadata,
-} from "./testing/view-leaks.js";
+import { checkHand } from "./testing/hand-summary-checks.js";
+import { testMetadata } from "./testing/view-leaks.js";
 import { propertyParams } from "./testing/property.js";
 
 const MAX_STEPS = 500;
@@ -217,125 +206,8 @@ function playHand(
   return events;
 }
 
-const cardsIn = (value: unknown) => collectCards(value).map(cardToString);
-
-/** 検査が空振りしていないことの記録（裁定の入った判断・Out-of-Turn の拘束・打ち切り・Important Spot を通ったか）。 */
-const seen = new Set<string>();
-
-function checkHand(events: readonly HandEvent[]) {
-  const sets = heroInformationSets(events, HERO);
-  if (events.some((e) => e.type === "HAND_ABORTED")) seen.add("aborted");
-  if (events.some((e) => e.type === "EMERGENCY_BOT_ENGAGED"))
-    seen.add("system");
-  for (const s of sets) {
-    if (s.decision.rulingNotes.length > 0) seen.add("ruling");
-    if (s.decision.rulingNotes.includes("out_of_turn_binding")) seen.add("oot");
-    if (s.knowledge.street === "river") seen.add("river");
-  }
-  const heroActions = events.filter(
-    (e) => e.type === "ACTION_TAKEN" && e.playerId === HERO,
-  );
-  expect(sets.map((s) => s.decision.actionSeq)).toEqual(
-    heroActions.map((e) => e.seq),
-  );
-
-  for (const set of sets) {
-    const { decision } = set;
-    // 判断時点までの、Hero に見える Event だけ（system・engine・他者宛ての private が無い）。
-    expect(set.events.every((e) => e.seq <= decision.decisionPointSeq)).toBe(
-      true,
-    );
-    expect(
-      set.events.every(
-        (e) =>
-          e.visibility.type === "public" ||
-          (e.visibility.type === "private" && e.visibility.playerId === HERO),
-      ),
-    ).toBe(true);
-    // 判断時点の卓: Hero が手番で、Legal Action がある。
-    expect(set.knowledge.actorId).toBe(HERO);
-    expect(set.knowledge.legalActions?.playerId).toBe(HERO);
-    // 判断時点の全情報の State と比べて、Hero が知り得ない Card（他者の札・未来の Card）が無い。
-    const truth = foldHandEvents(
-      events.filter((e) => e.seq <= decision.decisionPointSeq),
-    );
-    expect(leakedCards(set, truth, HERO)).toEqual([]);
-    expect(hiddenMarkers(set)).toEqual([]);
-    expect(JSON.stringify(set)).not.toContain("teleport");
-    // 判断より後の Event を切り落としても同じ（未来を読まない）。
-    const truncated = heroInformationSets(
-      events.filter((e) => e.seq <= decision.actionSeq),
-      HERO,
-    );
-    expect(truncated[decision.index]).toEqual(set);
-  }
-  // 見えない Event の中身を差し替えても同じ（中身が届く経路が無い）。
-  expect(heroInformationSets(tamperHiddenEvents(events, HERO), HERO)).toEqual(
-    sets,
-  );
-
-  // Important Spot は判断の部分列で、同じ入力から同じ結果になる。
-  const spots = extractImportantSpots(sets);
-  if (spots.length > 0) seen.add("spot");
-  expect(extractImportantSpots(heroInformationSets(events, HERO))).toEqual(
-    spots,
-  );
-  for (const spot of spots) {
-    expect(spot.reasons.length).toBeGreaterThan(0);
-    expect(sets[spot.decisionIndex]?.decision.decisionPointSeq).toBe(
-      spot.decisionPointSeq,
-    );
-  }
-
-  // Hand Summary: Hero に見える情報だけで、終わった Hand の Chip は保存される。
-  const summary = projectHandSummary(events, HERO);
-  const final = foldHandEvents(events);
-  expect(leakedCards(summary, final, HERO)).toEqual([]);
-  expect(hiddenMarkers(summary)).toEqual([]);
-  expect(summary.importantSpots).toEqual(spots);
-  const aborted = events.some((e) => e.type === "HAND_ABORTED");
-  expect(summary.outcome).toBe(aborted ? "aborted" : "complete");
-  if (summary.finalStacks !== null) {
-    const sum = (xs: readonly number[]) => xs.reduce((a, b) => a + b, 0);
-    expect(sum(summary.finalStacks.map((s) => s.amount))).toBe(
-      sum(summary.seats.map((s) => s.stack)),
-    );
-    expect(summary.totalPot).toBe(
-      sum(summary.pots.flatMap((p) => p.awards.map((a) => a.amount))),
-    );
-  }
-
-  // Learning-only Full Reveal: Hand の後だけ出し、そこでだけ見える札（公開されなかった他者の札）は
-  // Pass A の入力・Summary・どの CPU の KnowledgeState（全 prefix）にも入らない（INV-TEST-008 に相当）。
-  const reveal = projectLearningReveal(events);
-  expect(reveal).not.toBeNull();
-  const shown = new Set(
-    final.players
-      .filter((p) => p.shown)
-      .flatMap((p) => p.holeCards ?? [])
-      .map(cardToString),
-  );
-  for (const { playerId, cards } of reveal?.holeCards ?? []) {
-    const revealOnly = cards.map(cardToString).filter((c) => !shown.has(c));
-    if (playerId !== HERO) {
-      for (const value of [sets, summary]) {
-        for (const c of revealOnly) expect(cardsIn(value)).not.toContain(c);
-      }
-    }
-    for (let n = 1; n <= events.length; n++) {
-      for (const p of final.players) {
-        if (p.playerId === HERO || p.playerId === playerId) continue;
-        const knowledge = projectKnowledgeState(events.slice(0, n), p.playerId);
-        for (const c of revealOnly) expect(cardsIn(knowledge)).not.toContain(c);
-        expect(hiddenMarkers(knowledge)).toEqual([]);
-      }
-    }
-  }
-}
-
 describe("判断時点の Hero Information Set・Hand Summary（Property）", () => {
   it("どの判断の Information Set にも、未来の Card・他者の Hidden Cards・system の Event・Learning-only Reveal が入らない", () => {
-    const params = propertyParams(150);
     fc.assert(
       fc.property(
         fc.integer({ min: 2, max: 6 }),
@@ -349,19 +221,10 @@ describe("判断時点の Hero Information Set・Hand Summary（Property）", ()
           const seats = stacks
             .slice(0, n)
             .map((stack, i) => ({ playerId: `p${i}`, stack }));
-          checkHand(playHand(seats, seed, choices));
+          checkHand(playHand(seats, seed, choices), HERO);
         },
       ),
-      params,
+      propertyParams(150),
     );
-    // 網羅の確認が落ちたときも、seed から同じ入力で再現できるようメッセージへ入れる（#95）。
-    expect([...seen].sort(), `網羅の確認（seed=${params.seed}）`).toEqual([
-      "aborted",
-      "oot",
-      "river",
-      "ruling",
-      "spot",
-      "system",
-    ]);
   });
 });

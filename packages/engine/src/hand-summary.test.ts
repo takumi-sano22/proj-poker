@@ -20,10 +20,15 @@ import {
 } from "./hand-summary.js";
 import type { HandState } from "./hand-state.js";
 import { projectLearningReveal } from "./learning-reveal.js";
-import type { PlayerAction } from "./legal-actions.js";
+import { getLegalActions, type PlayerAction } from "./legal-actions.js";
 import { projectKnowledgeState, visibleEvents } from "./projection.js";
 import type { PhysicalAction } from "./ruling.js";
 import { PHASE1_CASH_PRESET } from "./table-config.js";
+import {
+  checkHand,
+  COVERAGE_KINDS,
+  type CoverageKind,
+} from "./testing/hand-summary-checks.js";
 import { collectCards, hiddenMarkers } from "./testing/view-leaks.js";
 import { stackedDeck } from "./testing/stacked-deck.js";
 
@@ -500,5 +505,143 @@ describe("Learning-only Full Reveal", () => {
         expect(hiddenMarkers(knowledge)).toEqual([]);
       }
     }
+  });
+});
+
+/** 手番の Player が Check できれば Check、できなければ Call で、Hand を最後まで進める（Showdown まで）。 */
+function checkDown(hand: Hand): Hand {
+  let current = hand;
+  while (current.state.status === "in_progress") {
+    const legal = getLegalActions(current.state);
+    if (legal === null) throw new Error("進行中なのに Actor がいない");
+    const canCheck = legal.actions.some((a) => a.type === "check");
+    current = act(current, legal.playerId, canCheck ? check : call);
+  }
+  return current;
+}
+
+/** Hand を打ち切る（HAND_ABORTED → SESSION_ENDED。D95）。 */
+function abort(hand: Hand): Hand {
+  const aborted = recordSessionEvent(hand.state, {
+    type: "HAND_ABORTED",
+    reason: "ai_outage",
+  });
+  const ended = recordSessionEvent(aborted.state, {
+    type: "SESSION_ENDED",
+    sessionId: "s1",
+    reason: "ai_outage",
+  });
+  return {
+    state: ended.state,
+    events: [...hand.events, ...aborted.events, ...ended.events],
+  };
+}
+
+// Property（hand-summary.property.test.ts）は任意の入力で不変条件が崩れないことを担当し、「その種類の Hand を通したか」の網羅は
+// random の seed に期待せず、ここの固定 Scenario が担当する（#167。seed によって River まで進む Hand が 1 つも出ず CI が赤くなった）。
+// Property と同じ検査（checkHand）を、各種類の Hand に決定論で通す。
+describe("Property の検査を通す Hand の網羅（固定 Scenario。#167）", () => {
+  const scenarios: {
+    title: string;
+    hero: string;
+    kinds: CoverageKind[];
+    build: () => Hand;
+  }[] = [
+    {
+      title:
+        "River まで進み Showdown する Hand（Preflop → River の全 Street に Hero の判断がある）",
+      hero: "utg",
+      kinds: ["river"],
+      build: fullHand,
+    },
+    {
+      title: "All-in に直面した判断のある Hand（Important Spot が出る）",
+      hero: "bb",
+      kinds: ["spot"],
+      build: () =>
+        play(start(), [
+          ["utg", { type: "all_in" }],
+          ["btn", fold],
+          ["sb", fold],
+          ["bb", call],
+        ]),
+    },
+    {
+      title: "Dealer の裁定（Oversized Chip）が Hero の判断に入る Hand",
+      hero: "utg",
+      kinds: ["ruling"],
+      build: () =>
+        checkDown(
+          physical(start(), "utg", [{ type: "chip_push", chips: [5] }]),
+        ),
+    },
+    {
+      title: "Out-of-Turn の操作を手番で拘束する Hand",
+      hero: "btn",
+      kinds: ["oot"],
+      build: () => {
+        let hand = physical(start(), "btn", [
+          { type: "declare", declaration: { kind: "call" } },
+        ]);
+        hand = act(hand, "utg", call);
+        const resolved = resolvePendingOutOfTurn(
+          hand.state,
+          PHASE1_CASH_PRESET,
+        );
+        if (!resolved.ok) throw new Error(resolved.error.message);
+        return checkDown({
+          state: resolved.value.state,
+          events: [...hand.events, ...resolved.value.events],
+        });
+      },
+    },
+    {
+      title:
+        "CPU（utg）の system の記録（Emergency Bot）があり、途中で打ち切った Hand",
+      hero: "btn",
+      kinds: ["aborted", "system"],
+      build: () => {
+        // Session の開始 → Emergency Bot の記録（system の Event）→ 通常どおり進めて打ち切る。
+        const started = start();
+        const session = recordSessionEvent(started.state, {
+          type: "SESSION_STARTED",
+          sessionId: "s1",
+        });
+        const bot = recordSessionEvent(session.state, {
+          type: "EMERGENCY_BOT_ENGAGED",
+          playerId: "utg",
+          cause: "timeout",
+        });
+        const hand = play(
+          {
+            state: bot.state,
+            events: [...started.events, ...session.events, ...bot.events],
+          },
+          [
+            ["utg", call],
+            ["btn", { type: "raise", amount: 8 }],
+          ],
+        );
+        return abort(hand);
+      },
+    },
+  ];
+
+  // 各 Scenario が狙いの種類を通したことは、それぞれの it で確かめる（空振りしていない）。
+  for (const { title, hero, kinds, build } of scenarios) {
+    it(title, () => {
+      const seen = new Set<CoverageKind>();
+      checkHand(build().events, hero, seen);
+      for (const kind of kinds) expect(seen.has(kind)).toBe(true);
+    });
+  }
+
+  // 全 Scenario をこの it の中で流して集める（他の it の実行順・選択に依存しない）。
+  it("上の Scenario で、Property の検査が見る全ての種類（River・Out-of-Turn・裁定・打ち切り・system・Important Spot）を通している", () => {
+    const covered = new Set<CoverageKind>();
+    for (const { hero, build } of scenarios) {
+      checkHand(build().events, hero, covered);
+    }
+    expect([...covered].sort()).toEqual([...COVERAGE_KINDS].sort());
   });
 });

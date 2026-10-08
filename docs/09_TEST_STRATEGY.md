@@ -319,6 +319,8 @@ Fuzz Testだけで明示的Rule Scenarioを置き換えないでください。
 
 再現できるようにするため、Property Test（fast-check）は共通のパラメータ（`packages/engine/src/testing/property.ts`の`propertyParams`）でseedを1つに決めて流します。失敗したときはfast-checkの出力（`{ seed: …, path: … }`と縮小済みのCounterexample）がCIのログに出るので、`POKER_PROPERTY_SEED=<seed> pnpm --filter @proj-poker/engine test`で同じ入力を再現し、縮小した反例をScenarioへ昇格させます。`POKER_PROPERTY_RUNS_FACTOR=<整数>`でケース数を倍にでき（時間切れも同じ倍率で延びます）、数万ケースの繰り返しに使います。1テストの時間切れは30秒です（既定の5秒だと、負荷の高いCIで時間切れになり、seedも反例も残らないまま落ちるため。#95）。
 
+Propertyは「任意の入力で不変条件が崩れない」だけを担当します。「River まで進むHand・Out-of-Turnの拘束・打ち切りなど、その種類のHandを検査に通したか」の網羅は、randomなseedに期待せず固定Scenarioで担当します（seedによってはそのHandが1つも出ず、Engineが正しくてもCIが赤になるため。#167）。例として`hand-summary`は、検査を`testing/hand-summary-checks.ts`にまとめ、Propertyと`hand-summary.test.ts`の固定Scenarioが同じ検査を共有します。
+
 ## 10. Session Learning（Phase 6）のテスト
 
 Phase 6 → 7のGate（`docs/08` §3.2）の項目と、それを確かめるテストの対応です。Stats・Score・Profile・Hypothesisはどれも、Event Logと`reviews`（Pass A）から読むたびに作り直すProjectionです（D37・D113）。
