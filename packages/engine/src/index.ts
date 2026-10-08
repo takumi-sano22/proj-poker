@@ -102,6 +102,27 @@ export type {
   UserReadInput,
 } from "./hand-engine.js";
 
+export {
+  TOURNAMENT_CONFIG_VERSION,
+  TOURNAMENT_PRESET_IDS,
+  TOURNAMENT_PRESETS,
+  isTournamentPresetId,
+  sessionSettingsOf,
+  tableConfigForLevel,
+  validateTournamentConfig,
+} from "./tournament.js";
+export type {
+  AnteKind,
+  BlindLevel,
+  BlindSchedule,
+  PayoutStructure,
+  SessionMode,
+  SessionSettings,
+  TournamentConfig,
+  TournamentPresetId,
+  TournamentSession,
+} from "./tournament.js";
+
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
 export type {
   Declaration,

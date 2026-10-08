@@ -6,6 +6,7 @@
 // CPU の障害の状態（どの CPU の手番か・障害の種類だけ。D86）だけ
 // （他者の Hole Cards・Deck・seed・CPU の Persona・内部のエラー本文を含めない）。
 import {
+  TOURNAMENT_PRESET_IDS,
   USER_READ_TEXT_MAX,
   type HeroView,
   type PhysicalAction,
@@ -17,7 +18,9 @@ import type {
   OrchestratorError,
   OutageChoice,
   OutageStatus,
+  SessionRequest,
   SessionStatus,
+  StartHandError,
 } from "../hand-orchestrator.js";
 
 interface HandParams {
@@ -27,6 +30,11 @@ interface HandParams {
 interface StartHandBody {
   /** クライアントが結果まで見た最後の Hand（まだ無ければ null）。開始の再送と「次の Hand」を区別する。 */
   afterHandId: string | null;
+  /**
+   * 新しい Session の設定（mode と Tournament の Preset。#183）。省略すると、続く Session はそのまま続け、新しい Session は cash。
+   * 今の Session が続いているときに違う設定を求めたら 409（session_mode_mismatch）。
+   */
+  session?: SessionRequest;
 }
 
 interface HeroActionBody {
@@ -76,6 +84,25 @@ const startHandBodySchema = {
       anyOf: [
         { type: "string", minLength: 1, maxLength: 64 },
         { type: "null" },
+      ],
+    },
+    session: {
+      anyOf: [
+        {
+          type: "object",
+          required: ["mode"],
+          additionalProperties: false,
+          properties: { mode: { const: "cash" } },
+        },
+        {
+          type: "object",
+          required: ["mode", "presetId"],
+          additionalProperties: false,
+          properties: {
+            mode: { const: "tournament" },
+            presetId: { enum: TOURNAMENT_PRESET_IDS },
+          },
+        },
       ],
     },
   },
@@ -211,8 +238,9 @@ const outageChoiceBodySchema = {
 } as const;
 
 /** 失敗の種類を HTTP Status へ写す。 */
-const STATUS_BY_ERROR: Record<OrchestratorError["kind"], number> = {
+const STATUS_BY_ERROR: Record<StartHandError["kind"], number> = {
   hand_not_found: 404,
+  session_mode_mismatch: 409,
   stale_view: 409,
   stale_outage: 409,
   not_spectating: 409,
@@ -222,7 +250,10 @@ const STATUS_BY_ERROR: Record<OrchestratorError["kind"], number> = {
   invalid_input: 422,
 };
 
-function sendError(reply: FastifyReply, error: OrchestratorError) {
+function sendError(
+  reply: FastifyReply,
+  error: OrchestratorError | StartHandError,
+) {
   return reply
     .code(STATUS_BY_ERROR[error.kind])
     .send({ error: { kind: error.kind, message: error.message } });
@@ -256,7 +287,10 @@ export function registerHandRoutes(
     "/api/hands",
     { schema: { body: startHandBodySchema } },
     async (request, reply) => {
-      const result = await orchestrator.startHand(request.body.afterHandId);
+      const result = await orchestrator.startHand(
+        request.body.afterHandId,
+        request.body.session,
+      );
       if (!result.ok) return sendError(reply, result.error);
       const { handId, view, created } = result.value;
       return reply.code(created ? 201 : 200).send({

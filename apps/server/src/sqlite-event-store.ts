@@ -53,6 +53,8 @@ import {
  *   変換せずに読む（版 1〜6 の行にこの種類は無く、作り直しもしない）
  * - 8: Hero の User Read USER_READ_RECORDED を足す（D112・#115）。既存の Event の形は変えていないので、版 7 の行も変換せずに読む
  *   （版 1〜7 の行にこの種類は無い）
+ * 版 8 のまま SESSION_STARTED に任意項目 tournament（Tournament の設定の Snapshot。D129・#183）を足した。cash の Session は項目を
+ * 持たず、項目の無い SESSION_STARTED は cash として読む（旧版の行の読み方が変わらない）ので、任意項目の追加として版を上げない（docs/04 §3）。
  */
 export const EVENT_SCHEMA_VERSION = 8;
 
