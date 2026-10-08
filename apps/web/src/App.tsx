@@ -321,11 +321,25 @@ interface ViewProps {
   readonly session: HandSession;
 }
 
+/**
+ * Hero の欄に出す Session の終わりの案内の状態（無ければ null）。通常の卓は、画面の幅によらず Hero の欄に出す（#158）。
+ * Drill の卓は Session の終わりを案内しない（Hand が終わったら「卓に戻る」）。
+ */
+function sessionEndInDock(
+  session: HandSession,
+  drill: DrillMode | null,
+): Extract<SessionStatus, { state: "ended" }> | null {
+  const status = session.sessionStatus;
+  return drill === null && status?.state === "ended" ? status : null;
+}
+
 /** 終わった Session の Session Review を開く（その Session の Hand を渡す）。 */
 type OpenSessionReview = (handId: string) => void;
 
 /**
- * 卓の中央の欄: Hand の結果、CPU の障害のダイアログ、障害で Session を終えた後の案内のどれか（無ければ何も出さない）。
+ * 卓の中央の欄（広い画面）: Hand の結果、CPU の障害のダイアログのどれか（無ければ何も出さない）。
+ * Session が終わった後は、獲得額の一覧だけを出す。理由と Button（振り返る・新しい Session）は Hero の欄に置く（#158）。
+ * 結果の欄に Button が縦に 2 つ並ぶと背が高くなり、画面の高さによっては下の Hero の席に覆われて押せないため。
  */
 function TableCenter({
   view,
@@ -337,6 +351,7 @@ function TableCenter({
   readonly onOpenSessionReview: OpenSessionReview;
   readonly drill: DrillMode | null;
 }) {
+  const sessionEnd = sessionEndInDock(session, drill);
   if (view.status === "complete") {
     return (
       <HandResult
@@ -345,18 +360,13 @@ function TableCenter({
         session={session}
         onOpenSessionReview={onOpenSessionReview}
         drill={drill}
+        awardsOnly={sessionEnd !== null}
       />
     );
   }
-  const status = session.sessionStatus;
-  if (status?.state === "ended") {
-    return (
-      <SessionEnded
-        status={status}
-        session={session}
-        onOpenSessionReview={() => onOpenSessionReview(view.handId)}
-      />
-    );
+  if (session.sessionStatus?.state === "ended") {
+    // 障害で打ち切った Hand の後（獲得額の無い Hand）。案内は Hero の欄だけに出す。
+    return null;
   }
   const outage = session.outage?.current;
   if (outage != null) {
@@ -455,6 +465,7 @@ function DockBody({
       : null,
     AI_DELAY_NOTICE_MS,
   );
+  const sessionEnd = sessionEndInDock(session, drill);
   if (view.status === "complete") {
     // 終わった Hand は保存済みなので、その Hand の Review を開ける（卓の Session はそのまま続く）。
     // Drill の Hand は、練習した判断の Review を開く（既存の Pass A の経路。D116）。
@@ -489,6 +500,17 @@ function DockBody({
             docked
             actions={review}
           />
+        ) : sessionEnd !== null ? (
+          // 広い画面でも、Session の終わりの案内は Hero の欄に置く（獲得額の一覧は卓の中央。#158）
+          <>
+            <SessionEnded
+              status={sessionEnd}
+              session={session}
+              onOpenSessionReview={() => onOpenSessionReview(view.handId)}
+              docked
+            />
+            {review}
+          </>
         ) : (
           review
         )}
@@ -496,7 +518,7 @@ function DockBody({
     );
   }
   if (session.sessionStatus?.state === "ended") {
-    return narrow ? (
+    return narrow || sessionEnd !== null ? (
       <SessionEnded
         status={session.sessionStatus}
         session={session}
@@ -669,8 +691,11 @@ function HandResult({
   drill = null,
   docked = false,
   actions = null,
+  awardsOnly = false,
 }: ViewProps & {
   readonly onOpenSessionReview: OpenSessionReview;
+  /** 獲得額の一覧だけを出す（Session の終わりの案内と Button は Hero の欄に出すとき。#158）。 */
+  readonly awardsOnly?: boolean;
   /** Drill の Hand（#117）は 1 Hand だけなので、次の Hand・Session の案内の代わりに「卓に戻る」を出す。 */
   readonly drill?: DrillMode | null;
   readonly docked?: boolean;
@@ -713,7 +738,7 @@ function HandResult({
           </li>
         ))}
       </ul>
-      {status?.state === "ended" && (
+      {!awardsOnly && status?.state === "ended" && (
         <p className="result__session">{sessionEndMessage(status)}</p>
       )}
       {status?.state === "ready_for_next_hand" && (
@@ -726,10 +751,10 @@ function HandResult({
           次の Hand へ
         </button>
       )}
-      {status?.state === "ended" && (
+      {!awardsOnly && status?.state === "ended" && (
         <SessionReviewButton onClick={() => onOpenSessionReview(view.handId)} />
       )}
-      {status?.state === "ended" && (
+      {!awardsOnly && status?.state === "ended" && (
         <button
           type="button"
           className="btn btn--primary btn--md"
