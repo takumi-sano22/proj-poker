@@ -1,4 +1,4 @@
-# D01〜D123の採用済み人間判断。
+# D01〜D124の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -494,3 +494,7 @@
   choice: "Memory 付き Prompt の Claude CPU の実モデル Eval を、API キーを使わず既存の OAuth 経路で、最大 36 Decision に限って録画する（#155 の人間判断）"
   status: "採用済み"
   decision: "Memory・Table Tendency・Tiltが入ったPromptのClaude CPUの品質を、eval:opponentと同じClaude Agent SDK・Claude CodeのOAuth（サブスク枠）・buildClaudeEnvの経路で録画する。API キーは使わず、API課金に切り替わる環境変数は除く（D87）。初回の上限は代表Spot 2・Persona 6・条件最大3（baseline・Loose側・Tight側）・repeat 1の最大36 Decision（Retryを含む呼び出しは最大72回相当）。確認するのは、Memory / Table Tendency / Tiltの戦略への反映の向き・Structured Output / Legal Action / Retry / Fallback・Persona Differentiation・Hidden Information Leakage 0（他CPUのPrivate Memory / Personaを含む）・Latency。CIは実モデルを呼ばず録画の再生だけで、paramsHashでPrompt / Optionsのdriftを検出する。OAuthのログイン・利用枠で実行できなければAPI キーへ切り替えず停止する。D40・D87・D121の具体化。実装は#155。"
+- id: D124
+  choice: "CPU Memory の永続 Cache は、Hand ごとの観察を派生の表（マイグレーション v12）に持ち、読むときに足りない分だけ補う（#150 の測定を受けた人間判断、AskUserQuestion）"
+  status: "採用済み"
+  decision: "#150の測定（実SQLiteで5,000 HandのHandの開始が約0.98秒。約85%がMemory）を受け、CPU Memoryに永続のCacheを足す。Cacheするのは、Handごとに抽出したObservation（Observer別・抽出のVersion付き）で、マイグレーションv12の派生の表に置く。HypothesisのrecencyとSampleの集計は今どおり都度計算し、Cacheに入れない。更新はHandの開始でMemoryを読むときに、Cacheに無いHand（論理順序のordで判定）だけを作って足し、Handの保存のトランザクションは変えない。表は消してもEvent Logから作り直せる派生で正本にしない。DELETEを許し（v6のhypothesis_snapshotsと同じ扱い）、抽出のVersionが変わったら消して作り直す。Opponent Memory Reset（D120）・Guest（D118）・論理順序（D117）の判定は今どおりEvent Log側の情報で行う。D118の「Observationは別の表やEventに書かない」は正本の置き場の規定で、この表は正本ではなく作り直せる派生のCacheなので、D118を変えない。D76・D106・D111・D118の具体化。実装は#165。"

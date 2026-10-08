@@ -12,7 +12,7 @@ description: 実装・設計書・Issue の三者整合を確認し、齟齬を�
 | 対象 | 正本 / 場所 |
 |---|---|
 | docs/ 正本 | `docs/00_DOCUMENTATION_INDEX.md`（索引。矛盾時の優先順位はそこ）〜 `docs/11_OPEN_ITEMS.md` |
-| 採用済み判断 | `docs/decision_log.yaml`（D01〜D123。**AI が上書き禁止**。記録・追記は `decision-log` skill） |
+| 採用済み判断 | `docs/decision_log.yaml`（D01〜D124。**AI が上書き禁止**。記録・追記は `decision-log` skill） |
 | 未確定事項 | `docs/11_OPEN_ITEMS.md`（OI-NNN） |
 | Issue | MVP（Phase 0〜5）は親 Issue #2（MVP Parent・Close 済み）。Post-MVP（Phase 6〜8）は Post-MVP Parent #104 と Phase Parent #105〜#107 の DoD・Phase Gate と sub-issue（D102） |
 | 実装 | リポジトリのコード（現在は実装前。Phase 0 以降で増える） |

@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D123の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D124の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -34,6 +34,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D117 | 意味上の順序（Learning Resetの前後・Replay・Session内のHand・Recent・最新のSession Projection・Resume）は永続的な単調増加の論理順序で決め、壁時計の列は表示・監査のMetadataとして残す。#129・#130は#132でまとめて直し、それまでPhase 6 → 7 Gateを保留する |
 | D118〜D121 | Phase 7 の人間確定事項。席と永続 Identity を結ぶ追記型の session_participants（マイグレーション v10）・Fixed Pool はコードの Version 付き Config（OI-005 の暫定値）・Observation は表に持たず Event Log から決定論で抽出・Guest は Session 限りの Identity（D118）、OI-011 の暫定値（phase7_memory_v1 の指数減衰と Sample の基準・phase7_tilt_v1 の 0〜3 の整数 Tilt。順序は論理順序。D119）、Opponent Memory Reset は追記型の区切りの表（マイグレーション v11）で正本と User Read / Note / Tag を消さない（D120）、P7-0〜P7-9（#135〜#144）を直列・Memory は Evidence ID 付きの上限付き要約で KnowledgeState へ注入し LLM の呼び出しを増やさない（D121） |
 | D122〜D123 | Phase 7 の派生の人間判断。Hero の Review の Evidence に、判断時点より前の public の Table Tendency を構造化 Evidence として入れる（Learning-only Reveal・CPU の Private Memory / Persona・Tilt は使わず、数値は決定論のコードが正本。D122）、Memory 付き Prompt の Claude CPU の実モデル Eval は API キーを使わず OAuth 経路で最大 36 Decision・CI は録画の再生だけ（D123） |
+| D124 | CPU Memory の永続 Cache は、Hand ごとに抽出した Observation（Observer 別・抽出の Version 付き）をマイグレーション v12 の派生の表に持ち、Hand の開始で読むときに足りない Hand だけ補う。Hypothesis の集計は都度計算・表は DELETE 可で正本にしない（#150・#165） |
 
 ## 特に重要なClosed Decision
 
