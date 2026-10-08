@@ -2,7 +2,7 @@
 
 ## 概要
 
-720〜1023px 幅（中間幅）で、画面下に固定した Hero の欄が折り返して高くなり、卓の下側（Hero の席・Board・Pot）を覆った。Hand の途中の Hero の手番では 720×600 で欄が 434px（y=166〜600）になる。#158（PR #162）の残課題。完了条件:
+720〜1023px 幅（中間幅）で、画面下に固定した Hero の欄が折り返して高くなり、卓の下側（Hero の席・Board・Pot）を覆った。Hand の途中の Hero の手番では 720×600 で欄が 434px（y=165〜600）になる。#158（PR #162）の残課題。完了条件:
 
 - 中間幅で Hero の欄の高さが卓の主要な情報（Hero の席・Board・Pot）を覆わない配置にする。
 - 720×600・1024×768 の Hand の途中と Session 終了後で、席と操作の欄が重ならない回帰の検査を足す。
@@ -31,8 +31,8 @@
 
 ## 回帰の検査（`table-layout.spec.ts`）
 
-- 1 つの Session（`POKER_SEED=20261042`）を、画面の大きさ 720×600・1024×768・1280×720・375×667・320×568 ごとに、(1) 最初の Hand の Hero の手番、(2) Hero が Bust して Session が終わった後、の 2 つの状態で測る。Hand は開始の応答の handId で特定し、終わった Hand が server の一覧で complete であることも確かめる（#129・D117）。
-- 測る項目: 席・Board・Pot・結果の欄が互いに交差しない／Hero 欄のすべての Button の中心を Button 自身が受ける／横スクロールが無い／720px 以上は Hero の席・Board・Pot の高さが「画面の高さ − Hero 欄の高さ」に収まる／宣言 Button（Hand の途中）と「この Session を振り返る」「新しい Session を始める」（Session の終わり）を `click({ trial: true })` で押せる（force なし。押下はしない。確定 Button は Chip を出すまで disabled なので除く）。
+- 1 つの Session（`POKER_SEED=20261042`）を、画面の大きさ 720×600・1024×768・1280×720・375×667・320×568 ごとに、(1) 最初の Hand の Hero の手番、(2) その Hand の終わり（Session は続く。卓の中央の結果と Hero 欄の「この Hand の Review」）、(3) Hero が Bust して Session が終わった後、の 3 つの状態で測る。Hand は開始の応答の handId で特定し、終わった Hand が server の一覧で complete であることも確かめる（#129・D117）。
+- 測る項目: 席・Board・Pot・結果の欄が互いに交差しない／Hero 欄のすべての Button の中心を Button 自身が受ける／横スクロールが無い／720px 以上は Hero の席・Board・Pot の高さが「画面の高さ − Hero 欄の高さ」に収まる／宣言 Button（Hand の途中）・「次の Hand へ」（Hand の終わり）・「この Session を振り返る」「新しい Session を始める」（Session の終わり）を `click({ trial: true })` で押せる（force なし。押下はしない。確定 Button は Chip を出すまで disabled なので除く）。
 - 修正前の `styles.css` に戻すと、720×600 の Hand の途中で「戻す」の中心が別の要素（潰れた Betting Area）に覆われて失敗する（修正前に確かめた）。
 - 既存の `session-end-layout.spec.ts`（#158）は変えていない。
 
@@ -45,7 +45,7 @@
 | 1023×768 | 318px | 216px |
 | 1024×768 / 1280×720 / 375×667 / 320×568 | 297 / 222 / 377 / 453px | 変わらない |
 
-User Read（読みを記録）を開いた 720×600 でも欄は 302px（卓の下側は見える。ボタンは覆われない）。
+User Read（読みを記録）を開いた 720×600 でも欄は約 292px（卓の下側は見える。ボタンは覆われない）。
 
 ## 実行した確認
 

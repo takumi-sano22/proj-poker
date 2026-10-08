@@ -1,5 +1,5 @@
 // 卓の配置の E2E（#163）: 720〜1023px の中間幅で、画面下に固定した Hero の欄が折り返して高くなり（720×600 で 434px）、卓の下側を
-// 覆っていた。Hand の途中（Hero の手番）と Session の終わりの両方を、画面の大きさ（720×600・1024×768・1280×720・375×667・320×568）ごとに
+// 覆っていた。Hand の途中（Hero の手番）・Hand の終わり・Session の終わりを、画面の大きさ（720×600・1024×768・1280×720・375×667・320×568）ごとに
 // 測り、席・Board・Pot・操作の欄・Session の終わりの Button に、操作できなくなる重なりが無いことを確かめる。
 // 山札の seed は session-end-layout.spec.ts と同じ（既定の 6 人卓・Hero が Call / Check だけで打つと数 Hand で Bust する）。
 import { mkdtempSync, rmSync } from "node:fs";
@@ -49,7 +49,7 @@ test.afterEach(async ({}, testInfo) => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("Hand の途中（Hero の手番）と Session の終わりで、中間幅を含む画面の大きさごとに、卓と Hero 欄が操作できなくなる重なりを作らない", async ({
+test("Hand の途中（Hero の手番）・Hand の終わり・Session の終わりで、中間幅を含む画面の大きさごとに、卓と Hero 欄が操作できなくなる重なりを作らない", async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -76,6 +76,22 @@ test("Hand の途中（Hero の手番）と Session の終わりで、中間幅�
         "オールイン（All-in）",
       ]);
     }
+  });
+
+  await test.step("Hand の終わり（Session は続く）", async () => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await playToHandEnd(page);
+    expect(await sessionEnded(page), "Session は続いている").toBe(false);
+    for (const { width, height } of LAYOUT_VIEWPORTS) {
+      await page.setViewportSize({ width, height });
+      await expect(dock.getByText("Hand が終了しました。")).toBeVisible();
+      await expectNoBlockingOverlap(page, `Hand の終わり ${width}×${height}`);
+      // 「次の Hand へ」は、広い画面は卓の中央・狭い画面は Hero 欄の結果の中にある。
+      await page
+        .getByRole("button", { name: "次の Hand へ" })
+        .click({ trial: true });
+    }
+    handIds.push(await startNextHand(page));
   });
 
   await test.step("Hero が Bust して Session が終わるまで Play する（既定の 1280×720）", async () => {
