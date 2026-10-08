@@ -55,6 +55,8 @@ function playHand(input: {
   readonly handId: string;
   readonly seats: readonly string[];
   readonly folds?: ReadonlySet<string>;
+  /** Preflop の最初の手番で最小額の Raise をする席。 */
+  readonly raises?: ReadonlySet<string>;
   readonly sessionStartedId?: string;
 }): HandEvent[] {
   const started = startHand({
@@ -87,16 +89,25 @@ function playHand(input: {
     state = s.state;
     events.push(...s.events);
   }
+  const raised = new Set<string>();
   for (let step = 0; state.status !== "complete"; step++) {
     const legal = getLegalActions(state);
     if (legal === null || step > 60) throw new Error("Hand が進まない");
     const types = legal.actions.map((a) => a.type);
+    const raise = legal.actions.find((a) => a.type === "raise");
+    const raiseFirst =
+      input.raises?.has(legal.playerId) === true &&
+      !raised.has(legal.playerId) &&
+      raise !== undefined;
+    if (raiseFirst) raised.add(legal.playerId);
     const action: PlayerAction =
-      input.folds?.has(legal.playerId) === true && types.includes("fold")
-        ? { type: "fold" }
-        : types.includes("call")
-          ? { type: "call" }
-          : { type: "check" };
+      raiseFirst && raise.type === "raise"
+        ? { type: "raise", amount: raise.min }
+        : input.folds?.has(legal.playerId) === true && types.includes("fold")
+          ? { type: "fold" }
+          : types.includes("call")
+            ? { type: "call" }
+            : { type: "check" };
     const progressed = act(state, legal.playerId, action);
     state = progressed.state;
     events.push(...progressed.events);
@@ -244,6 +255,47 @@ describe("Private Hypothesis: 集計と recency decay", () => {
     );
     expect(expected.length).toBeGreaterThan(0);
     expect(vpip.evidence).toEqual(expected);
+  });
+
+  it("Evidence は寄与を決めた Action だけで、同じ Street の別の Action を入れない", () => {
+    // Ben（Button）が Call → Hero（SB）が Raise → Ben が Call。VPIP は最初の Call、3-bet の機会は Raise に直面した 2 回目の Call。
+    const store = new InMemoryEventStore({ ordinals: createOrdinalCounter() });
+    const events = playHand({
+      handId: "h1",
+      seats: ["cpu2", HERO, "cpu1"],
+      raises: new Set([HERO]),
+      sessionStartedId: "s1",
+    });
+    store.append("h1", events, {
+      sessionId: "s1",
+      participants: [fixed("cpu1", "fixed_aki"), fixed("cpu2", "fixed_ben")],
+    });
+    const benPreflop = events
+      .filter(
+        (e) =>
+          e.type === "ACTION_TAKEN" &&
+          e.playerId === "cpu2" &&
+          e.street === "preflop",
+      )
+      .map((e) => e.seq);
+    expect(benPreflop).toHaveLength(2);
+    const ben = hypothesisOf(
+      buildOpponentHypothesesFromStore(store, query(AKI, "s1"), {
+        observerSkill: SKILL,
+      }),
+      BEN,
+    );
+    const ord = store.savedOrder("h1");
+    const vpip = tendency(ben, "vpip");
+    expect(vpip.numerator).toBe(1);
+    expect(vpip.evidence).toEqual([{ handId: "h1", seq: benPreflop[0], ord }]);
+    const threeBet = tendency(ben, "three_bet");
+    expect(threeBet).toMatchObject({ numerator: 0, opportunities: 1 });
+    expect(threeBet.evidence).toEqual([
+      { handId: "h1", seq: benPreflop[1], ord },
+    ]);
+    // Postflop の Check は Aggression Frequency の機会ではないので Evidence にも入らない。
+    expect(tendency(ben, "aggression_frequency").evidence).toEqual([]);
   });
 
   it("Subject は Hero と他の CPU で、Observer 自身は入らない。項目は Policy の順", () => {

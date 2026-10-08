@@ -48,7 +48,7 @@ export interface TendencyEstimate {
   readonly opportunities: number;
   /** 重み付きの機会数が、Observer の Skill に応じた基準以上か（不十分なら「保留」として扱う）。 */
   readonly sufficient: boolean;
-  /** この項目に入った Subject の Action の Event（論理順序・seq の順）。 */
+  /** この項目の寄与を決めた Subject の Action の Event（論理順序・seq の順）。 */
   readonly evidence: readonly HypothesisEvidence[];
 }
 
@@ -94,19 +94,37 @@ function definitionOf(item: HypothesisItemId): StatDefinition {
   return def;
 }
 
-/** その Hand の、Subject の Action のうち、寄与した Street のもの（Evidence）。 */
+/**
+ * 寄与を決めた Action（StatContribution.actions）を、その Hand の ACTION_TAKEN の Event（Evidence）へ引く。
+ * toStatsHand は public の ACTION_TAKEN を Event の順に並べるので、hand.actions の添字と seq 順の ACTION_TAKEN が対応する。
+ */
 function evidenceOf(
   entry: SubjectHand,
   contributions: readonly StatContribution[],
 ): HypothesisEvidence[] {
-  const streets = new Set(contributions.map((c) => c.street));
-  return entry.hand.events.flatMap((e): HypothesisEvidence[] =>
-    e.event.type === "ACTION_TAKEN" &&
-    e.event.playerId === entry.playerId &&
-    streets.has(e.event.street)
-      ? [{ handId: entry.hand.handId, seq: e.seq, ord: entry.hand.ord }]
-      : [],
-  );
+  const actionSeqs = entry.hand.events
+    .filter((e) => e.event.type === "ACTION_TAKEN")
+    .map((e) => e.seq);
+  if (actionSeqs.length !== entry.stats.actions.length) {
+    throw new RangeError(
+      `Hand ${entry.hand.handId} の Action の数が Stats の入力と合わない`,
+    );
+  }
+  const seqs = new Set<number>();
+  for (const c of contributions) {
+    for (const action of c.actions) {
+      const seq = actionSeqs[entry.stats.actions.indexOf(action)];
+      if (seq === undefined) {
+        throw new RangeError(
+          `Hand ${entry.hand.handId} の寄与の Action を Event に引けない`,
+        );
+      }
+      seqs.add(seq);
+    }
+  }
+  return [...seqs]
+    .sort((a, b) => a - b)
+    .map((seq) => ({ handId: entry.hand.handId, seq, ord: entry.hand.ord }));
 }
 
 function estimate(

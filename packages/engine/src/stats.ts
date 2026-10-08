@@ -63,6 +63,11 @@ export interface StatContribution {
   readonly numerator: number;
   readonly denominator: number;
   readonly opportunities: number;
+  /**
+   * この寄与を決めた Action（hand.actions の要素そのもの）。集計には使わず、寄与の根拠（Evidence）を Event へ引くために持つ
+   * （CPU の Private Hypothesis が Evidence ID を付ける。#138）。
+   */
+  readonly actions: readonly StatsAction[];
 }
 
 export interface StatDefinition {
@@ -77,9 +82,36 @@ export interface StatDefinition {
   ) => readonly StatContribution[];
 }
 
-/** 機会 1 回の寄与（Percentage の指標）。 */
-function chance(street: Street, hit: boolean): StatContribution {
-  return { street, numerator: hit ? 1 : 0, denominator: 1, opportunities: 1 };
+/** 機会 1 回の寄与（Percentage の指標）。actions はその判定を決めた Action。 */
+function chance(
+  street: Street,
+  hit: boolean,
+  actions: readonly StatsAction[],
+): StatContribution {
+  return {
+    street,
+    numerator: hit ? 1 : 0,
+    denominator: 1,
+    opportunities: 1,
+    actions,
+  };
+}
+
+/**
+ * 「その Street の自分の Action のどれかが条件を満たす」指標の寄与。満たせば最初に満たした Action が、満たさなければ
+ * 自分の Action すべてが判定を決めた Action。
+ */
+function anyChance(
+  street: Street,
+  own: readonly StatsAction[],
+  hit: (a: StatsAction) => boolean,
+): StatContribution {
+  const first = own.find(hit);
+  return chance(
+    street,
+    first !== undefined,
+    first === undefined ? own : [first],
+  );
 }
 
 function streetActions(hand: StatsHand, street: Street): StatsAction[] {
@@ -123,9 +155,10 @@ export const STAT_DEFINITIONS = [
       );
       if (own.length === 0) return [];
       return [
-        chance(
+        anyChance(
           "preflop",
-          own.some((a) => a.action !== "check" && a.action !== "fold"),
+          own,
+          (a) => a.action !== "check" && a.action !== "fold",
         ),
       ];
     },
@@ -140,12 +173,7 @@ export const STAT_DEFINITIONS = [
         (a) => a.playerId === playerId,
       );
       if (own.length === 0) return [];
-      return [
-        chance(
-          "preflop",
-          own.some((a) => a.aggressive),
-        ),
-      ];
+      return [anyChance("preflop", own, (a) => a.aggressive)];
     },
   },
   {
@@ -159,7 +187,9 @@ export const STAT_DEFINITIONS = [
       const facing = streetActions(hand, "preflop").find(
         (a) => a.playerId === playerId && a.raisesBefore === 1,
       );
-      return facing === undefined ? [] : [chance("preflop", facing.aggressive)];
+      return facing === undefined
+        ? []
+        : [chance("preflop", facing.aggressive, [facing])];
     },
   },
   {
@@ -174,7 +204,7 @@ export const STAT_DEFINITIONS = [
       );
       return facing === undefined
         ? []
-        : [chance("preflop", facing.action === "fold")];
+        : [chance("preflop", facing.action === "fold", [facing])];
     },
   },
   {
@@ -188,7 +218,7 @@ export const STAT_DEFINITIONS = [
         (a) => a.playerId === playerId,
       );
       if (first === undefined || first.raisesBefore !== 0) return [];
-      return [chance("flop", first.aggressive)];
+      return [chance("flop", first.aggressive, [first])];
     },
   },
   {
@@ -207,7 +237,7 @@ export const STAT_DEFINITIONS = [
         .find((a) => a.playerId === playerId && a.raisesBefore === 1);
       return facing === undefined
         ? []
-        : [chance("flop", facing.action === "fold")];
+        : [chance("flop", facing.action === "fold", [facing])];
     },
   },
   {
@@ -223,7 +253,7 @@ export const STAT_DEFINITIONS = [
             a.street !== "preflop" &&
             a.action !== "check",
         )
-        .map((a) => chance(a.street, a.aggressive)),
+        .map((a) => chance(a.street, a.aggressive, [a])),
   },
   {
     id: "aggression_factor",
@@ -243,6 +273,7 @@ export const STAT_DEFINITIONS = [
           numerator: a.aggressive ? 1 : 0,
           denominator: a.aggressive ? 0 : 1,
           opportunities: 1,
+          actions: [a],
         })),
   },
 ] as const satisfies readonly StatDefinition[];
