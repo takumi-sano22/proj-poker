@@ -101,7 +101,7 @@ Phase 7のTilt（D107。#106 P7-5）:
 - Persona（固定の性格）・Long-term Memory（観察の記録）とは別の、transientな層として持ちます。
 - Personaの確率分布へ限定的に反映します。Illegal / RandomなActionを弱さとして混ぜません（§3）。
 - TiltのPrivate StateはHeroのEvidenceに使いません。
-- Trigger・しきい値・増減・減衰の値はVersion付きの暫定値です（OI-011）。
+- Trigger・しきい値・増減・減衰の値はVersion付きの暫定値です（OI-011）。D119の暫定値（`phase7_tilt_v1`）: 0〜3の整数の段階で、Trigger（40BB以上のPotの負け・3連敗・ShowdownでBluffが見つかる・大勝ち）で上がり、1 HandごとにPersonaの`recoverySpeed`に応じて下がります。反映はLooseness / Aggressionを段階ごとに上限付きで少しずらすだけです。順序はHandの論理順序で決め、壁時計を使いません（D117）。
 
 ## 5. Opponent Modeling
 
@@ -128,7 +128,8 @@ CPU内部のSecret HypothesisをHeroへ「事実」として見せてはいけ�
 - **Hypothesis**: Observer × Subject × Contextごとに、Raw Observationから再生成できるProjectionとして作り、集計にrecency decayをかけます（Raw Observationは消さない）。Sample不足の扱いと更新の速さ・早合点の傾向は、上のSkillの差としてPersona Policyで変えられます。decayの係数等はVersion付きの暫定値です（OI-011）。
 - **CPU-to-CPU Memory**: Observer CPUがSubject（Heroや他CPU）について持つPrivate Memoryです。他のCPUへ共有しません（CPU AのBへの仮説をCへ渡さない）。
 - **Context**: Raw ObservationはCash / Tournamentで共通に使えますが、Strategy Hypothesisはcontext（cash / tournament）を分けます。
-- **KnowledgeStateへの注入**: そのCPU自身が過去に得たObservation / Hypothesisだけを入れます（`docs/02` INV-INFO-001）。Promptへ渡す量を絞るときも、Evidence IDを失わない形にし、自然言語のMemoryを正本にしません。
+- **KnowledgeStateへの注入**: そのCPU自身が過去に得たObservation / Hypothesisだけを入れます（`docs/02` INV-INFO-001）。Promptへ渡す量を絞るときも、Evidence IDを失わない形にし、自然言語のMemoryを正本にしません。D121: 構造化したHypothesisの要約（Evidence ID付き、Subjectごとに上位5項目まで）をKnowledgeStateに足し、ClaudeのCPUはPromptで、RuleBotは決定論でこれを使います。LLMの呼び出しの回数・経路は増やしません。
+- **Phase 7の暫定値（D118・D119。OI-005・OI-011）**: Fixed Poolはコードの Version付きConfigで、Fixed 8人＋Guestは1卓に最大1席です。Hypothesisのrecencyは、ObserverがそのSubjectを見たHandの数に応じた指数減衰（`phase7_memory_v1`。半減期150 Hand）、十分なSampleは機会数15以上（PersonaのSkillで0.5〜1.5倍）です。どれも永久仕様ではありません。
 
 ### Table Tendency（D106。#106 P7-6）
 

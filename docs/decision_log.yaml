@@ -1,4 +1,4 @@
-# D01〜D117の採用済み人間判断。
+# D01〜D121の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -470,3 +470,19 @@
   choice: "意味上の順序は永続的な単調増加の論理順序で決め、壁時計は表示・監査の Metadata にする。#129・#130 を直すまで Phase 6 → 7 Gate を保留する（#132 の人間判断）"
   status: "採用済み"
   decision: "正しさに関わる「どちらが先か」の順序・境界（Learning Resetの前後・Replayの新しい順・Session内のHandの順・Recentの順・最新のSession Projectionの選択・Resume等）には壁時計を使わず、永続的な単調増加の論理順序を正本にする。created_at / started_at / recorded_at等の壁時計の列は表示・監査のMetadataとして残してよいが、順序の正本にしない。時刻をclampして戻らない時計に見せる解決は採らない。論理順序は追加マイグレーションで表し、既存のテーブル・列・行とappend-only / DELETE拒否の契約を壊さない。#129・#130は同根の横断問題として#132でまとめて直し、それまでPhase 6 → 7 Gateを保留する。D37・D76・D114の具体化。"
+- id: D118
+  choice: "Fixed CPU の Identity は追記型の session_participants（マイグレーション v10）で席と結び、Observation は表に持たず Event Log から決定論で抽出する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "マイグレーションv10で追記型のsession_participants（Session×席 → Fixed CPUのcpuProfileId、またはGuestのSession限りのid）を足し、席・player id（cpu1等）と永続Identityを分ける。Fixed Pool（cpuProfileId・名前・Persona）はDBに置かず、Persona Presetと同じくコードのVersion付きConfigに置く（OI-005の暫定値: Fixed 8人＋Guestは1卓に最大1席）。CPUのObservationは別の表やEventに書かず、正本のEvent LogからそのObserverが見えたPublic / Showdown Evidenceだけを決定論で抽出し、provenanceはhand_id・events.seq・ordinals.ordで持つ。GuestのIdentityはSession限りなので、次のSessionでは読まない（＝破棄。行は消さない）。Note / TagのSubjectにcpu_profileのkindを足し、既存のsession_playerの行はsession_participantsから引く（保存済みの行は書き換えない）。D105・D106・D111・D76の具体化。実装は#136・#137。"
+- id: D119
+  choice: "OI-011 の暫定値は指数減衰と 0〜3 の整数 Tilt で置く（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "OI-011の暫定値をVersion付きのPolicy（phase7_memory_v1・phase7_tilt_v1）に置き、永久仕様にしない。HypothesisのrecencyはObserverがそのSubjectを見たHandの数に応じた指数減衰（半減期150 Hand）、十分なSampleは機会数15以上（PersonaのSkillで0.5〜1.5倍。弱いCPUは少ないSampleで早合点する）。Tiltは0〜3の整数の段階で、Trigger（40BB以上のPotの負け・3連敗・ShowdownでBluffが見つかる・大勝ち）で上がり、1 HandごとにPersonaのrecoverySpeedに応じて下がり、Persona のLooseness / Aggressionを段階ごとに上限付きで少しずらすだけにする。decay・Sample・Tiltの順序はすべて論理順序（ordinals.ord・Handの番号・events.seq）で決め、壁時計を使わない。D106・D107・D117の具体化。実装は#138・#140。"
+- id: D120
+  choice: "Opponent Memory Reset は追記型の区切りの表（マイグレーション v11）で表し、正本を消さない（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Opponent Memory ResetはD114と同じく正本を消さず、マイグレーションv11で足す追記型の区切りの表に行を足す。区切りは追加した時点のordinalsの最大のordを列に持って判定し、ordinalsのkindのCHECKは変えない。対象は全CPUか1つのcpuProfileId（Fixed CPU Factory Reset）。Event Log・reviews・User Read / Note / Tag・Learning Resetの区切りは変えない。D64・D114・D117の具体化。実装は#143。"
+- id: D121
+  choice: "Phase 7 は P7-0〜P7-9 を直列で進め、CPU の Memory は上限付きで KnowledgeState へ注入する（推奨案、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Phase 7の子Issueは#106の推奨どおりP7-0〜P7-9（#135〜#144）とし、依存順に直列で進める。CPUのMemoryは、KnowledgeStateに構造化したHypothesisの要約（Evidence ID付き、Subjectごとに上位5項目まで）として足し、Claudeの CPUはPromptでこれを受け取る。LLMの呼び出しの回数・経路は増やさない（PromptのTokenは少し増える）。RuleBotは同じ要約を決定論で使う。自然言語のMemoryを正本にしない。D40・D106・D110の具体化。"

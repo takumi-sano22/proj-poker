@@ -169,7 +169,20 @@ MVP Parent #2はPhase 5の完了でCloseしました（再オープンしない�
 - Fixed Pool + Guest
 - Table Tendency（観察可能なEvidenceだけ）
 
-子Issueの分解（#106の推奨）: P7-1 Fixed CPU Identity / Pool / Guest・P7-2 Observation Evidence Store・P7-3 Private Opponent Hypothesis / Recency・P7-4 Memory → KnowledgeState Integration・P7-5 Tilt State Machine・P7-6 Table Tendency・P7-7 Opponent Policy / Eval・P7-8 Reset / Persistence / Migration・P7-9 Critical E2E / README。
+子Issueの分解（D121。#106の推奨どおり、表の上から順に直列で進める）:
+
+| ID | 内容 |
+|---|---|
+| P7-0 | Phase 7 Decision / Docs Sync（#135。D118〜D121の記録とこの文書の同期） |
+| P7-1 | Fixed CPU Identity / Pool / Guest（#136） |
+| P7-2 | Observation Evidence（#137。Event Logからの決定論の抽出。D118） |
+| P7-3 | Private Opponent Hypothesis / Recency（#138） |
+| P7-4 | Memory → KnowledgeState Integration（#139） |
+| P7-5 | Tilt State Machine（#140） |
+| P7-6 | Table Tendency（#141） |
+| P7-7 | Opponent Policy / Eval（#142） |
+| P7-8 | Reset / Persistence / Migration（#143） |
+| P7-9 | Critical E2E / README（#144） |
 
 ### Phase 8 — Tournament（#107。D108・D109）
 
