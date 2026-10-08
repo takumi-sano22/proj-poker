@@ -53,7 +53,14 @@ function reachableFrom(entries: readonly string[]): Set<string> {
 describe("Observation の抽出の境界（静的）", () => {
   it("memory/ から learning/（Hero の弱点）に届かない", () => {
     const entries = memoryFiles();
-    expect(entries.length).toBeGreaterThan(0);
+    // CPU の Private Hypothesis と Policy（#138）も検査の入口に入っている（Hero の Weakness Hypothesis と型・モジュールを共有しない）。
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        join(MEMORY, "observation.ts"),
+        join(MEMORY, "opponent-hypothesis.ts"),
+        join(MEMORY, "memory-policy.ts"),
+      ]),
+    );
     const reachable = reachableFrom(entries);
     // たどれていること自体を確かめる（正規表現が何も拾わないと、検査が空振りする）。
     expect(reachable.size).toBeGreaterThan(entries.length);
