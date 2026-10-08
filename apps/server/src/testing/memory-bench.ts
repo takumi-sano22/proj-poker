@@ -104,6 +104,7 @@ function pageCounts(db: DatabaseSync, path: string) {
 interface CacheDataRow {
   rows: number;
   hands: number;
+  observers: number;
   nullRows: number;
   observedBytes: number;
   eventsBytes: number;
@@ -114,7 +115,7 @@ interface CacheDataRow {
 function cacheData(db: DatabaseSync) {
   const row = db
     .prepare(
-      `SELECT COUNT(*) AS rows, COUNT(DISTINCT hand_id) AS hands,
+      `SELECT COUNT(*) AS rows, COUNT(DISTINCT hand_id) AS hands, COUNT(DISTINCT observer_key) AS observers,
         COALESCE(SUM(observed IS NULL), 0) AS nullRows,
         COALESCE(SUM(length(CAST(observed AS BLOB))), 0) AS observedBytes,
         COALESCE(SUM(length(CAST(events AS BLOB))), 0) AS eventsBytes,
@@ -328,6 +329,30 @@ try {
     };
   };
 
+  /**
+   * #174: measureLayers の直前（= Hand の開始ごとに足してきた Cache が、全削除される前）の DB を使い捨てのコピーに複製して測る。
+   * Cache の行数・実データ・dbstat と、コピーを VACUUM したときの大きさ、さらに Cache を消して VACUUM した（Event Log だけの）大きさ。
+   */
+  function probeCheckpoint(target: number) {
+    const path = join(tmp, `probe-${target}.sqlite`);
+    copyFileSync(dbPath, path);
+    const d = openDatabase(path);
+    try {
+      const asIs = pageCounts(d, path);
+      const data = cacheData(d);
+      const stat = dbstatByName(d);
+      d.exec("VACUUM");
+      const vacuumed = pageCounts(d, path);
+      d.exec("DELETE FROM observed_hand_cache");
+      d.exec("VACUUM");
+      const eventsOnly = pageCounts(d, path);
+      return { asIs, data, stat, vacuumed, eventsOnly };
+    } finally {
+      d.close();
+      rmSync(path, { force: true });
+    }
+  }
+
   /** #174: DB の大きさの内訳。元の DB を使い捨てのコピーに複製して測る（元の DB・開発データには触れない）。 */
   function reportSizes(lastHandId: string) {
     const copies: DatabaseSync[] = [];
@@ -398,7 +423,7 @@ try {
         )
         .get() as { n: number; bytes: number };
       console.log(
-        `- ${title}: Cache ${d.rows} 行（Hand ${d.hands} 個・座っていない Hand の NULL 行 ${d.nullRows}・1 Hand あたり ${(d.rows / Math.max(d.hands, 1)).toFixed(2)} 行）。` +
+        `- ${title}: Cache ${d.rows} 行（Observer ${d.observers} 人・Hand ${d.hands} 個・座っている行は 1 Hand あたり ${((d.rows - d.nullRows) / Math.max(d.hands, 1)).toFixed(2)} 行・座っていない Hand の NULL 行 ${d.nullRows}・1 Hand あたり ${(d.rows / Math.max(d.hands, 1)).toFixed(2)} 行）。` +
           `observed ${mib(d.observedBytes)} MiB・events ${mib(d.eventsBytes)} MiB・鍵の列 ${mib(d.keyBytes)} MiB（実データの合計 ${mib(d.observedBytes + d.eventsBytes + d.keyBytes)} MiB）。` +
           `events を Hand ごとに 1 回だけ持つなら ${mib(d.eventsOnceBytes)} MiB（重複の分 ${mib(d.eventsBytes - d.eventsOnceBytes)} MiB）。` +
           `Event Log の payload ${ev.n} 行・${mib(ev.bytes)} MiB`,
@@ -420,6 +445,55 @@ try {
         `| ${r.savedHands} | ${mib(p.fileBytes)} | ${p.pageSize} | ${p.pageCount} | ${p.freelist} | ${((p.freelist / p.pageCount) * 100).toFixed(1)}% |`,
       );
     }
+    console.log(
+      "\n### C1b. 各 checkpoint の測定の直前の DB の内訳（Cache は Hand の開始ごとに足してきた分。全削除の前。使い捨てのコピーで VACUUM 等を試す）",
+    );
+    console.log(
+      "| 保存済みの Hand | ファイル (MiB) | freelist | VACUUM 後 (MiB) | 縮んだ割合 | Cache を消して VACUUM（Event Log だけ・MiB）| Cache の行数 | うち座っている行 | Observer | Cache の実データ observed / events / 鍵 (MiB) | events の重複の分 (MiB) |",
+    );
+    console.log("|---|---|---|---|---|---|---|---|---|---|---|");
+    for (const r of results) {
+      const q = r.probe;
+      if (q === undefined) continue;
+      const d = q.data;
+      console.log(
+        `| ${r.savedHands} | ${mib(q.asIs.fileBytes)} | ${q.asIs.freelist} | ${mib(q.vacuumed.fileBytes)} | ${(((q.asIs.fileBytes - q.vacuumed.fileBytes) / q.asIs.fileBytes) * 100).toFixed(1)}% | ${mib(q.eventsOnly.fileBytes)} | ${d.rows} | ${d.rows - d.nullRows} | ${d.observers} | ${mib(d.observedBytes)} / ${mib(d.eventsBytes)} / ${mib(d.keyBytes)} | ${mib(d.eventsBytes - d.eventsOnceBytes)} |`,
+      );
+    }
+    console.log(
+      "\n各 checkpoint の測定の直前の dbstat（使用 MiB = ページの合計 / 実データ payload MiB）",
+    );
+    console.log(
+      "| 保存済みの Hand | events 表 | events の索引 2 つ | observed_hand_cache 表 | その索引 | Cache 表の unused (MiB) | その他 |",
+    );
+    console.log("|---|---|---|---|---|---|---|");
+    for (const r of results) {
+      const t = r.probe?.stat;
+      if (t === undefined || t === null) continue;
+      const pick = (f: (n: string) => boolean) =>
+        t
+          .filter((x) => f(x.name))
+          .reduce(
+            (a, x) => ({
+              bytes: a.bytes + x.bytes,
+              payload: a.payload + x.payload,
+              unused: a.unused + x.unused,
+            }),
+            { bytes: 0, payload: 0, unused: 0 },
+          );
+      const ev = pick((n) => n === "events");
+      const evIdx = pick((n) => n.startsWith("sqlite_autoindex_events"));
+      const ca = pick((n) => n === "observed_hand_cache");
+      const caIdx = pick((n) => n.startsWith("sqlite_autoindex_observed"));
+      const total = pick(() => true);
+      const other =
+        total.bytes - ev.bytes - evIdx.bytes - ca.bytes - caIdx.bytes;
+      const f = (x: { bytes: number; payload: number }) =>
+        `${mib(x.bytes)} / ${mib(x.payload)}`;
+      console.log(
+        `| ${r.savedHands} | ${f(ev)} | ${f(evIdx)} | ${f(ca)} | ${f(caIdx)} | ${mib(ca.unused)} | ${mib(other)} |`,
+      );
+    }
     const asIs = openCopy("as-is.sqlite", dbPath);
     console.log("\n### C2. 実行の最後の状態から\n");
     dataLine(
@@ -427,7 +501,10 @@ try {
       asIs,
     );
     stat("最後の状態", asIs);
-    record("S1 最後の状態（bench の DB そのまま）", asIs);
+    record(
+      "S1 最後の状態（bench の DB そのまま。最後の checkpoint の層の測定で Cache は全削除→今の卓の Observer の分だけ作り直し済み）",
+      asIs,
+    );
     const vacuumed = openCopy("as-is-vacuum.sqlite", asIs.path);
     vacuum(vacuumed);
     record("S2 S1 を VACUUM（Cache を温めた状態 + VACUUM）", vacuumed);
@@ -443,7 +520,7 @@ try {
     const fresh = openCopy("fresh.sqlite", dropped.path);
     const coldMs = warm(fresh);
     record(
-      `S5 S4 に Cache を 1 回温める（${coldMs.toFixed(0)} ms。VACUUM なし）`,
+      `S5 S4 に Cache を 1 回温める（今の卓の CPU・Guest の Observer の分だけ。${coldMs.toFixed(0)} ms。VACUUM なし）`,
       fresh,
     );
     dataLine("S5", fresh);
@@ -452,18 +529,6 @@ try {
     vacuum(freshVac);
     record("S6 S5 を VACUUM", freshVac);
     stat("S6 S5 を VACUUM", freshVac);
-    // bench の層の測定と同じ「全削除 → 作り直し」を VACUUM なしで繰り返したときの大きさ。
-    for (let i = 2; i <= 4; i++) {
-      dropCache(fresh);
-      warm(fresh);
-      record(
-        `S7.${i - 1} S5 から 全削除 → 作り直し（VACUUM なし）の ${i} 回目の温め`,
-        fresh,
-      );
-    }
-    stat("S7 全削除→作り直しを繰り返した後", fresh);
-    vacuum(fresh);
-    record("S8 S7 を VACUUM", fresh);
     console.log(
       "\n| 状態 | ファイル (MiB) | page_size | page_count | freelist_count | 空き割合 | page_count × page_size (MiB) | 使用中のページ (MiB) |",
     );
@@ -478,6 +543,8 @@ try {
     readonly events: number;
     readonly dbBytes: number;
     readonly pages: ReturnType<typeof pageCounts>;
+    /** --size-report のときだけ。measureLayers の直前（Cache の全削除の前）の DB の内訳。 */
+    readonly probe: ReturnType<typeof probeCheckpoint> | undefined;
     readonly layers: ReturnType<typeof measureLayers>;
   }
   const results: CheckpointResult[] = [];
@@ -500,6 +567,7 @@ try {
         events: row.n,
         dbBytes: statSync(dbPath).size,
         pages: pageCounts(db, dbPath),
+        probe: sizeReport ? probeCheckpoint(next) : undefined,
         layers: measureLayers(lastHandId),
       });
     }
