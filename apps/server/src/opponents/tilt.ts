@@ -3,14 +3,13 @@
 // - 今の Session の保存済み（終わった）Hand を論理順序（ordinals.ord）で頭から畳み込んで作る純粋関数。Session が変われば 0 から始まる
 //   （＝ Session 終了で Reset。SESSION_ENDED の無い放置された Session でも次の Session には持ち越さない）。Resume では同じ Session の
 //   Hand から同じ値になる。壁時計を使わない（D117）
-// - 入力はその CPU が卓で見えた Event（public と自分宛ての private）と自分の結果だけ。他者の Hidden Cards・Deck・system の記録・
-//   Learning-only Reveal・Hero の弱点（apps/server/src/learning/）は読まない
+// - 入力は卓の全員が見た public の Event（その CPU 自身の結果を含む）だけ。Hole Cards（private）・Deck・system の記録・
+//   Learning-only Reveal・Hero の弱点（apps/server/src/learning/）は読まない（自分の札も Showdown で表にした CARDS_TABLED から読む）
 // - 反映は Persona の Looseness / Aggression を段階ごとに上限付きで少しずらすだけで、Illegal / Random な Action を作らない（D40）
 // - Hero の Evidence・Review・UI・Event に出さない。他の CPU の KnowledgeState・Prompt に出さない
 import {
   evaluateHand,
   HandCategory,
-  isVisibleTo,
   visibilityOf,
   type Card,
   type HandEvent,
@@ -28,12 +27,12 @@ export interface TiltSourceHand {
   readonly handId: string;
   /** Hand の保存の論理順序（ordinals.ord。D117）。 */
   readonly ord: number;
-  /** その Hand の全 Event（正本。ここで CPU に見えたものだけに絞る）。 */
+  /** その Hand の全 Event（正本。ここで public のものだけに絞る）。 */
   readonly events: readonly HandEvent[];
 }
 
 /**
- * 1 Hand の CPU 自身の結果（CPU が見えた Event だけから決める）。Trigger の定義（phase7_tilt_v1。OI-011 の暫定値）:
+ * 1 Hand の CPU 自身の結果（public の Event だけから決める）。Trigger の定義（phase7_tilt_v1。OI-011 の暫定値）:
  * - lostShowdown: Fold せずに Showdown まで残り（札を比べた Pot を争えた）、Pot を 1 枚も受け取らなかった
  * - bigPotLost: lostShowdown で、争えた Pot の総額が bigPotBigBlinds × その Hand の Big Blind 以上
  * - bluffCaught: lostShowdown で、その Hand の最後に額を引き上げた（Bet / Raise / 額を上げる All-in）のが自分で、
@@ -80,14 +79,18 @@ export interface TiltSeat {
 }
 
 /**
- * その CPU が卓で見えた Event か。保存された Visibility と Engine が種類から決める Visibility の両方が、public か自分宛ての private の
- * ときだけ通す（保存された値だけを信じない。Deck の engine・system の記録・他者宛ての private は落ちる）。
+ * 卓の全員が見た Event（保存された Visibility と Engine が種類から決める Visibility の両方が public）だけを seq の順で返す
+ * （保存された値だけを信じない。Hole Cards の private・Deck の engine・system の記録は落ちる）。全員に同じなので Hand ごとに 1 回でよい。
  */
-function seenBy(event: HandEvent, playerId: string): boolean {
-  return (
-    isVisibleTo(event, playerId) &&
-    isVisibleTo({ ...event, visibility: visibilityOf(event) }, playerId)
+function publicEventsOf(events: readonly HandEvent[]): HandEvent[] {
+  const shown = events.filter(
+    (e) => e.visibility.type === "public" && visibilityOf(e).type === "public",
   );
+  // Event Store の読み出しは seq の順。並んでいないときだけ並べる。
+  if (shown.some((e, i) => i > 0 && (shown[i - 1] as HandEvent).seq > e.seq)) {
+    shown.sort((a, b) => a.seq - b.seq);
+  }
+  return shown;
 }
 
 /**
@@ -99,9 +102,15 @@ export function tiltHandOutcome(
   playerId: string,
   policy: TiltPolicy = DEFAULT_TILT_POLICY,
 ): TiltHandOutcome | null {
-  const seen = [...events]
-    .filter((e) => seenBy(e, playerId))
-    .sort((a, b) => a.seq - b.seq);
+  return outcomeOfPublic(publicEventsOf(events), playerId, policy);
+}
+
+/** publicEventsOf を済ませた Event から、1 Hand の CPU 自身の結果を作る。 */
+function outcomeOfPublic(
+  seen: readonly HandEvent[],
+  playerId: string,
+  policy: TiltPolicy,
+): TiltHandOutcome | null {
   const started = seen.find((e) => e.type === "HAND_STARTED");
   if (started?.type !== "HAND_STARTED") return null;
   if (!started.seats.some((s) => s.playerId === playerId)) return null;
@@ -240,6 +249,11 @@ export function foldTilt(
   seat: TiltSeat,
   policy: TiltPolicy = DEFAULT_TILT_POLICY,
 ): TiltState {
+  return foldPrepared(prepare(hands), seat, policy);
+}
+
+/** ord を検査して小さい順に並べ、Hand ごとに public の Event へ絞る（席をまたいで使い回す）。 */
+function prepare(hands: readonly TiltSourceHand[]): readonly HandEvent[][] {
   const ords = new Set<number>();
   for (const h of hands) {
     if (!Number.isSafeInteger(h.ord) || ords.has(h.ord)) {
@@ -251,16 +265,24 @@ export function foldTilt(
   }
   return [...hands]
     .sort((a, b) => a.ord - b.ord)
-    .reduce(
-      (state, h) =>
-        stepTilt(
-          state,
-          tiltHandOutcome(h.events, seat.playerId, policy),
-          seat.traits,
-          policy,
-        ),
-      INITIAL_TILT_STATE,
-    );
+    .map((h) => publicEventsOf(h.events));
+}
+
+function foldPrepared(
+  hands: readonly (readonly HandEvent[])[],
+  seat: TiltSeat,
+  policy: TiltPolicy,
+): TiltState {
+  return hands.reduce(
+    (state, events) =>
+      stepTilt(
+        state,
+        outcomeOfPublic(events, seat.playerId, policy),
+        seat.traits,
+        policy,
+      ),
+    INITIAL_TILT_STATE,
+  );
 }
 
 /** 畳み込みが読む Event Store の部分（保存済みの Hand・その Session・論理順序）。 */
@@ -301,9 +323,9 @@ export function buildTiltsFromStore(
 ): ReadonlyMap<string, CpuTilt> {
   const tilts = new Map<string, CpuTilt>();
   if (query.seats.length === 0) return tilts;
-  const hands = loadTiltSources(store, query.sessionId);
+  const hands = prepare(loadTiltSources(store, query.sessionId));
   for (const seat of query.seats) {
-    const { level } = foldTilt(hands, seat, policy);
+    const { level } = foldPrepared(hands, seat, policy);
     if (level > 0) {
       tilts.set(seat.playerId, {
         level,

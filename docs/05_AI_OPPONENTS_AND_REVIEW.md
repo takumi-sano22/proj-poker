@@ -106,7 +106,7 @@ Phase 7のTilt（D107。#106 P7-5）:
 Tiltの実装（#140。`apps/server/src/opponents/tilt.ts`・`tilt-policy.ts`。数値と定義はすべてOI-011の暫定値で、確定ではない）:
 
 - **単位と寿命**: Session の中の席（その Session の参加者）ごとの状態です。Fixed CPU の Long-term Memory（§5のHypothesis）・Personaとは別の層で、保存しません（テーブル・列・Event・`schema_version`を足さない）。Hand Orchestratorが Handの開始時（そのHandをEvent Storeへ書く前）に、今のSessionの保存済み（終わった）Handを論理順序（`ordinals.ord`）で頭から畳み込んで作る純粋関数です。Sessionが変われば0から始まるので、Session終了でResetされ、`SESSION_ENDED`の無い放置されたSessionの後でも次のSessionへ持ち越しません。Resumeでは同じSessionのHandから同じ値になります。Personaの無いCPU・DrillのHandはTiltを持ちません。
-- **入力**: そのCPUが卓で見えたEvent（`public`と自分宛ての`private`。保存されたVisibilityとEngineが種類から決めるVisibilityの両方で判定）と自分の結果だけです。他者のHidden Cards・Deck・`system`の記録・Learning-only Reveal・Heroの弱点は読みません。CPUが座っていないHand（Bustの後）と、`HAND_FINISHED`の無いHand（打ち切ったHand）では動きません。
+- **入力**: 卓の全員が見た`public`のEvent（保存されたVisibilityとEngineが種類から決めるVisibilityの両方で判定。そのCPU自身の結果を含む）だけです。Hole Cards（`private`。自分の札もShowdownで表にした`CARDS_TABLED`から読む）・Deck・`system`の記録・Learning-only Reveal・Heroの弱点は読みません。CPUが座っていないHand（Bustの後）と、`HAND_FINISHED`の無いHand（打ち切ったHand）では動きません。
 - **1 Handの結果**（そのCPU自身から見た定義）:
   - Showdownの負け: Foldせずに札を比べたPotまで残り、Potを1枚も受け取らなかった。Potを1枚でも受け取れば勝ち（連敗が切れる）。Foldした Handは勝ちでも負けでもない（連敗を切らない）。
   - 40BB以上のPotの負け（Trigger）: Showdownの負けで、争えたPotの総額がそのHandのBig Blindの40倍以上。

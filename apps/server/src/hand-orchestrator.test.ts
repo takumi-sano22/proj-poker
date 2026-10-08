@@ -355,6 +355,9 @@ describe("HandOrchestrator", () => {
       }
       expect(busts).toBeGreaterThan(0);
     },
+    // 20 seed × 最大 30 Hand の開始ごとに、CPU の Memory（#139）と Tilt（#140）が Session の保存済みの Hand を読み直すので、
+    // 並列に走る CI では既定の 5 秒を超えることがある（8 人卓で 5.2 秒の実測）。判定の中身は変えず、上限だけを広げる。
+    20_000,
   );
 
   it("3 人卓で CPU が Bust すると退席し、次 Hand は 2 人（Heads-Up・Button = SB）で Stack を持ち越して続く", async () => {
