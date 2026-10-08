@@ -184,6 +184,12 @@ AIが過去に書いた自然言語だけを正本にしないでください。
 
 Phase 7（D106）では、Observationは観察できたPublic / Showdown Evidenceだけを、provenance（Observer / Subject / Source Hand or Event / Visibility / Timestamp or Hand Number。`docs/02` INV-INFO-003）付きでappend-onlyに記録します。Learning-only Reveal・他者のHidden Cards・Future Cardsは入れません。Observerは永続の`cpuProfileId`（GuestはSessionの間だけのIdentity）で持ち、SubjectはHero・Fixed CPU・Guestのどれも表せる、席・player idに依存しない安定した参加者の参照で持ちます（形はP7-1・P7-2で決め、Phase 6のUser Note / TagのSubjectの参照と接続する）。Hypothesis / TendencyはRaw Observationから再生成できるProjectionで、集計にrecency decayをかけます（Raw Observationは消さない）。Strategy HypothesisはCash / Tournamentのcontextごとに分けます。Guestの記録はSession終了時に破棄します。
 
+D118で形を決めました（実装は#136・#137。テーブル・列の具体はその時点で§12に書く）。
+
+- **Identity**: マイグレーションv10で追記型の`session_participants`（Session×席 → Fixed CPUの`cpuProfileId`、またはGuestのSession限りのid）を足し、席・player idと永続Identityを分けます。Fixed Pool（`cpuProfileId`・名前・Persona）はDBに置かず、コードのVersion付きConfigに置きます（OI-005の暫定値）。
+- **Observation**: 別の表やEventに書かず、正本のEvent LogからそのObserverが見えたEvent（Publicと、自分が見たShowdown）だけを決定論で抽出します。provenanceは`hand_id`・`events.seq`・`ordinals.ord`で持ちます。Event Logがappend-onlyなので、Raw Observationもappend-onlyです。
+- **Guest**: IdentityがSession限りなので、次のSessionでは読みません（これを破棄とし、Event Logの行は消さない）。
+
 ## 7. User Learning Hypothesis
 
 例:
@@ -367,6 +373,8 @@ Hand Historyは別指定がない限り保持します。
 
 CPUのPersistent Observation / Hypothesisを削除します。
 
+Phase 7のOpponent Memory Reset（D120。実装は#143）: D114と同じく正本を消さず、マイグレーションv11で足す追記型の区切りの表に行を足します。区切りは追加した時点の`ordinals`の最大の`ord`を列に持って判定し、`ordinals`の`kind`のCHECKは変えません。対象は全CPUか1つの`cpuProfileId`（Fixed CPU Factory Reset）です。Event Log・`reviews`・User Read / Note / Tag・Learning Resetの区切りは変えません。
+
 ### Hand History Delete
 
 Hand / Session Historyと派生Projectionを削除します（`session_projections`・`reviews` も含む。#77・#82。Reset の実装時に、Event を消したのに Projection が残る・Projection だけ残った Session を Resume する、を作らない）。
@@ -418,6 +426,6 @@ Phase 6以降で足すデータは、次の方針で置きます。具体的な�
 - **Learning Reset（#118）**: マイグレーションv8で足した追記型の`learning_resets`に、Resetの区切りの行を足します（既存のテーブル・列・行は変えない。D76。マイグレーションv8はD114の人間判断の範囲）。意味と区切りの判定は§11です。
   - `learning_resets`: `seq`（追記の順。INTEGER PRIMARY KEY）・`reset_id`（1回のReset。カテゴリごとの行が同じ値）・`created_at`（Resetの時刻。ISO 8601・UTC。1回のResetの行は同じ値）・`category`（`score` / `hypothesis` / `profile`。CHECK）。`(reset_id, category)`は一意で、1回のResetの行は1トランザクションで足します。`UPDATE` / `DELETE`はTriggerで拒否します。
   - API（`docs/03` §1）: `POST /api/learning/resets`（`{ categories }`）が区切りを足し、`GET /api/learning/profile`の応答の`resets`（カテゴリごとの最後のResetの時刻）と`GET /api/drills`の`score.since`で区切りを返します。返すのは表示用の時刻で、区切りの判定は論理順序で行います（§11・D117）。
-- **Phase 7のMemory**: CPUのObservationはappend-onlyのRaw Evidenceとして持ち、Hypothesis / TendencyはProjectionです（§6。D106）。TiltはSession終了でResetするtransientな状態で、Persona / Long-term Memoryと分けて持ちます（D107）。
+- **Phase 7のMemory**: CPUのObservationはappend-onlyのRaw Evidenceとして持ち、Hypothesis / TendencyはProjectionです（§6。D106）。TiltはSession終了でResetするtransientな状態で、Persona / Long-term Memoryと分けて持ちます（D107）。Identityの`session_participants`（v10）とObservationの抽出はD118（§6）、Opponent Memory Resetの区切りの表（v11）はD120（§11）、decay・Sample・Tiltの暫定値はD119（`docs/05` §4・§5。OI-011）です。
 - **意味上の順序（D117）**: 「どちらが先か」で結果が変わる判定（Learning Resetの前後・Replayの新しい順・Session内のHandの順・Recentの順・最新のSession Projectionの選択・Resume）は、永続的な単調増加の論理順序で決めます。`created_at`・`started_at`・`recorded_at`等の壁時計の列は表示・監査のMetadataとして残しますが、順序の正本にしません（OSの時刻は後ろへ戻ることがある）。具体（#132）は、マイグレーションv9の追記型の`ordinals`と各順序の表現・レガシーの扱いが§10「論理順序」、Learning Resetの前後が§11です。
 - **マイグレーション**: 既存のテーブル・列・保存済みのEventは書き換えず、足すだけにします（D76）。Eventの形を変えるときはschema_versionを上げてupcastを足します。

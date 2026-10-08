@@ -84,6 +84,8 @@ DB Schemaを固定人数へCoupleしないでください。
 
 D106で確定（Identityと寿命。人数等は未確定のまま）: Fixed CPUは席・player idと別の永続`cpuProfileId`を持ちMemoryはSessionを跨いで持続する。GuestのMemoryはSession終了時に破棄する。上の「未確定」（人数・Name・Avatar・Persona Distribution）はこの判断では決めていない。
 
+D118の暫定値（確定ではない）: Fixed Poolはコードの Version付きConfigに置き、Fixed 8人＋Guestは1卓に最大1席とする。Name・Avatar・Persona DistributionもそのConfigの暫定値で、DB Schemaは人数にCoupleしない。
+
 暫定値は D85（確定ではない）: Persona は TAG Regular・LAG・Calling Station・Nit・Maniac・Weak-tight Recreational の 6 Preset。各 Preset の 11 軸の数値・RuleBot への反映の係数・卓への既定の割り当て順（TAG Regular・LAG・Nit・Calling Station・Weak-tight Recreational・Maniac を席順に）も暫定値で、`apps/server/src/opponents/persona.ts`・`rule-bot.ts`・`config.ts` に置く（#51。環境変数 `CPU_PERSONAS` で割り当て順を変えられる）。Playtest で見直す。
 
 ## OI-006 — Session Score Formula
@@ -169,6 +171,8 @@ Evidence Gateの振る舞いは確定。
 - TiltのTrigger・しきい値・増減・減衰の値と、Personaへの反映の大きさ
 
 Phase 7でVersion付きのConfig / Policyに暫定値を置き、Eval / Playtestで見直します。
+
+D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがそのSubjectを見たHandの数に応じた指数減衰（半減期150 Hand）、十分なSampleは機会数15以上（PersonaのSkillで0.5〜1.5倍）。`phase7_tilt_v1`は0〜3の整数の段階で、Trigger（40BB以上のPotの負け・3連敗・ShowdownでBluffが見つかる・大勝ち）で上がり、1 HandごとにPersonaの`recoverySpeed`に応じて下がり、Looseness / Aggressionを段階ごとに上限付きで少しずらす。順序は論理順序（D117）。
 
 ## すでに確定しており、Routine Implementationで再検討しない項目
 
