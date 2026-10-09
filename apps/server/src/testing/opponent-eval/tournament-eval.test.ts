@@ -23,6 +23,7 @@ import {
   TOURNAMENT_EVAL_PERSONAS,
   TOURNAMENT_EVAL_REPEATS,
   TOURNAMENT_EVAL_SPOTS,
+  TOURNAMENT_BASELINE_RECORDING_URL,
   TOURNAMENT_RECORDING_URL,
   assertTournamentDecisionLimit,
   tournamentReport,
@@ -246,5 +247,79 @@ describe("録画済み応答の再生（CI。Claude を呼ばない）", () => {
     expect(report.stages.map((s) => s.spotId)).toEqual(recording.spots);
     expect(report.contextEffect.total).not.toBeNull();
     expect(report.layerEffect.total).not.toBeNull();
+  });
+});
+
+describe("#202 の録画（#207 のベースライン。D132 の Prompt）", () => {
+  const baseline = () =>
+    JSON.parse(
+      readFileSync(TOURNAMENT_BASELINE_RECORDING_URL, "utf8"),
+    ) as TournamentEvalRecording;
+
+  it("ベースラインは同じ母集団（7 Spot × Nit・Maniac × repeat 2）を揃えたまま残し、今の録画とは別のファイル", () => {
+    const recording = baseline();
+    expect(TOURNAMENT_BASELINE_RECORDING_URL.href).not.toBe(
+      TOURNAMENT_RECORDING_URL.href,
+    );
+    expect(recording.spots).toEqual(TOURNAMENT_EVAL_SPOTS.map((s) => s.id));
+    expect(recording.personas).toEqual(TOURNAMENT_EVAL_PERSONAS);
+    expect(recording.repeats).toBe(TOURNAMENT_EVAL_REPEATS);
+    assertPopulation(recording.cases, recording);
+    expect(recording.limits).toEqual(TOURNAMENT_EVAL_LIMITS);
+    expect(recording.summary).not.toBeNull();
+  });
+
+  it("Prompt の指紋の drift は Tournament の節がある S1〜S6 だけ。Context の無い S0 は今のコードで再生しても録画と一致する", async () => {
+    const recording = baseline();
+    // 今の Prompt の指紋（モデルは呼ばない）。
+    const current = await runOpponentEval({
+      spots: TOURNAMENT_EVAL_SPOTS,
+      personas: TOURNAMENT_EVAL_PERSONAS,
+      repeats: TOURNAMENT_EVAL_REPEATS,
+      model: MODEL_ROLES.opponent_fast,
+      env: { PATH: "/usr/bin" },
+      queryFor: () => dryRunQuery,
+    });
+    const recorded = new Map(
+      recording.cases.map((c) => [
+        `${c.spotId}/${c.personaId}/${c.repeat}`,
+        c.attempts[0]?.paramsHash,
+      ]),
+    );
+    for (const r of current) {
+      const before = recorded.get(`${r.spotId}/${r.personaId}/${r.repeat}`);
+      const after = r.attempts[0]?.paramsHash;
+      if (r.spotId === "t0_no_context") {
+        expect(after, r.spotId).toBe(before);
+      } else {
+        expect(after, r.spotId).not.toBe(before);
+      }
+    }
+    // S0 は本番と同じ経路で再生でき、録画時と同じ Action になる。
+    const clock = createReplayClock();
+    const s0 = await runOpponentEval({
+      spots: TOURNAMENT_EVAL_SPOTS,
+      personas: recording.personas,
+      repeats: recording.repeats,
+      model: MODEL_ROLES.opponent_fast,
+      env: { PATH: "/usr/bin" },
+      queryFor: replayQueryFor(recording, clock),
+      clock: clock.now,
+      only: (c) => c.spotId === "t0_no_context",
+    });
+    expect(s0).toHaveLength(4);
+    expect(s0.every((r) => r.final.kind === "claude")).toBe(true);
+    // 録画時の集計（S0 の Action の分布）と同じ。
+    for (const persona of TOURNAMENT_EVAL_PERSONAS) {
+      const counts: Record<string, number> = {};
+      for (const r of s0.filter((x) => x.personaId === persona)) {
+        if (r.final.kind === "claude") {
+          counts[r.final.action.type] = (counts[r.final.action.type] ?? 0) + 1;
+        }
+      }
+      expect(counts).toEqual(
+        recording.summary?.actionCounts[persona]?.t0_no_context,
+      );
+    }
   });
 });

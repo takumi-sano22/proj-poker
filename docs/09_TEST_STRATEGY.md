@@ -240,6 +240,41 @@ StageごとのAction（Nit / Maniac。各2判断）:
 - 所見: Contextは形式・合法性・漏れの面では正しく使われ、Rationaleにも`Bubble Factor 2.75`等の値が出ますが、判断はPersonaが支配的でした。NitはHeads-UpのSB 10BBのQ6o（Chip EVでもICMでもほぼShoveの局面）を含む14判断すべてでFoldし、ManiacはBubble Factor 2.75のShoveにA9oで「ICMのリスクを無視して」Callしました。Context・Stageによる差はManiacのSizing（3BBのRaiseかAll-inか）にだけ出ています。結果を見てPrompt / Policyは変えていません（D132）。戦略品質の改善は#207に分けました。
 - CI: 録画を本番と同じ経路で再生し、集計が録画時と一致すること・Hidden Information Leakageと障害が0件・上限の中で取ったこと・録画に資格情報が無いことを確かめます。
 
+### TournamentのClaude CPUのPersonaの読み方の再測定（Issue #207・D133）
+
+#202の録画で、Tournament ContextがPromptに入っていてもPersonaが判断を支配した（Nitは「Preflop Looseness 0.15だから範囲外」、Maniacは「規律が低いのでICMを無視」）ため、TournamentのHandでPersonaの節があるときだけ、Tournamentの節にPersonaの読み方を足しました（`claude-opponent.ts`の`TOURNAMENT_PERSONA_GUIDE`。`docs/05` §10）。CashのPrompt・Personaの節の文字列・`PERSONA_PRESETS`・RuleBotは変えていません。
+
+- **母集団と上限**: #202と同じ（7 Spot × Nit / Maniac × repeat 2 = 28判断・呼び出し56。経路の確認も同じ）。1変更1測定で、録画は1回だけ取りました（D133）。
+- **録画の置き場所**: 今のPromptの録画は`recordings/opponent-tournament-eval-v2.json`（`TOURNAMENT_RECORDING_URL`。CIは本番と同じ経路で再生）。#202の録画`recordings/opponent-tournament-eval.json`（`TOURNAMENT_BASELINE_RECORDING_URL`）はベースラインとして書き換えずに残し、CIはContextの無いS0だけを今のコードで再生して録画と一致すること、S1〜S6だけPromptの指紋（`paramsHash`）が変わったこと（意図したdrift）を確かめます。CashのOpponent Evalの録画（`opponent-eval.json`・Memory付きPrompt・River）の再生はそのまま通ります。
+
+録画の結果（2026-10-09・`claude-haiku-4-5`（`opponent_fast`）・Agent SDK 0.3.289・実行1回・呼び出し28回 / 上限56）:
+
+| 指標 | Before（#202） | After（#207） |
+|---|---:|---:|
+| Structured Output Valid率 | 1 | 1 |
+| Illegal Action率 | 0 | 0 |
+| Retry率 | 0 | 0 |
+| Fallback率 | 0 | 0 |
+| 障害 / Hidden Information Leakage | 0 / 0 | 0 / 0 |
+| Persona Differentiation（全体） | 1 | 0.571 |
+| Persona Differentiation（S0 / S1 / S2 / S3 / S4 / S5 / S6） | 1 / 1 / 1 / 1 / 1 / 1 / 1 | 1 / 0.5 / 0.5 / 1 / 1 / 0 / 0 |
+| Context Effect（S0 → S2。Nit / Maniac / 合計） | 0 / 1 / 0.5 | 0 / 1 / 0.5 |
+| Layer Effect（S5 → S6。Nit / Maniac / 合計） | 0 / 0.5 / 0.25 | 0 / 0 / 0 |
+| Latency（ms。median / p90） | 8681 / 10802 | 10190 / 11579 |
+
+| Spot | Nit Before | Nit After | Maniac Before | Maniac After |
+|---|---|---|---|---|
+| S0 対照（Contextなし。Promptは変わらない） | Fold 2 | Fold 2 | Raise 2 | Raise 2 |
+| S1 Bubbleの前 | Fold 2 | Fold 2 | Raise 1・All-in 1 | Fold 1・All-in 1 |
+| S2 Bubble | Fold 2 | Fold 2 | All-in 2 | Fold 1・All-in 1 |
+| S3 In the Money | Fold 2 | Fold 2 | All-in 2 | All-in 2 |
+| S4 Heads-Up | Fold 2 | Fold 2 | Raise 1・All-in 1 | All-in 2 |
+| S5 BubbleのBF 2.75のShoveへのCall | Fold 2 | Fold 2 | All-in 1・Call 1 | Fold 2 |
+| S6 S5 + 層 | Fold 2 | Fold 2 | Call 2 | Fold 2 |
+
+- 理由（rationale）の変化: Beforeで「Preflop Looseness 0.15のNitとして範囲外」だけで結論したS1・S3・S4のNitは、Afterでは8判断すべてが10BB・Button / Heads-Up・Stage・Bubble Factorのどれかを理由に挙げました（S4の2判断は「10BBのHeads-Upでも」と状況を挙げたうえで、なお性格の範囲を理由にFold）。ManiacのS5・S6の「ICMのリスクを無視」「bubbleFactorを無視」は0件になり、4判断ともBubble Factor 2.75を「Callの必要勝率が上がる圧力」として挙げました。ManiacのS1〜S4のAll-inも「Bubble Factorの圧力は理解するが」「Button・10BB」と状況を理由にしています。
+- 残る制約: S5・S6でManiacが4判断ともFoldし、BF 2.75のCallでのPersonaの差と層の効果が0になりました（「理解したうえで境界を広めに取る」がActionに出ず、慎重側へ寄りすぎた）。ManiacのS1・S2は1判断ずつFoldし、境界のSpotが割れました。NitはS4のHeads-Up 10BBでもFoldのままです（Push/Fold Solverを持たないので、Shoveしないこと自体は失敗にしない）。repeat 2の少数標本で、揺れと効果を分けられません。結果を見てPromptを変えて録り直していません（D133）。S5・S6の寄りすぎの扱いは#212で人間判断に返しました。
+
 ## 6. Review Eval
 
 確認:
