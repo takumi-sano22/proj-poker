@@ -49,6 +49,24 @@ Claude Codeが新しいMarkdown、Issue本文、PR本文、README、設計メモ
 
 一般的な戦略記事が、採用済みの人間判断を上書きしてはいけません。
 
+### 3.1 優先順位の外にある文書（入口・手順・履歴・記録）
+
+次の文書は上の優先順位に入りません。仕様を定めず、矛盾したら上の正本（と実装）を優先して、こちらを直します。
+
+| 文書 | 層 | 役割 |
+|---|---|---|
+| ルート `README.md` | 入口 | 何のプロジェクトか・現在の状態の短い要約・最短の起動手順・文書への導線だけを置く。Phase の作業履歴や Issue / PR / D 番号の列挙は置かない |
+| `guides/*` | 手順 | セットアップ・開発コマンド・E2E・画面の使い方・現在の制約の一覧。コマンドと既定値は `package.json`・`.nvmrc`・実装に合わせる |
+| `phases/*` | 履歴 | Phase 0〜8 の当時の到達点・判断の参照・Issue / PR / 作業ログへの導線。最新仕様の正本ではない |
+| `taskLog/*` | 記録 | Issue ごとの作業の原本（調査・実行したコマンド・結果）。後から書き換えない |
+
+### 3.2 読む順番
+
+1. ルート [`README.md`](../README.md) で、何のプロジェクトかと現在の状態をつかむ
+2. 動かすなら [`guides/SETUP_AND_DEVELOPMENT.md`](./guides/SETUP_AND_DEVELOPMENT.md)、使い方と制約は [`guides/USAGE_AND_LIMITATIONS.md`](./guides/USAGE_AND_LIMITATIONS.md)
+3. 仕様はこの索引（§4）から、触る領域の Domain docs（`01`〜`09`）を読む。判断の理由は `decision_log.yaml` と `10_DECISION_TRACEABILITY.md`、未確定の事項は `11_OPEN_ITEMS.md`
+4. 経緯を知りたいときは [`phases/README.md`](./phases/README.md) から Phase の履歴を読み、細部は `taskLog/` の作業ログをたどる
+
 ## 4. 各ファイルの責務
 
 | ファイル | 責務 |
@@ -66,6 +84,9 @@ Claude Codeが新しいMarkdown、Issue本文、PR本文、README、設計メモ
 | `10_DECISION_TRACEABILITY.md` | D01〜D132と実装領域の対応 |
 | `11_OPEN_ITEMS.md` | 意図的に未確定の事項 |
 | `research/*` | ポーカードメインの調査・出典 |
+| `guides/*` | セットアップ・開発・使い方・現在の制約（手順。§3.1） |
+| `phases/*` | Phase 0〜8 の履歴（§3.1） |
+| `taskLog/*` | Issue ごとの作業記録（§3.1） |
 
 ## 5. コア設計原則
 

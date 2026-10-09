@@ -58,7 +58,7 @@ Post-MVP の親の親は #104（Post-MVP Parent。D102）。以下で「親」�
 1. 親の DoD チェックボックスを更新してよいのは、**対応する PR がマージされた後だけ**。マージ前・レビュー中にチェックを入れない。
 2. チェック更新の前に、実出力を引用して根拠を示す（例: `gh pr view <n> --json state,mergedAt,url` の出力、Phase 完了時の `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check` の実出力）。引用できなければ完了と言わない。
 3. DoD の項目が Phase の途中で部分的にしか満たされていない場合はチェックしない。
-4. 子 Issue がすべてクローズされ、対応する DoD 項目が更新されたら Phase 完了。その時点で **`release-readme-sync` skill** に進み、README 等との同期を行う。
+4. 子 Issue がすべてクローズされ、対応する DoD 項目が更新されたら Phase 完了。その時点で **`release-readme-sync` skill** に進み、ルート README の「現在の状態」と `docs/phases/` の Phase 履歴を更新する。
 5. 実装開始ゲートの Gate 項目（親 #2 の「開始条件」、#104 の「⛔ 実装開始 Gate」と Phase 間の Phase Gate）のチェックは**人間だけ**が行う。AI は更新しない（Phase の完了時は、Gate の各項目を満たした根拠を親 Issue のコメントに残して人間に返す）。
 
 ## やってはいけないこと

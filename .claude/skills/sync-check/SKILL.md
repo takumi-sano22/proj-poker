@@ -12,7 +12,7 @@ description: 実装・設計書・Issue の三者整合を確認し、齟齬を�
 | 対象 | 正本 / 場所 |
 |---|---|
 | docs/ 正本 | `docs/00_DOCUMENTATION_INDEX.md`（索引。矛盾時の優先順位はそこ）〜 `docs/11_OPEN_ITEMS.md` |
-| 採用済み判断 | `docs/decision_log.yaml`（D01〜D130。**AI が上書き禁止**。記録・追記は `decision-log` skill） |
+| 採用済み判断 | `docs/decision_log.yaml`（D01〜D132。**AI が上書き禁止**。記録・追記は `decision-log` skill） |
 | 未確定事項 | `docs/11_OPEN_ITEMS.md`（OI-NNN） |
 | Issue | MVP（Phase 0〜5）は親 Issue #2（MVP Parent・Close 済み）。Post-MVP（Phase 6〜8）は Post-MVP Parent #104 と Phase Parent #105〜#107 の DoD・Phase Gate と sub-issue（D102） |
 | 実装 | リポジトリのコード（現在は実装前。Phase 0 以降で増える） |
@@ -35,7 +35,7 @@ Step 3（設計書の全確認）では、上記ファイルを優先的に確�
 
 ## Phase の進捗の置き場
 
-進捗は **親 Issue（MVP は #2、Post-MVP は #104 と #105〜#107）の DoD チェックボックスと sub-issue の状態**、および Phase 完了時のルート README（`release-readme-sync`）にだけ置く。**正本 docs（`docs/08_MVP_AND_ROADMAP.md` 等）に進捗記法（⏳ / ✅ 等）を書き込まない**（仕様文書に第 3 の進捗置き場を作らないため）。Step 4-a で正本 docs を直すのは、仕様の齟齬を解消するときだけ。
+進捗は **親 Issue（MVP は #2、Post-MVP は #104 と #105〜#107）の DoD チェックボックスと sub-issue の状態**、および Phase 完了時のルート README の短い「現在の状態」と `docs/phases/` の Phase 履歴（`release-readme-sync`）にだけ置く。**正本 docs（`docs/08_MVP_AND_ROADMAP.md` 等）に進捗記法（⏳ / ✅ 等）を書き込まない**（仕様文書に第 3 の進捗置き場を作らないため）。Step 4-a で正本 docs を直すのは、仕様の齟齬を解消するときだけ。
 
 ## Issue の命名規則・処理ルール
 
