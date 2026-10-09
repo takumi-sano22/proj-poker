@@ -1,0 +1,530 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-09T15:04:51.250Z",
+  "model": "claude-haiku-4-5",
+  "sdkVersion": "0.3.289",
+  "spots": [
+    "t0_no_context",
+    "t1_before_bubble_shove",
+    "t2_bubble_shove",
+    "t3_itm_shove",
+    "t4_heads_up_shove",
+    "t5_bubble_call_vs_big",
+    "t6_bubble_call_layers"
+  ],
+  "personas": ["nit", "maniac"],
+  "repeats": 2,
+  "concurrency": 1,
+  "limits": {
+    "maxDecisions": 28,
+    "maxCalls": 56
+  },
+  "modelCalls": 28,
+  "runs": 1,
+  "cases": [
+    {
+      "spotId": "t0_no_context",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "379c38fcea9ce9d5",
+          "output": {
+            "action": "fold",
+            "rationale": "Qh6cは低いPreflop参加率（0.15）と高い規律性（0.80）を持つNitプレイヤーにとって、フォールドすべき弱い手である。"
+          },
+          "ms": 7876
+        }
+      ]
+    },
+    {
+      "spotId": "t0_no_context",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "379c38fcea9ce9d5",
+          "output": {
+            "action": "fold",
+            "rationale": "Nit スタイルで preflop 参加率が極めて低く、Q6o は規律に基づいてフォールドすべき弱い手です。"
+          },
+          "ms": 6451
+        }
+      ]
+    },
+    {
+      "spotId": "t0_no_context",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e1bdfea5f52c941b",
+          "output": {
+            "action": "raise",
+            "amount": 600,
+            "rationale": "Maniacスタイルの極度な攻撃性とBluff傾向に従い、Buttonからの強気なレイズでポットを奪いにいく。"
+          },
+          "ms": 7992
+        }
+      ]
+    },
+    {
+      "spotId": "t0_no_context",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "e1bdfea5f52c941b",
+          "output": {
+            "action": "raise",
+            "amount": 450,
+            "rationale": "Maniacスタイルで高い攻撃性とBluff傾向を表現し、ボタンポジションから弱いハンドでも積極的にレイズで相手に圧力をかける。"
+          },
+          "ms": 7184
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "22118501dbda8de4",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble 前で複数の高い Bubble Factor の相手がいる中、10BB の浅い Stack では規律を優先し、Qh6c という弱い hand は fold すべき。"
+          },
+          "ms": 8108
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "22118501dbda8de4",
+          "output": {
+            "action": "fold",
+            "rationale": "10BBの浅いstackで弱いQ6oはbubble factorが大きい相手（hero 1.71、cpu1 1.64）との衝突コストが高く、very tightな性格と低いrisk toleranceから参加は控える。"
+          },
+          "ms": 10058
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "db3bacdd59094baf",
+          "output": {
+            "action": "fold",
+            "rationale": "10BB の浅い Stack で Q6o は最弱手。Bubble Factor 1.7 の hero 相手への敗退は ICM 上の痛みが大きく、攻撃性が高くても必要勝率に足りないため折る。"
+          },
+          "ms": 9849
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "db3bacdd59094baf",
+          "output": {
+            "action": "all_in",
+            "rationale": "10BB の短 Stack、Button position、超高い攻撃性と Bluff 傾向により、fold を狙って all-in で攻撃的に動く。"
+          },
+          "ms": 10664
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "c6c0956161247293",
+          "output": {
+            "action": "fold",
+            "rationale": "10BB浅Stack Button ですが Bubble 段階で bubbleFactor が 1.66～1.76 と高く、Q6o の勝率では All-in の必要期待値がマイナス、規律と慎重さから折ります。"
+          },
+          "ms": 11579
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "c6c0956161247293",
+          "output": {
+            "action": "fold",
+            "rationale": "10BBの浅いStack、Bubble段階での強いICM圧力、Q6oという非常に弱い手、そして超低い参加範囲と高い規律のNit性格から、フォールドが最適です。"
+          },
+          "ms": 10102
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "09348f9f873a0802",
+          "output": {
+            "action": "fold",
+            "rationale": "10BB のボタン、Bubble ステージで Q♥6♣ の弱い手、Hero との Bubble Factor 1.76 の高さとリスク・リターンが見合わない。"
+          },
+          "ms": 9231
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "09348f9f873a0802",
+          "output": {
+            "action": "all_in",
+            "rationale": "浅いStack(10BB)・Button位置・低実力で攻撃性が非常に高く、Bubble Factorの警告を理解しながらも広い参加範囲で All-in で圧力をかけるのが性格一貫。"
+          },
+          "ms": 9324
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "dac566fbb513bde8",
+          "output": {
+            "action": "fold",
+            "rationale": "10BB浅いスタックでQ6oはボタンでも弱く、Bubble Factor 1.2超の相手との対戦は規律と低いリスク許容から回避すべき。"
+          },
+          "ms": 11259
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "dac566fbb513bde8",
+          "output": {
+            "action": "fold",
+            "rationale": "弱いハンド(Q6o)、10BBの浅いStack、In the moneyステージで入賞確定済み、Bubble Factorが1を超える状況では、Nit の高い規律(0.80)と低いリスク許容(0.20)に従い、無理な勝負を避けるべき。"
+          },
+          "ms": 9128
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "ab789444df269495",
+          "output": {
+            "action": "all_in",
+            "rationale": "10BB 浅いスタック・Button 後ろポジション・規律 0.15 ・攻撃性 0.95 の Maniac は、Bubble Factor 1.2+ の相手でも All-in でプレッシャーをかけるクセが優先される傾向が強い。"
+          },
+          "ms": 12346
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "ab789444df269495",
+          "output": {
+            "action": "all_in",
+            "rationale": "10BBの浅いStack + Button位置 + 高い攻撃性とBluff傾向により、相手へのプレッシャーでFoldを狙う；Bubble Factorの圧力は理解するも、Stack再建の急務が優先される。"
+          },
+          "ms": 10605
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "6406e144f7ede83c",
+          "output": {
+            "action": "fold",
+            "rationale": "10BB heads-up の SB で Q6o は参加範囲外；規律高く、リスク許容低い性格として、より強い手の到来を待つ方が一貫している。"
+          },
+          "ms": 9788
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "6406e144f7ede83c",
+          "output": {
+            "action": "fold",
+            "rationale": "Heads-up 10BB の浅い Stack でも、Q6o は著しく弱く、自分の Nit スタイル（Discipline 0.80・Risk Tolerance 0.20・Preflop Looseness 0.15）に合わない手のため Fold。"
+          },
+          "ms": 10342
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "524f23911294fc45",
+          "output": {
+            "action": "all_in",
+            "rationale": "10BB のヘッズアップで広い Range を参加する Maniac として、攻撃性とリスク許容度の高さから Q6o での All-in が一貫したプレイ。"
+          },
+          "ms": 8468
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "524f23911294fc45",
+          "output": {
+            "action": "all_in",
+            "rationale": "Heads-upで10BB、Button位置、高い攻撃性とBluff傾向の性格から、Qh6cで相手を圧倒する全力のシャイブが一貫したプレイ。"
+          },
+          "ms": 10450
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "b28f9a99de33757e",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble 段階で cpu1 との Bubble Factor が 2.75 と極めて高く、Ah9c は弱い手のため、規律の高い Nit は敗退リスクを避けてフォールドするべき。"
+          },
+          "ms": 10190
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "b28f9a99de33757e",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble段階でcpu1のbubbleFactorが2.75と極めて大きく、弱いハンド(Ah9c)で浅いStackを失うリスクが高すぎるため、規律を優先してfold。"
+          },
+          "ms": 10631
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "83a6fe0b58d1cb60",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble stage で Bubble Factor が 2.75 と極めて高く、Ah9c の弱い手では ICM 圧力を考慮すると fold が正当。"
+          },
+          "ms": 9904
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "83a6fe0b58d1cb60",
+          "output": {
+            "action": "fold",
+            "rationale": "Ah9c は cpu1 の all-in range に対して勝率が低く、bubbleFactor 2.75 で call の必要勝率が高い；自分の skill が低く、hand strength を過大評価するリスクがあり、規律の低さも考慮すると fold が最適。"
+          },
+          "ms": 10848
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e4f1972887103490",
+          "output": {
+            "action": "fold",
+            "rationale": "Ah9cは弱い手で、16.7BB浅スタックのBubble局面、相手のbubbleFactor=2.75という高い敗退リスク下では、超厳格な規律と低リスク許容度で folding が標準的です。"
+          },
+          "ms": 10804
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "e4f1972887103490",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble段階でbubbleFactor 2.75の高い圧力があり、弱いAH9CではCall時の勝率がrequired winrateを下回るため、高い規律とリスク回避傾向に基づきFoldが最適。"
+          },
+          "ms": 11096
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "a728aef88cfbf7e0",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble 局面で Bubble Factor 2.75 と非常に高く、Ah9c の弱さと 16.7BB の浅い Stack では、攻撃的性格でも敗退の賞金喪失圧力に抗えない。"
+          },
+          "ms": 12158
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "a728aef88cfbf7e0",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble stage で bubbleFactor 2.75 は敗退の痛みが大きく、Ah9c では pot odds 33.5% に対して必要勝率 35-40% を満たさず、攻撃的性格でも敗退リスクを正当化できない。"
+          },
+          "ms": 10222
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "decisions": 28,
+    "calls": 28,
+    "structuredOutputValidRate": 1,
+    "illegalActionRate": 0,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "outages": 0,
+    "hiddenInformationLeakage": 0,
+    "latencyMs": {
+      "min": 6451,
+      "median": 10190,
+      "p90": 11579,
+      "max": 12346
+    },
+    "personaDifferentiation": 0.571,
+    "personaDifferentiationBySpot": {
+      "t0_no_context": 1,
+      "t1_before_bubble_shove": 0.5,
+      "t2_bubble_shove": 0.5,
+      "t3_itm_shove": 1,
+      "t4_heads_up_shove": 1,
+      "t5_bubble_call_vs_big": 0,
+      "t6_bubble_call_layers": 0
+    },
+    "actionDiversity": {
+      "nit": 0,
+      "maniac": 1.449
+    },
+    "actionCounts": {
+      "nit": {
+        "t0_no_context": {
+          "fold": 2
+        },
+        "t1_before_bubble_shove": {
+          "fold": 2
+        },
+        "t2_bubble_shove": {
+          "fold": 2
+        },
+        "t3_itm_shove": {
+          "fold": 2
+        },
+        "t4_heads_up_shove": {
+          "fold": 2
+        },
+        "t5_bubble_call_vs_big": {
+          "fold": 2
+        },
+        "t6_bubble_call_layers": {
+          "fold": 2
+        }
+      },
+      "maniac": {
+        "t0_no_context": {
+          "raise": 2
+        },
+        "t1_before_bubble_shove": {
+          "fold": 1,
+          "all_in": 1
+        },
+        "t2_bubble_shove": {
+          "fold": 1,
+          "all_in": 1
+        },
+        "t3_itm_shove": {
+          "all_in": 2
+        },
+        "t4_heads_up_shove": {
+          "all_in": 2
+        },
+        "t5_bubble_call_vs_big": {
+          "fold": 2
+        },
+        "t6_bubble_call_layers": {
+          "fold": 2
+        }
+      }
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  }
+}
