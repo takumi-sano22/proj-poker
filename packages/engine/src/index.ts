@@ -175,6 +175,18 @@ export type {
   IcmStack,
 } from "./icm.js";
 
+export {
+  TOURNAMENT_KNOWLEDGE_VERSION,
+  tournamentKnowledgeOf,
+  tournamentStageOf,
+} from "./tournament-knowledge.js";
+export type {
+  TournamentKnowledge,
+  TournamentSeatKnowledge,
+  TournamentSessionInfo,
+  TournamentStage,
+} from "./tournament-knowledge.js";
+
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
 export type {
   Declaration,
@@ -197,6 +209,7 @@ export type {
   DecisionMath,
   HeroView,
   KnowledgeState,
+  KnowledgeStateOptions,
   PositionInfo,
   PublicActionRecord,
   PublicRulingRecord,

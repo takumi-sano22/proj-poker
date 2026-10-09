@@ -20,6 +20,11 @@ import {
 } from "./legal-actions.js";
 import { potOdds } from "./pot-math.js";
 import type { PhysicalAction, RulingCode } from "./ruling.js";
+import {
+  tournamentKnowledgeOf,
+  type TournamentKnowledge,
+  type TournamentSessionInfo,
+} from "./tournament-knowledge.js";
 
 export interface SeatView {
   readonly playerId: string;
@@ -126,6 +131,17 @@ export interface KnowledgeState extends TableView {
    */
   readonly rulingHistory?: readonly PublicRulingRecord[];
   readonly math: DecisionMath;
+  /**
+   * Public Tournament Context（D109・D130・#188。tournament-knowledge.ts）。Tournament の Hand で、呼び出し側が Session の情報を
+   * 渡したときだけ持つ。Cash の Hand では項目ごと持たない（CPU への入力〔Prompt〕を変えない）。
+   */
+  readonly tournament?: TournamentKnowledge;
+}
+
+/** projectKnowledgeState の追加の入力。 */
+export interface KnowledgeStateOptions {
+  /** Tournament の Session の情報（設定の Snapshot・参加人数）。Tournament の Hand でだけ渡す（Cash は省略）。 */
+  readonly tournament?: TournamentSessionInfo;
 }
 
 /** viewer が読める Event だけを返す（public と viewer 宛ての private）。 */
@@ -155,6 +171,7 @@ export function projectHeroView(
 export function projectKnowledgeState(
   events: readonly HandEvent[],
   playerId: string,
+  options: KnowledgeStateOptions = {},
 ): KnowledgeState {
   const visible = visibleEvents(events, playerId);
   const actionHistory: PublicActionRecord[] = [];
@@ -186,6 +203,16 @@ export function projectKnowledgeState(
     actionHistory,
     ...(rulingHistory.length > 0 ? { rulingHistory } : {}),
     math: decisionMath(table, me),
+    // Tournament Context も見える Event（public の HAND_STARTED）と Session の設定だけから作る（whitelist。D109）。
+    ...(options.tournament === undefined
+      ? {}
+      : {
+          tournament: tournamentKnowledgeOf(
+            visible,
+            playerId,
+            options.tournament,
+          ),
+        }),
   };
 }
 
