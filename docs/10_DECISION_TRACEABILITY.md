@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D131の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D132の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -38,6 +38,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D125〜D126 | Review の自然言語中の数値 Grounding は Phase 7 では実装せず Blocker にしない・横断の品質課題として #104 に残す（D125）、River の代表 Spot だけで Claude CPU の実モデル Eval を追加測定（最大 36 Decision・72 呼び出し・OAuth・既存の録画は残し CI は再生だけ・逆向きでも Prompt / Policy は変えない。D126） |
 | D127〜D130 | Phase 8 の実装前判断: 標準6-max STTの暫定値（Starting Stack 1,500・10 HandごとのBlind表・参加費100pt。D127）、AnteのDead MoneyとBBAのBlind優先・time-baseのプレイ時間とUIでの選択（D128）、HeroのBustでTournamentを終えEvent Logだけに残しProjectionは都度計算（D129）、ICM EquityとBubble FactorとAll-inの必要Equity（ShoveはCallされた場合の条件付き）をCPUとReviewへ構造化して渡す（D130） |
 | D131 | Review の文の数値は Evidence から決定論で作った数値表の参照（{N3}）で書かせ、%・pt・BB の付いた生の数値を表と照合する（Pass A と Pass A への Follow-up。Retry の上限は増やさない・保存は置き換えた平文で DB スキーマは不変・Pass B は範囲外・Cash の Review Eval を最大 24 呼び出しで再録画。#168） |
+| D132 | Tournament の Claude CPU / Review の実モデル Eval の上限（CPU 7 Spot × 2 Persona × repeat 2 = 最大 28 Decision・56 呼び出し／Review 4 判断 × repeat 2 = 8 Review + Follow-up 2 = 最大 20 呼び出し）。OAuth / Agent SDK / buildClaudeEnv の経路だけ・結果を見て Prompt / Policy を調整しない・CI は録画の再生だけ。#202 |
 
 ## 特に重要なClosed Decision
 

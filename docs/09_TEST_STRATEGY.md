@@ -205,6 +205,41 @@ PersonaごとのCallの割合（baseline / loose / tight。各3判断）: TAG Re
 - 結果を見てPrompt / Policyは変えていません（D126）。
 
 
+### TournamentのClaude CPUのEval（Issue #202・D132）
+
+TournamentのHandのPublic Tournament Context（D130・#188。Stack BB・Stage・ICM Equity・Bubble Factor）が入ったPromptで、ClaudeのCPUの判断を録画します。経路・番人・dry-run・`--record` / `--resume`は#155と同じで、呼び出す前にシェルと子プロセスのenvの両方に`ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`・`CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY`・`ANTHROPIC_BASE_URL`が無いことを確かめます（`assertShellRoute`・`assertOAuthRoute`）。
+
+- **置き場所**: `tournament-eval.ts`（Spot・Persona・上限・Stageごとの集計）・`tournament-run.ts`（手動の実行。`eval:opponent-tournament`）・`tournament-eval.test.ts`（CI）・`recordings/opponent-tournament-eval.json`（録画）。`spots.ts`の`buildSpot`は、Tournamentの局面（席・Button・Level・Sessionの設定）を本番と同じ`tableConfigForLevel`と`projectKnowledgeState(…, { tournament })`で作れるようにしました（CashのSpotのPromptは変わらず、既存の録画の指紋はそのまま）。
+- **Spot（標準6-max STT・Level 5の75 / 150・BBA 150）**: S0 対照（S2と同じ札・Stack・BlindでContextなし）／S1 Bubbleの前（5人）／S2 Bubble（4人）／S3 In the Money（3人）／S4 Heads-Up は、判断するCPUが10BB（1,500）・Q6oで前が全員FoldのOpen Shoveの判断にそろえ、Stageだけを変えます（残人数が変わるので席はBTN → Heads-UpのSB）。S5 BubbleでChip Leader（4,000）のShoveにBBの2,500がA9oでCallするか（Chip Leaderに対するBubble Factor 2.75・1,000のShort Stackがいる）、S6 S5にMemory（`tournament`のHypothesis）・Table Tendency・Tiltの層（`all_loose`）を足したもの。S0とS2・S5とS6はHandのIDが同じで、違いはContext・層の有無だけです。S0のPromptはS2の入力からContextを外したものと同じ文字列で、System PromptはCashと同じであることをunit testで確かめます。
+- **Persona**: Nit（リスク許容0.2・規律0.8）とManiac（0.9・0.15）。Tournamentの節の読み方の指示が「リスク許容度」と「規律」を指すので、その2軸が両端に近い組にしました。
+- **上限（D132）**: 判断28（7 Spot × 2 Persona × repeat 2）・呼び出し56（`TOURNAMENT_EVAL_LIMITS`）。
+
+録画の結果（2026-10-09・`claude-haiku-4-5`（`opponent_fast`）・Agent SDK 0.3.289・実行1回・呼び出し28回 / 上限56）:
+
+| 指標 | 値 |
+|---|---|
+| 判断 / 呼び出し | 28 / 28 |
+| Structured Output Valid率 / Illegal Action率 / Retry率 / Fallback率 | 1 / 0 / 0 / 0 |
+| 障害 / Hidden Information Leakage | 0 / 0 |
+| Latency（ms。min / median / p90 / max） | 6829 / 8681 / 10802 / 12016 |
+| Persona Differentiation | 1（全Spotで1。NitとManiacが全Spotで別のActionを選んだ） |
+
+StageごとのAction（Nit / Maniac。各2判断）:
+
+| Spot | Nit | Maniac | 見るActionの割合（合計） |
+|---|---|---|---|
+| S0 対照（Contextなし） | Fold 2 | Raise 2（3BB） | All-in 0 |
+| S1 Bubbleの前 | Fold 2 | Raise 1・All-in 1 | All-in 0.25 |
+| S2 Bubble | Fold 2 | All-in 2 | All-in 0.5 |
+| S3 In the Money | Fold 2 | All-in 2 | All-in 0.5 |
+| S4 Heads-Up | Fold 2 | Raise 1・All-in 1 | All-in 0.25 |
+| S5 Bubbleの大StackのShoveへのCall | Fold 2 | All-in 1・Call 1 | Call / All-in 0.5 |
+| S6 S5 + 層 | Fold 2 | Call 2 | Call / All-in 0.5 |
+
+- Contextの有無（S0 → S2）の分布の差（Total Variation Distance）: Nit 0・Maniac 1（Raise → All-in）・合計0.5。層の有無（S5 → S6）: Nit 0・Maniac 0.5・合計0.25。
+- 所見: Contextは形式・合法性・漏れの面では正しく使われ、Rationaleにも`Bubble Factor 2.75`等の値が出ますが、判断はPersonaが支配的でした。NitはHeads-UpのSB 10BBのQ6o（Chip EVでもICMでもほぼShoveの局面）を含む14判断すべてでFoldし、ManiacはBubble Factor 2.75のShoveにA9oで「ICMのリスクを無視して」Callしました。Context・Stageによる差はManiacのSizing（3BBのRaiseかAll-inか）にだけ出ています。結果を見てPrompt / Policyは変えていません（D132）。戦略品質の改善は#207に分けました。
+- CI: 録画を本番と同じ経路で再生し、集計が録画時と一致すること・Hidden Information Leakageと障害が0件・上限の中で取ったこと・録画に資格情報が無いことを確かめます。
+
 ## 6. Review Eval
 
 確認:
@@ -252,9 +287,9 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - **手動の Eval**: `pnpm --filter @proj-poker/server eval:review [--repeats 1] [--depth standard|deep] [--solver] [--record]`。Claude CodeのOAuth（サブスク枠。D87）で呼び、指標と合格ラインを表示し、`--record`で録画（`recordings/review-eval.json`）に書きます（障害が1件でもあれば書かない）。API課金・別の経路（Bedrock / Vertex / Foundry・別の接続先）へ切り替わる変数が親（シェル）か子プロセスのenvにあれば、呼ぶ前に止めます（`assertOAuthRoute`）。1回の実行の呼び出しは番人（`createCallBudget`）で24回までで、Retryを含めた最悪の呼び出しの数（判断 × repeat × 2）が24を超える`--repeats`は呼ぶ前に拒否します（#168・D131）。
 - **CI**（`harness.test.ts`）: Claudeを呼ばず、録画した出力を本番と同じ経路で再生して集計し直し、録画時の集計と一致すること・Hindsight Leakと障害が0件であることを確かめます。Evidence・Prompt・Schema・KBが変わると引数の指紋が合わず、再生が失敗します（手動のEvalで録画を取り直す）。
 - **Table Tendency（D122・#153）**: 代表の判断は前のHandを持たない固定Handなので、Opponent Observationは`unavailable`のままで、#153では録画の指紋が変わらず、取り直していません（#168で数値表を足したときに取り直した。下記）。卓の傾向が入るPromptとGroundingは、Fakeと決定論のテストで確かめます（上の「Table Tendency」）。卓の傾向が入ったReviewの実モデルの品質（説明が数値を作らない・個々の相手の傾向として断定しない等）は、まだ録画で測っていません。
-- **Tournament（#189）**: `hands.ts`にTournamentの固定Hand（標準6-max STTの4人残り＝Bubble・Level 5。BTNのHeroの10BBのShove〔`BUBBLE_SHOVE`〕と、BBのHeroのBTNのShoveへのCall〔`BUBBLE_CALL`〕）を足し、`harness.ts`の`TOURNAMENT_REVIEW_EVAL_CASES`にしました。本番と同じく`reviewSpotReasons`とSessionの情報を`buildReviewEvidence`へ渡します。実モデル（Claude）を呼ぶ録画はまだ取っていない（OAuthの利用枠を使う判断は人間判断）ので、録画を再生するCIの母集団（`REVIEW_EVAL_CASES`）には入れず、固定の応答（Fake）で本番と同じ経路（Evidence・Prompt・Grounding・Retry・漏れの検査）を通します（`harness.test.ts`）。CashのEvidence・Prompt・Schemaは変えていないので、既存の録画の指紋はそのままです。録画を取るときに`REVIEW_EVAL_CASES`へ入れます。
+- **Tournament（#189）**: `hands.ts`にTournamentの固定Hand（標準6-max STTの4人残り＝Bubble・Level 5。BTNのHeroの10BBのShove〔`BUBBLE_SHOVE`〕と、BBのHeroのBTNのShoveへのCall〔`BUBBLE_CALL`〕）を足し、`harness.ts`の`TOURNAMENT_REVIEW_EVAL_CASES`にしました。本番と同じく`reviewSpotReasons`とSessionの情報を`buildReviewEvidence`へ渡します。CashのReview Evalの母集団（`REVIEW_EVAL_CASES`）には入れず、固定の応答（Fake）で本番と同じ経路（Evidence・Prompt・Grounding・Retry・漏れの検査）を通します（`harness.test.ts`）。CashのEvidence・Prompt・Schemaは変えていないので、既存の録画の指紋はそのままです。実モデルの録画は#202で別の母集団・別の録画として取りました（下の「TournamentのReview Eval」）。
 
-- **文の中の数値のGrounding（#168・D131）**: Promptに数値表を足したので引数の指紋が変わり、CashのReview Eval（上の4判断 × repeat 3 = 12 Review）を取り直しました（2026-10-09・`claude-sonnet-5-5`・Claude Agent SDK 0.3.289・OAuth。Claudeの呼び出し12回〔上限24〕）。Structured Output Valid率1・Retry率 / Fallback率0・数値Groundingの不正0・Math / KB Grounding率1・Hindsight Leak・障害・識別子の残存0で、合格ラインにすべて届きました。12件の出力の文には参照（`{N3}`）が計155個あり、参照を使わない単位付きの数値は2個（どちらも表の値と一致）でした。Tournamentのケースはまだ録画していません（#202）。
+- **文の中の数値のGrounding（#168・D131）**: Promptに数値表を足したので引数の指紋が変わり、CashのReview Eval（上の4判断 × repeat 3 = 12 Review）を取り直しました（2026-10-09・`claude-sonnet-5-5`・Claude Agent SDK 0.3.289・OAuth。Claudeの呼び出し12回〔上限24〕）。Structured Output Valid率1・Retry率 / Fallback率0・数値Groundingの不正0・Math / KB Grounding率1・Hindsight Leak・障害・識別子の残存0で、合格ラインにすべて届きました。12件の出力の文には参照（`{N3}`）が計155個あり、参照を使わない単位付きの数値は2個（どちらも表の値と一致）でした。Tournamentのケースは別の録画です（下の「TournamentのReview Eval」）。
 
 指標の定義（`metrics.ts`）:
 
@@ -272,6 +307,33 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 | Latency | 呼び出しごとの所要時間のmin / median / p90 / max | 表示のみ（上限は`REVIEW_TIMEOUT_MS`。OI-001） |
 
 - Mathの正しさはEvidenceがEngineの値そのものであることで担保し（LLMに計算させない）、Uncertaintyの表現とAssumptionを変えたときのRecommendationの変わり方はJudge（人間かLLM）が要るため、まだ測りません。Human-reviewed HandのRegression Caseは、人がReviewを読んで固定するまで置きません。
+
+### TournamentのReview Eval（Issue #202・D132）
+
+- **置き場所**: `apps/server/src/testing/review-eval/`の`tournament-eval.ts`（判断・Follow-up・上限・Tournamentの指標）・`tournament-run.ts`（手動の実行。`eval:review-tournament [--dry-run] [--record]`）・`tournament-eval.test.ts`（CI）・`recordings/review-tournament-eval.json`（録画。CashのReview Evalの録画とは別）。`hands.ts`に`ITM_SHORT_CALL`（3人残り・Pay Jump・BBの8BBのHeroがChip LeaderのShoveにK7oでCall）と`TOURNAMENT_TURN_BET`（5人残り・Level 3・All-inの関わらないTurnの最初のBet）を足しました。
+- **判断**: BubbleのShove（`bubble_shove/d0`）・BubbleのAll-inへのCall（`bubble_call/d0`）・In the MoneyのShort StackのCall（`itm_short_call/d0`）・All-inでない通常の判断（`tournament_turn_bet/d2`。Tournamentでは Solver が`mode`でUnsupported）× repeat 2 = 8 Review。Follow-upは`bubble_shove/d0#1`と`bubble_call/d0#1`に固定の質問を1つずつ（本番の`generateFollowUp`。対象はReviewServiceと同じく保存するReviewのEvidenceと説明）。
+- **上限（D132）**: Retryを含めて最大20回（`TOURNAMENT_REVIEW_LIMITS`）。最悪の呼び出しの数（(Review + Follow-up) × 2）が20を超える構成は呼ぶ前に拒否し、呼び出しは番人（`createCallBudget`）で止めます。経路の確認はCPUのEvalと同じです。`--dry-run`は検証を通らない出力を返すFakeで全経路を通し、Gateで止まる判断が無く最悪20回になることを確かめます（モデルは0回）。
+- **指標**: `ReviewEvalSummary`に加え、数値Grounding（D131）の不正の一覧、Chip EVとICMの混同の疑い（文の中の必要Equityの値の直前の語が逆の種類。近似なので一覧を人が読む）、Shoveの条件付きの前提（1人にCallされほかはFold・Fold Equityを含まない）がassumptionsにあるか、Solver UnsupportedのReviewのGTOへの言及、PromptへのCPUのPrivateな情報（CPUのPromptの節・Personaの ID・Memoryの項目名）の漏れ、Follow-upの答え・不正・漏れ（`tournamentReviewReport`）。
+
+録画の結果（2026-10-09・`claude-sonnet-5-5`（`review_standard`）・Agent SDK 0.3.289・OAuth・呼び出し11回 / 上限20〔Review 9・Follow-up 2〕）:
+
+| 指標 | 値 |
+|---|---|
+| Review / 呼び出し | 8 / 9 |
+| Structured Output Valid率 / Retry率 / Fallback率 / Insufficient Evidence率 | 0.889 / 0.125 / 0 / 0 |
+| 数値Groundingの不正 | 1（`bubble_shove/d0#2`の1回目: 単位を含む値の参照の後ろに単位を重ねた。Retryで通った） |
+| Math / KB Grounding率 | 1 / 0.75 |
+| Hindsight Leak / CPUのPrivateな情報の漏れ / 障害 / 識別子の残存 | 0 / 0 / 0 / 0 |
+| Shoveの前提をassumptionsに書いた | 2 / 2 |
+| Chip EVとICMの混同の疑い | 2件（同じ1文。「ICMの必要EquityはChip EVの必要Equityより高い（今回は60.5%と45.5%…）」の並列の書き方を語の近さで拾った誤検知で、読んで確かめた範囲では実際の混同は0） |
+| Solver UnsupportedのReviewのGTOへの言及 | 1件（「Solverの結果は無く、GTOの値ではない」。否定でExact GTOとは書いていない。Exact GTOの言及は0） |
+| Latency（ms。min / median / p90 / max） | 13275 / 14280 / 23254 / 23254 |
+| 段階評価 | Bubble Shove: mixed_marginal 2・Bubble Call: improvement_suggested 2・ITMのCall: mixed_marginal 2・Turn Bet: reasonable 2 |
+| Follow-up | 2件ともanswered（1回で検証を通過）・数値Groundingの不正0・漏れ0 |
+
+- 合格ライン（`REVIEW_EVAL_TARGETS`）はStructured Output Valid率（0.889 < 0.9）だけ届きませんでした（9回中1回の数値Groundingの不正。Retryで回復しFallbackは0）。8件ともChip EVとICMの必要Equityを別の値として並べ、Bubble / ITMで「Chip EVではCall、ICMでは損寄り」と書き分けました。
+- 失敗経路: `bubble_call/d0#2`のassumptionsに`{481} Combo`（`N`の無い波括弧）が残りました。数値Grounding（D131）は`{N3}`の参照と単位付きの数値だけを見るので通り、保存する文に波括弧が残ります（値は数値表のCombo数と一致）。検査を変えると録画の出力が不正になり再録画が要るので、この Issue では変えず#208に分けました。
+- 結果を見てPrompt / Policyは変えていません（D132）。CI（`tournament-eval.test.ts`）は録画を本番と同じ経路で再生し、集計（`summary`）とTournamentの指標（`report`）が録画時と一致すること・Hindsight Leak・Privateな情報の漏れ・障害が0件・上限の中で取ったこと・録画に資格情報が無いことを確かめます。
 
 ## 7. Solver Adapter Test
 
