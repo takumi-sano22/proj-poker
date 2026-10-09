@@ -337,19 +337,33 @@ test("6-max STT を開始 → Blind / Ante → Resume → Elimination → Heads-
     expect(current.result.status).toBe("finished");
   });
 
-  await test.step("Result: Hero の順位と Payout（50 / 30 / 20%）が決まり、Payout の合計は Prize Pool を超えない", async () => {
+  await test.step("Result: 順位ごとの Payout が 50 / 30 / 20%（300 / 180 / 120pt）の通りで、Hero の Bust で残った CPU だけが未決", async () => {
     const result = (status as TournamentStatus).result;
     const hero = result.placements.find((p) => p.playerId === "hero");
     // Heads-Up まで残ったので、Hero は 1 位（優勝）か 2 位（Heads-Up で Bust）。
     expect([1, 2]).toContain(hero?.place);
-    expect(hero?.payout).toBe(PAYOUTS_BY_PLACE[(hero?.place ?? 1) - 1]);
-    // 3〜6 位は CPU の Elimination で決まり、3 位だけが入賞（120pt）。
-    for (const place of [3, 4, 5, 6]) {
-      const p = result.placements.find((x) => x.place === place);
-      expect(p?.payout, `${place} 位`).toBe(place === 3 ? 120 : 0);
+    // 順位の決まった Player の Payout は、その順位の賞金（入賞の外は 0pt）と完全に一致する。
+    const decided = result.placements.filter((p) => p.place !== null);
+    for (const p of decided) {
+      expect(p.payout, `${p.playerId}（${p.place} 位）`).toBe(
+        PAYOUTS_BY_PLACE[(p.place ?? 0) - 1] ?? 0,
+      );
     }
-    const paid = result.placements.reduce((sum, p) => sum + (p.payout ?? 0), 0);
-    expect(paid).toBeLessThanOrEqual(PRIZE_POOL);
+    // 優勝なら全員の順位が決まり、Payout の合計は Prize Pool 600pt。Heads-Up で Bust したら、残った CPU 1 人の順位と Payout は
+    // 未決（D129）で、決まった Payout の合計は 1 位の賞金を除いた 300pt。
+    const undecided = result.placements.filter((p) => p.place === null);
+    if (hero?.place === 1) {
+      expect(undecided).toHaveLength(0);
+      expect(decided.map((p) => p.place).sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    } else {
+      expect(undecided).toHaveLength(1);
+      expect(undecided[0]?.payout).toBeNull();
+      expect(decided.map((p) => p.place).sort()).toEqual([2, 3, 4, 5, 6]);
+    }
+    const paid = decided.reduce((sum, p) => sum + (p.payout ?? 0), 0);
+    expect(paid).toBe(
+      hero?.place === 1 ? PRIZE_POOL : PRIZE_POOL - PAYOUTS_BY_PLACE[0],
+    );
 
     await expect(dock.getByText("Session が終了しました。")).toBeVisible();
     await expect(dock.locator(".result__session")).toHaveText(
@@ -364,6 +378,14 @@ test("6-max STT を開始 → Blind / Ante → Resume → Elimination → Heads-
       `${hero?.place} 位`,
     );
     await expect(panel.locator('[data-place="3"]')).toContainText("120pt");
+    if (hero?.place === 2) {
+      await expect(panel.locator('[data-place="undecided"]')).toContainText(
+        "未確定",
+      );
+      await expect(panel).toContainText(
+        "Hero の Bust で終えたため、残った CPU の順位は決めていません（未決）。",
+      );
+    }
   });
 
   await test.step("最後の Hand の Review で、Chip EV と ICM を別の項目として出す", async () => {
@@ -448,5 +470,10 @@ test("6-max STT を開始 → Blind / Ante → Resume → Elimination → Heads-
     );
     await expect(header).toHaveText("Level 1 · 10 / 20 · BB Ante 20");
     await expect(panel).toContainText("6 / 6 人");
+    // 前の Tournament の Stack を持ち越さず、全員が Starting Stack 1,500 から始まる。
+    const start = (await replaySteps(page, handId)).find(
+      (s) => s.seats.length > 0,
+    );
+    expect(start?.seats.map((s) => s.stack)).toEqual(Array(6).fill(1_500));
   });
 });

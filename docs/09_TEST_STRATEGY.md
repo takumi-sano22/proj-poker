@@ -360,10 +360,10 @@ Phase 8の通しは、標準の6-max STT（`stt6_hand_count`。D127の値のま�
 3. Resume: 12 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直して同じPresetで「Handを始める」と、同じTournamentの13 Hand目（Level 2・残人数と順位が同じ）として始まり、Stackを持ち越す（Chipの総量9,000は変わらない）
 4. Elimination: CPUのBustで残人数が減り、脱落した順に6位から順位が付く（欄の見出しに脱落の人数、6位のPayoutは0pt）
 5. Heads-Up: 残り2人になると、次のHandは2人の席で始まる
-6. 終了とPayout / Result: Heads-UpでHeroがAll-inして決着させ、Tournamentが終わる。Heroの順位は1位か2位で、Payoutは50 / 30 / 20%（300 / 180 / 120pt。Prize Pool 600pt）の通り。3〜6位のPayoutは120 / 0 / 0 / 0pt。Heroの欄の案内（順位とPayout）とTournamentの欄のResult
+6. 終了とPayout / Result: Heads-UpでHeroがAll-inして決着させ、Tournamentが終わる。Heroの順位は1位か2位で、順位の決まったPlayerのPayoutはその順位の賞金（50 / 30 / 20%の300 / 180 / 120pt、入賞の外は0pt）と完全に一致する。Heroが優勝なら全員の順位が決まりPayoutの合計は600pt、Heads-UpでBustしたら残ったCPU 1人の順位とPayoutは未決（D129）で合計は300pt。Heroの欄の案内（順位とPayout）とTournamentの欄のResult（未決の注記）
 7. ICMのReview: 最後のHandのHeads-UpのAll-inの判断（Important Spotの理由にShort Stack）のReview（Pass A）で、Mathの見出しが「Chip で計算」、Tournamentの欄（ICM / Prize EquityとChip EV）が別の項目として出る。ICM Equityの表（2人の合計はHeads-Upで争う480pt）と、Chip EVの必要EquityとICMの必要Equityの別の列。固定応答はICMの必要EquityのidをEvidenceとして挙げる
 8. Replay: 最後のHandのReplayでImportant Spotへジャンプする
-9. Restart: 卓に戻り、Heroの欄の選択でTournamentを選んで「新しい Session を始める」と、新しいTournament（1 Hand目・Level 1・6人）が始まる
+9. Restart: 卓に戻り、Heroの欄の選択でTournamentを選んで「新しい Session を始める」と、新しいTournament（1 Hand目・Level 1・6人。前のTournamentのStackを持ち越さず全員1,500）が始まる
 
 - serverの設定は1本目と同じ（`e2e/support/server.ts`。`POKER_SEED`・RuleBot・固定応答で、Claudeを呼ばない。D98）。本番のPresetの値は変えず、テスト用の短いBlind表も足しません。
 - HeroはHeads-UpまではCheck / Foldだけで打ってStackを守り（CPU同士のEliminationで残人数が減る）、Heads-UpではAll-in（できなければCall）で決着を早めます。経路はseed・RuleBot・再起動の位置で決まります（再起動するとseedの並びは先頭から使い直す）。この方針と12 Hand目の後の再起動で、Heroは51 Hand目でHeads-Upに入り、52 Hand目で終わります（UIで20秒ほど）。RuleBot・Engineの変更でHeroがHeads-Upの前にBustするようになったら、前提のassert（「Hero は Heads-Up の前に Bust しない」）で落ちるので、再起動の位置かseedを選び直します。
