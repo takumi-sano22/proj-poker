@@ -580,7 +580,8 @@ function validateStacks(stacks: readonly IcmStack[]): void {
  * Tournament の Result（#186。順位と順位ごとの賞金）と、残っている Player の今の Stack から ICM Equity を計算する（Payout / Standings
  * との接続）。残っている Player（順位が未決で Bust していない）は 1〜残人数位を争い、賞金は result.payoutsByPlace を使う。
  * Stack をどの時点で取るか（Hand の開始時・判断時点）は呼び出し側（#188 の CPU・#189 の Review）が決める。Review で過去の判断を
- * 見るときは、その Hand より前の Hand だけから作った Result を渡す（その時点で残っていた Player と一致させる）。
+ * 見るときは、判断時点までの Event Log（判断した Hand は HAND_FINISHED より前の Event だけ。HAND_FINISHED の無い Hand では誰も
+ * Bust しない）から作った Result を渡す（その時点で残っていた Player と一致させる。Session の最初の Hand でも作れる）。
  * stacks の顔ぶれが Result の残っている Player と一致しなければ RangeError を投げる。
  */
 export function tournamentIcm(
