@@ -69,11 +69,7 @@ export function payoutsByPlace(
   structure: PayoutStructure,
   prizePool: number,
 ): number[] {
-  if (
-    !Number.isSafeInteger(prizePool) ||
-    prizePool < 0 ||
-    !Number.isSafeInteger(prizePool * 100)
-  ) {
+  if (!Number.isSafeInteger(prizePool) || prizePool < 0) {
     throw new RangeError(`Prize Pool は 0 以上の整数: ${prizePool}`);
   }
   switch (structure.kind) {
@@ -92,7 +88,12 @@ export function payoutsByPlace(
           `Payout の割合の合計は 100%: ${percentages.join(" / ")}`,
         );
       }
-      const base = percentages.map((p) => Math.floor((prizePool * p) / 100));
+      // floor(Prize Pool × p / 100) を、Prize Pool を 100 で割った商と余りに分けて計算する（掛け算が安全な整数を超えない）。
+      const quotient = Math.floor(prizePool / 100);
+      const remainder = prizePool % 100;
+      const base = percentages.map(
+        (p) => quotient * p + Math.floor((remainder * p) / 100),
+      );
       const rest = prizePool - base.reduce((sum, a) => sum + a, 0);
       return base.map((amount, i) => amount + (i < rest ? 1 : 0));
     }

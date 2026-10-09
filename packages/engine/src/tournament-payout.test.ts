@@ -44,6 +44,13 @@ describe("prizePoolOf / payoutsByPlace（#186）", () => {
       payoutsByPlace({ kind: "percentages", percentages: [34, 33, 33] }, 2),
     ).toEqual([1, 1, 0]);
     expect(payoutsByPlace(structure, 0)).toEqual([0, 0, 0]);
+    // 安全な整数の Prize Pool なら、× 割合が安全な整数を超える額でも配れる（合計は Prize Pool）。
+    const large = 100_000_000_000_001;
+    const amounts = payoutsByPlace(structure, large);
+    expect(amounts).toEqual([
+      50_000_000_000_001, 30_000_000_000_000, 20_000_000_000_000,
+    ]);
+    expect(amounts.reduce((sum, a) => sum + a, 0)).toBe(large);
   });
 
   it("Custom の割合でも合計は Prize Pool（後から足す Payout の構造と同じ経路）", () => {
