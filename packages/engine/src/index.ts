@@ -150,6 +150,31 @@ export type {
   TournamentResultPlacement,
 } from "./tournament-payout.js";
 
+export {
+  ICM_MAX_PLAYERS,
+  ICM_MIN_PLAYERS,
+  ICM_POLICY,
+  bubbleFactors,
+  icmCallAllIn,
+  icmEquities,
+  icmShove,
+  tournamentIcm,
+} from "./icm.js";
+export type {
+  AllInAssumptions,
+  AllInIcmAnalysis,
+  AllInOutcomes,
+  AllInRequirement,
+  BubbleFactor,
+  IcmEquities,
+  IcmMethod,
+  IcmPlayerEquity,
+  IcmPolicy,
+  IcmSpot,
+  IcmSpotSeat,
+  IcmStack,
+} from "./icm.js";
+
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
 export type {
   Declaration,

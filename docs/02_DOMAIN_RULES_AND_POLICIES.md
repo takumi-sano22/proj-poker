@@ -240,6 +240,11 @@ ICM（D109）:
 
 - 2〜8人のICMは決定論のコード（ICM Calculator）で計算します。LLMをICMの数値の正本にしません。
 - 方式はMalmuth-Harvilleを暫定値とし、Version付きのPolicyに置きます（OI-007。確定ではない。ほかの方式へ差し替えられる形にする）。内部は倍精度で計算し、テストは許容誤差つきで合計の保存（Σ Equity = Prize Pool）・Stackについての単調性を確かめます。表示は丸めます。
+- **ICM Calculator（#187）**: Engineの`packages/engine/src/icm.ts`です（Policyは`ICM_POLICY`。版`phase8_icm_provisional_v1`・方式`malmuth_harville`を結果に残す）。入力はStack（Chip。D74の整数）と順位ごとの賞金（pt。`payoutsByPlace`の出力）で、2〜8人以外は拒否します。
+  - **Equity**: 各PlayerのICM Equity（pt）と、争う賞金の合計に対する%を返します。残っているn人は1〜n位を争い、n位より下の賞金（入賞の数より残りが少ないとき、すでにBustしたPlayerのもの）は含めません。Stack 0のPlayerはStackの残っている全員より下の順位で、Stack 0が複数ならその順位の賞金を等分します（同順位の等分と同じ値）。同額のStackは同じEquityです。Tournamentの順位とPayout（#186のResult）との接続は`tournamentIcm`で、順位が未決でBustしていないPlayerのStackを呼び出し側が渡します（どの時点のStackかは#188・#189が決める）。
+  - **Bubble Factor（D130）**: Heroから見た相手ごとに、2人のStackの小さい方を1対1で取り合う（Dead Moneyなし）ときの「負けで失うICM Equity ÷ 勝ちで得るICM Equity」です（`bubbleFactors`）。Heads-Upは常に1です。賭けられない（どちらかのStackが0）・勝ってもEquityが増えないときは値なし（null）です。
+  - **All-inの必要Equity（D130）**: 判断時点の各席の手元のChip・このHandで出した額・Foldの有無（と`big_blind_ante`のDead Money）から、Fold・Callされて勝つ・負けるの3つの結果のHeroのStackとICM Equityを作り、損益分岐の勝率 q（q × 勝ち + (1 − q) × 負け = Fold）をICMのEquityとChipの両方で返します。Chipで計算した値がChip EVの必要Equity（All-inへのCallではPot Oddsと一致）で、ICMの値とは別の項目です。All-inへのCall（`icmCallAllIn`）は相手の額が決まっているのでそのまま計算し、Foldの比較点では相手がPotを取ります。Shove（`icmShove`）はCallしうる相手（まだFoldしておらずStackが残っている相手）ごとに「その1人にCallされ、ほかはFoldした場合」の条件付きで出し、比較点（HeroがFoldした場合）でPotを取るPlayerは呼び出し側が渡します。どちらもFold Equity・Callの頻度を含めず、その前提（`assumptions`）を結果に明示します。MultiwayのAll-in（相手以外にAll-inした・すでに揃えたPlayerがいる）・All-inの関わらない判断は範囲外で拒否します。
+  - **数値精度**: StackとPayoutは整数で受け取り、確率・Equity・必要Equityは倍精度で丸めずに返します。テストは争う賞金の合計に対する相対1e-9（Scenarioは小数第9位まで）の許容誤差で比べます。表示・Evidenceに出すときだけpt・%・必要Equity（%表記）を小数第1位に四捨五入し、比較・判定は丸める前の値で行います。8人のICM Equityは部分集合のDP（2^8 × 8）で1回約0.01msです（#187の作業ログ）。
 - ICM（Prize Equity）とChip EVを混同せず、Reviewへは別のEvidenceとして渡します（`docs/05` §10）。
 - Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外です。
 
