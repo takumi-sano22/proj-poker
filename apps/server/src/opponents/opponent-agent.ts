@@ -23,8 +23,8 @@ export interface OpponentCorrection {
 }
 
 /**
- * CPU の KnowledgeState。Engine の Projection（その Hand の中で見えたもの）に、その CPU 自身の Memory の要約を足したもの
- * （D121・#139。docs/05 §1・docs/04 §5）。Memory はその CPU が Observer の観察から作った Hypothesis だけで、
+ * CPU の KnowledgeState。Engine の Projection（その Hand の中で見えたもの。Tournament の Hand では Public Tournament Context の
+ * tournament〔D109・D130・#188〕を含む）に、その CPU 自身の Memory の要約を足したもの（D121・#139。docs/05 §1・docs/04 §5）。Memory はその CPU が Observer の観察から作った Hypothesis だけで、
  * 他 CPU の Hypothesis・Hidden の Persona・Hero の弱点・Learning-only Reveal は入らない。
  * Memory を作れない CPU（参加者の行が無い Session・Drill）では項目ごと持たない（Prompt を変えない）。
  */

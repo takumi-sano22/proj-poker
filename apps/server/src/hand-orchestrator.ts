@@ -69,6 +69,7 @@ import {
   type TournamentPresetId,
   type TournamentProgress,
   type TournamentResult,
+  type TournamentSessionInfo,
   type TournamentStandings,
 } from "@proj-poker/engine";
 import { APP_VERSION } from "./app-version.js";
@@ -282,6 +283,11 @@ interface HandRuntime {
    * 保存済みの Hand の public の Event だけから作り、Hand の間は変えない。数えた Hand が 0 の CPU・Drill は持たない。
    */
   readonly tableTendencies: ReadonlyMap<string, TableTendency>;
+  /**
+   * Tournament の Hand の Session の情報（設定の Snapshot・参加人数。D129）。CPU の KnowledgeState の Public Tournament Context
+   * （D109・D130・#188）を作るのに使う。Cash の Hand・Drill は null（KnowledgeState に項目を足さない）。
+   */
+  readonly tournament: TournamentSessionInfo | null;
   /** 不正な出力が続いたときに使う CPU ごとの RuleBot（Deterministic Fallback。D41）。 */
   readonly fallbackBots: ReadonlyMap<string, RuleBot>;
   readonly listeners: Set<HeroViewListener>;
@@ -553,6 +559,8 @@ export class HandOrchestrator {
     const tilts = this.opponentTilts(plan);
     // Table Tendency も同じ時点で、今の Session の保存済みの Hand の public の Event だけから作る（D106・D117）。
     const tableTendencies = this.opponentTableTendencies(plan);
+    // Tournament の Session の情報（設定の Snapshot と参加人数）。CPU の Public Tournament Context の入力（D109・D130）。
+    const tournamentSession = this.tournamentSessionOf(plan);
     // 新しい Session の最初の Hand には、開始の Event に続けて SESSION_STARTED を置く（D95）。
     // Session の最初の Hand は全員が均等 Stack（Big Blind より多い）で始まるので、開始の時点では終わっていない。
     const opening = plan.newSession
@@ -612,6 +620,7 @@ export class HandOrchestrator {
       memories,
       tilts,
       tableTendencies,
+      tournament: tournamentSession,
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -701,6 +710,8 @@ export class HandOrchestrator {
       tilts: new Map(),
       // Drill の専用の Session はその Hand だけなので、Table Tendency も持たない（D116）。
       tableTendencies: new Map(),
+      // Drill は Cash の卓の設定で進める（Tournament Context を持たない）。
+      tournament: null,
       fallbackBots,
       listeners: new Set(),
       outageListeners: new Set(),
@@ -1053,6 +1064,7 @@ export class HandOrchestrator {
    * - Subject は今の Hand の他の参加者（Hero と他 CPU）で、席の playerId との対応はこの Hand の中だけのもの
    * - Skill は Observer の Persona（Fixed CPU は Pool の Persona、Guest は席の Persona）。Persona が無ければ平均（0.5）
    * - Opponent Memory Reset（D120）の後は、その CPU に効く最後の区切りより後に保存された Hand だけを入力にする
+   * - 要約に使う Hypothesis の context は今の Session の mode（Cash は cash、Tournament は tournament。D106・#188）
    */
   private opponentMemories(
     plan: HandPlan,
@@ -1098,6 +1110,8 @@ export class HandOrchestrator {
       currentSessionId: plan.sessionId,
       seats,
       observers,
+      // Tournament の Hand では tournament の Hypothesis を使う（D106。Raw Observation は共通・Hypothesis は context で分ける。#188）。
+      context: plan.settings.mode,
       // Cache（D124）は読むときに足りない Hand だけを足す。失敗は warn に残し、Memory は Event Log から作る。
       ...(cache === undefined
         ? {}
@@ -1279,6 +1293,26 @@ export class HandOrchestrator {
       ),
       context,
     };
+  }
+
+  /**
+   * Tournament の Hand の Session の情報（設定の Snapshot・参加人数。D129・#188）。cash の Hand は null。呼ぶのは this.session を
+   * この Hand へ進める前。参加人数は Session の最初の Hand に座った人数（Result の Prize Pool と同じ。tournamentResult）で、新しい
+   * Session の最初の Hand はこの Hand の席、続く Session は Session の最初の保存済みの Hand の HAND_STARTED から読む。
+   */
+  private tournamentSessionOf(plan: HandPlan): TournamentSessionInfo | null {
+    const { settings } = plan;
+    if (settings.mode !== "tournament") return null;
+    const last = this.session?.lastHandId;
+    if (plan.newSession || last === undefined) {
+      return { config: settings.tournament, entrants: plan.seats.length };
+    }
+    const first = this.options.store.sessionHandIds(last)[0] ?? last;
+    const started = this.events(first)[0];
+    if (started?.type !== "HAND_STARTED") {
+      throw new Error(`Session の最初の Hand に HAND_STARTED が無い: ${first}`);
+    }
+    return { config: settings.tournament, entrants: started.seats.length };
   }
 
   /**
@@ -1576,7 +1610,12 @@ export class HandOrchestrator {
     // AI_ACTION_INVALID は誰の Projection にも入らないので、再要求でも KnowledgeState は同じ。
     // Memory はその CPU 自身のもの（Hand の開始時に作った要約）だけを足す。無い CPU では項目ごと持たない（D121）。
     // Tilt も同じく、その CPU 自身の 1 以上の段階だけを足す（0 の CPU では項目ごと持たず、Prompt を変えない。D107）。
-    const projected = projectKnowledgeState(events, playerId);
+    // Tournament の Hand だけ、公開の Stack と Session の設定から作った Public Tournament Context を足す（Cash は項目ごと持たない。D109・D130・#188）。
+    const projected = projectKnowledgeState(
+      events,
+      playerId,
+      rt.tournament === null ? {} : { tournament: rt.tournament },
+    );
     const memory = rt.memories.get(playerId);
     const tilt = rt.tilts.get(playerId);
     // Table Tendency もその CPU が座っていた Hand から作った値だけを足す（Hand が 0 の CPU では項目ごと持たない。#141）。

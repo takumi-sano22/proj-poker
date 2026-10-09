@@ -236,6 +236,13 @@ CPUの`KnowledgeState`に、全員に見える公開情報として足します�
 
 D130で粒度を決めました: 全席のStackとBB換算・ICM Equity（ptと%）・Stage（bubble / in the money / heads-up）・自分から見た相手ごとのBubble Factorを構造化して足します。すべて公開のStackとPayoutから決定論で計算します。
 
+実装（#188。Engineの`packages/engine/src/tournament-knowledge.ts`。組み立ての版`phase8_tournament_knowledge_v1`。形は`docs/04` §5・§12）。人間判断を経ていない次の点はOI-007の暫定Policyです（確定ではない）:
+
+- **Stackを取る時点**: CPUのContextは、Handの開始時（Blind・Anteを払う前）の公開のStack（`HAND_STARTED`の`seats`）でICM EquityとBubble Factorを計算します。Handの途中の手元のStackとPotは`KnowledgeState`の`seats`・`pot`で別に渡し、Potに入ったChipの持ち主は決めません。ReviewのEvidence（#189）は判断時点のStackで取ります。
+- **Stage**: 残り2人は`heads_up`、残人数が入賞の数以下は`in_the_money`、入賞の数 + 1は`bubble`、それより前は`before_bubble`です（上ほど優先。D130の3つのどれにも当たらない段階の名前として足した）。
+- **Payout**: Prize Pool = 参加費 × 参加人数（Sessionの最初のHandに座った人数）で、順位ごとの賞金は`payoutsByPlace`（Resultと同じ）。残人数より下の順位の賞金はICMに含めません（`icmEquities`と同じ）。
+- **丸め**: `KnowledgeState`の値は丸めず（RuleBotは丸める前の値で判定する）、ClaudeのPromptに出すときだけBB換算・ICM Equity（ptと%）を小数第1位、Bubble Factorを小数第2位に四捨五入します。
+
 ICM（D109）:
 
 - 2〜8人のICMは決定論のコード（ICM Calculator）で計算します。LLMをICMの数値の正本にしません。

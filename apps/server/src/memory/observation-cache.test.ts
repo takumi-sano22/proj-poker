@@ -11,6 +11,7 @@ import {
   PHASE1_CASH_PRESET,
   recordSessionEvent,
   startHand,
+  TOURNAMENT_PRESETS,
   type HandEvent,
   type HeroView,
   type PlayerAction,
@@ -76,12 +77,16 @@ function backwardsClock(): () => Date {
   };
 }
 
-/** 1 Hand を終わりまで進めた Event（Call できれば Call、できなければ Check）。最初の Hand には SESSION_STARTED を入れる。 */
+/**
+ * 1 Hand を終わりまで進めた Event（Call できれば Call、できなければ Check）。最初の Hand には SESSION_STARTED を入れる
+ * （tournament なら標準 Preset の設定の Snapshot を持たせる。Observation の context は Session の mode で決まる。#188）。
+ */
 function playHand(
   handId: string,
   seats: readonly string[],
   seed: number,
   sessionStartedId?: string,
+  tournament = false,
 ): HandEvent[] {
   const started = startHand({
     handId,
@@ -109,6 +114,7 @@ function playHand(
     const s = recordSessionEvent(state, {
       type: "SESSION_STARTED",
       sessionId: sessionStartedId,
+      ...(tournament ? { tournament: TOURNAMENT_PRESETS.stt6_hand_count } : {}),
     });
     state = s.state;
     events.push(...s.events);
@@ -134,12 +140,19 @@ function saveSession(
   sessionId: string,
   hands: readonly { handId: string; seats: readonly string[] }[],
   participants: readonly SessionParticipant[] | null,
+  tournament = false,
 ): void {
   hands.forEach(({ handId, seats }, i) => {
     const first = i === 0;
     store.append(
       handId,
-      playHand(handId, seats, 11 + i, first ? sessionId : undefined),
+      playHand(
+        handId,
+        seats,
+        11 + i,
+        first ? sessionId : undefined,
+        tournament,
+      ),
       first && participants !== null
         ? { sessionId, participants }
         : { sessionId },
@@ -547,6 +560,125 @@ describe("Cache の失敗", () => {
     expect(saves).toBe(6);
     expect(logger.messages.length).toBe(6);
     expect(cacheRows(db)).toEqual([]);
+  });
+});
+
+describe("Tournament の context（D106・#188）", () => {
+  /** s1（Cash）の後に、同じ Fixed CPU が座る Tournament の Session t1 を保存する。 */
+  function populateTournament(store: EventStore): EventStore {
+    saveS1(store);
+    saveSession(
+      store,
+      "t1",
+      [
+        { handId: "t1h1", seats: FOUR },
+        { handId: "t1h2", seats: ["cpu1", "cpu3", "cpu2", HERO] },
+      ],
+      [
+        fixed("cpu1", "fixed_aki"),
+        fixed("cpu2", "fixed_ben"),
+        guest("cpu3", "guest/t1/cpu3"),
+      ],
+      true,
+    );
+    return store;
+  }
+
+  const T1_TABLE: readonly MemoryTableSeat[] = [
+    { playerId: "cpu1", participant: AKI },
+    { playerId: "cpu2", participant: BEN },
+    { playerId: HERO, participant: { kind: "hero" } },
+  ];
+
+  function memoriesIn(
+    store: EventStore,
+    context: "cash" | "tournament",
+    cache?: ObservationCacheStore,
+  ): [string, OpponentMemorySummary][] {
+    return [
+      ...buildOpponentMemoriesFromStore(store, {
+        heroPlayerId: HERO,
+        currentSessionId: "t1",
+        seats: T1_TABLE,
+        observers: [
+          { playerId: "cpu1", observer: AKI, observerSkill: 0.5 },
+          { playerId: "cpu2", observer: BEN, observerSkill: 0.5 },
+        ],
+        context,
+        ...(cache === undefined
+          ? {}
+          : { observationCache: { store: cache, logger: countingLogger() } }),
+      }).entries(),
+    ];
+  }
+
+  it("Hand の context は Session の mode で決まり（Cash の Session は cash・Tournament の Session は tournament）、Cache の有無で同じ", () => {
+    const { db, store } = sqliteStore();
+    populateTournament(store);
+    const query: ObservationQuery = {
+      observer: AKI,
+      heroPlayerId: HERO,
+      currentSessionId: "t1",
+    };
+    const expected = extractObservedHandsFromStore(store, query);
+    expect(expected.map((h) => [h.handId, h.context])).toEqual([
+      ["s1h1", "cash"],
+      ["s1h2", "cash"],
+      ["t1h1", "tournament"],
+      ["t1h2", "tournament"],
+    ]);
+    const cache = new SqliteObservationCache(db);
+    // 初回（Cache を作る）・温まった状態のどちらでも同じ context。
+    for (let round = 0; round < 2; round++) {
+      expect(
+        new ObservationCacheReader(cache, countingLogger()).extract(
+          store,
+          query,
+        ),
+      ).toEqual(expected);
+    }
+    // メモリ内の Event Store（Cache なし）でも同じ。
+    expect(
+      extractObservedHandsFromStore(
+        populateTournament(new InMemoryEventStore()),
+        query,
+      ),
+    ).toEqual(expected);
+  });
+
+  it("Memory の要約は context の Hypothesis だけを使う（Tournament の要約に Cash の Hand の Evidence が入らない。逆も同じ）", () => {
+    const { db, store } = sqliteStore();
+    populateTournament(store);
+    const sessionOfHand = (id: string) => store.sessionIdOfHand(id);
+    for (const [context, sessionId] of [
+      ["tournament", "t1"],
+      ["cash", "s1"],
+    ] as const) {
+      const expected = memoriesIn(store, context);
+      let evidence = 0;
+      for (const [, memory] of expected) {
+        expect(memory.context).toBe(context);
+        for (const subject of memory.subjects) {
+          for (const item of subject.items) {
+            for (const id of item.evidenceIds) {
+              evidence++;
+              expect(sessionOfHand(id.split("#")[0] ?? ""), id).toBe(sessionId);
+            }
+          }
+        }
+      }
+      // 空振りしていない（Evidence のある要約を比べている）。
+      expect(evidence).toBeGreaterThan(0);
+      // Cache の有無で同じ（初回・温まった状態）。
+      const cache = new SqliteObservationCache(db);
+      expect(memoriesIn(store, context, cache)).toEqual(expected);
+      expect(memoriesIn(store, context, cache)).toEqual(expected);
+    }
+    // Aki が Ben を Tournament で見た Hand は t1 の 2 Hand だけ（Cash の s1 の Hand を数えない）。
+    const aki = new Map(memoriesIn(store, "tournament")).get("cpu1");
+    expect(
+      aki?.subjects.find((s) => s.playerId === "cpu2")?.handsObserved,
+    ).toBe(2);
   });
 });
 
