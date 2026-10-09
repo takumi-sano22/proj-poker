@@ -1,4 +1,4 @@
-# D01〜D132の採用済み人間判断。
+# D01〜D133の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -530,3 +530,7 @@
   choice: "Tournament の Claude CPU / Review を実モデルで録画する上限を、CPU 最大 28 Decision・56 呼び出し、Review 8 + Follow-up 2・最大 20 呼び出しに決める（#202 の人間判断、AskUserQuestion）"
   status: "採用済み"
   decision: "Tournament の Public Tournament Context（D130）が入った Claude CPU と、ICM / Chip EV の Evidence と数値 Grounding（D131）が入った Review の品質を、Claude Agent SDK・Claude Code の OAuth（サブスク枠）・buildClaudeEnv の経路だけで録画する。CPU は 7 Spot（S0 対照＝Tournament Context なし／S1 Bubble 前の Short Stack の Open Shove／S2 Bubble／S3 In the Money／S4 Heads-Up／S5 Bubble で Bubble Factor の高い大 Stack の Shove への Call／S6 S5 に Memory・Table Tendency・Tilt を合成）× 対照的な 2 Persona × repeat 2 の最大 28 Decision（Retry を含む呼び出しは最大 56 回）。Review（Tournament）は Bubble Shove・Bubble の All-in への Call・In the Money の Pay Jump で Short Stack の Call・All-in でない通常の判断（Tournament で Solver Unsupported）× repeat 2 の 8 Review と、Follow-up 2 件（質問文は固定）の最大 20 回。ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / Bedrock / Vertex / Foundry / 別の ANTHROPIC_BASE_URL が実行環境にあれば呼ばずに停止し、API キーへ切り替えない。#168 マージ後の最終 Prompt を対象にし、結果が期待どおりでなくても Prompt / Policy をその場で調整しない（戦略品質の改善は別 Issue で人間判断へ）。CI は実モデルを呼ばず録画の再生だけで、paramsHash で Prompt / Options の drift を検出する。既存の録画は残す。D87・D123・D126・D130・D131 の具体化。実装は #202。"
+- id: D133
+  choice: "Tournament の Claude CPU では Public Tournament Context を戦略上の基準にし、Persona はそこからの偏り、Skill は Context を反映する精度として Prompt で読ませる（#207 の人間判断）"
+  status: "採用済み"
+  decision: "TournamentのHandのClaude CPUのPromptで、Stack BB・Position・Stage・Payout・ICM Equity・Bubble Factor等のPublic Tournament Contextを、Personaに関わらず必ず考慮する戦略上の基準とし、PersonaはContextを無効化せず、その基準からリスク側・慎重側への寄り方・境界のSpotで倒れる向き・Sizing / Aggressionの偏りとして反映する（全CPUを同じ判断にはしない）。TournamentではSkillを「Public Tournament Contextを戦略へ適切に反映できる度合い」とし、低Skillでも Contextを無視してよいとはしない。Short Stack（目安10BB前後以下）ではPreflop Loosenessを固定の通常時のHand Rangeとして扱わず、Stack BB・人数・Position・Stageで参加範囲が大きく変わり得るとPromptに明示する。Bubble Factorの高い相手とのAll-inは慎重になる圧力として理解させ、リスク許容の高い・規律の低いPersonaでも無視ではなく境界を広めに取る形にする。Memory・Table Tendency・Tiltは既存どおりその上で調整する。Push/Fold Nash Chart・Push/Fold Solver・Nash / GTO Rangeは追加しない（D109・D130の範囲を維持）。変えるのはTournamentのClaudeのPromptでのPersonaの読み方だけで、PERSONA_PRESETSの基礎数値・CashのPrompt / Personaの意味・RuleBotのPolicy・KnowledgeState・ICM Calculator・Payout・Engineは変えない。測定は#202（D132）と同じ7 Spot × Nit / Maniac × repeat 2の最大28 Decision・Retry込み最大56呼び出しで1回だけ行い（Claude Agent SDK・Claude CodeのOAuth・buildClaudeEnvの経路だけ。API キー・Bedrock / Vertex / Foundry・別のANTHROPIC_BASE_URLがあれば呼ばずに停止）、#202の録画はベースラインとして残して新しい録画は別ファイルにする。1変更1測定とし、結果を見て自動で次のPrompt修正・再録画をしない（必要なら新しいIssueで人間判断へ）。D132は過去のEval条件として変えない。D85・D109・D130・D132の具体化。実装は#207。"

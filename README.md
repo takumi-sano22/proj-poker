@@ -81,7 +81,7 @@ pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）
 | 画面の使い方・現在の制約と暫定値 | [使い方と現在の制約](./docs/guides/USAGE_AND_LIMITATIONS.md) |
 | 仕様（要件・ドメイン・アーキテクチャ・データ・AI・UI・学習・テスト） | [`docs/01`〜`09`](./docs/00_DOCUMENTATION_INDEX.md)（索引 §4） |
 | Phase 0〜8 の到達点と経緯 | [Phase 履歴](./docs/phases/README.md) |
-| 採用済みの人間判断（D01〜D132） | [`decision_log.yaml`](./docs/decision_log.yaml)・[トレーサビリティ](./docs/10_DECISION_TRACEABILITY.md) |
+| 採用済みの人間判断（D01〜D133） | [`decision_log.yaml`](./docs/decision_log.yaml)・[トレーサビリティ](./docs/10_DECISION_TRACEABILITY.md) |
 | 未確定の事項 | [Open Items](./docs/11_OPEN_ITEMS.md) |
 | Issue ごとの作業記録 | [`docs/taskLog/`](./docs/taskLog/) |
 | ポーカードメインの調査 | [Research Pack](./docs/research/README.md) |
