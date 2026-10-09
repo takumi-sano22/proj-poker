@@ -50,9 +50,17 @@ Phase 8 の 6-max STT を、開始から Blind / Ante・Resume・Elimination・H
 - `pnpm lint` / `pnpm typecheck` / `pnpm format:check`: 通過。`pnpm test`: engine 480・web 160・server 843 がすべて passed。
 - `pnpm e2e`（全 12 本）: 12 passed（1.5 分）。Cash の 11 本（`session` 4・`session-end-layout` 3・`table-layout` 1・`learning` 1・`opponent-memory` 1・`review-tendency` 1）と `tournament` 1 本。`tournament` は 1 回 21 秒前後。
 - 安定性（過去の E2E の一度だけの失敗の教訓）: `playwright test tests/tournament.spec.ts --repeat-each=10` を 2 回続けて実行した。
-  - 1 回目: 10 passed（3.9 分。1 回 20.6〜32.7 秒）
-  - 2 回目: 10 passed（3.6 分。1 回 20.2〜21.1 秒）
+  - 最初の版: 1 回目 10 passed（3.9 分。1 回 20.6〜32.7 秒）、2 回目 10 passed（3.6 分。1 回 20.2〜21.1 秒）
+  - Codex の P2 を直した最終版（19872d4）: 1 回目 10 passed（3.6 分。1 回 20.3〜21.6 秒）、2 回目 10 passed（3.6 分。1 回 20.5〜21.4 秒）
 - 画面の経路の Hand の番号: 一時的に `console.log` を足して 1 回通し（コミットしていない）、50 Hand 目の後に残り 2 人、52 Hand 目で終わることを確かめた（API で測った値と同じ。Heads-Up は 51・52 Hand 目）。
+
+## レビュー対応
+
+- 自己レビュー: 前提の assert の文言を「12 Hand 目までに」に合わせた（60adcda）。
+- Codex（1 回目。clean・P2 が 2 件。どちらも CONFIRMED で修正。19872d4）:
+  - ①Payout の合計を Prize Pool「以下」でしか見ていなかった → 順位の決まった Player の Payout をその順位の賞金と完全一致で確かめ、合計は終わり方ごとに完全一致（Hero が優勝なら 600pt。Heads-Up で Bust したら残った CPU 1 人が未決〔D129〕で 300pt）。常に 600pt を求めると D129 と矛盾するので分けた。
+  - ②新しい Tournament で Level・人数だけを見ていた → 最初の Hand の開始時に全員 1,500 であることを Replay で確かめる。
+  - P2 だけの修正で、条件付き再レビューの①〜④に当たらないので Codex は再実行していない。
 
 ## #107 の DoD の根拠（親が #107 へコメントする材料）
 
