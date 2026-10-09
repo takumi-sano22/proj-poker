@@ -21,7 +21,7 @@ Review AI の出力の検証は、参照した Evidence ID の実在と Solver /
 - `generate.ts`: 検証を通った出力を `resolveNumericRefs` → `sanitizeOutput` の順で置き換えてから保存する
 - `followup.ts`: Pass A の Review への質問だけ、Prompt に数値表の節・System Prompt に参照の指示を足し、答えの数値を照合する（Hero の質問に書かれた単位付きの値は一致として扱う）。通った答えは参照を置き換える
 - `testing/review-eval/metrics.ts`: `numericGroundingInvalids`（数値の照合で grounding の不正になった呼び出しの数）を足した
-- `testing/review-eval/run.ts`: OAuth 以外の経路の変数（`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY` / `ANTHROPIC_BASE_URL`）が親（シェル）か子プロセスの env にあれば呼ばずに止める（`assertOAuthRoute`）。呼び出しを `createCallBudget(24)` で包んだ
+- `testing/review-eval/run.ts`: OAuth 以外の経路の変数（`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_USE_BEDROCK` / `VERTEX` / `FOUNDRY` / `ANTHROPIC_BASE_URL`）が親（シェル）か子プロセスの env にあれば呼ばずに止める（`assertOAuthRoute`）。呼び出しを `createCallBudget(24)` で包み、Retry を含めた最悪の呼び出しの数（判断 × repeat × 2）が 24 を超える `--repeats` は呼ぶ前に拒否する（Codex の P2 の指摘への対応。`--repeats 4` で RangeError になり Claude を呼ばないことを確認）
 - テスト: `numeric-grounding.test.ts`（新規）、`generate.test.ts`（検証を通る出力の数値を参照に直し、置換後の文を確かめる）、`reveal.test.ts`（Pass B への Follow-up には数値表を出さず照合もしない）
 - 録画: `recordings/review-eval.json` を取り直した（下記）
 - docs: `docs/05`（§6 の卓の傾向・§7 の Follow-up・§8 の実装の節・§10 の Tournament の Grounding）、`docs/09`（テストの項目・Review Eval の指標と再録画）、`docs/decision_log.yaml`（D131）・`docs/10`・`docs/00` の範囲表記
@@ -68,3 +68,8 @@ Review AI の出力の検証は、参照した Evidence ID の実在と Solver /
 - #168 より前に保存された Review の説明は、置き換えの無い平文のまま（作り直さない）。その Review への Follow-up では、Review の説明の数値を答えに繰り返すと、表と一致しなければ grounding の不正になる（表の値なら通る）
 - Bet の大きさを Pot に対する割合で書く表現（「Pot の 44% の Bet」）は表に無い（Action ごとの Bet 前の Pot を Evidence に持たない）。今回の録画では出なかった。出るようなら別 Issue で表に足すか決める
 - `README.md` と `.claude/skills/`（test-and-review・sync-check）の D 番号の範囲表記（D01〜D130）は、この Issue の触らない領域なので更新していない（親へ返す）
+
+## レビュー
+
+- 自己レビュー: 席の表示名を外すときに、後ろに数字が続く別の名前（`CPU 1` に対する `CPU 12`）を巻き込む書き方を直した
+- Codex（1 回目・STATUS=clean）: [P2] `--repeats` が呼び出しの上限と整合しない（4 以上で途中で番人に止められ、利用枠だけを使う）→ CONFIRMED。呼ぶ前に拒否するよう修正。P2 だけの局所修正で、条件付き再レビューの①〜④に当たらないため Codex は再実行しない
