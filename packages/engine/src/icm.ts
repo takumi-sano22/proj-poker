@@ -67,7 +67,7 @@ export interface IcmEquities {
  *   （同順位の賞金を合算して等分する Payout の扱い〔docs/02 §7〕と同じ値になる）
  * - 同額の Stack の Player は同じ Equity になる（浮動小数の誤差の範囲で）
  *
- * 人数が 2〜8 人でない・playerId が重複・Stack が 0 以上の整数でない・Stack の合計が 0・賞金が 0 以上の有限の数でない・
+ * 人数が 2〜8 人でない・playerId が重複・Stack が 0 以上の整数でない・Stack の合計が 0・賞金が 0 以上の整数でない・争う賞金の合計が安全な整数を超える・
  * 争う賞金の合計が 0 なら RangeError を投げる。
  */
 export function icmEquities(
@@ -79,13 +79,17 @@ export function icmEquities(
   if (payouts.length === 0) {
     throw new RangeError("賞金の列は 1 つ以上");
   }
+  // 賞金は pt の整数（payoutsByPlace の出力）。小数や合計が安全な整数を超える額は、正本の Equity の入力として受け付けない。
   for (const amount of payouts) {
-    if (!Number.isFinite(amount) || amount < 0) {
-      throw new RangeError(`賞金は 0 以上の有限の数: ${amount}`);
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new RangeError(`賞金は 0 以上の整数: ${amount}`);
     }
   }
   const prizes = stacks.map((_, place) => payouts[place] ?? 0);
   const prizePool = prizes.reduce((sum, a) => sum + a, 0);
+  if (!Number.isSafeInteger(prizePool)) {
+    throw new RangeError(`争う賞金の合計が整数で表せない: ${prizePool}`);
+  }
   if (prizePool === 0) {
     throw new RangeError("争う賞金の合計が 0");
   }

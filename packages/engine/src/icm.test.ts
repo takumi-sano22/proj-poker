@@ -113,6 +113,16 @@ describe("icmEquities: 手計算の Scenario", () => {
     expect(() => icmEquities(stacksOf(0, 0), STANDARD)).toThrow(RangeError);
     expect(() => icmEquities(stacksOf(10, 10), [])).toThrow(RangeError);
     expect(() => icmEquities(stacksOf(10, 10), [100, -1])).toThrow(RangeError);
+    // 賞金は pt の整数（payoutsByPlace の出力）。小数・合計が安全な整数を超える額は拒否する。
+    expect(() => icmEquities(stacksOf(10, 10), [50.5, 49.5])).toThrow(
+      RangeError,
+    );
+    expect(() =>
+      icmEquities(stacksOf(10, 10), [
+        Number.MAX_SAFE_INTEGER,
+        Number.MAX_SAFE_INTEGER,
+      ]),
+    ).toThrow(RangeError);
     expect(() => icmEquities(stacksOf(10, 10), [0, 0, 100])).toThrow(
       RangeError,
     );
