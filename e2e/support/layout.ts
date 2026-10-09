@@ -88,6 +88,8 @@ async function measureLayout(page: Page): Promise<LayoutMeasure> {
  * - 720px 以上（広い画面）: Hero 欄を除いた画面の高さに、Hero の席から Board までが同時に収まる。Hero 欄は画面下に固定されるので、
  *   欄が高すぎると、どこまでスクロールしても Hero の席と Board を同時には見られない（#163: 720×600 で欄が 434px になった）。
  *   狭い画面は縦長の卓で欄も高く、320px では収まらない（`references/proj-poker.md`「既知のずれ」）ので、この項目は測らない。
+ * - 720px 未満（狭い画面）: Hero 欄が画面の高さに収まる。欄が画面より高いと、画面下に固定した欄の上端（Hero の札・裁定）か
+ *   下端（宣言 Button）のどちらかが常に画面の外にあり、両方を同時には見られない（#179: 320×568 の RULING で欄が 576px になった）。
  */
 export async function expectNoBlockingOverlap(
   page: Page,
@@ -126,6 +128,14 @@ export async function expectNoBlockingOverlap(
     ).toBe(true);
   }
   expect(m.overflowX, `${label}: 横スクロール`).toBe(0);
+
+  if (width < 720) {
+    const dockHeight = m.dock.bottom - m.dock.top;
+    expect(
+      dockHeight,
+      `${label}: Hero 欄（高さ ${Math.round(dockHeight)}px）が画面の高さ ${m.viewportHeight}px に収まる`,
+    ).toBeLessThanOrEqual(m.viewportHeight);
+  }
 
   if (width >= 720) {
     expect(m.heroSeat, `${label}: Hero の席`).not.toBeNull();
