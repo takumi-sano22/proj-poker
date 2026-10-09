@@ -55,6 +55,13 @@ if (values.record && (values.solver || depth !== "standard")) {
 const MEASURE_TIMEOUT_MS = 600_000;
 /** 1 回の実行で Claude を呼んでよい回数の上限（#168 の人間判断: 4 判断 × repeat 3 = 12 Review・Retry を含めて最大 24 回）。 */
 const REVIEW_EVAL_MAX_CALLS = 24;
+// 最悪（全判断が Retry する）の呼び出しの数が上限を超える実行は、呼ぶ前に拒否する（途中で番人に止められて利用枠だけを使うのを防ぐ）。
+const worstCaseCalls = REVIEW_EVAL_CASES.length * repeats * 2;
+if (worstCaseCalls > REVIEW_EVAL_MAX_CALLS) {
+  throw new RangeError(
+    `--repeats ${repeats} は Retry を含めて最大 ${worstCaseCalls} 回呼びうるので、上限 ${REVIEW_EVAL_MAX_CALLS} 回を超える（判断 ${REVIEW_EVAL_CASES.length} × repeat ${Math.floor(REVIEW_EVAL_MAX_CALLS / (REVIEW_EVAL_CASES.length * 2))} まで）`,
+  );
+}
 
 // 経路の確認（値は出さない）。buildClaudeEnv は API キーを子プロセスから外すが、親（シェル）にあるだけでも止める（D123・D126 と同じ作法）。
 const env = buildClaudeEnv(process.env);
