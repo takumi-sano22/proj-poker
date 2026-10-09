@@ -9,8 +9,17 @@
 // 終わったら練習した判断の Review を開ける。Drill の間も通常の卓の Session（SSE）はそのまま残り、「卓に戻る」で続きに戻る。
 // 狭い画面（スマホ幅）では、卓の中央に重ねていた欄（Hand の結果・CPU 障害のダイアログ・Session 終了の案内）が席と重なるので、
 // 画面下に固定した Hero の欄へ置く（#5。広い画面は従来どおり卓の中央）。
+// 新しい Session の開始で Cash / Tournament の Preset を選べる（#190・D128）。Tournament の Hand では、見出しに Level・Blind・Ante を、
+// 卓の右（狭い画面は卓の下）に Tournament の欄（次の Level・残人数・Payout・Elimination・終わったら Result）を出す。Cash の画面は変えない。
 import type { HeroView } from "@proj-poker/engine";
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Amount } from "./components/Amount.js";
 import {
   BbDisplayProvider,
@@ -29,16 +38,26 @@ import { ReplayScreen } from "./components/ReplayScreen.js";
 import { ReviewScreen } from "./components/ReviewScreen.js";
 import { SessionReviewScreen } from "./components/SessionReviewScreen.js";
 import { Table } from "./components/Table.js";
+import {
+  SessionModePicker,
+  TournamentPanel,
+} from "./components/TournamentPanel.js";
 import { UserReadToggle } from "./components/UserRead.js";
 import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import { useNarrowScreen } from "./hooks/useNarrowScreen.js";
+import { useTournament } from "./hooks/useTournament.js";
 import type { ReplayStart } from "./hooks/useReplay.js";
-import { ApiError, type SessionStatus } from "./lib/api.js";
+import {
+  ApiError,
+  type SessionStatus,
+  type TournamentTableStatus,
+} from "./lib/api.js";
 import { startDrill, type DrillView } from "./lib/drill-api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
+import { handLevelOf, tournamentEndMessage } from "./lib/tournament.js";
 import {
   canFastForward,
   heroRulingStatus,
@@ -61,6 +80,12 @@ type Screen =
     }
   | { readonly kind: "session_review"; readonly handId: string }
   | { readonly kind: "drill" };
+
+/**
+ * 表示中の Hand の Tournament の状況（#190）。Cash の Hand・まだ読めていない間・別の Hand の値は null（卓の部品は Cash のまま）。
+ * Hand の結果・Session の終わりの案内（卓の中央と Hero の欄の両方の経路）が、Hero の順位と Payout を出すために読む。
+ */
+const TournamentContext = createContext<TournamentTableStatus | null>(null);
 
 /** Drill の卓（#117）で、通常の卓と違う操作（練習した判断の Review・卓に戻る）。 */
 interface DrillMode {
@@ -114,6 +139,10 @@ export function App() {
     [],
   );
   const { view } = session;
+  // 通常の卓の Tournament の状況（Cash の Hand は null）。Drill の卓は Tournament にならないので読まない。
+  const tournament = useTournament(session.handId, view);
+  // 見出しの Level・Ante は表示中の Hand の公開の HAND_STARTED から作る（読み込みを待たない。Cash は null）。
+  const handLevel = view === null ? null : handLevelOf(view);
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
   const [showBB, setShowBB] = useBbSetting();
 
@@ -124,12 +153,27 @@ export function App() {
         <header className="app__header">
           <h1 className="app__title">proj-poker</h1>
           <div className="app__header-end">
-            {screen.kind === "table" && view !== null && (
-              <p className="app__meta">
-                ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
-                {formatChips(view.bigBlind)}
-              </p>
-            )}
+            {screen.kind === "table" &&
+              view !== null &&
+              (handLevel === null ? (
+                <p className="app__meta">
+                  ブラインド（Blinds） {formatChips(view.smallBlind)} /{" "}
+                  {formatChips(view.bigBlind)}
+                </p>
+              ) : (
+                // Tournament の Hand は Level と Ante も出す。見出しの行が折り返して卓を押し下げないよう短く書く
+                // （項目の名前は Tournament の欄にある。hover では Blind の項目名を出す）。
+                <p
+                  className="app__meta"
+                  title="Level · ブラインド（Blinds） · Ante"
+                >
+                  Level {handLevel.level} · {formatChips(view.smallBlind)} /{" "}
+                  {formatChips(view.bigBlind)}
+                  {handLevel.ante !== null && (
+                    <span className="app__meta-ante"> · {handLevel.ante}</span>
+                  )}
+                </p>
+              ))}
             <BbDisplayToggle showBB={showBB} onChange={setShowBB} />
             <button
               type="button"
@@ -201,24 +245,14 @@ export function App() {
             onOpenReplay={openReplay}
           />
         ) : view === null ? (
-          <main className="app__empty">
-            <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
-            <button
-              type="button"
-              className="btn btn--primary btn--lg"
-              disabled={session.pending}
-              onClick={session.start}
-            >
-              Hand を始める
-            </button>
-            <Notice session={session} />
-          </main>
+          <StartScreen session={session} />
         ) : (
           <TableScreen
             session={session}
             narrow={narrow}
             onOpenReview={openReview}
             onOpenSessionReview={openSessionReview}
+            tournament={tournament}
           />
         )}
       </div>
@@ -227,8 +261,35 @@ export function App() {
 }
 
 /**
+ * 最初の画面（まだ Hand が無い）。新しい Session の種類（Cash / Tournament の Preset。D128）を選んで始める。
+ * 前の Session が続いていて（再起動後の Resume など）種類が違えば、サーバーが拒否し、案内から続きに戻れる（Notice）。
+ */
+function StartScreen({ session }: { readonly session: HandSession }) {
+  return (
+    <main className="app__empty">
+      <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
+      <SessionModePicker
+        value={session.sessionChoice}
+        onChange={session.setSessionChoice}
+        disabled={session.pending}
+      />
+      <button
+        type="button"
+        className="btn btn--primary btn--lg"
+        disabled={session.pending}
+        onClick={session.startNewSession}
+      >
+        Hand を始める
+      </button>
+      <Notice session={session} />
+    </main>
+  );
+}
+
+/**
  * 卓の画面（卓・進行ログ・Hero の欄）。通常の卓と Drill の卓（#117）で同じ部品を使う。
  * Drill の卓は、上に Drill の説明（banner）を置き、CPU の Note / Tag の欄を出さない（Drill の相手は Drill の設定の RuleBot）。
+ * Tournament の Hand（tournament が null でない）は、進行ログの上に Tournament の欄を置く（#190。Cash の画面は変えない）。
  */
 function TableScreen({
   session,
@@ -237,6 +298,7 @@ function TableScreen({
   onOpenSessionReview,
   drill = null,
   banner = null,
+  tournament = null,
 }: {
   readonly session: HandSession;
   readonly narrow: boolean;
@@ -244,6 +306,7 @@ function TableScreen({
   readonly onOpenSessionReview: OpenSessionReview;
   readonly drill?: DrillMode | null;
   readonly banner?: ReactNode;
+  readonly tournament?: TournamentTableStatus | null;
 }) {
   const { view, players } = session;
   const nameOf = useCallback(
@@ -252,66 +315,65 @@ function TableScreen({
     [players],
   );
   if (view === null) {
-    return (
-      <main className="app__empty">
-        <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
-        <button
-          type="button"
-          className="btn btn--primary btn--lg"
-          disabled={session.pending}
-          onClick={session.start}
-        >
-          Hand を始める
-        </button>
-        <Notice session={session} />
-      </main>
-    );
+    return <StartScreen session={session} />;
   }
   return (
     // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
-    <VocabularyProvider view={view} nameOf={nameOf}>
-      {banner}
-      <main className="app__main">
-        <div className="app__table">
-          <Table
-            view={view}
-            nameOf={nameOf}
-            // 狭い画面では卓の中央に何も重ねない（結果などは Hero の欄に出す）
-            center={
-              narrow ? null : (
-                <TableCenter
-                  view={view}
-                  nameOf={nameOf}
-                  session={session}
-                  onOpenSessionReview={onOpenSessionReview}
-                  drill={drill}
-                />
-              )
-            }
-          />
-        </div>
-        <aside className="app__side">
-          <HandLog view={view} nameOf={nameOf} />
-          {/* Hero の CPU ごとの Note / Tag（#115）。HUD（統計）ではなく Hero 自身のメモ（D32）。Drill の卓には出さない */}
-          {drill === null && (
-            <OpponentNotes
-              handId={view.handId}
-              players={players}
-              seatedIds={view.seats.map((s) => s.playerId)}
+    // 順位・Payout の案内は表示中の Hand の値だけで作る（欄は次の Hand を読み終えるまで前の値を出す。useTournament）。
+    <TournamentContext.Provider
+      value={tournament?.handId === view.handId ? tournament : null}
+    >
+      <VocabularyProvider view={view} nameOf={nameOf}>
+        {banner}
+        <main className="app__main">
+          <div className="app__table">
+            <Table
+              view={view}
+              nameOf={nameOf}
+              // 狭い画面では卓の中央に何も重ねない（結果などは Hero の欄に出す）
+              center={
+                narrow ? null : (
+                  <TableCenter
+                    view={view}
+                    nameOf={nameOf}
+                    session={session}
+                    onOpenSessionReview={onOpenSessionReview}
+                    drill={drill}
+                  />
+                )
+              }
             />
-          )}
-        </aside>
-      </main>
-      <HeroDock
-        view={view}
-        nameOf={nameOf}
-        session={session}
-        narrow={narrow}
-        onOpenReview={onOpenReview}
-        onOpenSessionReview={onOpenSessionReview}
-        drill={drill}
-      />
-    </VocabularyProvider>
+          </div>
+          <aside className="app__side">
+            {tournament !== null && (
+              <TournamentPanel
+                status={tournament}
+                heroId={view.viewerId}
+                nameOf={nameOf}
+              />
+            )}
+            <HandLog view={view} nameOf={nameOf} />
+            {/* Hero の CPU ごとの Note / Tag（#115）。HUD（統計）ではなく Hero 自身のメモ（D32）。Drill の卓には出さない */}
+            {drill === null && (
+              <OpponentNotes
+                handId={view.handId}
+                players={players}
+                seatedIds={view.seats.map((s) => s.playerId)}
+              />
+            )}
+          </aside>
+        </main>
+        <HeroDock
+          view={view}
+          nameOf={nameOf}
+          session={session}
+          narrow={narrow}
+          onOpenReview={onOpenReview}
+          onOpenSessionReview={onOpenSessionReview}
+          drill={drill}
+        />
+      </VocabularyProvider>
+    </TournamentContext.Provider>
   );
 }
 
@@ -618,10 +680,20 @@ function DockBody({
   );
 }
 
-/** Session が終わった理由の案内（D80）。 */
+/**
+ * Session が終わった理由の案内（D80）。Tournament の Hand で、その Hand の状況が読めていれば、Hero の順位と Payout を 1 文で出す
+ * （#190・D129。読めるまでは Cash と同じ文）。
+ */
 function sessionEndMessage(
   status: Extract<SessionStatus, { state: "ended" }>,
+  tournament: TournamentTableStatus | null,
+  heroId: string | undefined,
 ): string {
+  const tournamentEnd =
+    tournament === null || heroId === undefined
+      ? null
+      : tournamentEndMessage(tournament.result, heroId);
+  if (tournamentEnd !== null) return tournamentEnd;
   switch (status.reason) {
     case "hero_busted":
       return "Hero の Stack がなくなりました（Bust）。この Session は終了です。";
@@ -645,6 +717,28 @@ function SessionReviewButton({ onClick }: { readonly onClick: () => void }) {
   );
 }
 
+/** 新しい Session の種類の選択と「新しい Session を始める」Button（#190）。終わった Session の案内に置く。 */
+function NewSessionControls({ session }: { readonly session: HandSession }) {
+  return (
+    <>
+      <SessionModePicker
+        value={session.sessionChoice}
+        onChange={session.setSessionChoice}
+        disabled={session.pending}
+        compact
+      />
+      <button
+        type="button"
+        className="btn btn--primary btn--md"
+        disabled={session.pending}
+        onClick={session.startNewSession}
+      >
+        新しい Session を始める
+      </button>
+    </>
+  );
+}
+
 /** Session が終わった後の案内（理由と、Session を振り返る・新しい Session を始める Button）。 */
 function SessionEnded({
   status,
@@ -657,18 +751,14 @@ function SessionEnded({
   readonly onOpenSessionReview: () => void;
   readonly docked?: boolean;
 }) {
+  const tournament = useContext(TournamentContext);
   return (
     <div className={resultClass(docked)} role="status">
-      <p className="result__session">{sessionEndMessage(status)}</p>
+      <p className="result__session">
+        {sessionEndMessage(status, tournament, session.view?.viewerId)}
+      </p>
       <SessionReviewButton onClick={onOpenSessionReview} />
-      <button
-        type="button"
-        className="btn btn--primary btn--md"
-        disabled={session.pending}
-        onClick={session.start}
-      >
-        新しい Session を始める
-      </button>
+      <NewSessionControls session={session} />
     </div>
   );
 }
@@ -702,6 +792,7 @@ function HandResult({
   readonly actions?: ReactNode;
 }) {
   const status = session.sessionStatus;
+  const tournament = useContext(TournamentContext);
   if (drill !== null) {
     return (
       <div className={resultClass(docked)} role="status">
@@ -739,7 +830,9 @@ function HandResult({
         ))}
       </ul>
       {!awardsOnly && status?.state === "ended" && (
-        <p className="result__session">{sessionEndMessage(status)}</p>
+        <p className="result__session">
+          {sessionEndMessage(status, tournament, view.viewerId)}
+        </p>
       )}
       {status?.state === "ready_for_next_hand" && (
         <button
@@ -755,14 +848,7 @@ function HandResult({
         <SessionReviewButton onClick={() => onOpenSessionReview(view.handId)} />
       )}
       {!awardsOnly && status?.state === "ended" && (
-        <button
-          type="button"
-          className="btn btn--primary btn--md"
-          disabled={session.pending}
-          onClick={session.start}
-        >
-          新しい Session を始める
-        </button>
+        <NewSessionControls session={session} />
       )}
       {actions}
     </div>
@@ -793,6 +879,17 @@ function Notice({ session }: { readonly session: HandSession }) {
           onClick={session.retry}
         >
           もう一度送る
+        </button>
+      )}
+      {notice?.continueSession === true && (
+        // 前の Session が続いていて、選んだ種類の Session を始められなかった。設定を送らずに続きへ戻る。
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          disabled={session.pending}
+          onClick={session.start}
+        >
+          続きから遊ぶ
         </button>
       )}
       {connection === "lost" && view?.status !== "complete" && (

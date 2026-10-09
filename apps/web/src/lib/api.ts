@@ -1,11 +1,15 @@
 // Runtime の Hand API（D73: Hero の Action は REST、卓の状態は SSE）。ブラウザは同一 origin の /api だけを呼ぶ（D67）。
 import type {
   ActionType,
+  AnteKind,
+  BlindSchedule,
   Card,
   HeroView,
   ImportantSpotReason,
   PhysicalAction,
   Street,
+  TournamentPresetId,
+  TournamentResult,
 } from "@proj-poker/engine";
 
 /** 卓に座る Player の表示情報（POST /api/hands の players）。 */
@@ -62,6 +66,48 @@ export interface StartHandResponse {
   readonly fastForward: boolean;
 }
 
+/**
+ * 新しい Session に求める設定（サーバーの SessionRequest と同じ形。#183・D128）。Cash か、Tournament の Preset
+ * （stt6_hand_count: 標準の 6-max STT〔Hand 数で Level が上がる〕/ stt6_time_base: プレイ時間で Level が上がる）。
+ */
+export type SessionRequest =
+  | { readonly mode: "cash" }
+  | { readonly mode: "tournament"; readonly presetId: TournamentPresetId };
+
+/**
+ * 卓に出す Tournament の状況（サーバーの TournamentTableStatus と同じ形。#190）。この Hand の Level・Blind・Ante と次の Level、
+ * この Hand までの Result（残人数・Elimination・順位・Payout）。値はすべて公開の情報で、Event Log からサーバーが都度計算したもの。
+ */
+export interface TournamentTableStatus {
+  /** どの Hand の状況か（表示中の Hand と照らし合わせる）。 */
+  readonly handId: string;
+  readonly presetId: TournamentPresetId;
+  readonly schedule: BlindSchedule;
+  readonly level: number;
+  readonly levelCount: number;
+  readonly handNumber: number;
+  readonly smallBlind: number;
+  readonly bigBlind: number;
+  readonly anteKind: AnteKind;
+  readonly ante: number;
+  readonly nextLevel: {
+    readonly level: number;
+    readonly smallBlind: number;
+    readonly bigBlind: number;
+    readonly ante: number;
+    /** hand_count は次の Level が始まる Hand の番号、time_base は要求の時点の残りのプレイ時間（ms。0 なら次の Hand から）。 */
+    readonly until:
+      | { readonly kind: "hand_count"; readonly handNumber: number }
+      | { readonly kind: "time_base"; readonly remainingPlayMs: number };
+  } | null;
+  readonly result: TournamentResult;
+}
+
+/** 卓の Tournament の状況（GET）の URL。cash の Hand は { tournament: null }。 */
+export function tournamentPath(handId: string): string {
+  return `/api/hands/${encodeURIComponent(handId)}/tournament`;
+}
+
 /** Hero の Action と、障害の続け方の選択の応答。 */
 export interface HeroActionResponse {
   readonly view: HeroView;
@@ -79,6 +125,9 @@ export type ApiErrorKind =
   | "illegal_action"
   | "hand_not_found"
   | "invalid_input"
+  // Session の開始（#183）: 続く Session と違う設定・卓の人数に合わない Tournament の Preset
+  | "session_mode_mismatch"
+  | "tournament_unavailable"
   // Review の API（#84）
   | "hand_not_finished"
   | "decision_not_found"
@@ -113,6 +162,8 @@ const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "illegal_action",
   "hand_not_found",
   "invalid_input",
+  "session_mode_mismatch",
+  "tournament_unavailable",
   "hand_not_finished",
   "decision_not_found",
   "review_not_found",
@@ -180,11 +231,17 @@ function toApiError(status: number, payload: unknown): ApiError {
  * 次の Hand を始める。afterHandId は結果まで見た最後の Hand（まだ無ければ null）。
  * サーバーはそれより新しい Hand（進行中・まだ見ていない結果）があれば、新しく作らずその Hand を返す（開始の再送が冪等になる）。
  * Session が終わっていたら、サーバーが新しい Session として均等 Stack で始める。
+ * session は新しい Session に求める設定（#183。省略すると続く Session はそのまま、新しい Session は cash）。続く Session と違う設定は
+ * session_mode_mismatch で拒否される。
  */
 export function startHand(
   afterHandId: string | null,
+  session?: SessionRequest,
 ): Promise<StartHandResponse> {
-  return postJson<StartHandResponse>("/api/hands", { afterHandId });
+  return postJson<StartHandResponse>(
+    "/api/hands",
+    session === undefined ? { afterHandId } : { afterHandId, session },
+  );
 }
 
 /**

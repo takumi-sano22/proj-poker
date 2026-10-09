@@ -3,6 +3,8 @@
 // - 受信経路は 2 つ（REST の応答と SSE の Push）。どちらが先に届いても seq の新しい方だけを残す
 // - 送信中は ref と state の 2 層で二重送信を止める（state は描画用、ref は同じ tick 内の連打用）
 // - CPU の障害の状態（D86）も REST の応答と SSE の outage イベントの両方から受け、revision の新しい方だけを残す
+// - 新しい Session の設定（Cash / Tournament の Preset。#183・#190）は Hero が選んだ値を持ち、新しい Session を始める操作だけが送る
+//   （「次の Hand へ」・「卓に戻る」は送らず、続く Session をそのまま続ける）
 import type { HeroView, PhysicalAction } from "@proj-poker/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -17,6 +19,7 @@ import {
   type StartHandResponse,
   type OutageChoice,
   type OutageStatus,
+  type SessionRequest,
   type SessionStatus,
   type TablePlayer,
 } from "../lib/api.js";
@@ -38,6 +41,11 @@ export interface SessionNotice {
   readonly message: string;
   /** 押せば同じ操作をやり直せるか（届かなかった送信など）。 */
   readonly retryable: boolean;
+  /**
+   * 続いている Session に戻る操作を添えるか（新しい Session の設定が、続いている Session〔再起動後の Resume など〕と違って
+   * 始められなかったとき。session_mode_mismatch）。
+   */
+  readonly continueSession?: boolean;
 }
 
 export interface HandSession {
@@ -51,7 +59,13 @@ export interface HandSession {
   readonly pending: boolean;
   readonly notice: SessionNotice | null;
   readonly connection: ConnectionState;
+  /** 次の Hand を始める・進行中の Hand に戻る（Session の設定は送らない。続く Session はそのまま、終わっていれば cash）。 */
   readonly start: () => void;
+  /** Hero が選んだ設定（sessionChoice）で新しい Session を始める（続く Session と違う設定ならサーバーが拒否する）。 */
+  readonly startNewSession: () => void;
+  /** 新しい Session に求める設定（既定は Cash）。 */
+  readonly sessionChoice: SessionRequest;
+  readonly setSessionChoice: (choice: SessionRequest) => void;
   /** Hero の 1 回の手番の物理的な操作（した順）を送る。手番でなくても送る（裁定はサーバー）。 */
   readonly operate: (actions: readonly PhysicalAction[]) => void;
   /** 表示中の障害の続け方を選ぶ（Retry / Emergency Bot / Session 終了）。 */
@@ -137,6 +151,19 @@ function noticeOf(error: unknown): SessionNotice {
       };
     case "hand_complete":
       return { message: "この Hand は終了しています。", retryable: false };
+    case "session_mode_mismatch":
+      return {
+        message:
+          "前の Session が続いているため、別の種類の Session は始められません。続きから遊べます。",
+        retryable: false,
+        continueSession: true,
+      };
+    case "tournament_unavailable":
+      return {
+        message:
+          "今の卓の人数では、この Tournament を始められません（Tournament は Preset の参加人数と同じ人数の卓で始めます）。",
+        retryable: false,
+      };
     case "review_required":
       return {
         message:
@@ -173,7 +200,10 @@ export interface HandSessionOptions {
    * Hand の開始の要求（既定は POST /api/hands）。Drill（#117）は POST /api/drills を渡す。描画ごとに作り直さない関数を渡す
    * （変わると開始の手順を作り直す）。
    */
-  readonly start?: (afterHandId: string | null) => Promise<StartHandResponse>;
+  readonly start?: (
+    afterHandId: string | null,
+    session?: SessionRequest,
+  ) => Promise<StartHandResponse>;
 }
 
 export function useHandSession(options: HandSessionOptions = {}): HandSession {
@@ -186,6 +216,9 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
+  const [sessionChoice, setSessionChoice] = useState<SessionRequest>({
+    mode: "cash",
+  });
   // Fast Forward（D12）。サーバーの状態を写すだけで、どの Hand のものかを持つ（別の Hand へ持ち越さない）。
   const [fastForward, setFastForwardState] = useState<{
     readonly handId: string;
@@ -203,7 +236,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   // 操作は送ったときの handId と lastSeq ごと覚え、再送でも同じ値を送る。応答だけが失われて実は適用済みだった場合、
   // サーバーが stale_view で弾くので、次の手番へ誤って適用されない（現在の View の lastSeq で送り直さない）。
   const lastFailed = useRef<
-    | { kind: "start"; afterHandId: string | null }
+    | {
+        kind: "start";
+        afterHandId: string | null;
+        session: SessionRequest | undefined;
+      }
     | {
         kind: "operation";
         handId: string;
@@ -253,15 +290,15 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     if (view?.status === "complete") seenComplete.current = view.handId;
   }, [view]);
 
-  /** 開始の要求を送る。afterHandId は送ったときの値のまま再送する（再送で次の Hand へ進めない）。 */
+  /** 開始の要求を送る。afterHandId・session は送ったときの値のまま再送する（再送で次の Hand へ進めない）。 */
   const requestStart = useCallback(
-    (afterHandId: string | null) => {
+    (afterHandId: string | null, session?: SessionRequest) => {
       if (inFlight.current) return;
       inFlight.current = true;
       setPending(true);
       setNotice(null);
       lastFailed.current = null;
-      startRequest(afterHandId)
+      startRequest(afterHandId, session)
         .then((res) => {
           // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
           // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
@@ -280,7 +317,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
           setStreamEpoch((n) => n + 1);
         })
         .catch((error: unknown) => {
-          lastFailed.current = { kind: "start", afterHandId };
+          lastFailed.current = { kind: "start", afterHandId, session };
           setNotice(noticeOf(error));
         })
         .finally(() => {
@@ -294,6 +331,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   const start = useCallback(
     () => requestStart(seenComplete.current),
     [requestStart],
+  );
+
+  const startNewSession = useCallback(
+    () => requestStart(seenComplete.current, sessionChoice),
+    [requestStart, sessionChoice],
   );
 
   /**
@@ -432,7 +474,8 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
 
   const retry = useCallback(() => {
     const failed = lastFailed.current;
-    if (failed?.kind === "start") requestStart(failed.afterHandId);
+    if (failed?.kind === "start")
+      requestStart(failed.afterHandId, failed.session);
     else if (failed?.kind === "operation")
       send(failed.handId, failed.lastSeq, failed.actions);
     else if (failed?.kind === "outage")
@@ -486,6 +529,9 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     notice,
     connection,
     start,
+    startNewSession,
+    sessionChoice,
+    setSessionChoice,
     operate,
     resolveOutage,
     retry,

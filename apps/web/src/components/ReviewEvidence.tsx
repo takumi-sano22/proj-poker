@@ -1,11 +1,14 @@
 // Review の根拠（Evidence）の表示（#84・docs/05 §6・docs/06 §10 Spot Detail）。値はサーバーの Evidence をそのまま読むだけで、
 // 計算・評価はしない（数値は Engine が決定論で作ったもの）。金額は実額を出し、BB は補助（D49）。
 // Pass A の根拠（判断時点の卓・Math・Range・Solver・KB）は判断時点の情報だけで、他者の札・後の Street は入らない。
+// Tournament の判断（#189・#190・D130）は、ICM / Prize Equity（賞金 pt の期待値）を Chip EV（Chip の損得）と別の項目・別の欄で出す。
 import type { ReactNode } from "react";
 import { STREET_TERMS, formatPercent, termLabel } from "../lib/format.js";
 import {
+  ALL_IN_DECISION_LABELS,
   PREFLOP_SPOT_LABELS,
   SOLVER_FALLBACK_NOTE,
+  TOURNAMENT_STAGE_LABELS,
   decisionLabel,
   solverActionLabel,
   solverNote,
@@ -19,7 +22,14 @@ import type {
   OpponentObservation,
   RangeEvidence,
   SolverEvidence,
+  TournamentEvidence,
 } from "../lib/review-api.js";
+import {
+  anteText,
+  equityText,
+  payoutText,
+  placeText,
+} from "../lib/tournament.js";
 import { Amount } from "./Amount.js";
 import { PlayingCard } from "./PlayingCard.js";
 
@@ -492,6 +502,171 @@ export function TableTendencyView({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** Chip EV と ICM の必要 Equity を混同させないための注記（D130）。JSX の改行で日本語の間に空白が入らないよう 1 つの文字列にする。 */
+const TOURNAMENT_EV_NOTE =
+  "Chip EV の必要 Equity は Chip の損得、ICM の必要 Equity は賞金（pt）の期待値で計算した別の値です。Tournament では Chip の損得と賞金の損得が一致しないため、混同せずに見比べてください。";
+
+/** Evidence の % の値（小数第 1 位に丸め済み）の表記。 */
+function percent1(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+/**
+ * Tournament の根拠（#189・#190・D130）。判断時点の公開の状況（残人数・Level・Ante・Payout・Stage）と、全席の ICM Equity
+ * （賞金 pt の期待値）、All-in の関わる判断では相手ごとの Chip EV の必要 Equity と ICM の必要 Equity を別の列で出す。
+ * Shove の値は「その相手に Call され、ほかは Fold した場合」の条件付きで、その前提（Fold Equity・Call の頻度を含まない）を
+ * サーバーの Evidence の文のまま出す。値は Engine の ICM Calculator が公開の Stack から作ったもので、画面では計算しない。
+ */
+export function TournamentEvidenceView({
+  tournament,
+  bigBlind,
+  nameOf,
+  cited,
+}: {
+  readonly tournament: TournamentEvidence;
+  readonly bigBlind: number;
+  readonly nameOf: NameOf;
+  readonly cited: readonly string[];
+}) {
+  const ante = anteText(tournament.anteKind, tournament.ante);
+  const { allIn } = tournament;
+  return (
+    <div className="evidence-grid">
+      <dl className="facts">
+        <div>
+          <dt>段階（Stage）</dt>
+          <dd>{TOURNAMENT_STAGE_LABELS[tournament.stage]}</dd>
+        </div>
+        <div>
+          <dt>残り</dt>
+          <dd>
+            {tournament.remaining} / {tournament.entrants} 人
+          </dd>
+        </div>
+        {tournament.level !== null && (
+          <div>
+            <dt>Level</dt>
+            <dd>
+              {tournament.level}
+              {ante !== null && `（${ante}）`}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Prize Pool</dt>
+          <dd>{payoutText(tournament.prizePool)}</dd>
+        </div>
+        <div>
+          <dt>Payout</dt>
+          <dd>
+            {tournament.payoutsByPlace
+              .map((amount, i) => `${placeText(i + 1)} ${payoutText(amount)}`)
+              .join("・")}
+          </dd>
+        </div>
+      </dl>
+      <div className="evidence-table-wrap">
+        <table className="evidence-table" data-evidence="icm">
+          <caption>
+            判断時点の ICM Equity（賞金の期待値。Chip の量とは別の項目）
+            {cited.includes(tournament.icm.id) && (
+              <span className="badge evidence__cited">説明の根拠</span>
+            )}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Player</th>
+              <th scope="col">Stack</th>
+              <th scope="col">ICM Equity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tournament.icm.seats.map((s) => (
+              <tr
+                key={s.playerId}
+                className={s.isHero ? "evidence-table__hero" : undefined}
+              >
+                <th scope="row">{nameOf(s.playerId)}</th>
+                <td>
+                  <Amount value={s.icmStack} bigBlind={bigBlind} inline />
+                </td>
+                <td>
+                  {equityText(s.icmEquity)}（{percent1(s.icmEquityPercent)}）
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="evidence__note">
+        {`Stack は判断時点の手元の Stack にこの Hand で出した額を戻した値です（Pot の行方は決めていません）。ICM Equity は残りの順位の賞金（pt）を、Stack から決定論で分けた期待値です（${tournament.icm.method}）。`}
+      </p>
+      {allIn?.status === "available" && (
+        <div className="evidence-grid" data-evidence="all-in">
+          <div className="evidence-table-wrap">
+            <table className="evidence-table">
+              <caption>
+                {ALL_IN_DECISION_LABELS[allIn.decision]}の必要 Equity（Chip EV
+                と ICM を別に計算）
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">相手</th>
+                  <th scope="col">Chip EV の必要 Equity</th>
+                  <th scope="col">ICM の必要 Equity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allIn.requirements.map((r) => (
+                  <tr key={r.villainId}>
+                    <th scope="row">
+                      {allIn.decision === "shove"
+                        ? `${nameOf(r.villainId)} に Call された場合`
+                        : nameOf(r.villainId)}
+                    </th>
+                    <td data-requirement="chip-ev">
+                      {percent1(r.chipEv.requiredEquityPercent)}
+                      {cited.includes(r.chipEv.id) && (
+                        <span className="badge evidence__cited">
+                          説明の根拠
+                        </span>
+                      )}
+                    </td>
+                    <td data-requirement="icm">
+                      {r.icm.requiredEquityPercent === null
+                        ? "—"
+                        : percent1(r.icm.requiredEquityPercent)}
+                      {cited.includes(r.icm.id) && (
+                        <span className="badge evidence__cited">
+                          説明の根拠
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Assumptions
+            items={allIn.assumptions.notes}
+            title={
+              allIn.decision === "shove"
+                ? "前提（Shove の値は条件付き）"
+                : "前提（Assumptions）"
+            }
+          />
+        </div>
+      )}
+      {allIn?.status === "out_of_scope" && (
+        <p className="evidence__muted" data-evidence="all-in-out-of-scope">
+          {allIn.reason}。
+        </p>
+      )}
+      <p className="evidence__note">{TOURNAMENT_EV_NOTE}</p>
     </div>
   );
 }
