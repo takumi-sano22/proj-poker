@@ -226,6 +226,81 @@ export const BUBBLE_CALL: ScriptedHand = {
   },
 };
 
+/**
+ * Tournament の In the Money（3 人残り・3 位まで入賞・2 位と 3 位の賞金に差がある Pay Jump）で、BB の Short Stack の Hero（1,200 = 8BB）が
+ * BTN の Chip Leader（4,500）の Shove に Call する（#202）。Hero の判断: 0 = All-in への Call（相手は BTN）。
+ */
+export const ITM_SHORT_CALL: ScriptedHand = {
+  id: "itm_short_call",
+  label:
+    "Tournament の In the Money（Pay Jump）で、BB の Short Stack の Hero が BTN の Shove に Call（K7o）",
+  button: "cpu1",
+  holes: { hero: "Kd 7c", cpu1: "Ah 4d", cpu2: "8s 6s" },
+  board: "9s 5h 2c Jd 3s",
+  script: [
+    ["cpu1", { type: "all_in" }],
+    ["cpu2", fold],
+    ["hero", call],
+  ],
+  tournament: {
+    config: STT6,
+    entrants: 6,
+    level: 5,
+    handNumber: 47,
+    seats: [
+      { playerId: "hero", stack: 1_200 },
+      { playerId: "cpu1", stack: 4_500 },
+      { playerId: "cpu2", stack: 3_300 },
+    ],
+  },
+};
+
+/**
+ * Tournament の Bubble の前（5 人残り・Level 3 の 25 / 50・Big Blind Ante 50）で、All-in の関わらない Postflop の判断（#202）。
+ * SB の Hero が BTN の Open に Call し、Flop は両者 Check、Turn で Straight になって最初に Bet、River は Check して BTN の Bet に Call。
+ * Heads-Up の Turn の Root の判断だが、Tournament では Solver の Capability Gate が mode で Unsupported になる（ICM を扱わない。#189）。
+ * Hero の判断: 0 = Preflop の Call・1 = Flop の Check・2 = Turn の Bet・3 = River の Check・4 = River の Call。
+ */
+export const TOURNAMENT_TURN_BET: ScriptedHand = {
+  id: "tournament_turn_bet",
+  label:
+    "Tournament の Bubble の前で、SB の Hero が Turn で最初に Bet（98s・T72 → 6 で Straight。All-in なし）",
+  button: "cpu5",
+  holes: { hero: "9h 8h", cpu5: "Ac Td" },
+  board: "Th 7c 2s 6d Kd",
+  script: [
+    ["cpu2", fold],
+    ["cpu3", fold],
+    ["cpu5", raise(125)],
+    ["hero", call],
+    ["cpu1", fold],
+    // Flop（Pot 350）: 両者 Check。
+    ["hero", check],
+    ["cpu5", check],
+    // Turn（Pot 350）: Hero が最初に 175 を Bet、BTN が Call。
+    ["hero", bet(175)],
+    ["cpu5", call],
+    // River（Pot 700）: Hero が Check、BTN が 350 を Bet、Hero が Call。
+    ["hero", check],
+    ["cpu5", bet(350)],
+    ["hero", call],
+  ],
+  tournament: {
+    config: STT6,
+    entrants: 6,
+    level: 3,
+    handNumber: 25,
+    // 席順: hero（SB）→ cpu1（BB）→ cpu2（UTG）→ cpu3（CO）→ cpu5（BTN）。
+    seats: [
+      { playerId: "hero", stack: 2_000 },
+      { playerId: "cpu1", stack: 1_800 },
+      { playerId: "cpu2", stack: 1_700 },
+      { playerId: "cpu3", stack: 1_500 },
+      { playerId: "cpu5", stack: 2_000 },
+    ],
+  },
+};
+
 export const SCRIPTED_HANDS: readonly ScriptedHand[] = [
   BTN_VS_UTG,
   SB_VS_BTN,

@@ -60,7 +60,7 @@ export function toRecordedReviewCases(
  * runStructuredQuery の message の読み方も本番と同じ経路を通る。渡された引数の指紋が録画と違えば例外にする（録画が古い）。
  */
 export function replayReviewQueryFor(
-  recording: ReviewEvalRecording,
+  recording: Pick<ReviewEvalRecording, "records">,
   clock: ReplayClock,
   hashParams: (params: Parameters<ClaudeQuery>[0]) => string,
 ): (caseId: string, repeat: number) => ClaudeQuery {

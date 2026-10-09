@@ -1,4 +1,4 @@
-# D01〜D131の採用済み人間判断。
+# D01〜D132の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -526,3 +526,7 @@
   choice: "Review の文の数値は Evidence から決定論で作った数値表の参照トークンで書かせ、%・pt・BB の付いた生の数値を照合する（案 A。#168 の人間判断、AskUserQuestion）"
   status: "採用済み"
   decision: "Pass A（Decision Review）と、Pass Aの Reviewへの Follow-upで、Evidenceから決定論で数値表（参照キーN1, N2…・人が読む説明・UIと揃えた書式の値。額はChipの実額・比率は整数の%・ICMはptと小数第1位の%）を作ってPromptに添え、Review AIには文の数値を参照（{N3}の形）で書かせる。出力の検証のGroundingで、未知の参照と、参照ではない%・pt・BBの付いた数値のうち数値表の値（とEvidenceの文に書かれた値）に表示の丸めの範囲で一致しないものを不正にする。単位の無い数（3-Bet・人数・Level等）は検査しない。不正時は既存のRetryの枠（最大2回）だけを使い、Retryの上限は増やさない。検証を通った文は参照を決定論の値に置き換えてから保存し、DBスキーマは変えない（#169のUIのEvidenceの直接表示は維持）。Pass B（Reveal Review）とPass Bへの Follow-upは範囲外。CashとTournamentで共通。Promptの変更に伴うCashのReview Evalの再録画（4判断 × repeat 3 = 12 Review・最大24呼び出し・OAuth / Agent SDK / buildClaudeEnvの経路だけ）を承認する。D125で横断の品質課題として残した#168を実装するもので、D125は変更しない。D40・D101・D122・D130の具体化。"
+- id: D132
+  choice: "Tournament の Claude CPU / Review を実モデルで録画する上限を、CPU 最大 28 Decision・56 呼び出し、Review 8 + Follow-up 2・最大 20 呼び出しに決める（#202 の人間判断、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Tournament の Public Tournament Context（D130）が入った Claude CPU と、ICM / Chip EV の Evidence と数値 Grounding（D131）が入った Review の品質を、Claude Agent SDK・Claude Code の OAuth（サブスク枠）・buildClaudeEnv の経路だけで録画する。CPU は 7 Spot（S0 対照＝Tournament Context なし／S1 Bubble 前の Short Stack の Open Shove／S2 Bubble／S3 In the Money／S4 Heads-Up／S5 Bubble で Bubble Factor の高い大 Stack の Shove への Call／S6 S5 に Memory・Table Tendency・Tilt を合成）× 対照的な 2 Persona × repeat 2 の最大 28 Decision（Retry を含む呼び出しは最大 56 回）。Review（Tournament）は Bubble Shove・Bubble の All-in への Call・In the Money の Pay Jump で Short Stack の Call・All-in でない通常の判断（Tournament で Solver Unsupported）× repeat 2 の 8 Review と、Follow-up 2 件（質問文は固定）の最大 20 回。ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / Bedrock / Vertex / Foundry / 別の ANTHROPIC_BASE_URL が実行環境にあれば呼ばずに停止し、API キーへ切り替えない。#168 マージ後の最終 Prompt を対象にし、結果が期待どおりでなくても Prompt / Policy をその場で調整しない（戦略品質の改善は別 Issue で人間判断へ）。CI は実モデルを呼ばず録画の再生だけで、paramsHash で Prompt / Options の drift を検出する。既存の録画は残す。D87・D123・D126・D130・D131 の具体化。実装は #202。"

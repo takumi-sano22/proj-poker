@@ -191,6 +191,23 @@ export function assertOAuthRoute(env: Readonly<Record<string, string>>): void {
   }
 }
 
+/**
+ * 親（シェル）の env に、API 課金・OAuth 以外の経路へ切り替わる変数があれば例外（#202・D132）。buildClaudeEnv は API キーを子プロセスから
+ * 外すが、シェルにあるだけでも呼ばずに止める（review-eval/run.ts と同じ作法）。値は出さない。
+ */
+export function assertShellRoute(
+  parent: Readonly<Record<string, string | undefined>>,
+): void {
+  const found = [...API_BILLING_ENV_KEYS, ...OTHER_ROUTE_ENV_KEYS].filter(
+    (k) => parent[k] !== undefined,
+  );
+  if (found.length > 0) {
+    throw new Error(
+      `OAuth 以外の経路に切り替わる変数がシェルの env にある: ${found.join(", ")}（呼ばずに止める）`,
+    );
+  }
+}
+
 /** 子プロセスと親の env に経路の変数があるかの表示（値は出さない）。 */
 export function describeRouteEnv(
   env: Readonly<Record<string, string>>,

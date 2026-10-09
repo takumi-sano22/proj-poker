@@ -1,0 +1,521 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-09T11:56:24.535Z",
+  "model": "claude-sonnet-5-5",
+  "sdkVersion": "0.3.289",
+  "kbVersion": "1.0.0",
+  "cases": [
+    "bubble_shove/d0",
+    "bubble_call/d0",
+    "itm_short_call/d0",
+    "tournament_turn_bet/d2"
+  ],
+  "repeats": 2,
+  "limits": {
+    "maxReviews": 8,
+    "maxFollowUps": 2,
+    "maxCalls": 20
+  },
+  "modelCalls": 11,
+  "records": [
+    {
+      "caseId": "bubble_shove/d0",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "82d1afea2367f94a",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "Hero は BTN で Stack {N3}、Ante を含めて Pot は {N11}。KsとOs…ではなく K9 スーテッドで、全員ランダムな Range を仮定した Equity は {N16} です。この仮定は SB と BB が Action 前の「ランダム」で、実際の Call Range よりかなり広いので、Equity は高めに出ている可能性が高いです。Chip EV だけなら、Call された場合の必要 Equity は {N70}（CPU 1）と {N78}（CPU 2）で、仮定上の Equity {N16} はこれを下回ります。つまり、2 人のどちらかに Call された場面で Chip EV が確実にプラスとは言えません。簡易 EV の {N40} は、Fold しない全員が Call する前提で Pot を数えた目安で、Fold Equity を含まず、この場面の判断材料には向きません。Shove の利益の多くは Blind が Fold することから来ます。Bubble なので ICM の必要 Equity は {N71}（CPU 1）と {N79}（CPU 2）まで上がり、Call された場合の負けのコストは大きくなります。Hero の ICM Equity は {N56} で、Fold しても {N75} 相当を保てます。ただし Stack {N55} と短く、次の Blind と Ante で急に厳しくなります。K9 スーテッドの Shove は、Fold される頻度が十分高ければ成立しますが、2 人の Blind 両方が残っているので僅差です。Fold Equity と Call 頻度は Evidence に無いので、数値にはしません。",
+            "theoryBasis": "general_theory",
+            "theory": "一般論として、Bubble では ICM により Call される場合の損失が Chip EV より重くなり、必要 Equity は Chip EV の {N70} から ICM の {N71} へ上がります。Stack の短い Hero は他の Stack に対して圧力を受けますが、2 人の Blind が残る BTN からの Shove は、1 人でも Call すると不利になりやすいです。Push / Fold の解は Evidence に無いので、この Hand の Shove が正解かどうかは断定しません。Preflop は Solver の対象外です。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "SB と BB の Range は Action 前のランダム（標準・狭い・広いの 3 想定が同じ Equity）で、実際の Call Range より広い。Equity は推定で、Monte Carlo の試行回数は {N19}。",
+              "必要 Equity は「1 人に Call され、ほかは Fold した場合」の条件付きの値で、Fold Equity と Call 頻度は含まない。",
+              "Hero が Fold した場合は CPU 2 が今の Pot を取る前提で ICM を計算している。",
+              "簡易 EV は Fold しない全員が Call する前提で、Rake・Implied Odds は含まず、GTO / Solver の値ではない。",
+              "相手の過去の傾向の記録は無い。"
+            ],
+            "conclusionChangers": [
+              "Blind の 2 人が実際に Call する Range がランダムよりずっと狭ければ、Call された場合の Equity は下がり、Shove は悪くなる。",
+              "Blind が Fold する頻度が高い根拠があれば、Shove の価値は上がる。",
+              "相手の Stack や賞金構造が変われば、ICM の必要 Equity も変わる。",
+              "Push / Fold の解で K9 スーテッドが Shove 圏内かどうかを確認できれば、評価が変わる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-bubble_shove/d0",
+              "math:review-bubble_shove/d0",
+              "range:review-bubble_shove/d0",
+              "tournament:review-bubble_shove/d0",
+              "icm:review-bubble_shove/d0",
+              "chipev:review-bubble_shove/d0/cpu1",
+              "icmreq:review-bubble_shove/d0/cpu1",
+              "chipev:review-bubble_shove/d0/cpu2",
+              "icmreq:review-bubble_shove/d0/cpu2"
+            ]
+          },
+          "ms": 14646
+        }
+      ]
+    },
+    {
+      "caseId": "bubble_shove/d0",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "82d1afea2367f94a",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "Hero はボタンで Stack {N3}（{N55} BB）、Ante {N49} を含む Pot {N11}。K9s は Fold された後の SB と BB の 2 人が相手です。仮定した Range はどちらもランダムな手（各 {N41} 通りと {N42} 通り）で、これに対する Equity は {N16} です。この仮定は、2 人が Call するときの強さを反映しません。Chip EV では、Call された場合の必要 Equity は CPU 1 に対して {N70}、CPU 2 に対して {N78} です。Equity {N16} はどちらも下回ります。つまり、2 人のどちらかに Call されたときの Chip EV は、このランダム Range の仮定でも損です。簡易 EV の {N40} は、全員が Call する前提で Fold Equity を含まず、さらに必要 Equity を {N38} としているため、実際の Call 条件より甘い数字です。信頼しすぎないでください。Bubble の ICM では、必要 Equity が CPU 1 に対して {N71}、CPU 2 に対して {N79} とさらに高くなります。Call されたときの ICM 上の損は大きく、Equity {N16} とは大きな開きがあります。Shove の良し悪しは、2 人が Fold する頻度と、Call 時の Range の強さで決まります。この Evidence にはどちらも含まれていないため、推測で数値にはしません。ただ、Stack が {N55} BB と浅く、Fold しても ICM Equity は {N56} です。Call された場合の損は小さくありません。判断は僅差から、やや厳しい側にあるとみます。",
+            "theoryBasis": "general_theory",
+            "theory": "Bubble では、Chip を失う損が、同じ量の Chip を得る利益より大きくなります。そのため ICM の必要 Equity（{N71}、{N79}）は Chip EV の必要 Equity（{N70}、{N78}）より高くなります。この差は賞金の構造による違いです。浅い Stack の Shove は Fold Equity に支えられます。ただし今回の Evidence に Fold Equity は含まれません。K9s はスーテッドの K ハイで、Call された場合の Equity は強くありません。Preflop は Solver の対象外で、Push / Fold の解は根拠にしていません。この判断が理論的に正しいと断定はできません。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "相手 2 人の Range はどちらもランダムな手（Tight、Standard、Loose のどれも同じ Equity）で、Call 時の絞り込みは反映されていない。",
+              "Equity は Monte Carlo（試行回数 {N19}）による推定。",
+              "必要 Equity は、1 人に Call されてほかは Fold した場合の条件付きの値。Fold Equity と Call の頻度は含まない。",
+              "Fold した場合は CPU 2 が今の Pot を取る前提で ICM を計算している。",
+              "簡易 EV は全員が Call する前提で、Rake や Implied Odds を含まず、GTO / Solver の値ではない。",
+              "相手の傾向の記録は無い。"
+            ],
+            "conclusionChangers": [
+              "SB と BB が実際に Call する Range がもっと狭いと、Equity が下がって Shove は厳しくなる。",
+              "SB と BB が Fold する頻度が十分に高いと、Fold Equity で Shove の損益が改善する。",
+              "Stack の差や賞金の構造が違うと、ICM の必要 Equity が変わる。",
+              "相手が Call で Wide に Call するなら、Equity が必要 Equity に近づき、評価が変わる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-bubble_shove/d0",
+              "math:review-bubble_shove/d0",
+              "range:review-bubble_shove/d0",
+              "tournament:review-bubble_shove/d0",
+              "icm:review-bubble_shove/d0",
+              "chipev:review-bubble_shove/d0/cpu1",
+              "icmreq:review-bubble_shove/d0/cpu1",
+              "chipev:review-bubble_shove/d0/cpu2",
+              "icmreq:review-bubble_shove/d0/cpu2"
+            ]
+          },
+          "ms": 14280
+        },
+        {
+          "paramsHash": "662f37c2f5e076e0",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "Hero は BTN で、Stack は {N3}、Pot は {N11} です。仮定した Range（SB と BB はまだ Action していないためランダムな札）に対する Equity は {N16} で、Pot Odds {N13} を大きく上回ります（差は {N20}）。Chip EV だけなら強気に見えます。ただしこの Equity は相手の Range をランダムとした値で、実際に Call してくる Range より弱い手を含みます。Call される場合は強い手に偏るため、実際の Equity は下がる可能性が高いです。Shove の必要 Equity は、CPU 1 に Call された場合で Chip EV が {N70}、ICM が {N71}。CPU 2 に Call された場合で Chip EV が {N78}、ICM が {N79} です。仮定した Equity {N16} は Chip EV の必要 Equity に届かず、ICM の必要 Equity とは大きく差があります。Bubble で次に Bust する 1 人だけが入賞しません。Hero の ICM Equity は {N56} で、Fold しても約 {N75} を保てます。つまり K9s の Shove は、Fold Equity に頼る選択です。簡易 EV の {N40} は全員 Call する前提で、Fold Equity を含まないため、そのまま信用できません。Call された時の損得は上記の必要 Equity で見るのが妥当で、僅差から損寄りの判断と考えます。",
+            "theoryBasis": "general_theory",
+            "theory": "Bubble では Chip を失う損失が、得る利益より賞金の期待値に大きく響きます。そのため ICM の必要 Equity は Chip EV の必要 Equity より高くなります（今回は {N71} と {N70}、{N79} と {N78}）。Shove が成り立つには、相手が十分な頻度で Fold することが必要です。ただしこの Evidence には Fold Equity も Call の頻度も含まれていません。Push / Fold の解も無いため、K9s がこの Stack {N55} の Shove Range に入るかは断定できません。Rake は含まれていません。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "SB と BB の Range はまだ Action していないためランダムな札を仮定している。Equity は {N19} 回の Monte Carlo による推定。",
+              "必要 Equity は、相手 1 人に Call され、ほかは Fold した場合の条件付きの値。Fold Equity と Call の頻度は含まない。",
+              "Hero が Fold した場合は CPU 2 が今の Pot を取る前提で ICM を計算している。",
+              "簡易 EV は GTO / Solver の値ではなく、Fold Equity、Rake、Implied Odds を含まない。",
+              "相手の Observation は無く、相手の傾向は読めない。"
+            ],
+            "conclusionChangers": [
+              "相手の Call Range が実際にランダムより狭ければ、Equity は下がり、Shove は悪くなる。",
+              "相手の Fold の頻度が高いと分かれば、Shove の価値は上がる。",
+              "賞金の構造や Stack の差が変われば、ICM の必要 Equity は変わる。",
+              "Push / Fold の解や Solver の結果で K9s が Shove Range に入ると分かれば、評価は上がる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-bubble_shove/d0",
+              "math:review-bubble_shove/d0",
+              "range:review-bubble_shove/d0",
+              "tournament:review-bubble_shove/d0",
+              "icm:review-bubble_shove/d0",
+              "chipev:review-bubble_shove/d0/cpu1",
+              "icmreq:review-bubble_shove/d0/cpu1",
+              "chipev:review-bubble_shove/d0/cpu2",
+              "icmreq:review-bubble_shove/d0/cpu2"
+            ]
+          },
+          "ms": 13275
+        }
+      ]
+    },
+    {
+      "caseId": "bubble_call/d0",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "f4fecab64e2d8851",
+          "output": {
+            "assessment": "improvement_suggested",
+            "confidence": "medium",
+            "practical": "バブル（残り {N30} 人で入賞は 3 人）で、BB の Hero が AQo で CPU 2 の All-in（{N7}）に {N11} を Call した判断です。Chip EV だけで見ると、Pot Odds は {N12}、必要 Equity は {N23} で、仮定した Range に対する Equity は {N15} です。差は {N19} あり、Call の簡易 EV は {N24} とプラスです。ただし ICM で見ると必要 Equity は {N54} まで上がります。標準の想定の Equity {N26} はこれを下回ります。広い想定でも {N28}、狭い想定では {N27} で、どれも必要 Equity に届きません。Fold なら ICM Equity は {N58} で、負けると {N60} まで下がります。勝てば {N59} です。Chip の上では明確な Call でも、賞金の期待値では Fold が上回る可能性が高い場面です。Call の質は低いと評価します。Hero は Stack {N3} と、CPU 2 を除いて最大です。Fold しても 18 BB 残ります。ただし CPU 1（{N42}）が短く、他の Player の Bust を待てる余地もあります。",
+            "theoryBasis": "general_theory",
+            "theory": "ICM では、Chip を失う痛みが Chip を得る喜びより大きくなります。特に Bubble で、負けると Stack が {N57} まで減り、Bust に近づく場面で顕著です。そのため必要 Equity が Chip EV の {N53} から ICM の {N54} に上がります。AQo は BTN の広い Open/Push 想定に対して強い Hand ですが、この賞金構造では Call に必要な勝率に届きません。ただし、ICM の値は Malmuth-Harville の暫定版による推定で、Solver の結果ではありません。賞金構造や Stack の仮定でずれる可能性があります。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "CPU 2 の Range は、BTN Open 相当の広い Range（Combo 数 {N25}）という推定です。All-in 時の実際の Range はもっと狭い可能性があります。",
+              "必要 Equity の前提は、Call したら Hero と CPU 2 だけで争い、他の Player は Fold する、Fold Equity と Call 頻度は含めない、Hero が Fold したら CPU 2 が今の Pot を取る、というものです。",
+              "Equity は Monte Carlo（試行 {N18} 回）の推定で、Rake・Implied Odds・Postflop の実現度は含みません。",
+              "ICM は Malmuth-Harville の暫定版で、賞金は 300 / 180 / 120pt の仮定です。相手の Observation は無く、Solver の対象外です。"
+            ],
+            "conclusionChangers": [
+              "CPU 2 の All-in Range がもっと広く、例えば Equity が {N54} を超えるなら、Call でも良くなります。",
+              "CPU 2 の Range が AK・AA〜QQ など強い Hand に絞られるなら、Equity はさらに下がり、Fold がより明確になります。",
+              "賞金構造が Winner-take-all に近ければ、ICM の必要 Equity が Chip EV に近づき、Call が良くなります。",
+              "他の Player の Stack が変わり、Bust の危険が変われば、ICM の必要 Equity も変わります。"
+            ],
+            "evidenceIds": [
+              "math:review-bubble_call/d0",
+              "range:review-bubble_call/d0/standard",
+              "range:review-bubble_call/d0/tight",
+              "range:review-bubble_call/d0/loose",
+              "tournament:review-bubble_call/d0",
+              "icm:review-bubble_call/d0",
+              "chipev:review-bubble_call/d0/cpu2",
+              "icmreq:review-bubble_call/d0/cpu2",
+              "kb:1.0.0:blind_defense_basics@1"
+            ]
+          },
+          "ms": 14190
+        }
+      ]
+    },
+    {
+      "caseId": "bubble_call/d0",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "f4fecab64e2d8851",
+          "output": {
+            "assessment": "improvement_suggested",
+            "confidence": "medium",
+            "practical": "Bubble（残り4人で入賞は3人）で、BB の Hero（Stack {N3}）が BTN の CPU 2 の All-in（{N7}）に {N11} を Call する場面です。Chip EV だけで見ると、Pot Odds は {N12}、必要 Equity は {N23} です。標準の Range（{N25} Combo）に対する Equity は {N15} で、差は {N19}、Call の簡易 EV は {N24} です。Chip EV では明確な Call です。ただし ICM の必要 Equity は {N54} で、Equity {N15} はこれに届きません。Fold なら ICM Equity は {N58}、Call して勝つと {N59}、負けると {N60} です。負けると Stack は {N57} に減り、Bust に近づきます。Range の想定を狭い（{N27}）から広い（{N28}）まで動かしても、{N54} を上回る場面はありません。そのため、Bubble では Fold も有力で、Call は賞金期待値の面で損の可能性が高いと考えます。Chip EV では得でも、ICM では Call が損になる典型例です。Rake は含みませんが、Tournament なので主題ではありません。",
+            "theoryBasis": "general_theory",
+            "theory": "Bubble では Chip を失うコストが、得るコストより大きくなります。この Hand では、Chip EV の必要 Equity {N53} に対し、ICM の必要 Equity は {N54} です。この差が賞金構造（ICM）による違いです。BTN の Open 的な広い Range に対して A Q は強く、Chip EV では Call が良い手です。それでも ICM の下では、Equity {N15} が {N54} に届きません。ここでの ICM は Malmuth-Harville の近似で、Solver の結論ではありません。相手を 1 人に絞り、他の Player は Fold する前提も含みます。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "CPU 2 の Range は BTN の Open 的な広い Range（標準 {481} Combo）という推定で、All-in 時の実際の Range とは異なりうる。",
+              "Equity は Monte Carlo（20,000 試行）による推定で、Rake・Implied Odds は含まない。",
+              "ICM の必要 Equity は、Call したら Hero と CPU 2 の 2 人だけで争い、他の Player は Fold する前提。Fold Equity と Call 頻度は含まない。",
+              "Hero が Fold したら CPU 2 が今の Pot を取る前提。",
+              "賞金構造は 1 位 300pt、2 位 180pt、3 位 120pt で、ICM は Malmuth-Harville の暫定版。",
+              "相手の過去の傾向（Observation）は無く、Hero 自身の読みも未収集。"
+            ],
+            "conclusionChangers": [
+              "CPU 2 の All-in Range が、仮定よりかなり広い（Equity が {N54} 付近まで上がる）場合。",
+              "Stack 分布や賞金構造が変わり、ICM の必要 Equity が下がる場合。",
+              "CPU 2 の過去の All-in 頻度が高いなどの Observation が得られた場合。",
+              "CPU 2 の Range が仮定より狭く、Equity が下がる場合は、Fold の方向がさらに強まる。"
+            ],
+            "evidenceIds": [
+              "math:review-bubble_call/d0",
+              "range:review-bubble_call/d0/standard",
+              "range:review-bubble_call/d0/tight",
+              "range:review-bubble_call/d0/loose",
+              "tournament:review-bubble_call/d0",
+              "icm:review-bubble_call/d0",
+              "chipev:review-bubble_call/d0/cpu2",
+              "icmreq:review-bubble_call/d0/cpu2",
+              "kb:1.0.0:equity_types_and_plausible_range@1"
+            ]
+          },
+          "ms": 13441
+        }
+      ]
+    },
+    {
+      "caseId": "itm_short_call/d0",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "972fb6a01399d66e",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "low",
+            "practical": "Chip EV だけで見ると Call は妥当です。Call に必要な額 {N10} で取りうる Pot は {N21}、必要 Equity は {N48} です。標準の想定での Equity は {N14} で、Pot Odds の {N11} を大きく上回り、簡易 EV も {N23} とプラスです。ただし残り {N29} 人の入賞圏（賞金は 3 位でも {N35}）なので、見るべきは ICM の必要 Equity {N49} です。標準の想定の Equity {N14} はこれにわずかに届かず、僅差でマイナス側です。Fold なら ICM Equity は {N53}、勝てば {N54}、負ければ {N55} です。狭い想定では Equity が {N26} で Chip EV の必要 Equity も下回り、広い想定では {N27} で ICM の必要 Equity も上回ります。Hero の Stack は {N37} と短く、Fold を続けても Blind と Ante で目減りします。また、CPU 1 の All-in は Stack {N41} からの Shove で、仮定した Open Range（{N24} Combo）より絞られている可能性が高いです。これらを合わせると、Call は僅差で Fold と大差ない判断です。Fold の方が少し良い可能性もあります。",
+            "theoryBasis": "general_theory",
+            "theory": "ICM では、失う Chip の価値が得る Chip の価値より大きいため、Chip EV より必要 Equity が上がります。この Hand では {N48} から {N49} に上がっています。K7o は Equity が必要 Equity の近くにある境界線上の Hand で、Range の想定が少し変わるだけで結論が反転します。Push/Fold の解は Evidence に無いので、それを根拠にした結論は書きません。Preflop は Solver の対象外です。ここでの数値は ICM の簡易計算（Malmuth-Harville）と、仮定した Range に対する Equity に基づく目安です。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "CPU 1 の Range は、BTN の Open Range（標準で {N24} Combo）を All-in の Range の代わりに使った仮定です。実際の Shove Range は異なる可能性があります。",
+              "Equity は Monte Carlo（試行 {N17} 回）の推定値で、誤差があります。",
+              "必要 Equity の前提：他の Player は Fold し、Call したら Hero と CPU 1 だけで争います。Fold Equity と Call 頻度は含めません。Hero が Fold したら CPU 1 が今の Pot を取ります。",
+              "ICM は Malmuth-Harville の暫定版で、賞金は 1 位 {N33}、2 位 {N34}、3 位 {N35} です。",
+              "相手の過去の傾向の記録は無く、Rake も含めていません。"
+            ],
+            "conclusionChangers": [
+              "CPU 1 の Shove Range が標準の想定より狭ければ（狭い想定の Equity は {N26}）、Fold の方が良くなります。",
+              "Range が広ければ（広い想定の Equity は {N27}）、Call が ICM の面でも明確に正しくなります。",
+              "相手の Shove 頻度が高いという観察が得られれば、Call 寄りになります。",
+              "Stack や賞金の構造が変わり、ICM の必要 Equity が変われば、結論も変わります。"
+            ],
+            "evidenceIds": [
+              "ctx:review-itm_short_call/d0",
+              "math:review-itm_short_call/d0",
+              "range:review-itm_short_call/d0/standard",
+              "range:review-itm_short_call/d0/tight",
+              "range:review-itm_short_call/d0/loose",
+              "tournament:review-itm_short_call/d0",
+              "icm:review-itm_short_call/d0",
+              "chipev:review-itm_short_call/d0/cpu1",
+              "icmreq:review-itm_short_call/d0/cpu1",
+              "kb:1.0.0:equity_types_and_plausible_range@1"
+            ]
+          },
+          "ms": 16058
+        }
+      ]
+    },
+    {
+      "caseId": "itm_short_call/d0",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "972fb6a01399d66e",
+          "output": {
+            "assessment": "mixed_marginal",
+            "confidence": "medium",
+            "practical": "Hero（BB）の K7 オフスートは、CPU 1 の BTN からの All-in {N6} に対し、{N8}（{N3} の全 Stack、6 BB）を Call する判断です。Pot Odds は {N11} で、Chip EV の必要 Equity は {N48} です。標準の Range（{N24} Combo）に対する Equity は {N14}（勝ち {N15}、引き分け {N16}）で、Chip EV では必要 Equity を上回ります。簡易 EV は {N23} です。ただしトーナメントは入賞圏（残り {N29} 人）で、ICM の必要 Equity は {N49} です。標準の想定の Equity はこれをわずかに下回ります。ICM では Call が僅差で損になる可能性があります。Hero の Fold 時の ICM Equity は {N53}、勝ちは {N54}、負け（Bust）は {N55} です。Bust しても 3 位賞金が残るので、Bust のペナルティは通常のバブルより小さいはずですが、それでも必要 Equity は上がります。Hero は 6 BB と短く、Fold 後は Blind と Ante で急速に削られます。それでも、僅差で ICM 上わずかにマイナスの Call と考えます。",
+            "theoryBasis": "general_theory",
+            "theory": "Chip EV の必要 Equity は {N48}、ICM の必要 Equity は {N49} で、差は賞金構造による違いです。Equity は想定の幅で動きます。狭い想定（Tight）では {N26}、標準では {N25}、広い想定（Loose）では {N27} です。ICM の必要 Equity を超えるのは広い想定のときだけです。BTN の All-in が 30 BB の大きな Stack からのものなら、Range は広いと考えるのが自然です。ただし標準の Range はもともと広めの Open の想定です。All-in の相手に対する実際の Range は、この Evidence だけでは確定できません。Preflop なので Solver の結果はありません。Rake は含みません。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "CPU 1 の Range は BTN の Open として仮定した推定で、実際の札ではない。All-in に対する Range ではなく Open の Range を使っている。",
+              "Equity は Monte Carlo の推定（試行 {N17} 回）で、誤差がある。",
+              "必要 Equity の前提は、ほかの Player は Fold し、Hero と CPU 1 の 2 人で争うこと。Fold Equity と Call 頻度は含まない。Hero が Fold したら CPU 1 が今の Pot を取る。",
+              "簡易 EV は Rake・Implied Odds を含まず、ICM を反映しない Chip の目安。",
+              "ICM は Malmuth-Harville の暫定の計算で、賞金は暫定の構造。"
+            ],
+            "conclusionChangers": [
+              "CPU 1 の All-in の Range が標準より広ければ（広い想定の Equity は {N27}）、Call が ICM でも正当になる。",
+              "Range が狭ければ（狭い想定の Equity は {N26}）、Chip EV でも Fold が妥当になる。",
+              "Fold 後に Hero が回復できる見込み（Stack が極端に短く Blind で削られる点）の見方で、ICM の評価は動く。",
+              "Equity の誤差で、{N14} と {N49} の差はひっくり返りうる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-itm_short_call/d0",
+              "math:review-itm_short_call/d0",
+              "range:review-itm_short_call/d0",
+              "range:review-itm_short_call/d0/standard",
+              "range:review-itm_short_call/d0/tight",
+              "range:review-itm_short_call/d0/loose",
+              "tournament:review-itm_short_call/d0",
+              "icm:review-itm_short_call/d0",
+              "chipev:review-itm_short_call/d0/cpu1",
+              "icmreq:review-itm_short_call/d0/cpu1",
+              "kb:1.0.0:equity_types_and_plausible_range@1"
+            ]
+          },
+          "ms": 13906
+        }
+      ]
+    },
+    {
+      "caseId": "tournament_turn_bet/d2",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "9e4845c06804f790",
+          "output": {
+            "assessment": "reasonable",
+            "confidence": "medium",
+            "practical": "Hero は 9h8h でターンにストレートが完成していて、BTN の CPU 5 の想定 Range（{N39} Combo）に対する Equity は {N17}（勝ち {N18}、引き分け {N19}）です。Check で見逃す理由は薄く、Value Bet は妥当です。選んだ {N12} の Bet は Pot {N13} の約半分で、弱い Pair や Draw、Ace High などに払わせやすい Size です。ただし Equity がここまで高いと、Size を上げても Call が残る限り取れる額が増えます。{N24} 出す Bet の簡易 EV は {N28}、{N29} の Bet は {N33} です。この EV は全員が Call する前提で、大きい Size ほど有利に出る点に注意してください。実際には Size を上げるほど Fold が増えます。SPR は {N16} で、River にもう 1 回大きく打つ余地を残す意味で、小さめのターン Bet は筋が通ります。",
+            "theoryBasis": "general_theory",
+            "theory": "Solver の結果はありません（トーナメントは対象外）。一般論では、Hero はこのボードで強い Hand を持ち、フロップで Check-Check した後の Range 構成から、ターンの Bet は Value として自然です。Bet Size は「Call してくる幅」と「取れる額」のバランスで決まる経験則（HEURISTIC）があり、小さい Size は幅広く Call を得られ、大きい Size は強い Hand の Value を厚く取れます。どちらが良いかは相手の Call 範囲次第で、{N24} の Bet が唯一の正解というわけではありません。ICM は Bubble 前ですが、Equity が {N17} あるので Chip を失うリスクは小さく、ICM 上の懸念はほぼありません。",
+            "exploitBasis": "none",
+            "exploit": "相手の過去の傾向の記録が無いので、特定の調整は根拠を持てません。",
+            "assumptions": [
+              "CPU 5 は BTN Open の標準的な Range（{N39} Combo）を持つと仮定し、Postflop の絞り込みは行っていない。実際のフロップ Check 後の Range はもっと弱い Hand に寄る可能性がある。",
+              "Equity は全列挙（{N20} 組）で、Draw は数えない簡易モデル。",
+              "簡易 EV は全員が Call する前提で、Fold Equity は含まない。大きい Bet ほど過大に見える。",
+              "Solver の結果は無く、GTO の値ではない。"
+            ],
+            "conclusionChangers": [
+              "CPU 5 の Range が実際にはもっと強い（Set や J8 などの上位ストレート寄り）なら、Equity が下がり Size の判断も変わる。",
+              "相手が Call しやすい（Calling Station 型）という観察があれば、より大きい Size が有利になる。",
+              "相手が大きい Bet にすぐ Fold するなら、小さめの Size の方が Value を取りやすい。",
+              "ターンの Check から River でまとめて取る狙いなら、Bet 無しの選択肢も比較対象になる。"
+            ],
+            "evidenceIds": [
+              "ctx:review-tournament_turn_bet/d2",
+              "math:review-tournament_turn_bet/d2",
+              "range:review-tournament_turn_bet/d2",
+              "kb:1.0.0:bet_sizing_purpose@1",
+              "kb:1.0.0:spr_and_effective_stack@1",
+              "tournament:review-tournament_turn_bet/d2",
+              "icm:review-tournament_turn_bet/d2"
+            ]
+          },
+          "ms": 23254
+        }
+      ]
+    },
+    {
+      "caseId": "tournament_turn_bet/d2",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "9e4845c06804f790",
+          "output": {
+            "assessment": "reasonable",
+            "confidence": "medium",
+            "practical": "Hero は 9h8h でボードは Th 7c 2s 6d なので、ターンでストレートが完成している。フロップは Hero が Check し、CPU 5 も Check で返した。ターンで Pot {N13} に {N12} を Bet したのは、強い Hand の Value Bet として自然。仮定した Range（{N39} Combo）に対する Equity は {N17} だが、この Range は Postflop で絞っておらず、フロップの Check を反映していない。そのため {N17} は高めに出ている可能性がある。それでも Hero は Range の大半に勝つ。相手の Range には Pair、Set、Draw が残るので、Check して Pot を小さく保つより、払える Hand から Chip を取りに行く価値が高い。SPR は {N16} で、Bet を 1〜2 回重ねるとリバーまでに大きな Pot になる。{N12} の Bet は、相手の Call の幅を残しやすい小さめの Size。簡易 EV は Check が {N23}、{N12} の Bet が {N28}、Bet 350 が {N33}。ただしこの EV は「全員が Call する」前提なので、大きい Bet ほど有利に見えるバイアスがある。Size の優劣の根拠にはならない。Position は不利だが、Hand が強いので Bet して Pot を作る方針で問題ない。",
+            "theoryBasis": "general_theory",
+            "theory": "Solver の結果は無い（トーナメントは対象外）。一般論としては、Hero の Hand は Nut に近く、Check-Check のフロップを経たターンでは Bet で Value を取る候補になる。Hero の Check Range にも強い Hand が含まれるので、強い Hand を全部 Check に回す必要はない。Bet Size は経験則（HEURISTIC）では目的で決まる。Pot の約半分は Call の幅と取れる額のバランスを取りやすい Size。ただし 1 つの Size が正解というわけではない。リバーで大きく取りたいなら、ターンで大きめの Bet も候補になる。ICM は Bubble 前で、Hero の ICM Equity は {N51}。大きな Stack 同士の対戦で、Chip の増減は賞金にも影響する。ただし Hero がほぼ勝っている Hand なので、この Bet 自体のリスクは小さい。",
+            "exploitBasis": "none",
+            "exploit": "",
+            "assumptions": [
+              "CPU 5 の Range は BTN の標準的な Open Range（{N39} Combo）で、フロップの Check やボードによる絞り込みは反映していない。",
+              "Equity は Draw を数えない簡易モデルでの全列挙。Range が実際はもっと弱い、または強いと数値は動く。",
+              "簡易 EV は全員が Call する前提で Fold Equity を含まない。Size 間の優劣の根拠にはしない。",
+              "相手の過去の傾向（Observation）と Hero 自身の読みは無い。"
+            ],
+            "conclusionChangers": [
+              "CPU 5 がフロップの Check から強い Hand（Set など）に絞られているなら、Hero の優位は小さくなり、Size の考え方も変わる。",
+              "CPU 5 が Call しすぎる傾向を持つと分かれば、より大きい Bet で取る額を増やせる。",
+              "CPU 5 が Bet に Raise する頻度が高く、Bluff を多く含むなら、小さめの Bet から Check-Raise を誘う線も候補になる。",
+              "Stack が浅くなる、または Bubble が近づく場合は、Commit の判断や ICM の影響を見直す。"
+            ],
+            "evidenceIds": [
+              "ctx:review-tournament_turn_bet/d2",
+              "math:review-tournament_turn_bet/d2",
+              "range:review-tournament_turn_bet/d2",
+              "kb:1.0.0:bet_sizing_purpose@1",
+              "kb:1.0.0:spr_and_effective_stack@1",
+              "tournament:review-tournament_turn_bet/d2",
+              "icm:review-tournament_turn_bet/d2"
+            ]
+          },
+          "ms": 18821
+        }
+      ]
+    }
+  ],
+  "followUps": [
+    {
+      "caseId": "followup:bubble_shove/d0#1",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "40c3179cbc7eb96a",
+          "output": {
+            "scope": "answered",
+            "answer": "どちらも「Shove して CPU 1 または CPU 2 の1人に Call され、ほかは Fold した場合」の損益分岐の勝率ですが、測る量が違います。\n\n【数値】\n・Chip EV（Chip の損得）の必要 Equity は、CPU 1 に Call された場合が {N70}、CPU 2 に Call された場合が {N78} です。\n・ICM（賞金の期待値）の必要 Equity は、CPU 1 に Call された場合が {N71}、CPU 2 に Call された場合が {N79} です。\n・仮定した Range に対する Equity は {N16} で、Chip EV の必要 Equity も ICM の必要 Equity も下回っています。ただしこの Equity は SB と BB をランダムとした仮定で、実際の Call Range より広い想定です。\n\n【差の出どころ】\nChip EV は Stack の増減だけで見ます。CPU 1 に Call された場合、Fold なら Hero の Stack は {N72}、勝てば {N73}、負ければ {N74} です。Chip は多いほど価値が直線的に増えるので、損益分岐は Pot Odds と同じ形になります。\n\nICM は Stack を賞金の期待値に換算します。CPU 1 に Call された場合、Hero の ICM Equity は Fold なら {N75}、勝てば {N76}、負ければ {N77} です。\n・負けると Bust して {N77} になり、失うのは Fold で保てる {N75} です。\n・勝っても {N76} までしか増えません。Stack がほぼ2倍以上になっても、賞金の期待値は同じ割合では増えません。\nつまり、負けて失う分が大きく、勝って得る分が小さい非対称があります。そのため、釣り合うのに必要な勝率が上がります。\n\nCPU 2 に Call された場合も同じ構造です。Fold なら {N83}、勝てば {N84}、負ければ {N85} です。\n\n【背景】\n今は残り {N47} 人の Bubble で、入賞は上位3人です。Bust は賞金ゼロにつながるので、Chip の損得より重く響きます。\n\n【注意】\nこの比較は、Fold される確率（Fold Equity）と Call される頻度を含まない、Call された場合だけの条件付きの値です。Push / Fold の解は Evidence に無いので、この Shove が正解かどうかはここからは断定できません。",
+            "evidenceIds": [
+              "tournament:review-bubble_shove/d0",
+              "icm:review-bubble_shove/d0",
+              "chipev:review-bubble_shove/d0/cpu1",
+              "icmreq:review-bubble_shove/d0/cpu1",
+              "chipev:review-bubble_shove/d0/cpu2",
+              "icmreq:review-bubble_shove/d0/cpu2",
+              "math:review-bubble_shove/d0"
+            ]
+          },
+          "ms": 10048
+        }
+      ]
+    },
+    {
+      "caseId": "followup:bubble_call/d0#1",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e6ee479c1e1aa6df",
+          "output": {
+            "scope": "answered",
+            "answer": "変わります。\n【Chip EV】Call に必要な額は {N11}、Pot Odds と必要 Equity は {N12}（Chip EV の必要 Equity {N53}）です。仮定した Range に対する Equity は {N15} で、差は {N19}。Call の簡易 EV は {N24} とプラスなので、Chip だけなら明確な Call です。\n【ICM】賞金の期待値で見ると必要 Equity は {N54} に上がります。Fold なら ICM Equity は {N58}、勝てば {N59}、負けると {N60} まで下がります。負けたときの Hero の Stack は {N57} です。標準の想定の Equity {N26} は {N54} を下回り、狭い想定 {N27}、広い想定 {N28} でも届きません。そのため ICM では Fold が上回る可能性が高く、Review は Call の質を低いと評価しています。\n【理由】バブル（残り {N30} 人）では、Chip を失う痛みが得る喜びより大きくなります。\n【注意】ICM は暫定版の推定で、Solver の結果ではありません。賞金構造や Stack の仮定でずれる可能性があります。また Equity は相手の実際の札ではなく、当時妥当だった Range の仮定に対する値です。",
+            "evidenceIds": [
+              "math:review-bubble_call/d0",
+              "chipev:review-bubble_call/d0/cpu2",
+              "icmreq:review-bubble_call/d0/cpu2",
+              "icm:review-bubble_call/d0",
+              "tournament:review-bubble_call/d0",
+              "range:review-bubble_call/d0"
+            ]
+          },
+          "ms": 6863
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "reviews": 8,
+    "calls": 9,
+    "structuredOutputValidRate": 0.889,
+    "retryRate": 0.125,
+    "fallbackRate": 0,
+    "insufficientRate": 0,
+    "numericGroundingInvalids": 1,
+    "outages": 0,
+    "hindsightLeaks": 0,
+    "mathGroundingRate": 1,
+    "kbGroundingRate": 0.75,
+    "exactGtoMentions": 0,
+    "identifierMentionRate": 0,
+    "identifierResidualRate": 0,
+    "latencyMs": {
+      "min": 13275,
+      "median": 14280,
+      "p90": 23254,
+      "max": 23254
+    },
+    "assessmentCounts": {
+      "bubble_shove/d0": {
+        "mixed_marginal": 2
+      },
+      "bubble_call/d0": {
+        "improvement_suggested": 2
+      },
+      "itm_short_call/d0": {
+        "mixed_marginal": 2
+      },
+      "tournament_turn_bet/d2": {
+        "reasonable": 2
+      }
+    },
+    "solverStatus": {
+      "bubble_shove/d0": "not_applicable",
+      "bubble_call/d0": "not_applicable",
+      "itm_short_call/d0": "not_applicable",
+      "tournament_turn_bet/d2": "unsupported"
+    },
+    "invalidOutputs": [
+      "bubble_shove/d0#2#1: grounding: 数値の根拠: 参照の後ろに単位を重ねない（{N55} は単位を含む値に置き換わる）"
+    ],
+    "leaks": [],
+    "residualIdentifiers": []
+  },
+  "report": {
+    "numericGroundingReasons": [
+      "bubble_shove/d0#2#1: grounding: 数値の根拠: 参照の後ろに単位を重ねない（{N55} は単位を含む値に置き換わる）"
+    ],
+    "chipIcmConfusions": [],
+    "shovePremise": {
+      "reviews": 2,
+      "withPremise": 2,
+      "missing": []
+    },
+    "unsupportedSolverGtoMentions": [
+      "tournament_turn_bet/d2#1: Solver の結果は無く、GTO の値ではない。"
+    ],
+    "privateLeaks": [],
+    "followUps": {
+      "answered": 2,
+      "outOfScope": 0,
+      "fallbacks": 0,
+      "outages": 0,
+      "calls": 2,
+      "numericGroundingInvalids": 0,
+      "invalidOutputs": [],
+      "chipIcmConfusions": [],
+      "leaks": []
+    }
+  }
+}

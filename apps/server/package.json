@@ -17,8 +17,10 @@
     "eval:opponent-memory": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/memory-run.ts",
     "eval:opponent-memory-prompt": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/memory-prompt-run.ts",
     "eval:opponent-memory-river": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/river-repeat-run.ts",
+    "eval:opponent-tournament": "tsx --conditions=@proj-poker/source src/testing/opponent-eval/tournament-run.ts",
     "bench:memory": "tsx --conditions=@proj-poker/source src/testing/memory-bench.ts",
-    "eval:review": "tsx --conditions=@proj-poker/source src/testing/review-eval/run.ts"
+    "eval:review": "tsx --conditions=@proj-poker/source src/testing/review-eval/run.ts",
+    "eval:review-tournament": "tsx --conditions=@proj-poker/source src/testing/review-eval/tournament-run.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.289",
