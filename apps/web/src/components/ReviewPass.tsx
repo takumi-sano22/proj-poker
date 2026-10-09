@@ -36,6 +36,7 @@ import {
   RangeView,
   SolverView,
   TableTendencyView,
+  TournamentEvidenceView,
 } from "./ReviewEvidence.js";
 
 type NameOf = (playerId: string) => string;
@@ -147,9 +148,36 @@ export function DecisionReviewBody({
         >
           <DecisionContextView context={evidence.context} nameOf={nameOf} />
         </EvidenceSection>
-        <EvidenceSection title="計算（Math）" cited={citedAny("math:")}>
+        <EvidenceSection
+          // Tournament の判断では、Math（Pot Odds・簡易 EV）が Chip で計算した値だと見出しで分かるようにする（ICM と混同させない。D130）
+          title={
+            evidence.tournament === undefined
+              ? "計算（Math）"
+              : "計算（Math・Chip で計算）"
+          }
+          cited={citedAny("math:")}
+        >
           <MathView math={evidence.math} bigBlind={evidence.context.bigBlind} />
         </EvidenceSection>
+        {evidence.tournament !== undefined && (
+          // Tournament の判断（#189・D130）: ICM / Prize Equity と、All-in の Chip EV・ICM の必要 Equity を別の項目で出す。
+          <EvidenceSection
+            title="Tournament（ICM / Prize Equity と Chip EV）"
+            cited={
+              citedAny("tournament:") ||
+              citedAny("icm:") ||
+              citedAny("chipev:") ||
+              citedAny("icmreq:")
+            }
+          >
+            <TournamentEvidenceView
+              tournament={evidence.tournament}
+              bigBlind={evidence.context.bigBlind}
+              nameOf={nameOf}
+              cited={cited}
+            />
+          </EvidenceSection>
+        )}
         <EvidenceSection title="相手の Range の仮定" cited={citedAny("range:")}>
           <RangeView range={evidence.range} nameOf={nameOf} />
         </EvidenceSection>

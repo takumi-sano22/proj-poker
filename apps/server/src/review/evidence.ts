@@ -9,7 +9,6 @@ import {
   analyzeDecision,
   classifyPreflop,
   compareRangeProfiles,
-  extractImportantSpots,
   positionName,
   type DecisionAnalysis,
   type HeroInformationSet,
@@ -27,8 +26,8 @@ import type { PlayerNames } from "./identifiers.js";
 import { buildSolverEvidence } from "./solver-evidence.js";
 import {
   buildTournamentEvidence,
+  importantSpotsOf,
   tournamentIdsOf,
-  tournamentSpotReasonsOf,
 } from "./tournament-evidence.js";
 import type {
   DecisionContextEvidence,
@@ -72,12 +71,12 @@ export function reviewSpotReasons(
   decisionIndex: number,
   tournament?: TournamentSessionInfo,
 ): ImportantSpotReason[] {
-  const reasons =
-    extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
-      ?.reasons ?? [];
-  const set = sets[decisionIndex];
-  if (tournament === undefined || set === undefined) return [...reasons];
-  return [...reasons, ...tournamentSpotReasonsOf(set, tournament)];
+  // Replay・Session Review と同じ関数（importantSpotsOf）で選ぶ（画面ごとに理由が食い違わない。#190）。
+  return [
+    ...(importantSpotsOf(sets, tournament).find(
+      (s) => s.decisionIndex === decisionIndex,
+    )?.reasons ?? []),
+  ];
 }
 
 /** Knowledge Evidence に入れる KB の項目数（暫定値）。Prompt の長さと根拠の幅の釣り合いで決める。 */

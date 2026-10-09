@@ -3,13 +3,16 @@
 // 生成は非同期で、POST は待ちの状態を返し、GET で終わりを確かめる（ポーリング）。
 import type {
   ActionType,
+  AllInOutcomes,
   AlternativeAction,
+  AnteKind,
   Card,
   ImportantSpotReason,
   PositionName,
   PublicActionRecord,
   RangeAssumption,
   Street,
+  TournamentStage,
 } from "@proj-poker/engine";
 import { postJson } from "./api.js";
 
@@ -213,6 +216,78 @@ export type OpponentObservation =
       };
     };
 
+/** 1 席の判断時点の ICM Equity（サーバーの TournamentSeatIcmEvidence と同じ形。値は丸め済み）。 */
+export interface TournamentSeatIcm {
+  readonly playerId: string;
+  readonly isHero: boolean;
+  /** ICM の計算に使った Stack（判断時点の手元の Stack + この Hand で出した額）。 */
+  readonly icmStack: number;
+  readonly stackBb: number;
+  /** ICM Equity（pt）。 */
+  readonly icmEquity: number;
+  /** 争う賞金の合計に対する ICM Equity の割合（%）。 */
+  readonly icmEquityPercent: number;
+}
+
+/** All-in の判断の相手 1 人との必要 Equity（D130）。Chip EV と ICM は別の項目・別の id。必要 Equity は %（小数第 1 位）。 */
+export interface TournamentAllInRequirement {
+  readonly villainId: string;
+  readonly chipEv: {
+    readonly id: string;
+    readonly requiredEquityPercent: number;
+    readonly heroStack: AllInOutcomes;
+  };
+  readonly icm: {
+    readonly id: string;
+    /** 勝っても負けても ICM Equity が変わらないなら null。 */
+    readonly requiredEquityPercent: number | null;
+    readonly heroIcmEquity: AllInOutcomes;
+  };
+}
+
+/**
+ * Tournament の Evidence（サーバーの TournamentEvidence と同じ形。#189・D109・D130）。Tournament の Hand の判断だけが持つ。
+ * ICM の数値は Engine の ICM Calculator が判断時点の公開の Stack と Payout から決定論で作ったもので、画面は読むだけ。
+ */
+export interface TournamentEvidence {
+  readonly id: string;
+  readonly entrants: number;
+  readonly remaining: number;
+  readonly level: number | null;
+  readonly handNumber: number | null;
+  readonly anteKind: AnteKind;
+  readonly ante: number;
+  /** Prize Pool（pt）。 */
+  readonly prizePool: number;
+  /** 順位ごとの賞金（pt）。 */
+  readonly payoutsByPlace: readonly number[];
+  readonly stage: TournamentStage;
+  readonly icm: {
+    readonly id: string;
+    readonly icmPolicyVersion: string;
+    readonly method: string;
+    readonly seats: readonly TournamentSeatIcm[];
+  };
+  /** All-in の関わる判断（Shove・All-in への Call）だけ。それ以外は null。 */
+  readonly allIn:
+    | {
+        readonly status: "available";
+        readonly decision: "call_all_in" | "shove";
+        readonly assumptions: {
+          readonly potWinnerIfHeroFolds: string;
+          /** 前提の文（そのまま画面に出す）。 */
+          readonly notes: readonly string[];
+        };
+        readonly requirements: readonly TournamentAllInRequirement[];
+      }
+    | {
+        readonly status: "out_of_scope";
+        readonly decision: "call_all_in" | "shove";
+        readonly reason: string;
+      }
+    | null;
+}
+
 /** Pass A の Evidence（判断時点の情報だけ）。 */
 export interface ReviewEvidence {
   readonly context: DecisionContext;
@@ -226,6 +301,8 @@ export interface ReviewEvidence {
   readonly userRead?:
     | { readonly status: "not_collected" }
     | { readonly status: "collected"; readonly items: readonly UserReadItem[] };
+  /** Tournament の Hand の判断だけ（#189）。Cash の Review には無い。 */
+  readonly tournament?: TournamentEvidence;
 }
 
 /** Pass A の Review の 1 Version（上書きしない。D39）。 */

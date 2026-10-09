@@ -194,6 +194,13 @@ input {
   font-size: 13px;
 }
 
+/* 320px 級では、見出しの Tournament の Ante を省く（見出しが 1 行増えて卓を押し下げないように。Ante は Tournament の欄に出す。#190） */
+@media (max-width: 359px) {
+  .app__meta-ante {
+    display: none;
+  }
+}
+
 .app__empty {
   display: grid;
   justify-items: center;
@@ -1123,6 +1130,157 @@ input {
 .hand-log__feedback .feedback-tag {
   margin-right: 2px;
   font-size: 10px;
+}
+
+/* ───────── Tournament の欄（#190・docs/06 §15）。進行ログと同じ面で、進行ログの上に置く。
+   Level・Blind・次の Level・残人数を常に出し、Payout と Elimination は畳める欄にして進行ログを押し下げすぎない ───────── */
+
+.tournament {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-aside);
+  background: var(--color-surface-sunken);
+  font-size: 13px;
+}
+
+.tournament__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tournament__preset,
+.tournament__note {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.tournament__muted {
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-weight: 400;
+}
+
+/* 項目と値の 1 行。値は実額（Chip）を数字の幅をそろえて右に寄せる */
+.tournament__facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.tournament__facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tournament__facts dt {
+  color: var(--color-on-surface-muted);
+}
+
+.tournament__facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+}
+
+.tournament__until {
+  display: block;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.tournament__summary {
+  min-height: 32px;
+  padding: 4px 0;
+  color: var(--color-on-surface-muted);
+  cursor: pointer;
+}
+
+.tournament__body {
+  display: grid;
+  gap: 6px;
+}
+
+.tournament__line {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.tournament__places {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 順位・名前・Payout の 1 行。名前が長くても順位と Payout の列はずれない */
+.tournament__place {
+  display: grid;
+  grid-template-columns: 4em minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.tournament__place--hero {
+  color: var(--color-brand-400);
+  font-weight: 700;
+}
+
+.tournament__name {
+  overflow-wrap: anywhere;
+}
+
+/* 新しい Session の種類（Cash / Tournament の Preset。#190）。入力欄は User Read と同じ面と縁 */
+.session-pick {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 100%;
+}
+
+.session-pick__label {
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.session-pick__select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-sunken);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 15px;
+}
+
+/* Hero の欄の Session の終わりの案内では、Button と同じ行に並べる（欄を高くしない） */
+.result .session-pick__select {
+  font-size: 14px;
+}
+
+.result--docked .session-pick__select {
+  flex: 0 1 auto;
 }
 
 /* ───────── CPU ごとの Note / Tag（#115）。既定は閉じ、卓の情報量を増やさない ───────── */

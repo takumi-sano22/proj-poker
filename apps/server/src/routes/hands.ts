@@ -283,7 +283,7 @@ export function registerHandRoutes(
   // Session が続いていれば Stack を持ち越し、終わっていれば新しい Session として均等 Stack で始める（D80）。
   // afterHandId（クライアントが結果まで見た最後の Hand）が今の Session の最後の Hand と違う、またはその Hand が進行中なら、
   // 新しく作らずその Hand を 200 で返す（応答が失われた開始の再送で、結果を見ないまま次へ進めない・Session を捨てない）。
-  // Hand が開始直後に終わることもあるので、Session の状態も一緒に返す。
+  // Hand が開始直後に終わることもあるので、Session の状態も一緒に返す。開いた Hand の Session の種類（sessionKind。#190）も返す。
   app.post<{ Body: StartHandBody }>(
     "/api/hands",
     { schema: { body: startHandBodySchema } },
@@ -301,6 +301,9 @@ export function registerHandRoutes(
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
         fastForward: orchestrator.fastForwardOf(handId) ?? false,
+        // 開いた Hand の Session の種類（#190）。まだ結果を見ていない Hand は、求めた設定と違っても新しく作らずに返す（#183）ので、
+        // client が選んだ種類と違えば Hero に伝える。
+        sessionKind: orchestrator.sessionKindOf(handId),
       });
     },
   );
@@ -395,6 +398,26 @@ export function registerHandRoutes(
         view: result.value,
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
+      });
+    },
+  );
+
+  // 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の Level・Blind・Ante・次の Level までの残りと、この Hand までの
+  // 残人数・Elimination・順位・Payout（Result）。Event Log から都度計算し（D129）、cash の Hand は tournament: null。
+  // 返すのは公開の情報だけ（CPU の Persona・他者の札・内部の設定は返さない）。このプロセスで進めた Hand だけ（他は 404）。
+  app.get<{ Params: HandParams }>(
+    "/api/hands/:handId/tournament",
+    { schema: { params: handParamsSchema } },
+    (request, reply) => {
+      const { handId } = request.params;
+      if (orchestrator.heroView(handId) === null) {
+        return sendError(reply, {
+          kind: "hand_not_found",
+          message: `Hand が無い: ${handId}`,
+        });
+      }
+      return reply.send({
+        tournament: orchestrator.tournamentTableOf(handId),
       });
     },
   );

@@ -1,7 +1,12 @@
 // Review の画面の文言（#84・docs/05 §8〜§10・docs/06 §10・§11）。サーバーが返した Review の値を読める文にするだけで、
 // 評価・計算はしない（評価は Review AI と Gate、数値は Engine が決める）。
 // 生成の待ち・失敗の案内では内部実装（モデル名・呼んでいる API）を前面に出さない（docs/06 §11）。
-import type { ImportantSpotReason, PreflopSpot } from "@proj-poker/engine";
+import {
+  DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES,
+  type ImportantSpotReason,
+  type PreflopSpot,
+  type TournamentStage,
+} from "@proj-poker/engine";
 import { ACTION_TERMS, termLabel, type Term } from "./format.js";
 import { describeAction } from "./view-model.js";
 import type { ReplayDecision } from "./api.js";
@@ -17,6 +22,7 @@ import type {
   SolverUnsupportedReason,
   TableTendencyItem,
   TableTendencyItemId,
+  TournamentEvidence,
 } from "./review-api.js";
 
 /** 段階評価の表記（日本語 + docs/05 §8 の語）。点数にはしない。 */
@@ -67,10 +73,28 @@ export const IMPORTANT_SPOT_REASON_LABELS: Readonly<
   all_in: "All-in",
   river_big_bet: "River の大きい Bet",
   ruling: "Dealer の裁定",
-  // Tournament の Important Spot（#189）。画面の扱いは #190 で決める（ここは型を満たす表記だけ）。
-  bubble: "Bubble",
-  pay_jump: "Pay Jump",
-  short_stack: "Short Stack",
+  // Tournament の Important Spot（#189。規則は Engine の tournamentImportantSpotReasons）。表記は #190 の暫定の表示。
+  bubble: "Bubble（入賞の手前）",
+  pay_jump: "Pay Jump（賞金の段差）",
+  short_stack: `Short Stack（${DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES.shortStackBb} BB 以下）`,
+};
+
+/** Tournament の段階（Stage。D130・docs/02 §7）の表記。 */
+export const TOURNAMENT_STAGE_LABELS: Readonly<
+  Record<TournamentStage, string>
+> = {
+  before_bubble: "Bubble の前",
+  bubble: "Bubble（あと 1 人の脱落で入賞）",
+  in_the_money: "入賞圏（In the Money）",
+  heads_up: "Heads-Up",
+};
+
+/** All-in の関わる判断の種類の表記（D130）。 */
+export const ALL_IN_DECISION_LABELS: Readonly<
+  Record<NonNullable<TournamentEvidence["allIn"]>["decision"], string>
+> = {
+  shove: "Shove（All-in）",
+  call_all_in: "All-in への Call",
 };
 
 /** Hero の判断の 1 行（進行ログと同じ書き方。例: "コール（Call） 10" / "レイズ（Raise） 30 まで"）。 */
