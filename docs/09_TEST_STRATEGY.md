@@ -325,7 +325,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 | Math / KB Grounding率 | 1 / 0.75 |
 | Hindsight Leak / CPUのPrivateな情報の漏れ / 障害 / 識別子の残存 | 0 / 0 / 0 / 0 |
 | Shoveの前提をassumptionsに書いた | 2 / 2 |
-| Chip EVとICMの混同の疑い | 2件（同じ1文。「ICMの必要EquityはChip EVの必要Equityより高い（今回は60.5%と45.5%…）」の並列の書き方を語の近さで拾った誤検知で、読んで確かめた範囲では実際の混同は0） |
+| Chip EVとICMの混同の疑い | 0（判定は値の直前の同じ節〔読点・括弧で区切った範囲〕の語で行い、節に語が無い値は判定しない。初版は文の単位で見て「ICMの必要EquityはChip EVの必要Equityより高い（今回は60.5%と45.5%…）」の並べ方を2件の疑いと誤検知した〔Codexの指摘〕ので、録画の出力は変えずに定義を直して集計し直した。8件の文を読んだ範囲でも実際の混同は0） |
 | Solver UnsupportedのReviewのGTOへの言及 | 1件（「Solverの結果は無く、GTOの値ではない」。否定でExact GTOとは書いていない。Exact GTOの言及は0） |
 | Latency（ms。min / median / p90 / max） | 13275 / 14280 / 23254 / 23254 |
 | 段階評価 | Bubble Shove: mixed_marginal 2・Bubble Call: improvement_suggested 2・ITMのCall: mixed_marginal 2・Turn Bet: reasonable 2 |

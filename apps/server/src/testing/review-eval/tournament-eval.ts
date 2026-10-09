@@ -435,7 +435,9 @@ const ALL_CARDS: ReadonlySet<string> = new Set(createDeck().map(cardToString));
 
 /**
  * Chip EV と ICM の混同の疑い。必要 Equity の値（Evidence の Chip EV と ICM の requiredEquityPercent）を文の中で見つけ、その値の前の
- * 同じ文の中で最も近い語（"Chip EV" か "ICM"）が値の種類と逆なら疑いとして返す。2 つの値が表示の丸めで区別できないときは見ない。
+ * 同じ節（読点・括弧・コロンで区切った範囲）の中で最も近い語（"Chip EV" か "ICM"）が値の種類と逆なら疑いとして返す。
+ * 節の中に語が無い値（「ICM は Chip EV より高い（60.5% と 45.5%）」の括弧の中の並べ方など、語と値の対応を順序でしか読めないもの）と、
+ * 2 つの値が表示の丸めで区別できない値は判定しない（誤検知を避け、疑いを少なめに数える）。
  */
 export function chipIcmConfusionsOf(
   texts: readonly string[],
@@ -464,7 +466,11 @@ export function chipIcmConfusionsOf(
         );
         if (kinds.size !== 1) continue;
         const kind = [...kinds][0];
-        const before = sentence.slice(0, m.index);
+        const before =
+          sentence
+            .slice(0, m.index)
+            .split(/[、，,（）()：:]/)
+            .at(-1) ?? "";
         const chipAt = Math.max(
           before.lastIndexOf("Chip EV"),
           before.lastIndexOf("チップ EV"),

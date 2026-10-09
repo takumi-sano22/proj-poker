@@ -67,7 +67,7 @@ Phase 8 で Tournament の CPU Prompt（Public Tournament Context。#188・D130�
 | Math / KB Grounding | 1 / 0.75 |
 | Hindsight Leak / Private な情報の漏れ / 障害 / 識別子の残存 | 0 / 0 / 0 / 0 |
 | Shove の前提を assumptions に書いた | 2 / 2 |
-| Chip EV と ICM の混同の疑い | 2（同じ 1 文の並列の書き方の誤検知。読んで確かめた範囲で実際の混同 0） |
+| Chip EV と ICM の混同の疑い | 0（初版の判定は 2 件の誤検知。下記「レビュー対応」） |
 | Unsupported Solver の GTO への言及 | 1（「GTO の値ではない」の否定。Exact GTO の言及 0） |
 | Follow-up | 2 件 answered・1 回で通過・数値 Grounding の不正 0・漏れ 0 |
 | Latency（ms） | 13275 / 14280 / 23254 / 23254 |
@@ -78,6 +78,11 @@ Phase 8 で Tournament の CPU Prompt（Public Tournament Context。#188・D130�
 ### 品質チェック
 
 - `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`（結果は PR の Test plan に記載）
+
+## レビュー対応
+
+- 自己レビュー: ブロッキングなし（PR コメント）
+- Codex 1 回目（`STATUS=clean`・P2 1 件）: Chip EV と ICM の混同の判定が「ICM は Chip EV より高い（60.5% と 45.5%）」の並べ方を混同と誤検知（録画の report に 2 件）→ CONFIRMED。判定を「値の直前の同じ節（読点・括弧・コロンで区切った範囲）の語」に変え、節に語が無い値は判定しないようにした。録画の出力（モデルの応答）は変えず、`report` だけを再生から作り直した（モデルは呼んでいない。`summary` は録画と一致を確認）。テストに誤検知の回帰を足した
 
 ## 残課題
 
