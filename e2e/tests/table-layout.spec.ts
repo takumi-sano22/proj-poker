@@ -1,6 +1,9 @@
 // 卓の配置の E2E（#163）: 720〜1023px の中間幅で、画面下に固定した Hero の欄が折り返して高くなり（720×600 で 434px）、卓の下側を
 // 覆っていた。Hand の途中（Hero の手番）・Hand の終わり・Session の終わりを、画面の大きさ（720×600・1024×768・1280×720・375×667・320×568）ごとに
 // 測り、席・Board・Pot・操作の欄・Session の終わりの Button に、操作できなくなる重なりが無いことを確かめる。
+// #179: 裁定（RULING）が Hero 欄に出ると欄が約 100px 高くなり、720×600 で Hero の席・Board・Pot が収まらず、320×568 で欄が画面より
+// 高くなった。最初の Hand の Hero の手番で、Call 額があるのに Check を宣言して RULING（check_facing_bet。Action は決まらず Hero の手番の
+// まま）を決定論的に出し、同じ画面の大きさで測る。
 // 山札の seed は session-end-layout.spec.ts と同じ（既定の 6 人卓・Hero が Call / Check だけで打つと数 Hand で Bust する）。
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -49,7 +52,7 @@ test.afterEach(async ({}, testInfo) => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("Hand の途中（Hero の手番）・Hand の終わり・Session の終わりで、中間幅を含む画面の大きさごとに、卓と Hero 欄が操作できなくなる重なりを作らない", async ({
+test("Hand の途中（Hero の手番）・裁定（RULING）が出た手番・Hand の終わり・Session の終わりで、中間幅を含む画面の大きさごとに、卓と Hero 欄が操作できなくなる重なりを作らない", async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -75,6 +78,42 @@ test("Hand の途中（Hero の手番）・Hand の終わり・Session の終わ
         "レイズ（Raise）",
         "オールイン（All-in）",
       ]);
+    }
+  });
+
+  await test.step("裁定（RULING）が出た Hero の手番", async () => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    // この seed の最初の Hand は、Hero に Call 額がある（Check の宣言は裁定で採られない）。seed が変わったらここで気付く。
+    const call = dock.getByRole("button", { name: /^コール（Call）/ });
+    await expect(call.locator(".declaration__amount")).toBeVisible();
+    await dock.getByRole("button", { name: /^チェック（Check）/ }).click();
+    const ruling = dock.locator(".feedback__item--ruling");
+    await expect(ruling).toContainText(
+      "相手の Bet があるので、Check の宣言は受けられません。",
+    );
+    await expect(dock.getByText("Hero の手番です。")).toBeVisible();
+    for (const { width, height } of LAYOUT_VIEWPORTS) {
+      await page.setViewportSize({ width, height });
+      await expect(ruling).toBeVisible();
+      await expectNoBlockingOverlap(page, `RULING ${width}×${height}`);
+      // 宣言 Button と、裁定の用語・作法の補足の Button が、通常の click で押せる（用語の「チェック（Check）」と宣言の Button は
+      // 同じ名前なので、置き場所で分ける）。
+      const declarations = dock.getByRole("group", {
+        name: "宣言（Declaration）",
+      });
+      for (const name of [
+        "フォールド（Fold）",
+        "チェック（Check）",
+        "コール（Call）",
+        "ベット（Bet）",
+        "レイズ（Raise）",
+        "オールイン（All-in）",
+      ]) {
+        await declarations.getByRole("button", { name }).click({ trial: true });
+      }
+      for (const name of ["チェック（Check）", "作法（Etiquette）"]) {
+        await ruling.getByRole("button", { name }).click({ trial: true });
+      }
     }
   });
 

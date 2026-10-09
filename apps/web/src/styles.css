@@ -1531,6 +1531,14 @@ input {
   }
 }
 
+/* 狭い画面は Hero 欄が画面の高さの大半を占めるので、上下の余白を詰める（#179） */
+@media (max-width: 719px) {
+  .dock {
+    padding-top: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+}
+
 /* 中間幅（720〜1023px）は、手番の案内（と User Read の入口）も 1 行目の右へ置く。右の列に収まるので、Hero 欄が 1 行ぶん低くなる（#163） */
 @media (min-width: 720px) and (max-width: 1023px) {
   .dock__controls > .dock__turn {
@@ -1625,8 +1633,10 @@ input {
   --feedback-color: var(--color-feedback-coaching);
 }
 
-/* 狭い画面では札を文の先頭に流し込み（札の列で文の幅を削らない）、用語と補足の button を次の 1 行にまとめる */
-@media (max-width: 719px) {
+/* Hero 欄が横いっぱいに広がる 1023px 以下では、札を文の先頭に、用語と補足の button を文の末尾に流し込む。
+   札・用語を別の列に置くと文の幅が削られて折り返し（720×600 で 3 行）、用語を別の行に置くとその 1 行ぶん欄が高くなる
+   （RULING が出ると Hero 欄が約 100px 高くなり、720×600 で Hero の席・Board・Pot が収まらなかった。#179） */
+@media (max-width: 1023px) {
   .feedback__item {
     display: block;
     padding: 4px 8px;
@@ -1636,8 +1646,11 @@ input {
     margin-right: 6px;
   }
   .feedback__terms {
-    display: flex;
-    margin-top: 4px;
+    display: inline;
+  }
+  /* 用語と補足の button は 1 つずつ文に続けて折り返す（まとめて 1 つの箱にすると、入らないときに丸ごと次の行へ送られる） */
+  .feedback__terms > * {
+    margin-left: 4px;
   }
 }
 
@@ -2091,6 +2104,19 @@ input {
 
   .chip-hand__return {
     padding: 4px 8px;
+  }
+}
+
+/* 320px 級では Betting Area が 170px 前後しかなく、名前と案内が 4 行・確定 Button が 3 行に割れて、この行が 67px になっていた。
+   案内（Click / Drag の仕方。押したときの動作は Button の名前〔aria-label〕にもある）を省き、確定 Button の左右の余白を詰めて
+   2 行に収める（Hero 欄を低くする。#179） */
+@media (max-width: 359px) {
+  .betting-area__hint {
+    display: none;
+  }
+
+  .chip-controls__submit {
+    padding: 4px 6px;
   }
 }
 
