@@ -275,4 +275,11 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 - 残人数・Payout・Eliminationを出し、Stackは実額を常時表示してBBを補助にします（D49）。
 - HeroのBustか優勝でTournamentを終え、Result（Heroの順位とPayout・確定した他の順位。残ったCPUの順位は未決）を出します（D129）。
 - ReviewではICM / Prize EquityとChip EVを別の項目として表示し、混同させません（D130）。
-- 具体的な配置は#190で決めます（`ui-design-recipes`）。
+- 具体的な配置（#190。`ui-design-recipes`）。人間判断を経ていない表示の規則は暫定です（変えてよい）:
+  - **Sessionの種類の選択**: 最初の画面とSessionの終わりの案内（「新しいSessionを始める」の左。Heroの欄では見出しの文字を出さない`select`）に、Cash Game（既定）/ Tournament（10 Handごと）/ Tournament（10分ごと）を置きます。選んだ種類は「新しいSessionを始める」「Handを始める」だけが送り、「次のHandへ」「卓に戻る」は送りません（続くSessionをそのまま続ける）。前のSessionが続いていて種類が違えば（`session_mode_mismatch`）、案内と「続きから遊ぶ」を出します。CashのSessionで選ばなければ、画面と流れは今までどおりです（Session終了の案内に`select`が1つ増えるだけ。狭い画面と720px台では1行増える）。
+  - **見出し**: TournamentのHandは「Level 2 · 15 / 30 · BB Ante 30」の形で出します（Cashは今までどおり「ブラインド（Blinds） 1 / 2」）。値はHeroに見える`HAND_STARTED`（`tournament`・`ante`）から作ります。幅359px以下はAnteを見出しから省きます（見出しが1行増えないように。Tournamentの欄に出す）。
+  - **Tournamentの欄**: 卓の右（狭い画面は卓の下）の進行ログの上に置き、Level（何Levelのうちか）・Blind・Ante・次のLevel（hand-countは「11 Hand目から（今3 Hand目）」、time-baseは「プレイ時間であと約7分」。過ぎていれば「次のHandから」。最後のLevelは「以後は上がりません」）・残人数を常に出し、PayoutとElimination（脱落した順位・名前・Payout）は畳める欄に置きます（進行ログを押し下げすぎない）。Payoutはpt（参加費の単位）と書き、Stack・PotのChip（実額）と別の量だと注記します。値はserverの`GET /api/hands/:handId/tournament`（`docs/03` §1）を、卓の状態が進むたびに読み直します。
+  - **Result**: HeroのBust・優勝でTournamentが終わったら、Heroの欄の案内を「Heroは2位でTournamentを終えました（Payout 180pt）。」/「Heroが優勝しました…」にし、Tournamentの欄を開いて順位とPayoutを出します（順位の決まっていないPlayerを先に「未決」「未確定」と書き、続けて決まった順位を上から）。打ち切った（`ai_outage`）Tournamentは、残っていたPlayer（Heroを含む）の順位とPayoutが決まらないことを書きます（OI-007の暫定Policy）。
+  - **Review**: Pass Aの根拠に「Tournament（ICM / Prize Equity と Chip EV）」の欄を足し、段階（Stage）・残人数・Level・Payout・全席の判断時点のICM Equity（ptと%。Stackは実額でBBは補助）を出します。All-inの関わる判断は、相手ごとに「Chip EVの必要Equity」と「ICMの必要Equity」を別の列で出し、Shoveは「〈相手〉にCallされた場合」と書いて、条件付きの前提（Evidenceの文のまま）を出します。範囲外（MultiwayのAll-in等）は理由だけを出します。TournamentのHandでは「計算（Math）」の見出しを「計算（Math・Chipで計算）」にします。
+  - **Important Spot**: Replay・Reviewの判断の一覧・Session ReviewのImportant Handsに、TournamentのHandの理由（Bubble（入賞の手前）・Pay Jump（賞金の段差）・Short Stack（10 BB以下））を出します（serverの`importantSpotsOf`がReviewと同じ規則で選ぶ）。
+  - 情報境界: どの欄にもCPUのPersona・Private Memory・他者の札は出しません（ICMは公開のStackから）。320×568・375×667・720×600・1024×768・1280×720で横スクロールが出ないこと、Cashの配置のE2E（`session-end-layout`・`table-layout`）が通ることを確かめました。

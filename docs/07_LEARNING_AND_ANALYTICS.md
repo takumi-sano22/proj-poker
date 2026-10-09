@@ -246,7 +246,7 @@ Decision Quality SummaryとScoreは、Pass AのReviewがある判断だけで計
 - **Hands / Duration / 収支**: Hands はSessionの終わったHandの数（打ち切ったHandを含む）、Durationは最初のHandの開始から最後のHandの終わりまでの記録時刻の差です（表示だけの値。Handの順は保存の論理順序で決め〔D117〕、壁時計が後ろへ戻って差が負になったときは0にする）。収支はHeroの実額（`HAND_FINISHED`のStack −`HAND_STARTED`のStackの和。打ち切ったHandはChipが動かないので0）で、BBは最後のHandのBBで割った補助です（D49）。収支はScore・Strength / Leak・Important Handsのどれにも使いません。
 - **Decision Quality Summary**: §2の`computeScoreReport`をSessionのHandだけで呼び、M・N・段階評価ごとの数・Overall（Confidence・件数・Trendつき）とAbilityごとのScoreを返します。
 - **Strength / Leak（暫定）**: Pass Aの段階評価が`strong`の判断をStrength、`major_leak` / `improvement_suggested`の判断をLeak（重い順）とします。`reasonable`・`mixed_marginal`はどちらにも入れません。
-- **Important Hands（暫定）**: Important Spot（`docs/05`。判断時点の情報だけで選ぶ）か、Strength / Leakの判断があるHandを、Leakの多い順 → Important Spotの多い順 → Handの順に並べ、5 Handまで出します。結果（収支）では選びません。行はHeroの札・Important Spotの理由・Review済みの数で、他者の札は出しません。
+- **Important Hands（暫定）**: Important Spot（`docs/05`。判断時点の情報だけで選ぶ）か、Strength / Leakの判断があるHandを、Leakの多い順 → Important Spotの多い順 → Handの順に並べ、5 Handまで出します。結果（収支）では選びません。行はHeroの札・Important Spotの理由・Review済みの数で、他者の札は出しません。TournamentのSessionでは、Important Spotの理由にBubble / Pay Jump / Short Stack（`docs/05` §10。Reviewと同じ`importantSpotsOf`）も入ります（#190）。
 - **Stats**: §3の`projectPlayerStats`をSessionのHand（Profileは全期間）で呼び、Heroの行だけを返します（他Playerの詳細HUDを出さない。D32）。
 - **Recommended Drill**: 候補はLeakの最初の判断（Pass AのReviewがある判断）で、候補があれば`available: true`です。その判断からTargeted Drill（§7）を始めます（#117）。TournamentのSessionは候補を出しません（`available: false`。TournamentのHandはDrillの題材にしない。§7。#189）。
 - **Drillの除外**: `excludeHandIds`（D116）。`drills`テーブル（#117）のHandを渡します。
