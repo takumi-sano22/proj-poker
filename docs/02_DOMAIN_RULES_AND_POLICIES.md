@@ -238,7 +238,7 @@ D130で粒度を決めました: 全席のStackとBB換算・ICM Equity（ptと%
 
 実装（#188。Engineの`packages/engine/src/tournament-knowledge.ts`。組み立ての版`phase8_tournament_knowledge_v1`。形は`docs/04` §5・§12）。人間判断を経ていない次の点はOI-007の暫定Policyです（確定ではない）:
 
-- **Stackを取る時点**: CPUのContextは、Handの開始時（Blind・Anteを払う前）の公開のStack（`HAND_STARTED`の`seats`）でICM EquityとBubble Factorを計算します。Handの途中の手元のStackとPotは`KnowledgeState`の`seats`・`pot`で別に渡し、Potに入ったChipの持ち主は決めません。ReviewのEvidence（#189）は判断時点のStackで取ります。
+- **Stackを取る時点**: CPUのContextは、Handの開始時（Blind・Anteを払う前）の公開のStack（`HAND_STARTED`の`seats`）でICM EquityとBubble Factorを計算します。Handの途中の手元のStackとPotは`KnowledgeState`の`seats`・`pot`で別に渡し、Potに入ったChipの持ち主は決めません。ReviewのEvidence（#189）は判断時点のStackで取ります（下の「ReviewのICM Evidence」）。
 - **Stage**: 残り2人は`heads_up`、残人数が入賞の数以下は`in_the_money`、入賞の数 + 1は`bubble`、それより前は`before_bubble`です（上ほど優先。D130の3つのどれにも当たらない段階の名前として足した）。
 - **Payout**: Prize Pool = 参加費 × 参加人数（Sessionの最初のHandに座った人数）で、順位ごとの賞金は`payoutsByPlace`（Resultと同じ）。残人数より下の順位の賞金はICMに含めません（`icmEquities`と同じ）。
 - **丸め**: `KnowledgeState`の値は丸めず（RuleBotは丸める前の値で判定する）、ClaudeのPromptに出すときだけBB換算・ICM Equity（ptと%）を小数第1位、Bubble Factorを小数第2位に四捨五入します。
@@ -253,6 +253,13 @@ ICM（D109）:
   - **All-inの必要Equity（D130）**: 判断時点の各席の手元のChip・このHandで出した額・Foldの有無（と`big_blind_ante`のDead Money）から、Fold・Callされて勝つ・負けるの3つの結果のHeroのStackとICM Equityを作り、損益分岐の勝率 q（q × 勝ち + (1 − q) × 負け = Fold）をICMのEquityとChipの両方で返します。Chipで計算した値がChip EVの必要Equity（All-inへのCallではPot Oddsと一致）で、ICMの値とは別の項目です。All-inへのCall（`icmCallAllIn`）は相手の額が決まっているのでそのまま計算し、Foldの比較点では相手がPotを取ります。Shove（`icmShove`）はCallしうる相手（まだFoldしておらずStackが残っている相手）ごとに「その1人にCallされ、ほかはFoldした場合」の条件付きで出し、比較点（HeroがFoldした場合）でPotを取るPlayerは呼び出し側が渡します。どちらもFold Equity・Callの頻度を含めず、その前提（`assumptions`）を結果に明示します。MultiwayのAll-in（相手以外にAll-inした・すでに揃えたPlayerがいる）・All-inの関わらない判断は範囲外で拒否します。
   - **数値精度**: StackとPayoutは整数で受け取り、確率・Equity・必要Equityは倍精度で丸めずに返します。テストは争う賞金の合計に対する相対1e-9（Scenarioは小数第9位まで）の許容誤差で比べます。表示・Evidenceに出すときだけpt・%・必要Equity（%表記）を小数第1位に四捨五入し、比較・判定は丸める前の値で行います。8人のICM Equityは部分集合のDP（2^8 × 8）で1回約0.01msです（#187の作業ログ）。
 - ICM（Prize Equity）とChip EVを混同せず、Reviewへは別のEvidenceとして渡します（`docs/05` §10）。
+- **ReviewのICM Evidence（#189。組み立ての版`phase8_review_tournament_v1`）**。人間判断を経ていない次の点はOI-007の暫定Policyです（確定ではない。作り方の全体は`docs/05` §10）:
+  - **Stackを取る時点**: 判断時点の各席の手元のStackに、このHandで出した額を戻したStackでICM Equityを計算します（Potの行方は決めない。誰のCommitにも数えない`big_blind_ante`のAnteは誰にも戻さない）。
+  - **All-inの判断の見分け方**: Heroが判断の後の額でFoldしていない相手の誰の額も超えてAll-inし、Callできる相手がいればShove。All-inした相手に直面している・CallするとHeroがAll-inになる・相手の額を超えないAll-inはAll-inへのCall（相手はFoldしていないうちこのHandで出した額が最も大きいPlayer）。
+  - **Shoveの比較点でPotを取るPlayer**: FoldしていないうちこのHandで出した額が最も大きい相手。同じ額が複数なら最後にBet / Raise（額を引き上げるAll-inを含む）した相手、それも無ければ席順で先の相手。
+  - **範囲外**: ICM Calculatorが拒否するAll-in（MultiwayのAll-in・All-inした相手がいるShove等）は`out_of_scope`とし、ReviewはReview AIを呼ばずにInsufficient Evidence（`tournament_icm`）にします（Chip EVだけで評価しない）。
+  - **Important Spot**（規則の版`phase8_tournament_spot_v1`）: `bubble`（Stageがbubble）・`pay_jump`（残りの全員が入賞・3人以上が残る・1つ上の順位の賞金が多い）・`short_stack`（HeroのStack〔判断時点の手元 + このHandで出した額〕が10BB以下）。
+  - **Drill**（`phase8_drill_tournament_v1`）: TournamentのHandはTargeted Drillの題材にしません（`docs/07` §7）。
 - Push/Fold Nash Solver等のTournament SolverはPhase 8の初期Scope外です。
 
 Heads-Up Invariant:
