@@ -64,6 +64,11 @@ export interface StartHandResponse {
   readonly outage: OutageStatus;
   /** Fast Forward が入っているか（開始の再送・「卓に戻る」で、進行中の Hand の状態を画面へ戻すため）。 */
   readonly fastForward: boolean;
+  /**
+   * 開いた Hand の Session の種類（#190）。まだ結果を見ていない Hand・続いている Session は、求めた設定と違っても新しく作らずに
+   * 返る（開始の再送を冪等にするため）ので、選んだ種類と比べて違えば Hero に伝える。Drill の応答には無い。
+   */
+  readonly sessionKind?: SessionRequest;
 }
 
 /**

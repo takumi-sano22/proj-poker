@@ -294,6 +294,28 @@ describe("GET /api/hands/:handId/tournament（#190）", () => {
     expect(missing.json()).toMatchObject({ error: { kind: "hand_not_found" } });
   });
 
+  it("開始の応答は開いた Hand の Session の種類を返し、まだ結果を見ていない Hand は求めた種類と違ってもそのまま返る（client が違いを伝える）", async () => {
+    const app = makeApp();
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/hands",
+      payload: { afterHandId: null, session: HAND_COUNT },
+    });
+    expect(first.statusCode).toBe(201);
+    expect(first.json()).toMatchObject({ sessionKind: HAND_COUNT });
+    // 結果を見ていない（afterHandId が null の）開始の再送は、Cash を求めても同じ Tournament の Hand を返す（#183）。
+    const resend = await app.inject({
+      method: "POST",
+      url: "/api/hands",
+      payload: { afterHandId: null, session: { mode: "cash" } },
+    });
+    expect(resend.statusCode).toBe(200);
+    expect(resend.json()).toMatchObject({
+      handId: first.json<{ handId: string }>().handId,
+      sessionKind: HAND_COUNT,
+    });
+  });
+
   it("Cash の Hand は tournament: null", async () => {
     const app = makeApp();
     const started = await app.inject({
@@ -308,6 +330,7 @@ describe("GET /api/hands/:handId/tournament（#190）", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ tournament: null });
+    expect(started.json()).toMatchObject({ sessionKind: { mode: "cash" } });
   });
 });
 

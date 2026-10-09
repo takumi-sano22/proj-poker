@@ -195,6 +195,13 @@ function noticeOf(error: unknown): SessionNotice {
   }
 }
 
+/** Session の種類が同じか（Tournament は Preset まで比べる）。 */
+function sameSessionKind(a: SessionRequest, b: SessionRequest): boolean {
+  return a.mode === "cash"
+    ? b.mode === "cash"
+    : b.mode === "tournament" && a.presetId === b.presetId;
+}
+
 export interface HandSessionOptions {
   /**
    * Hand の開始の要求（既定は POST /api/hands）。Drill（#117）は POST /api/drills を渡す。描画ごとに作り直さない関数を渡す
@@ -313,6 +320,19 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
             enabled: res.fastForward === true,
           });
           setConnection("idle");
+          // 新しい Session として選んだ種類と違う Session の続きが開いた（まだ結果を見ていない Hand・Resume した Session。サーバーは
+          // 開始の再送を冪等にするため、その Hand を新しく作らずに返す）。黙って続けず、選んだ種類はこの Session の後で始められると伝える。
+          if (
+            session !== undefined &&
+            res.sessionKind !== undefined &&
+            !sameSessionKind(session, res.sessionKind)
+          ) {
+            setNotice({
+              message:
+                "前の Session が続いているため、その続きを開きました。選んだ種類の Session は、この Session が終わってから始められます。",
+              retryable: false,
+            });
+          }
           // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。
           setStreamEpoch((n) => n + 1);
         })

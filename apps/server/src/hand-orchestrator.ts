@@ -927,6 +927,17 @@ export class HandOrchestrator {
   }
 
   /**
+   * その Hand の Session の種類（cash か Tournament の Preset。#190）。開始の応答に載せ、client が選んだ種類と違う Session の続き
+   * （まだ結果を見ていない Hand・Resume した Session）が開いたことを Hero に伝えられるようにする。設定の値そのものは返さない。
+   */
+  sessionKindOf(handId: string): SessionRequest {
+    const settings = this.sessionSettingsOfSession(handId);
+    return settings.mode === "cash"
+      ? { mode: "cash" }
+      : { mode: "tournament", presetId: settings.tournament.presetId };
+  }
+
+  /**
    * 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の開始時の Level・Blind・Ante と次の Level、この Hand までの
    * Elimination・順位・Payout（Result）を、Event Log から都度計算する（保存しない。D129）。cash の Session・Event の無い Hand は null。
    * Result はこの Hand までの Hand から作る（進行中の Hand は Bust を決めない。tournamentResult）。値はすべて卓の全員が知る公開の情報
