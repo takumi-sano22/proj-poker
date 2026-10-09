@@ -25,6 +25,7 @@ import type { ReviewInvalidStage } from "../../review/review-ai.js";
 import type {
   Assessment,
   ReviewDepth,
+  ReviewDraft,
   ReviewEvidence,
   ReviewGeneratedBy,
 } from "../../review/types.js";
@@ -64,8 +65,8 @@ export const REVIEW_EVAL_CASES: readonly ReviewEvalCase[] = [
 
 /**
  * Tournament の代表の判断（#189）。Bubble の Shove と、Bubble の All-in への Call（ICM と Chip EV の必要 Equity を並べる Spot）。
- * 実モデルの録画はまだ無い（Claude の利用枠を使う録画は人間判断）ので、REVIEW_EVAL_CASES（録画を再生する CI の母集団）とは分け、
- * 固定の応答（Fake）で本番と同じ経路を通す（harness.test.ts）。録画を取るときに REVIEW_EVAL_CASES へ入れる。
+ * 固定の応答（Fake）で本番と同じ経路を通す（harness.test.ts）。実モデルの録画（#202）は Cash の REVIEW_EVAL_CASES とは別の母集団
+ * （tournament-eval.ts の TOURNAMENT_REVIEW_RECORDING_CASES。この 2 つを含む）と別の録画で持つ。
  */
 export const TOURNAMENT_REVIEW_EVAL_CASES: readonly ReviewEvalCase[] = [
   { id: "bubble_shove/d0", hand: BUBBLE_SHOVE, decisionIndex: 0 },
@@ -133,6 +134,12 @@ export interface ReviewEvalOptions {
     record: ReviewEvalRecord,
     done: number,
     total: number,
+  ) => void;
+  /** 作った Review（保存の前の Draft）を受け取る（Follow-up の対象にする。#202）。障害の判断では呼ばない。 */
+  readonly onDraft?: (
+    caseId: string,
+    repeat: number,
+    draft: ReviewDraft,
   ) => void;
 }
 
@@ -222,6 +229,7 @@ async function runCase(
         });
       },
     });
+    options.onDraft?.(c.id, repeat, draft);
     return {
       caseId: c.id,
       repeat,
