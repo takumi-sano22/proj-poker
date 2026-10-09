@@ -42,6 +42,7 @@ Hero が UI で 6-max STT を始めて完走できるよう、新しい Session 
 ## レビュー対応
 
 - Codex（1 回目。clean・P2 が 2 件）: ①次の Hand の読み込みに失敗すると前の Tournament の欄が残る → 今の Hand を読めなかったら別の Hand の値を返さない。②time-base の残り時間が卓の状態の変化でしか更新されない → time-base の進行中の Hand は 30 秒ごと（`TOURNAMENT_REFRESH_MS`）にも読み直す。どちらも `hooks/useTournament.ts` だけの修正。
+- Codex（2 回目。clean・P2 が 1 件）: ①と同根で、次の Hand を読み終えるまでの間も前の Hand の値を出していた → 「前の値を出して欄の跳ねを防ぐ」をやめ、表示中の Hand の値だけを返す形に変えた（同じ指摘を繰り返さないよう、保持の仕組みごと外した）。Hand の切り替えの直後は読み終えるまで（ローカルの GET で数 ms〜数十 ms）欄が出ない。
 
 ## 残課題
 

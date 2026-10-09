@@ -319,7 +319,7 @@ function TableScreen({
   }
   return (
     // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
-    // 順位・Payout の案内は表示中の Hand の値だけで作る（欄は次の Hand を読み終えるまで前の値を出す。useTournament）。
+    // 順位・Payout の案内は表示中の Hand の値だけで作る（useTournament も表示中の Hand の値だけを返す。二重の照合）。
     <TournamentContext.Provider
       value={tournament?.handId === view.handId ? tournament : null}
     >
