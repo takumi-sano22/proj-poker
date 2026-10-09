@@ -10,6 +10,7 @@ import { createReplayClock } from "../opponent-eval/recording.js";
 import { hashParams } from "../opponent-eval/harness.js";
 import {
   REVIEW_EVAL_CASES,
+  TOURNAMENT_REVIEW_EVAL_CASES,
   runReviewEval,
   type ReviewEvalRecord,
 } from "./harness.js";
@@ -188,6 +189,67 @@ describe("summarizeReviewEval", () => {
       exactGtoMentions: 1,
       hindsightLeaks: 0,
     });
+  });
+});
+
+describe("Tournament の判断（#189。固定の応答で本番と同じ経路を通す。実モデルの録画はまだ無い）", () => {
+  /** Prompt の Evidence から、Math・KB と ICM の必要 Equity の id を拾って検証を通る出力を作る。 */
+  function validTournamentFrom(prompt: string) {
+    const icmReq = /"id":"(icmreq:[^"]+)"/.exec(prompt)?.[1] ?? "";
+    const base = validFrom(prompt);
+    return { ...base, evidenceIds: [...base.evidenceIds, icmReq] };
+  }
+
+  async function runTournament(outputs: Parameters<typeof scriptedQuery>[0]) {
+    const prompts: string[] = [];
+    const records = await runReviewEval({
+      cases: TOURNAMENT_REVIEW_EVAL_CASES,
+      repeats: 1,
+      kb,
+      solver,
+      env: { PATH: "/usr/bin" },
+      queryFor: () => {
+        const inner = scriptedQuery(outputs);
+        return (params) => {
+          prompts.push(params.prompt);
+          return inner(params);
+        };
+      },
+    });
+    return { records, prompts };
+  }
+
+  it("Shove・All-in への Call: ICM の Evidence と読み方が Prompt に入り、ICM の必要 Equity の id を挙げた出力は review_ai。漏れは無い", async () => {
+    const { records, prompts } = await runTournament([validTournamentFrom]);
+    expect(records.map((r) => r.caseId)).toEqual([
+      "bubble_shove/d0",
+      "bubble_call/d0",
+    ]);
+    for (const record of records) {
+      expect(record.final).toMatchObject({
+        kind: "review",
+        generatedBy: "review_ai",
+      });
+      expect(record.leaks).toEqual([]);
+      // Preflop の判断なので Solver は当てはめない（Tournament でも正常な Fallback）。
+      expect(record.solverStatus).toBe("not_applicable");
+    }
+    for (const prompt of prompts) {
+      expect(prompt).toContain("## トーナメントの状況（tournament）の扱い");
+      expect(prompt).toContain('"icmreq:');
+      expect(prompt).toContain('"chipev:');
+    }
+    expect(prompts[0]).toContain("## Shove の必要 Equity の扱い");
+    expect(prompts[1]).not.toContain("## Shove の必要 Equity の扱い");
+  });
+
+  it("ICM の必要 Equity の id を挙げない出力は Grounding で不正になり、1 回だけ再要求する", async () => {
+    const { records } = await runTournament([validFrom, validTournamentFrom]);
+    const [shove] = records;
+    expect(shove?.attempts.map((a) => a.check)).toEqual([
+      expect.objectContaining({ ok: false, stage: "grounding" }),
+      { ok: true },
+    ]);
   });
 });
 

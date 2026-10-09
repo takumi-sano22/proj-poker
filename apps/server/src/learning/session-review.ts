@@ -12,6 +12,7 @@ import {
   heroInformationSets,
   projectHeroView,
   projectPlayerStats,
+  sessionSettingsOf,
   visibleEvents,
   type ActionType,
   type Card,
@@ -220,11 +221,20 @@ export function computeSessionReview(
       hands: hero?.hands ?? 0,
       overall: hero?.overall ?? null,
     },
-    recommendedDrill: {
-      available: leaks[0] !== undefined,
-      candidate: leaks[0] ?? null,
-    },
+    // Tournament の Session の Hand は Drill の題材にしない（DRILL_TOURNAMENT_POLICY。#189 の暫定 Policy）ので、候補を出さない。
+    recommendedDrill: tournamentSession(hands)
+      ? { available: false, candidate: null }
+      : { available: leaks[0] !== undefined, candidate: leaks[0] ?? null },
   };
+}
+
+/** Session の最初の Hand の SESSION_STARTED の設定が Tournament か（D129）。SESSION_STARTED の無い旧版の Session は cash。 */
+function tournamentSession(hands: readonly SessionHandRecord[]): boolean {
+  const first = hands[0];
+  return (
+    first !== undefined &&
+    sessionSettingsOf(first.events)?.mode === "tournament"
+  );
 }
 
 function toDecisionRef(

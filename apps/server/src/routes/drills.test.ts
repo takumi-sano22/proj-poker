@@ -20,6 +20,7 @@ import {
   loadLearningFixtures,
   type PlayedHand,
 } from "../testing/learning-fixtures.js";
+import { BUBBLE_CALL, playScriptedHand } from "../testing/review-eval/hands.js";
 
 const fixtures = await loadLearningFixtures();
 
@@ -181,6 +182,22 @@ describe("POST /api/drills", () => {
     const drill = (await startDrill(app, btn.handId, 1)).json<DrillStartBody>();
     const again = await startDrill(app, drill.handId, 1);
     expect(again.statusCode).toBe(422);
+  });
+
+  it("Tournament の Session の Hand は Drill の題材にしない（暫定 Policy phase8_drill_tournament_v1。#189）", async () => {
+    const { app, store, drillStore } = setup();
+    // Session の最初の Hand（SESSION_STARTED に Tournament の設定の Snapshot）。
+    store.append(
+      "review-bubble_call",
+      playScriptedHand(BUBBLE_CALL, { sessionId: "t1" }),
+      { sessionId: "t1" },
+    );
+    const res = await startDrill(app, "review-bubble_call", 0);
+    expect(res.statusCode).toBe(422);
+    expect(res.json<{ error: { kind: string } }>().error.kind).toBe(
+      "drill_unavailable",
+    );
+    expect(drillStore.list()).toEqual([]);
   });
 
   it("Drill の Hand は通常の Hand の API で終局まで進み、Replay の一覧・Learning の集計・Resume から除かれる（D116）", async () => {

@@ -251,6 +251,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - **手動の Eval**: `pnpm --filter @proj-poker/server eval:review [--repeats 1] [--depth standard|deep] [--solver] [--record]`。Claude CodeのOAuth（サブスク枠。D87）で呼び、指標と合格ラインを表示し、`--record`で録画（`recordings/review-eval.json`）に書きます（障害が1件でもあれば書かない）。
 - **CI**（`harness.test.ts`）: Claudeを呼ばず、録画した出力を本番と同じ経路で再生して集計し直し、録画時の集計と一致すること・Hindsight Leakと障害が0件であることを確かめます。Evidence・Prompt・Schema・KBが変わると引数の指紋が合わず、再生が失敗します（手動のEvalで録画を取り直す）。
 - **Table Tendency（D122・#153）**: 代表の判断は前のHandを持たない固定Handなので、Opponent Observationは`unavailable`のままで、録画の指紋は#153より前と同じです（録画は取り直していない）。卓の傾向が入るPromptとGroundingは、Fakeと決定論のテストで確かめます（上の「Table Tendency」）。卓の傾向が入ったReviewの実モデルの品質（説明が数値を作らない・個々の相手の傾向として断定しない等）は、まだ録画で測っていません。
+- **Tournament（#189）**: `hands.ts`にTournamentの固定Hand（標準6-max STTの4人残り＝Bubble・Level 5。BTNのHeroの10BBのShove〔`BUBBLE_SHOVE`〕と、BBのHeroのBTNのShoveへのCall〔`BUBBLE_CALL`〕）を足し、`harness.ts`の`TOURNAMENT_REVIEW_EVAL_CASES`にしました。本番と同じく`reviewSpotReasons`とSessionの情報を`buildReviewEvidence`へ渡します。実モデル（Claude）を呼ぶ録画はまだ取っていない（OAuthの利用枠を使う判断は人間判断）ので、録画を再生するCIの母集団（`REVIEW_EVAL_CASES`）には入れず、固定の応答（Fake）で本番と同じ経路（Evidence・Prompt・Grounding・Retry・漏れの検査）を通します（`harness.test.ts`）。CashのEvidence・Prompt・Schemaは変えていないので、既存の録画の指紋はそのままです。録画を取るときに`REVIEW_EVAL_CASES`へ入れます。
 
 指標の定義（`metrics.ts`）:
 

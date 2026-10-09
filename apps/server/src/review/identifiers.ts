@@ -29,6 +29,11 @@ interface EvidenceTerm {
    * （無い Evidence の Prompt を #153 より前と同じ文字列に保つ。Review Eval の録画の指紋を変えない）。置換には常に使う。
    */
   readonly tableTendency?: true;
+  /**
+   * Tournament の Evidence（#189）の項目。Evidence に Tournament の Evidence があるときだけ説明を出す
+   * （Cash の Prompt を #189 より前と同じ文字列に保つ。Review Eval の録画の指紋を変えない）。置換には常に使う。
+   */
+  readonly tournament?: true;
 }
 
 /** Evidence の項目の説明（Prompt に添える説明と、出力の置換の両方がこの 1 か所を見る）。 */
@@ -215,6 +220,178 @@ export const EVIDENCE_TERMS: readonly EvidenceTerm[] = [
     pass: "decision",
     tableTendency: true,
   },
+  // Tournament（#189）。普通の英単語と同じ綴りの項目名は plain（`name=値` の形のときだけ置換する）。
+  {
+    name: "tournament",
+    text: "トーナメントの状況",
+    plain: true,
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "tournamentPolicyVersion",
+    text: "トーナメントの Evidence の作り方の版",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "payoutPolicyVersion",
+    text: "賞金の端数の配り方の版",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "entrants",
+    text: "参加人数",
+    plain: true,
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "remaining",
+    text: "残人数",
+    plain: true,
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "level",
+    text: "Blind の Level",
+    plain: true,
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "handNumber",
+    text: "トーナメントの何 Hand 目か",
+    pass: "decision",
+    tournament: true,
+  },
+  { name: "anteKind", text: "Ante の種類", pass: "decision", tournament: true },
+  {
+    name: "ante",
+    text: "Ante の額",
+    plain: true,
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "prizePool",
+    text: "賞金の総額（pt）",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "payoutsByPlace",
+    text: "順位ごとの賞金（pt）",
+    note: "1 位から入賞の数だけ",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "stage",
+    text: "トーナメントの段階",
+    note: "before_bubble は Bubble より前、bubble は次に Bust する 1 人だけが入賞しない、in_the_money は残りの全員が入賞、heads_up は残り 2 人",
+    plain: true,
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "icmPolicyVersion",
+    text: "ICM の計算の版",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "stackBasis",
+    text: "ICM の Stack を取った時点",
+    note: "decision_point は判断時点の手元の Stack とこの Hand で出した額の合計",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "icmStack",
+    text: "ICM の計算に使った Stack",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "stackBb",
+    text: "Stack の BB 換算",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "icmEquity",
+    text: "ICM Equity（賞金の期待値。pt）",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "icmEquityPercent",
+    text: "賞金の総額に対する ICM Equity の割合（%）",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "villainId",
+    text: "相手の席",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "chipEv",
+    text: "Chip EV の必要 Equity",
+    note: "Chip の損益分岐の勝率。All-in への Call では Pot Odds と同じ",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "requiredEquityPercent",
+    text: "必要 Equity（%）",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "heroStack",
+    text: "Hero の Stack（Fold・勝ち・負け）",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "heroIcmEquity",
+    text: "Hero の ICM Equity（Fold・勝ち・負け。pt）",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "othersFold",
+    text: "ほかの Player は Fold する前提",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "foldEquityIncluded",
+    text: "Fold Equity を含むか",
+    whenTrue: "Fold Equity を含む",
+    whenFalse: "Fold Equity を含まない",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "callFrequencyIncluded",
+    text: "Call の頻度を含むか",
+    whenTrue: "Call の頻度を含む",
+    whenFalse: "Call の頻度を含まない",
+    pass: "decision",
+    tournament: true,
+  },
+  {
+    name: "potWinnerIfHeroFolds",
+    text: "Hero が Fold したときに今の Pot を取る Player",
+    pass: "decision",
+    tournament: true,
+  },
   {
     name: "inAssumedRange",
     text: "実際の札が判断時点に仮定した Range に入っていたか",
@@ -279,6 +456,20 @@ const VALUE_TERMS: Readonly<Record<string, string>> = {
   // Table Tendency の項目と Policy の版（D122・#153）
   aggression_frequency: "Postflop の Aggression の頻度",
   phase7_table_tendency_v1: "卓の傾向の数え方の版",
+  // Tournament の Evidence（#189）の値と版
+  before_bubble: "Bubble より前",
+  in_the_money: "入賞圏",
+  big_blind_ante: "Big Blind Ante",
+  per_player: "全員の Ante",
+  call_all_in: "All-in への Call",
+  out_of_scope: "計算の範囲外",
+  decision_point: "判断時点",
+  malmuth_harville: "Malmuth-Harville",
+  pay_jump: "Pay Jump",
+  short_stack: "Short Stack",
+  phase8_review_tournament_v1: "トーナメントの Evidence の作り方の版",
+  phase8_icm_provisional_v1: "ICM の計算の版",
+  phase8_provisional_v1: "賞金の端数の配り方の版",
   // 段階評価・理論の根拠
   mixed_marginal: "僅差",
   improvement_suggested: "改善の余地あり",
@@ -370,12 +561,17 @@ export function replacementNamesOf(evidence: {
  */
 export function evidenceGlossary(
   pass: "decision" | "reveal",
-  options: { readonly tableTendency?: boolean } = {},
+  options: {
+    readonly tableTendency?: boolean;
+    /** Tournament の Evidence（#189）があるときだけ、その項目の説明を出す（構造ゲート）。 */
+    readonly tournament?: boolean;
+  } = {},
 ): string {
   const terms = EVIDENCE_TERMS.filter(
     (t) =>
       (pass === "reveal" || t.pass === "decision") &&
-      (t.tableTendency !== true || options.tableTendency === true),
+      (t.tableTendency !== true || options.tableTendency === true) &&
+      (t.tournament !== true || options.tournament === true),
   );
   return [
     "## Evidence の項目の説明（文では項目名や id を書かず、説明の言葉で書く。席は displayName で書く）",
@@ -395,9 +591,9 @@ const IDENTIFIER_PATTERNS: readonly RegExp[] = [
   // 英字と _ の値（snake_case）
   /(?<![A-Za-z0-9_])[a-z]+(?:_[a-z0-9]+)+(?![A-Za-z0-9_])/g,
   // Evidence 内の位置（math.equity.method 等）
-  /(?<![A-Za-z0-9_.])(?:math|range|solver|context|knowledge|reveal|equity|aggression|decision)\.[a-zA-Z]+(?:\.[a-zA-Z]+)*/g,
+  /(?<![A-Za-z0-9_.])(?:math|range|solver|context|knowledge|reveal|equity|aggression|decision|tournament)\.[a-zA-Z]+(?:\.[a-zA-Z]+)*/g,
   // Evidence の id（math:review-... 等）
-  /(?<![A-Za-z0-9_])(?:ctx|math|range|solver|kb|reveal|equity|aggression|tendency):[^\s,、。）)」]+/g,
+  /(?<![A-Za-z0-9_])(?:ctx|math|range|solver|kb|reveal|equity|aggression|tendency|tournament|icm|icmreq|chipev):[^\s,、。）)」]+/g,
 ];
 
 /** 文に残っている識別子の疑い（重複なし）。 */

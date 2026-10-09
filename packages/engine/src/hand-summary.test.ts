@@ -13,9 +13,11 @@ import {
 } from "./hand-engine.js";
 import {
   DEFAULT_IMPORTANT_SPOT_RULES,
+  DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES,
   heroDecisions,
   heroInformationSets,
   projectHandSummary,
+  tournamentImportantSpotReasons,
   type HeroInformationSet,
 } from "./hand-summary.js";
 import type { HandState } from "./hand-state.js";
@@ -643,5 +645,59 @@ describe("Property の検査を通す Hand の網羅（固定 Scenario。#167）
       checkHand(build().events, hero, covered);
     }
     expect([...covered].sort()).toEqual([...COVERAGE_KINDS].sort());
+  });
+});
+
+describe("tournamentImportantSpotReasons（#189。Tournament の Important Spot の理由）", () => {
+  // 標準 6-max STT（D127）の 3 位まで入賞（600pt を 300 / 180 / 120）。
+  const payouts = [300, 180, 120];
+  const facts = (
+    stage: "before_bubble" | "bubble" | "in_the_money" | "heads_up",
+    remaining: number,
+    heroStackBb = 30,
+  ) => ({ stage, remaining, payoutsByPlace: payouts, heroStackBb });
+
+  it("暫定の規則は版付きで、Short Stack は 10BB 以下", () => {
+    expect(DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES).toEqual({
+      version: "phase8_tournament_spot_v1",
+      shortStackBb: 10,
+    });
+  });
+
+  it("Bubble（残り 4 人）は bubble。Bubble より前・Heads-Up は理由なし", () => {
+    expect(tournamentImportantSpotReasons(facts("bubble", 4))).toEqual([
+      "bubble",
+    ]);
+    expect(tournamentImportantSpotReasons(facts("before_bubble", 5))).toEqual(
+      [],
+    );
+    expect(tournamentImportantSpotReasons(facts("heads_up", 2))).toEqual([]);
+  });
+
+  it("入賞圏で 3 人以上が残り、1 つ上の順位の賞金が多ければ pay_jump（同じ賞金なら付けない）", () => {
+    expect(tournamentImportantSpotReasons(facts("in_the_money", 3))).toEqual([
+      "pay_jump",
+    ]);
+    expect(
+      tournamentImportantSpotReasons({
+        ...facts("in_the_money", 3),
+        payoutsByPlace: [200, 200, 200],
+      }),
+    ).toEqual([]);
+  });
+
+  it("Hero の Stack が 10BB 以下なら short_stack（境目の 10BB を含む・規則で変えられる）", () => {
+    expect(
+      tournamentImportantSpotReasons(facts("before_bubble", 5, 10)),
+    ).toEqual(["short_stack"]);
+    expect(
+      tournamentImportantSpotReasons(facts("before_bubble", 5, 10.1)),
+    ).toEqual([]);
+    expect(
+      tournamentImportantSpotReasons(facts("bubble", 4, 15), {
+        version: "test",
+        shortStackBb: 15,
+      }),
+    ).toEqual(["bubble", "short_stack"]);
   });
 });

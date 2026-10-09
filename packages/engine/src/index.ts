@@ -219,10 +219,12 @@ export type {
 
 export {
   DEFAULT_IMPORTANT_SPOT_RULES,
+  DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES,
   extractImportantSpots,
   heroDecisions,
   heroInformationSets,
   projectHandSummary,
+  tournamentImportantSpotReasons,
 } from "./hand-summary.js";
 export type {
   HandOutcome,
@@ -234,6 +236,8 @@ export type {
   ImportantSpotRules,
   PotResult,
   ShowdownRecord,
+  TournamentImportantSpotRules,
+  TournamentSpotFacts,
   UserReadRecord,
 } from "./hand-summary.js";
 

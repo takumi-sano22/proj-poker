@@ -78,6 +78,49 @@ export const REVIEW_SYSTEM_PROMPT = [
   "- evidenceIds: 根拠にした Evidence の id",
 ].join("\n");
 
+/**
+ * Tournament の Hand の判断（evidence.tournament がある）の System Prompt（#189）。1 行目だけをトーナメントにし、2 行目以降は Cash と同じ
+ * （Cash の System Prompt は #189 より前と同じ文字列のまま。Review Eval の録画の指紋を変えない）。
+ */
+export const TOURNAMENT_REVIEW_SYSTEM_PROMPT = REVIEW_SYSTEM_PROMPT.replace(
+  "ノーリミット・テキサスホールデム（キャッシュゲーム）のコーチです",
+  "ノーリミット・テキサスホールデム（トーナメント）のコーチです",
+);
+
+/** その Evidence の Review に使う System Prompt（Tournament の Evidence があるときだけトーナメントの版。構造ゲート）。 */
+export function reviewSystemPromptFor(evidence: ReviewEvidence): string {
+  return evidence.tournament === undefined
+    ? REVIEW_SYSTEM_PROMPT
+    : TOURNAMENT_REVIEW_SYSTEM_PROMPT;
+}
+
+/**
+ * Tournament の Evidence があるときだけ Pass A の Prompt に添える、トーナメントの状況と ICM の読み方（D109・D130・#189）。
+ * ICM の数値は決定論のコードが正本で、Review AI は説明だけを行う（計算し直させない）。
+ */
+export const TOURNAMENT_GUIDE = [
+  "## トーナメントの状況（tournament）の扱い",
+  "- この判断はトーナメントの Hand です。tournament は判断時点の公開情報（残人数・Level・Ante・賞金の構造・段階）と、そこから決定論のコードが計算した ICM（賞金の期待値）の値です。",
+  "- ICM Equity・必要 Equity・BB 換算は計算済みの値です。Evidence の値をそのまま使い、ICM を自分で計算し直したり、値を作ったりしないでください。",
+  "- Chip EV（Chip の損得）と ICM（賞金の期待値）は別の量です。混同せず、どちらの値かを書き分けてください。",
+  "- Push / Fold の Range やその解は渡していません。それらを根拠にしないでください。",
+].join("\n");
+
+/** All-in の関わる判断で ICM の必要 Equity があるときだけ添える読み方（D130）。 */
+export const TOURNAMENT_ALL_IN_GUIDE = [
+  "## All-in の判断（tournament.allIn）の扱い",
+  "- Chip EV の必要 Equity と ICM の必要 Equity を並べて比べてください。仮定した Range に対する Equity がそれぞれを上回るかで判断の質を考えてください。2 つの差は賞金の構造（ICM）による違いです。",
+  "- 必要 Equity の前提（tournament.allIn.assumptions）を assumptions に書いてください。",
+  "- 根拠にした ICM の必要 Equity の id を evidenceIds に入れてください。",
+].join("\n");
+
+/** Shove の判断にだけ添える、条件付きの値の読み方（D130。Fold Equity を推測で数値にさせない）。 */
+export const TOURNAMENT_SHOVE_GUIDE = [
+  "## Shove の必要 Equity の扱い",
+  "- Shove の必要 Equity は、相手ごとに「その 1 人に Call され、ほかは Fold した場合」の条件付きの値です。相手が Fold する確率（Fold Equity）と Call の頻度は含みません。",
+  "- Shove の良し悪しを書くときはこの前提を書き、Fold Equity や Call の頻度を推測で数値にしないでください。",
+].join("\n");
+
 /** Hero の読み（userRead）があるときだけ Pass A の Prompt に添える、読みの扱い方（D112・docs/05 §6）。 */
 export const USER_READ_GUIDE = [
   "## Hero 自身の読み（userRead）の扱い",
@@ -108,7 +151,10 @@ export function buildReviewPrompt(
   const sections = [
     "## Evidence（Card は 2 文字で、As はスペードの A、Td はダイヤの 10）",
     JSON.stringify(evidence, cardReplacer),
-    evidenceGlossary("decision", { tableTendency: hasTableTendency }),
+    evidenceGlossary("decision", {
+      tableTendency: hasTableTendency,
+      tournament: evidence.tournament !== undefined,
+    }),
   ];
   // Hero の読みがあるときだけ扱い方を添える（構造ゲート。読みの無い判断の Prompt は従来と同じ文字列のまま）。
   if (evidence.userRead.status === "collected") {
@@ -117,6 +163,16 @@ export function buildReviewPrompt(
   // 卓の傾向があるときだけ読み方を添える（構造ゲート。無い判断の Prompt は #153 より前と同じ文字列のまま）。
   if (hasTableTendency) {
     sections.push(TABLE_TENDENCY_GUIDE);
+  }
+  // Tournament の Evidence があるときだけ読み方を添える（構造ゲート。Cash の Prompt は #189 より前と同じ文字列のまま）。
+  // All-in の判断・Shove の判断の読み方は、その値があるときだけ節ごと出し分ける（条件付きの指示を文で書かない）。
+  if (evidence.tournament !== undefined) {
+    sections.push(TOURNAMENT_GUIDE);
+    const allIn = evidence.tournament.allIn;
+    if (allIn?.status === "available") {
+      sections.push(TOURNAMENT_ALL_IN_GUIDE);
+      if (allIn.decision === "shove") sections.push(TOURNAMENT_SHOVE_GUIDE);
+    }
   }
   if (correction !== undefined) {
     sections.push(
@@ -279,6 +335,16 @@ export function checkReviewOutput(
     if (!sufficientIds.some((id) => evidenceIds.includes(id))) {
       return grounding(
         `exploitBasis が observation なら evidenceIds にサンプルが十分な卓の傾向の id（${sufficientIds.join(" / ")} のどれか）を入れる`,
+      );
+    }
+  }
+  // Tournament の All-in の判断（ICM の必要 Equity がある）では、その id を 1 つ以上根拠に挙げる（ICM を無視・創作させない。D130）。
+  const allIn = evidence.tournament?.allIn;
+  if (allIn?.status === "available") {
+    const icmIds = allIn.requirements.map((r) => r.icm.id);
+    if (!icmIds.some((id) => evidenceIds.includes(id))) {
+      return grounding(
+        `トーナメントの All-in の判断では evidenceIds に ICM の必要 Equity の id（${icmIds.join(" / ")} のどれか）を入れる`,
       );
     }
   }

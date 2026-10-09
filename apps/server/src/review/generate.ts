@@ -13,10 +13,10 @@ import {
 import { evidenceIdsOf } from "./evidence.js";
 import { replacementNamesOf, sanitizeOutput } from "./identifiers.js";
 import {
-  REVIEW_SYSTEM_PROMPT,
   buildReviewPrompt,
   checkReviewOutput,
   reviewOutputSchema,
+  reviewSystemPromptFor,
   type ReviewCorrection,
 } from "./review-ai.js";
 import {
@@ -107,7 +107,8 @@ export async function generateReview(
     const output = await runStructuredQuery({
       query: options.query,
       model,
-      systemPrompt: REVIEW_SYSTEM_PROMPT,
+      // Tournament の Evidence があるときだけトーナメントの版（Cash は #189 より前と同じ文字列）。
+      systemPrompt: reviewSystemPromptFor(evidence),
       prompt,
       schema,
       env: options.env,

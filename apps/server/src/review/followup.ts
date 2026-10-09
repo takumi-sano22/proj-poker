@@ -19,6 +19,7 @@ import {
 import {
   EVIDENCE_IDS_MAX,
   REVIEW_TEXT_MAX,
+  TOURNAMENT_GUIDE,
   cardReplacer,
   isText,
   type ReviewCorrection,
@@ -81,9 +82,25 @@ const OUTPUT_RULES = [
   "- evidenceIds: 根拠にした Evidence の id（answered なら 1 つ以上）",
 ];
 
-/** Follow-up の system prompt（Pass で範囲の指示を出し分ける）。 */
-export function followUpSystemPrompt(pass: FollowUpTarget["pass"]): string {
-  return [...COMMON_RULES, ...PASS_RULES[pass], ...OUTPUT_RULES].join("\n");
+/**
+ * Follow-up の system prompt（Pass で範囲の指示を出し分ける）。Tournament の Evidence のある Pass A の Review への質問（#189）だけ、
+ * 1 行目をトーナメントにする（それ以外は #189 より前と同じ文字列）。
+ */
+export function followUpSystemPrompt(
+  pass: FollowUpTarget["pass"],
+  options: { readonly tournament?: boolean } = {},
+): string {
+  const rules = [...COMMON_RULES, ...PASS_RULES[pass], ...OUTPUT_RULES].join(
+    "\n",
+  );
+  return options.tournament === true
+    ? rules.replace("（キャッシュゲーム）", "（トーナメント）")
+    : rules;
+}
+
+/** Tournament の Evidence のある Pass A の Review か（#189）。 */
+function hasTournament(target: FollowUpTarget): boolean {
+  return target.pass === "decision" && target.evidence.tournament !== undefined;
 }
 
 /** 対象の Review の Evidence が持つ id（答えの根拠に挙げてよい id）。 */
@@ -112,10 +129,13 @@ export function buildFollowUpPrompt(
       tableTendency:
         target.pass === "decision" &&
         target.evidence.opponentObservation.status === "available",
+      tournament: hasTournament(target),
     }),
     "### Review の説明",
     JSON.stringify(target.explanation),
   ];
+  // Tournament の Evidence のある Pass A の Review だけ、ICM の読み方を添える（構造ゲート。#189）。
+  if (hasTournament(target)) sections.push(TOURNAMENT_GUIDE);
   if (history.length > 0) {
     sections.push("## これまでの質問と答え（古い順）");
     for (const turn of history) {
@@ -244,7 +264,9 @@ export async function generateFollowUp(
     concreteModel: model,
     question,
   } as const;
-  const systemPrompt = followUpSystemPrompt(target.pass);
+  const systemPrompt = followUpSystemPrompt(target.pass, {
+    tournament: hasTournament(target),
+  });
   const schema = followUpOutputSchema(target);
   const failures: ReviewCorrection[] = [];
   for (let attempt = 1; attempt <= 2; attempt++) {
