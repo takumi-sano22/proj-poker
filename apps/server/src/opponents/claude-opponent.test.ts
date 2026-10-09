@@ -33,6 +33,7 @@ import type { OpponentMemorySummary } from "../memory/memory-summary.js";
 import type { TableTendency } from "../memory/table-tendency.js";
 import { OpponentOutageError, type OpponentInput } from "./opponent-agent.js";
 import { checkOpponentOutput } from "./opponent-output.js";
+import { PERSONA_PRESETS, describePersona } from "./persona.js";
 
 // 録画済み応答: 2026-10-06 に SDK 0.3.289・claude-haiku-4-5 で実際に返った message から、使う項目だけを残したもの。
 // 型の必須項目（usage 等）は省いているので SDKMessage へ cast する。
@@ -428,12 +429,51 @@ describe("Tournament の Prompt（#188）", () => {
     expect(buildOpponentPrompt(cash)).not.toContain("トーナメント");
   });
 
-  it("Persona の節を指す行は Persona の節があるときだけ。Tournament の Memory には Tournament の Hand だけの傾向だと書く", () => {
+  it("Persona の読み方（#207・D133）は Persona の節があるときだけ Tournament の節に入れ、Context を基準・Skill を反映の精度・性格を偏りとして読ませる", () => {
     const { input } = tournamentDecisionInput();
-    expect(buildOpponentPrompt(input)).not.toContain("リスク許容度");
-    expect(buildOpponentPrompt(input, "タイトで慎重")).toContain(
-      "「リスク許容度」と「規律」の程度に合わせて",
+    const persona = describePersona(PERSONA_PRESETS.nit);
+    const sectionOf = (prompt: string) =>
+      prompt.split("\n\n").find((s) => s.startsWith("## トーナメントの状況"));
+    const plain = sectionOf(buildOpponentPrompt(input)) ?? "";
+    const guided = sectionOf(buildOpponentPrompt(input, persona)) ?? "";
+    // Persona が無ければ #188 の節のまま（性格の読み方を入れない）。
+    expect(plain).not.toContain("性格");
+    // Persona があれば、#188 の節の後ろに読み方だけを足す。
+    expect(guided.startsWith(plain)).toBe(true);
+    expect(guided).toContain("戦略上の基準はこのトーナメントの状況です");
+    expect(guided).toContain("性格を理由に無視しません");
+    expect(guided).toContain(
+      "「実力（Skill）」は、この基準をどれだけ正確に判断へ反映できるか",
     );
+    expect(guided).toContain(
+      "低くても、これらの情報を使わずに決めてよいわけではありません",
+    );
+    expect(guided).toContain("基準からどちら側へどの程度偏るか");
+    expect(guided).toContain("固定の Hand の範囲ではありません");
+    expect(guided).toContain("この値だけで「範囲外」と決めず");
+    expect(guided).toContain("慎重になる圧力です");
+    expect(guided).toContain("この圧力を無視するのではなく");
+    // Persona の節の軸の名前と同じ言葉で指す（性格の節の文字列は Cash と共通で変えない）。
+    for (const name of [
+      "実力（Skill）",
+      "Preflop で参加する手の広さ",
+      "リスクの許容",
+      "規律",
+      "攻撃性",
+      "Bluff の多さ",
+    ]) {
+      expect(persona).toContain(name);
+    }
+    // Push/Fold の Range・Solver を渡さない（D130）。
+    expect(buildOpponentPrompt(input, persona)).not.toMatch(
+      /Push\/Fold|Nash|GTO|Solver/,
+    );
+    // 層の 1 行は層の節があるときだけ（この入力には Memory・Table Tendency・Tilt が無い）。
+    expect(guided).not.toContain("後の節（記憶・卓の傾向・今の状態）");
+    // Cash の Prompt には Persona があっても入れない。
+    const cashPrompt = buildOpponentPrompt(firstDecisionInput().input, persona);
+    expect(cashPrompt).not.toContain("戦略上の基準");
+    expect(cashPrompt).not.toContain("トーナメント");
     const memory: OpponentMemorySummary = {
       policyVersion: "phase7_memory_v1",
       injectionVersion: "phase7_memory_injection_v1",
@@ -448,6 +488,21 @@ describe("Tournament の Prompt（#188）", () => {
     const at = sections.findIndex((s) => s.startsWith("## あなたの記憶"));
     expect(sections[at]).toContain("トーナメントの Hand だけから数えた傾向");
     expect(JSON.parse(sections[at + 1] ?? "")).toEqual(memory);
+    // 層の節があり Persona もあれば、Tournament の節に層を後に当てる 1 行を足す（Memory の節の文字列は変えない）。
+    const layered = buildOpponentPrompt(
+      { ...input, knowledge: { ...input.knowledge, memory } },
+      persona,
+    );
+    expect(sectionOf(layered)).toContain(
+      "後の節（記憶・卓の傾向・今の状態）は、この基準と性格の上で",
+    );
+    expect(
+      layered.split("\n\n").find((x) => x.startsWith("## あなたの記憶")),
+    ).toBe(
+      sections[at] +
+        "\n" +
+        "あなたの性格の「相手への適応」と「相手の読みの精度」の程度に合わせて使ってください。",
+    );
     // Cash の Memory の節には足さない。
     const cashMemory = buildOpponentPrompt({
       ...firstDecisionInput().input,

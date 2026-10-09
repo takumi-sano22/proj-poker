@@ -2,7 +2,7 @@
 // eval:opponent と同じ経路（Claude Agent SDK・Claude Code の OAuth〔サブスク枠〕・buildClaudeEnv）だけで呼び、API キーは使わない。
 // 実行: pnpm --filter @proj-poker/server eval:opponent-tournament [--dry-run] [--record] [--resume]
 //   --dry-run: モデルを呼ばず（0 回）、判断・Prompt の数・節の入り方と漏れを数える。録画の前に必ず 1 回流す。
-//   --record: 録画（recordings/opponent-tournament-eval.json）を新しく取る。録画が既にあれば実行しない（全件の再実行を防ぐ）。
+//   --record: 録画（recordings/opponent-tournament-eval-v2.json。#207・D133。#202 の録画はベースラインとして残す）を新しく取る。録画が既にあれば実行しない（全件の再実行を防ぐ）。
 //   --resume: 録画に足りない判断だけを、残りの呼び出しの上限の中で追加で集める。
 // 呼び出しの上限（判断 28・呼び出し 56）は tournament-eval.ts の値を番人（createCallBudget）で強制する。障害が出たら残りを打ち切る。
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -106,6 +106,11 @@ async function dryRun(): Promise<void> {
           memory: count("## あなたの記憶"),
           tableTendency: count("## 卓の傾向"),
           tilt: count("## あなたの今の状態"),
+          // #207・D133 の Persona の読み方（Tournament の節）と、層を後に当てる 1 行（S6 だけ）。
+          tournamentPersonaGuide: count(
+            "戦略上の基準はこのトーナメントの状況です",
+          ),
+          tournamentLayersLine: count("後の節（記憶・卓の傾向・今の状態）"),
         },
         hiddenInformationLeakage: summary.hiddenInformationLeakage,
         leaks: summary.leaks,

@@ -78,7 +78,7 @@ export function systemPromptOf(input: OpponentInput): string {
 /**
  * Public Tournament Context の節の見出しと読み方（D109・D130・#188）。中身は構造化データ（engine の tournament-knowledge.ts）で、
  * ここは固定の説明だけ。ICM の数値は決定論のコードが正本で、LLM に計算させない（D109）。Push/Fold の Range は渡さない（D130）。
- * Tournament の Hand でだけ入れる（Cash の Prompt は変えない）。Persona の節を指す 1 行は、Persona の節があるときだけ足す。
+ * Tournament の Hand でだけ入れる（Cash の Prompt は変えない）。Persona の読み方（TOURNAMENT_PERSONA_GUIDE）は、Persona の節があるときだけ足す。
  */
 const TOURNAMENT_GUIDE = [
   "## トーナメントの状況（卓の全員が知る公開の情報と、そこから決定論の計算で出した ICM の値）",
@@ -88,8 +88,26 @@ const TOURNAMENT_GUIDE = [
   "これらの値は計算済みです。自分で計算し直さず、そのまま判断に使ってください。",
 ].join("\n");
 
-const TOURNAMENT_PERSONA_LINE =
-  "あなたの性格の「リスク許容度」と「規律」の程度に合わせて考慮してください。";
+/**
+ * Tournament の Hand で、Persona の節があるときだけ Tournament の節に足す読み方（#207・D133）。
+ * Tournament Context を戦略上の基準にし、Skill はそれを反映する精度、ほかの性格の傾向は基準からの偏りとして読ませる
+ * （#202 の録画で「Looseness 0.15 だから範囲外」「規律が低いから ICM を無視」と Persona が Context を上書きしたため）。
+ * Persona の数値（PERSONA_PRESETS）と性格の節の文字列は Cash と共通のまま変えず、ここで Tournament での読み方だけを決める。
+ * Push/Fold の Range・Solver の結果は渡さない（D130）。
+ */
+const TOURNAMENT_PERSONA_GUIDE = [
+  "あなたの性格は、この状況を使ったうえで、次の順で判断に反映してください。",
+  "1. 戦略上の基準はこのトーナメントの状況です。自分と相手の stackBb、Position（position・isButton）、残人数と stage、payoutsByPlace、icmEquity、bubbleFactors から、この局面の標準的な方向をまず考えます。これは性格に関わらず必ず考慮する公開の情報で、性格を理由に無視しません。",
+  "2. 「実力（Skill）」は、この基準をどれだけ正確に判断へ反映できるかです。高いほど Stack BB・Stage・ICM の圧力・Bubble Factor を正確に反映し、低いほど性格のクセに引っぱられて基準から大きく外れることがあります。低くても、これらの情報を使わずに決めてよいわけではありません。",
+  "3. ほかの傾向は、その基準からどちら側へどの程度偏るかです。「リスクの許容」と「規律」は境界の局面でリスク側と慎重側のどちらへ倒れやすいかに、「攻撃性」と「Bluff の多さ」は額と攻め方に出します。",
+  "「Preflop で参加する手の広さ」は、深い Stack・通常の人数での参加の傾向で、固定の Hand の範囲ではありません。Stack が浅い（目安として 10BB 前後以下）とき、残人数が少ないとき、Position が後ろのときは、参加する範囲そのものが大きく変わり得ます。この値だけで「範囲外」と決めず、Stack BB・人数・Position・Stage と合わせて決めてください。",
+  "Bubble Factor が 1 より大きい相手との All-in（その相手の All-in への Call を含む）は、Chip の損得だけで考えるより必要な勝率が上がる、慎重になる圧力です。リスクの許容が高い・規律が低い性格でも、この圧力を無視するのではなく、理解したうえで境界を広めに取ります。",
+  "rationale には、性格に加えて、判断に使ったこの状況（Stack BB・Position・Stage・Bubble Factor 等）を書いてください。",
+].join("\n");
+
+/** TOURNAMENT_PERSONA_GUIDE の基準と性格の後に当てる層の 1 行。Memory・Table Tendency・Tilt の節があるときだけ足す（各層の読み方は各節のまま）。 */
+const TOURNAMENT_LAYERS_LINE =
+  "4. 後の節（記憶・卓の傾向・今の状態）は、この基準と性格の上で、それぞれの節の説明どおりに判断を調整します。";
 
 /** 小数を digits 桁に四捨五入する（Prompt に出すときだけ。比較・判定は丸める前の値で行う。docs/02 §7）。 */
 function roundTo(value: number, digits: number): number {
@@ -228,12 +246,15 @@ export function buildOpponentPrompt(
     JSON.stringify(table, cardReplacer),
   );
   if (tournament !== undefined) {
-    sections.push(
-      hasPersona
-        ? `${TOURNAMENT_GUIDE}\n${TOURNAMENT_PERSONA_LINE}`
-        : TOURNAMENT_GUIDE,
-      JSON.stringify(tournamentForPrompt(tournament)),
-    );
+    // Persona の読み方は Persona の節があるときだけ、層の 1 行は層の節があるときだけ足す（条件付きの指示を文で書かない）。
+    const hasLayers =
+      memory !== undefined || tableTendency !== undefined || tilt !== undefined;
+    const guide = [
+      TOURNAMENT_GUIDE,
+      ...(hasPersona ? [TOURNAMENT_PERSONA_GUIDE] : []),
+      ...(hasPersona && hasLayers ? [TOURNAMENT_LAYERS_LINE] : []),
+    ].join("\n");
+    sections.push(guide, JSON.stringify(tournamentForPrompt(tournament)));
   }
   if (memory !== undefined) {
     const guide = [

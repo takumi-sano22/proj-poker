@@ -1,4 +1,4 @@
-// Tournament の Claude CPU の Opponent Eval（#202・D132・docs/09 §5）。
+// Tournament の Claude CPU の Opponent Eval（#202・D132・docs/09 §5。#207・D133 で Persona の読み方を変えた Prompt を同じ母集団で再測定）。
 // #188 で Prompt に入るようになった Public Tournament Context（Stack BB・Stage・ICM Equity・Bubble Factor）を、Tournament の Hand の
 // 代表 Spot で Claude が戦略にどう使うかを、既存の Opponent Eval のハーネス（本番の Factory・検証・Retry）で集める。
 // Spot は D132 の 7 つ（S0 対照 / S1〜S4 Stage ごとの 10BB の Open Shove の判断 / S5 Bubble の大 Stack の Shove への Call / S6 S5 + 層）。
@@ -19,8 +19,8 @@ export const TOURNAMENT_EVAL_LIMITS = {
 export const TOURNAMENT_EVAL_REPEATS = 2;
 
 /**
- * 対照的な 2 Persona（D132）。Tournament Context の読み方の指示は「リスク許容度」と「規律」を指す（claude-opponent.ts）ので、
- * その 2 軸が両端に近い組にする: Nit（リスク許容 0.2・規律 0.8）と Maniac（リスク許容 0.9・規律 0.15）。
+ * 対照的な 2 Persona（D132。#207・D133 の再測定も同じ母集団）。Tournament の境界の局面で倒れる向きを決める「リスクの許容」と「規律」が
+ * 両端に近い組にする: Nit（リスク許容 0.2・規律 0.8）と Maniac（リスク許容 0.9・規律 0.15）。
  */
 export const TOURNAMENT_EVAL_PERSONAS: readonly PersonaPresetId[] = [
   "nit",
@@ -220,8 +220,20 @@ export function assertTournamentDecisionLimit(
   return decisions;
 }
 
-/** 録画の置き場所（既存の録画とは別。CI はこれも再生する）。 */
+/**
+ * 今の Tournament の Prompt（#207・D133 の Persona の読み方）の録画の置き場所。CI はこれを本番と同じ経路で再生する。
+ * #202 の録画（TOURNAMENT_BASELINE_RECORDING_URL）は Prompt が違うので別のファイルにする。
+ */
 export const TOURNAMENT_RECORDING_URL = new URL(
+  "./recordings/opponent-tournament-eval-v2.json",
+  import.meta.url,
+);
+
+/**
+ * #202（D132）の録画。#207 の比較のベースラインとして残す（取り直さない・書き換えない）。Tournament の節の Prompt が変わったので、
+ * CI は Context の無い S0 だけを再生し、S1〜S6 は指紋が今の Prompt と違うこと（意図した drift）を確かめる。
+ */
+export const TOURNAMENT_BASELINE_RECORDING_URL = new URL(
   "./recordings/opponent-tournament-eval.json",
   import.meta.url,
 );
