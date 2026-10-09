@@ -196,7 +196,7 @@ Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poke
 | `pnpm typecheck` | 全パッケージの `tsc --noEmit` |
 | `pnpm test` | Vitest（`packages/engine`・`apps/server`・`apps/web`） |
 | `pnpm format:check` | Prettier の整形チェック（適用は `pnpm format`） |
-| `pnpm e2e` | Critical E2E（Playwright。6-max Session・Phase 6 の学習の流れ・Phase 7 の CPU の Memory。下の「E2E の実行」）。CI では別のジョブ `e2e` で動きます |
+| `pnpm e2e` | Critical E2E（Playwright。6-max Session・Phase 6 の学習の流れ・Phase 7 の CPU の Memory・Phase 8 の Tournament。下の「E2E の実行」）。CI では別のジョブ `e2e` で動きます |
 
 ### E2E の実行
 
@@ -205,6 +205,8 @@ Hand Review の Solver Evidence には、ローカルの Solver **amaster97/poke
 `e2e/tests/learning.spec.ts` が、Phase 6 の学習の流れを 1 本で通します（`docs/09` §8・#119）: 2 人卓で Session の終わりまで Play → Review（Pass A・Pass B）→ Session Review → Player Profile → Targeted Drill → 練習した判断の Review → Learning Reset（Hand の記録・Review・Drill の記録は残る）→ server を再起動しても学習の記録と Drill の provenance が同じ。
 
 `e2e/tests/opponent-memory.spec.ts` が、Phase 7 の CPU の Memory の流れを 1 本で通します（`docs/09` §8・#144）: Fixed CPU と Guest の 6 人卓で Hero が Bust するまで Play → 新しい Session → 前の Session の観察を同じ `cpuProfileId` の CPU が Memory として使う・Guest は持ち越さない・CPU 同士の Private Memory が第三者の CPU に漏れない・Tilt は Session の終わりで 0 に戻る → Opponent Memory Reset の後は Reset より前の Hand を Memory に使わず、Note / Tag は残る → Hero の画面と API に Memory・Tilt・Persona・Pool の Identity が出ない。Memory・Tilt は Hero に見せない値なので、確認用の API は足さず、テストから一時 DB を読み取り専用で開き、server と同じ Projection の関数で作り直して確かめます。
+
+`e2e/tests/tournament.spec.ts` が、Phase 8 の 6-max STT を 1 本で通します（`docs/09` §8・#191）: 最初の画面で Tournament を選んで開始 → Level 1 の Blind / BB Ante → 10 Hand で Level 2 → server を再起動して Resume（同じ Level・残人数・Stack）→ CPU の Elimination → Heads-Up への移行 → 終了 → Payout / Result（50 / 30 / 20%）→ 最後の Hand の Review で Chip EV と ICM を別の項目として出す → Replay → 新しい Tournament を始める。標準 Preset の値（D127）のまま、Hero は Heads-Up までは Check / Fold、Heads-Up では All-in で打ちます（20 秒ほど）。
 
 ```bash
 # 初回だけ: Playwright の Chromium（headless shell）を取得する。OS の依存パッケージも入れるなら --with-deps（sudo が要る）
@@ -216,6 +218,7 @@ pnpm e2e
 - 決定論にするため、server は `POKER_SEED`（山札の seed の固定）・CPU は RuleBot・`REVIEW_PROVIDER=fake`（Review AI を固定応答に差し替え）・空の一時 DB で動きます。Claude と Solver は呼びません。学習の流れの E2E は `TABLE_SIZE=2` と `FAKE_REVIEW_ASSESSMENT=improvement_suggested`（固定応答の Pass A の段階評価。既定は `reasonable`）、Memory の流れの E2E は `POKER_SEED=20261042`（両方の Session に Guest が座り、2 つ目の Session で初めて座る Fixed CPU がいる編成になる seed）と 1280×900 の画面（#158）で動きます。
 - `pnpm e2e` は `NODE_OPTIONS=--conditions=@proj-poker/source` で Playwright を動かし、`apps/server` の Projection の関数と Engine を build せずに `src` から読みます。
 - 失敗したら `e2e/test-results/` に Trace・スクリーンショット・server のログが残ります（`pnpm --filter @proj-poker/e2e exec playwright show-trace <trace.zip>` で開けます）。
+- Tournament の E2E の経路は seed・RuleBot・再起動の位置で決まります。RuleBot・Engine の変更で Hero が Heads-Up の前に Bust するようになったら、前提の assert で落ちるので、再起動の位置か seed を選び直します（`docs/09` §8）。
 - 実際の Claude（OAuth）での通しは手動で行います（結果の例は [`docs/taskLog/issue-85-e2e-readme.md`](./docs/taskLog/issue-85-e2e-readme.md)）。
 
 ## MVPの完成条件
@@ -281,7 +284,7 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 
 ## 現在のフェーズ
 
-**Phase 7 — Rich Opponent Simulation** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。MVP（Phase 0〜5。完成条件 1〜8 の機能と 6-max Session の E2E。[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2)）と Phase 6（Session Learning。[#105](https://github.com/takumi-sano22/proj-poker/issues/105)）の上に、Session を跨いで同じ CPU（Fixed CPU）と Session 限りの Guest、CPU ごとの観察（Observation）と Private Memory、Tilt、卓の傾向（Table Tendency）、Opponent Memory Reset がそろい、Phase 7 の流れを Critical E2E で通しています。Phase 7 の Definition of Done の確認は [親 Issue #106](https://github.com/takumi-sano22/proj-poker/issues/106)、Phase 7 → 8 の Gate の確認は [#104](https://github.com/takumi-sano22/proj-poker/issues/104) で人間が行います（`docs/08` §3.2。各項目とテストの対応は `docs/09` §11）。
+**Phase 8 — Tournament** の到達点です（[`docs/08_MVP_AND_ROADMAP.md`](./docs/08_MVP_AND_ROADMAP.md) §3）。MVP（Phase 0〜5。完成条件 1〜8 の機能と 6-max Session の E2E。[親 Issue #2](https://github.com/takumi-sano22/proj-poker/issues/2)）、Phase 6（Session Learning。[#105](https://github.com/takumi-sano22/proj-poker/issues/105)）、Phase 7（Rich Opponent Simulation。[#106](https://github.com/takumi-sano22/proj-poker/issues/106)）の上に、既存の Hand Engine を再利用した 6-max STT（Blind / Ante・Elimination・Placement / Payout・決定論の ICM・Tournament を考える CPU・ICM を Chip EV と分けた Review）がそろい、Tournament の流れを Critical E2E で通しています（Cash の E2E もそのまま通ります）。Phase 8 の Definition of Done の確認は [親 Issue #107](https://github.com/takumi-sano22/proj-poker/issues/107) で人間が行います（各項目とテストの対応は `docs/09` §12）。
 
 できていること:
 
@@ -331,6 +334,16 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
   - 層の合成と Eval（#142）: RuleBot は Persona → Tilt → Table Tendency → Memory の順に上限付きで判断のしきい値をずらします（`phase7_rulebot_composition_v1`）。Claude の CPU には同じ構造化データを Prompt の節として渡します。Opponent Memory の Eval（Memory が戦略に効く・Fixed CPU の継続・Guest の一時性・Leakage 0）を CI で回し、分布と計算時間は `pnpm --filter @proj-poker/server eval:opponent-memory` で表示します（`docs/09` §5）
   - Opponent Memory Reset（#143・D120）: `POST /api/opponents/memory-resets` に `{ "scope": "all" }`（全 CPU）か `{ "scope": "cpu_profile", "cpuProfileId": "…" }`（1 つの Fixed CPU）を送ると、その時点より後に保存された Hand だけから Memory を作り直します。区切りの行を追記型の表（マイグレーション v11）に足すだけで、Hand の記録・Review・Note / Tag・Learning Reset の区切りは変えません（取り消しはできません。画面の入口はまだありません）
   - Phase 7 の Critical E2E（#144）: Fixed CPU と Guest の卓で複数 Session を Play し、Memory の持ち越し・Guest の破棄・Private Memory の分離・Tilt の Reset・Opponent Memory Reset を CI で通します（CPU は RuleBot）
+- **Tournament（Phase 8）**: Hand Engine を複製せず、その上に Tournament の Session を置きます（D108）。順位・Payout・Result は Event Log から都度計算し、テーブルを足していません（D129）。値（Preset・Payout・端数・同順位・ICM の方式）は OI-007 の暫定値です
+  - Mode / Session / Preset（#183・D127・D128）: 新しい Session の開始で Cash / Tournament を選べます。標準 Preset は 6-max STT（Starting Stack 1,500・Blind 10 / 20 から 10 Hand ごとに Level・Big Blind Ante〔額は BB と同じ〕・参加費 100pt）と、同じ値で 1 Level をプレイ時間 10 分にした time-base です。設定は Session の開始の Event に Snapshot として残し、Resume もその Snapshot で続けます
+  - Blind / Ante（#184）: Ante は `none` / `per_player` / `big_blind_ante`（TDA 準拠の Dead Money。BB を先に払い、Main Pot へ）。Level は Hand の開始時に決めて `HAND_STARTED` に固定し、再起動後も同じ数え方で作り直します（`schema_version` 10）
+  - Elimination / 順位（#185・D129）: Bust = Elimination。Bust の席を除いて Button / SB / BB を動かし、2 人になったら Heads-Up（Button = SB）へ移ります。Hero の Bust か Hero が最後の 1 人で Tournament を終えます（CPU だけで続けない。残った CPU の順位は未決）
+  - Payout / Result（#186）: Prize Pool は参加費 × 参加人数（標準は 600pt）で、50 / 30 / 20%（300 / 180 / 120pt）。Payout は pt で、Chip とは別の量です。端数・同順位は版付きの暫定 Policy で配ります
+  - ICM（#187・D130）: 2〜8 人の ICM Equity・Bubble Factor・All-in の判断（All-in への Call / Shove）の Chip EV と ICM の必要 Equity を決定論のコード（Malmuth-Harville）で計算します。LLM には計算させません
+  - Tournament を考える CPU（#188・D109）: CPU の KnowledgeState に公開の Tournament Context（残人数・Level・BB 換算の Stack・Payout・段階・ICM）を足し、RuleBot と Claude の CPU が使います。Memory は Tournament の Hand を `tournament` の context で数え、Cash と混ぜません
+  - ICM を分けた Review（#189・D130）: Decision Review（Pass A）の Evidence に、判断時点の ICM Equity と、All-in の判断の Chip EV / ICM の必要 Equity を別の項目・別の Evidence ID で入れます（数値の正本はコードで、Review AI は説明だけ）。Tournament の Spot は Solver に対応が無く、正常な Fallback になります
+  - Tournament の画面（#190）: 見出しに Level・Blind・Ante、卓の右（狭い画面は卓の下）の欄に次の Level までの残り・残人数・Payout・脱落、終わったら Hero の順位と Payout の Result。Review の根拠の欄「Tournament（ICM / Prize Equity と Chip EV）」と、Important Spot の Tournament の理由（Bubble・Pay Jump・Short Stack）
+  - Phase 8 の Critical E2E（#191）: 6-max STT を開始から Heads-Up・終了・Payout・ICM の Review・Replay・Resume / 新しい Tournament まで CI で通します（CPU は RuleBot、Review AI は固定応答）
 
 制約・未実装:
 
@@ -345,7 +358,10 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - **Solver は Heads-Up の Turn / River だけ**です。Preflop・Flop・Multiway（3 人以上）・Side Pot あり・Rake ありの Spot は Unsupported で、Math・Range・KB で Review します（Multiway の Deep Solver は OI-009）。Solver の結果は Street の最初の判断（OOP）の頻度だけで、Action EV は出しません
 - **Web Fallback（根拠が足りないときの Web 検索）はありません**（D94・OI-010）。根拠が足りない判断は Review AI を呼ばずに「根拠が足りない」として評価しません
 - Review は Claude（サブスク枠）を使い、1 回に十数秒〜数十秒かかります。CPU の Observation・Memory・Tilt は Hero の Review に入れないので（Hidden の層を Hero に見せない。D105・D107）、個々の相手の傾向に基づく Exploit の観点は出ません（Hero が見た Hand の公開された Action から数えた卓全体の傾向〔#153・#169〕だけは、十分な項目があるときに根拠として入り、根拠の欄に出ます）
-- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Ante・Blind Level は Phase 8（Tournament）です
+- 人数は起動時の `TABLE_SIZE` で決まり、途中参加・Rebuy / Top-up はありません。Tournament の標準 Preset は 6 人卓（`TABLE_SIZE=6`。既定）でだけ始められます
+- **Tournament は 1 卓（Single Table）の STT だけ**です。MTT・Re-entry・Rebuy / Add-on・Satellite・Bounty はありません。Push/Fold Nash Solver などの Tournament の Solver は置かず、Shove の ICM の必要 Equity は「特定の 1 人に Call され、ほかは Fold した場合」の条件付きの値です（Fold Equity・Call の頻度は含みません。D130）
+- **Tournament の値（Preset の Stack・Blind 表・Payout・端数・同順位・ICM の方式・CPU の調整の係数）は OI-007 の暫定値**です（永久仕様ではありません）。Hero の Bust で終えたときに残った CPU の順位は、残りが 1 人でも未決です（D129）
+- Cash の Session が続いている間は Tournament を始められません（違う種類を選ぶと、前の Session の続きを開くよう案内します）。Tournament の Prompt（CPU・Review）の実モデルでの品質はまだ録画で測っていません。Session Review の画面には Tournament の Result を出していません（卓の欄と Hero の欄に出します）
 - **Score・Hypothesis・Drill の式と値（`phase6_provisional_v1`・`phase6_hypothesis_v1`・`phase6_drill_v1`・Recent の 100 件）は OI-006 の暫定値**です（永久仕様ではありません）。Score は Review 済みの判断だけで数え、未 Review の判断をまとめて Review する機能はありません（D115。判断を 1 つずつ Review します）
 - Session Review の画面は、Session が終わった（Hero の Bust・Hero だけが残った・AI 障害で終えた）後の「この Session を振り返る」から開きます。Player Profile・Drill の結果・Learning Reset はその画面の下にあります
 - Targeted Drill は決定論の変形だけで、LLM で Spot を作る経路は Phase 6 の範囲外です。Drill の相手の傾向は Drill の設定の RuleBot で、元の Hand の CPU の性格ではありません
@@ -353,4 +369,4 @@ AI駆動開発を前提にしていますが、AIに設計判断を丸投げし�
 - サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます（Stack・Button・Emergency Bot を持ち越す。#77）。Hand の途中で止めた場合は、その Hand は消え、最後に終わった Hand から続きます
 - Hand の途中でサーバーを止めると、そのHandは保存されません（終わったHandだけが残る）
 
-次は **Phase 8 — Tournament** です（`docs/08` §3。Phase 7 → 8 の Gate を人間が確認してから着手します）。
+Phase 8 の Definition of Done の確認（[#107](https://github.com/takumi-sano22/proj-poker/issues/107)）は人間が行います。`docs/08` のロードマップは Phase 8 までです。
