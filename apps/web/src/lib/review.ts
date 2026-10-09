@@ -67,6 +67,10 @@ export const IMPORTANT_SPOT_REASON_LABELS: Readonly<
   all_in: "All-in",
   river_big_bet: "River の大きい Bet",
   ruling: "Dealer の裁定",
+  // Tournament の Important Spot（#189）。画面の扱いは #190 で決める（ここは型を満たす表記だけ）。
+  bubble: "Bubble",
+  pay_jump: "Pay Jump",
+  short_stack: "Short Stack",
 };
 
 /** Hero の判断の 1 行（進行ログと同じ書き方。例: "コール（Call） 10" / "レイズ（Raise） 30 まで"）。 */

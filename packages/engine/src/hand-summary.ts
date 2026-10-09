@@ -19,6 +19,7 @@ import {
   type KnowledgeState,
 } from "./projection.js";
 import type { RulingCode } from "./ruling.js";
+import type { TournamentStage } from "./tournament-knowledge.js";
 
 /** Hero の 1 回の判断（Hero の ACTION_TAKEN 1 つ）。 */
 export interface HeroDecision {
@@ -82,7 +83,13 @@ export type ImportantSpotReason =
   /** River で大きい Bet に直面した（Pot Odds が riverBigBetMinPotOdds 以上） */
   | "river_big_bet"
   /** Hero の操作に Dealer の裁定が入った */
-  | "ruling";
+  | "ruling"
+  /** Tournament の Bubble（残人数が入賞の数 + 1）での判断（tournamentImportantSpotReasons。#189） */
+  | "bubble"
+  /** Tournament で、次に Bust する 1 人で残りの全員の賞金が上がる（入賞圏で 3 人以上が残り、順位の賞金に差がある）判断 */
+  | "pay_jump"
+  /** Tournament で、Hero の Stack が shortStackBb 以下の判断 */
+  | "short_stack";
 
 /** Review の対象にする Hero の判断（理由を 1 つ以上持つ判断だけ。判断の順）。 */
 export interface ImportantSpot {
@@ -112,6 +119,60 @@ export const DEFAULT_IMPORTANT_SPOT_RULES: ImportantSpotRules = {
   // Half Pot（0.25）は拾わず、3/4 Pot 以上の Bet・Overbet を拾う。
   riverBigBetMinPotOdds: 0.3,
 };
+
+/**
+ * Tournament の Important Spot の規則（#189。OI-007 の暫定 Policy。人間判断を経ていない。値は Review の運用を見て変える）。
+ * 版を Review の Evidence（tournament の policyVersion と同じ扱い）で読めるよう、規則を変えたら version を上げる。
+ */
+export interface TournamentImportantSpotRules {
+  readonly version: string;
+  /** Hero の Stack（判断時点の手元 + この Hand で出した額）がこの BB 数以下なら short_stack。 */
+  readonly shortStackBb: number;
+}
+
+export const DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES: TournamentImportantSpotRules =
+  {
+    version: "phase8_tournament_spot_v1",
+    // 暫定値: 10BB 以下は Push / Fold が主になる Stack の目安（ICM と All-in の判断が Review の中心になる）。
+    shortStackBb: 10,
+  };
+
+/** Tournament の Important Spot の判定に使う、判断時点の公開の事実（呼び出し側が Session の設定と判断時点の Stack から作る）。 */
+export interface TournamentSpotFacts {
+  readonly stage: TournamentStage;
+  /** 残人数（この Hand に座っている人数）。 */
+  readonly remaining: number;
+  /** 順位ごとの賞金（pt。1 位から入賞の数だけ）。 */
+  readonly payoutsByPlace: readonly number[];
+  /** Hero の Stack の BB 換算（判断時点の手元 + この Hand で出した額。丸めない）。 */
+  readonly heroStackBb: number;
+}
+
+/**
+ * Tournament の判断の Important Spot の理由（bubble / pay_jump / short_stack）。判断時点の公開の事実だけを見る（結果を見ない）。
+ * extractImportantSpots（Cash と共通の理由）とは別に呼び、Tournament の Hand でだけ足す（Cash の Important Spot を変えない）。
+ * - bubble: Stage が bubble
+ * - pay_jump: 残りの全員が入賞する（残人数 ≤ 入賞の数）・3 人以上が残る（Heads-Up は ICM が Chip EV と同じ）・
+ *   残人数の順位の賞金より 1 つ上の順位の賞金が多い
+ * - short_stack: Hero の Stack が shortStackBb 以下
+ */
+export function tournamentImportantSpotReasons(
+  facts: TournamentSpotFacts,
+  rules: TournamentImportantSpotRules = DEFAULT_TOURNAMENT_IMPORTANT_SPOT_RULES,
+): ImportantSpotReason[] {
+  const reasons: ImportantSpotReason[] = [];
+  if (facts.stage === "bubble") reasons.push("bubble");
+  const { remaining, payoutsByPlace } = facts;
+  if (
+    remaining >= 3 &&
+    remaining <= payoutsByPlace.length &&
+    (payoutsByPlace[remaining - 2] ?? 0) > (payoutsByPlace[remaining - 1] ?? 0)
+  ) {
+    reasons.push("pay_jump");
+  }
+  if (facts.heroStackBb <= rules.shortStackBb) reasons.push("short_stack");
+  return reasons;
+}
 
 /** Hand の終わり方（Hero の視点）。 */
 export type HandOutcome = "complete" | "aborted" | "in_progress";
