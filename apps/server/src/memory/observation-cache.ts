@@ -19,6 +19,7 @@ import {
   extractObservedHandsFromStore,
   observationCandidates,
   participantKey,
+  sessionContextOf,
   type ObservationContext,
   type ObservationQuery,
   type ObservationStore,
@@ -27,10 +28,12 @@ import {
 } from "./observation.js";
 
 /**
- * 抽出の規則の Version。observation.ts の extractObservedHands の規則（通す Event・席→参加者の引き方・行為者の決め方・行の形）を変えたら上げる。
- * Version の違う Cache の行は読まず、消して Event Log から作り直す。
+ * 抽出の規則の Version。observation.ts の extractObservedHands の規則（通す Event・席→参加者の引き方・行為者の決め方・行の形・context の
+ * 決め方）を変えたら上げる。Version の違う Cache の行は読まず、消して Event Log から作り直す。
+ * - phase7_observation_v1: context は常に cash（#137・#165）
+ * - phase8_observation_v2: context を Hand が属する Session の mode で決める（#188。v1 の行は Tournament の Hand も cash なので作り直す）
  */
-export const OBSERVATION_EXTRACTION_VERSION = "phase7_observation_v1";
+export const OBSERVATION_EXTRACTION_VERSION = "phase8_observation_v2";
 
 /**
  * 表の extraction_version に書く値。Cache の events は読み出し時に upcast した後の Event の形なので、Event の版（EVENT_SCHEMA_VERSION）が
@@ -127,6 +130,8 @@ function viewFrom(hand: ObservedHand, currentSessionId: string): ObservedHand {
 export class ObservationCacheReader {
   /** handId → その Hand の public の Event の列（この計算の間だけ）。 */
   private readonly eventsOf = new Map<string, readonly HandEvent[]>();
+  /** sessionId → その Session の Observation の context（この計算の間だけ。Cache に無い Hand を抽出するときだけ引く）。 */
+  private readonly contexts = new Map<string, ObservationContext>();
 
   constructor(
     private readonly cache: ObservationCacheStore,
@@ -173,7 +178,13 @@ export class ObservationCacheReader {
         // Cache に無い（または読めない）Hand。その Hand の Session を「今」として抽出し、Session 外の扱いは読むときに当てる。
         full =
           extractObservedHands(
-            [{ ...c, events: store.read(c.handId).map((s) => s.event) }],
+            [
+              {
+                ...c,
+                context: sessionContextOf(store, c, this.contexts),
+                events: store.read(c.handId).map((s) => s.event),
+              },
+            ],
             {
               observer: query.observer,
               heroPlayerId: query.heroPlayerId,

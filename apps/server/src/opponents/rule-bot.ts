@@ -8,7 +8,9 @@
 // 少しずらした Persona でしきい値を作る（tiltedPersona）。乱数の引き方は変えず、Illegal / Random な Action は作らない。
 // KnowledgeState にその CPU から見た Table Tendency（D106・#141）があれば、Persona の Adaptability の範囲で同じ 2 つのしきい値だけを
 // 少しずらす（tableTendencyAdjustedTuning。十分な Sample の項目だけ）。
-// 4 つの層（Persona・Tilt・Table Tendency・Memory）の合成は composeTuning の 1 か所で、順序と合計のずれの上限を決めて行う（#142）。
+// KnowledgeState に Public Tournament Context（D109・D130・#188）があれば、この Street で最後に額を引き上げた相手との Bubble Factor で、
+// Persona の Skill の範囲で medium の手の Call のしきい値だけを下げる（tournamentAdjustedTuning。Push/Fold の Range は使わない）。
+// 5 つの層（Persona・Tilt・Table Tendency・Memory・Tournament）の合成は composeTuning の 1 か所で、順序と合計のずれの上限を決めて行う（#142）。
 import {
   HandCategory,
   createRng,
@@ -179,16 +181,7 @@ export function memoryAdjustedTuning(
   let { mediumLooseCall, weakBluffFrequency } = base;
 
   // この Street で最後に額を引き上げた相手。同額までの All-in（Call と同じ）は額を引き上げないので Aggressor にしない。
-  let level = 0;
-  let aggressor: { playerId: string } | undefined;
-  for (const a of knowledge.actionHistory) {
-    if (a.street !== knowledge.street) continue;
-    const raises =
-      (a.action === "bet" || a.action === "raise" || a.action === "all_in") &&
-      a.toAmount > level;
-    if (raises) aggressor = a;
-    level = Math.max(level, a.toAmount);
-  }
+  const aggressor = lastAggressorOf(knowledge);
   if (aggressor !== undefined && aggressor.playerId !== knowledge.viewerId) {
     const aggression = sufficientFrequency(
       subjectOf(aggressor.playerId),
@@ -281,6 +274,66 @@ export function tableTendencyAdjustedTuning(
 }
 
 /**
+ * Tournament の反映の係数（phase8_rulebot_tournament_v1。#188）。数値はすべて OI-007 / OI-011 の暫定値で、人間判断を経ていない（確定ではない）。
+ * - maxShift: medium の手の Call のしきい値を下げる幅の上限（Persona の Skill が 1 で、Bubble Factor が 1 + bubbleFactorScale 以上のとき）
+ * - bubbleFactorScale: Bubble Factor の 1 からの超過をこの幅で割って 0〜1 に丸める
+ * Push/Fold Solver（Shove / Call の Range）は入れない（D109・D130）。乱数を引かず、Legal Action の中から選ぶことは変えない（D40）。
+ */
+export const RULEBOT_TOURNAMENT_V1 = {
+  version: "phase8_rulebot_tournament_v1",
+  maxShift: 0.15,
+  bubbleFactorScale: 1,
+} as const;
+
+/** この Street で最後に額を引き上げた Player（同額までの All-in は Call と同じなので除く）。誰も引き上げていなければ undefined。 */
+function lastAggressorOf(
+  knowledge: CpuKnowledgeState,
+): { readonly playerId: string } | undefined {
+  let level = 0;
+  let aggressor: { playerId: string } | undefined;
+  for (const a of knowledge.actionHistory) {
+    if (a.street !== knowledge.street) continue;
+    const raises =
+      (a.action === "bet" || a.action === "raise" || a.action === "all_in") &&
+      a.toAmount > level;
+    if (raises) aggressor = a;
+    level = Math.max(level, a.toAmount);
+  }
+  return aggressor;
+}
+
+/**
+ * Tournament Context で、medium の手の Call（mediumLooseCall）のしきい値だけを下げる（決定論で、乱数を引かない）。
+ * この Street で最後に額を引き上げた相手（自分以外）との Bubble Factor が 1 より大きいときだけ、Skill × maxShift ×
+ * min(1, (Bubble Factor − 1) ÷ bubbleFactorScale) 下げる（負けの痛みが大きいほど Call を絞る。ICM を知る強い CPU ほど強く効く）。
+ * Tournament Context が無い（Cash）・Skill が 0・相手がいない・Bubble Factor が無い（null）か 1 以下なら元のまま。
+ */
+export function tournamentAdjustedTuning(
+  base: RuleBotTuning,
+  knowledge: CpuKnowledgeState,
+  skill: number,
+): RuleBotTuning {
+  const tournament = knowledge.tournament;
+  if (tournament === undefined || skill <= 0) return base;
+  const aggressor = lastAggressorOf(knowledge);
+  if (aggressor === undefined || aggressor.playerId === knowledge.viewerId) {
+    return base;
+  }
+  const factor = tournament.bubbleFactors.find(
+    (b) => b.opponentId === aggressor.playerId,
+  )?.bubbleFactor;
+  if (factor === undefined || factor === null || factor <= 1) return base;
+  const p = RULEBOT_TOURNAMENT_V1;
+  const pressure = Math.min(1, (factor - 1) / p.bubbleFactorScale);
+  return {
+    ...base,
+    mediumLooseCall: clamp01(
+      base.mediumLooseCall - clamp01(skill) * p.maxShift * pressure,
+    ),
+  };
+}
+
+/**
  * Tilt の段階で Persona の Preflop Looseness と Aggression だけを上げた Persona（D119。1 段あたりの幅は Policy。上限は maxLevel 倍）。
  * 他の軸・Leak は変えない。軸は 0〜1 に丸める。
  */
@@ -299,10 +352,11 @@ export function tiltedPersona(persona: Persona, tilt: CpuTilt): Persona {
 }
 
 /**
- * 4 つの層の合成の係数（phase7_rulebot_composition_v1。#142）。数値は OI-011 の暫定値で、確定ではない。
- * - maxTotalShift: Persona だけのしきい値（tuningFromPersona）からの、Tilt・Table Tendency・Memory を合わせたずれの上限
- *   （しきい値ごと。確率の差）。今の Preset と各層の上限（Tilt 3 段・Table Tendency 0.1 × Adaptability・Memory 0.15 × 読みの強さ）では届かず、
- *   軸の大きい Persona や、層の係数を上げた Version でも、1 つのしきい値が Persona の性格から大きく離れないようにする
+ * 層の合成の係数（phase7_rulebot_composition_v1。#142。#188 で Tournament の層も同じ上限に入れた）。数値は OI-011 の暫定値で、確定ではない。
+ * - maxTotalShift: Persona だけのしきい値（tuningFromPersona）からの、Tilt・Table Tendency・Memory・Tournament を合わせたずれの上限
+ *   （しきい値ごと。確率の差）。Cash の Hand では今の Preset と各層の上限（Tilt 3 段・Table Tendency 0.1 × Adaptability・Memory 0.15 × 読みの強さ）
+ *   では届かない。Tournament の Hand では Tournament の層（0.15 × Skill）が medium の手の Call を同じ向きに下げると届くことがあり、そのときは
+ *   この上限で丸める。軸の大きい Persona や、層の係数を上げた Version でも、1 つのしきい値が Persona の性格から大きく離れないようにする
  */
 export const RULEBOT_COMPOSITION_V1 = {
   version: "phase7_rulebot_composition_v1",
@@ -321,11 +375,12 @@ const NUMERIC_TUNING_KEYS = [
 
 /**
  * その判断で使うしきい値を、Persona（固定）・Tilt・Table Tendency・Memory の順に決定論で合成する（#142。乱数を引かない）。
- * 1. Persona: tuningFromPersona（Persona なしは DEFAULT_TUNING のまま返す。D71 の挙動で、Tilt・Table Tendency・Memory も読まない）
+ * 1. Persona: tuningFromPersona（Persona なしは DEFAULT_TUNING のまま返す。D71 の挙動で、Tilt・Table Tendency・Memory・Tournament も読まない）
  * 2. Tilt: Persona の Preflop Looseness・Aggression を段階ごとにずらした Persona でしきい値を作り直す（tiltedPersona）
  * 3. Table Tendency: 卓全体の傾向で 2 つのしきい値をずらす（Adaptability × 上限）
  * 4. Memory: 相手ごとの傾向で同じ 2 つのしきい値をずらす（読みの強さ × 上限。卓全体より個別の相手の情報を後に当てる）
- * 5. 上限: 確率のしきい値ごとに、1（Persona だけ）の値からのずれを ±maxTotalShift に丸める（0〜1 の範囲も保つ）。参加 Range（preflopRange）は
+ * 5. Tournament: Tournament の Hand だけ、最後に額を引き上げた相手との Bubble Factor で medium の手の Call を下げる（Skill × 上限。#188）
+ * 6. 上限: 確率のしきい値ごとに、1（Persona だけ）の値からのずれを ±maxTotalShift に丸める（0〜1 の範囲も保つ）。参加 Range（preflopRange）は
  *    Tilt だけが変えるので、そのまま
  * 選ぶ Action は呼び出し側が Legal Action の中から決めるので、合成の結果で Illegal な Action は作らない（D40）。
  */
@@ -339,10 +394,18 @@ export function composeTuning(
     knowledge.tilt === undefined
       ? anchor
       : tuningFromPersona(tiltedPersona(persona, knowledge.tilt));
-  const adjusted = memoryAdjustedTuning(
-    tableTendencyAdjustedTuning(tilted, knowledge, persona.traits.adaptability),
+  const adjusted = tournamentAdjustedTuning(
+    memoryAdjustedTuning(
+      tableTendencyAdjustedTuning(
+        tilted,
+        knowledge,
+        persona.traits.adaptability,
+      ),
+      knowledge,
+      memoryReadingOf(persona),
+    ),
     knowledge,
-    memoryReadingOf(persona),
+    persona.traits.skill,
   );
   const cap = RULEBOT_COMPOSITION_V1.maxTotalShift;
   const capped: { -readonly [K in keyof RuleBotTuning]: RuleBotTuning[K] } = {
@@ -385,7 +448,7 @@ export class RuleBot implements OpponentAgent {
    * （待ち時間も障害も無く、seed だけで結果が決まる）。
    */
   choose({ knowledge, legal }: OpponentInput): PlayerAction {
-    // Persona・Tilt・Table Tendency・Memory の合成は composeTuning の 1 か所（順序と合計のずれの上限。#142）。
+    // Persona・Tilt・Table Tendency・Memory・Tournament の合成は composeTuning の 1 か所（順序と合計のずれの上限。#142・#188）。
     const tuning = composeTuning(this.persona, knowledge);
     const strength = rateStrength(
       knowledge.holeCards,

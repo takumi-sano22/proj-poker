@@ -89,6 +89,8 @@ function storeUpTo(
         return ord !== null && (inclusive ? ord <= upToOrd : ord < upToOrd);
       }),
     sessionIdOfHand: (handId) => store.sessionIdOfHand(handId),
+    // Session の最初の Hand（Observation の context を決める。#188）は、その Session の Hand より前に保存されている。
+    sessionHandIds: (handId) => store.sessionHandIds(handId),
     savedOrder: (handId) => store.savedOrder(handId),
     read: (handId) => store.read(handId),
     sessionParticipants: (sessionId) => store.sessionParticipants(sessionId),

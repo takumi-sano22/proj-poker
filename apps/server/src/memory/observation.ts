@@ -7,7 +7,12 @@
 // - Learning-only Reveal（packages/engine の learning-reveal.ts）はゲーム世界の Observation ではないので参照しない（INV-INFO-002）
 // - Hero の弱点（apps/server/src/learning/ の Score・Hypothesis・Profile）は参照しない（不変条件 2。import の検査は observation-isolation.test.ts）
 // 順序は保存の論理順序（ordinals.ord）と Hand 内の events.seq で決め、壁時計（recorded_at 等）を使わない（D117）。
-import { visibilityOf, type HandEvent } from "@proj-poker/engine";
+// context（cash / tournament）は Hand が属する Session の mode で決める（D106・D129・#188。sessionContextOf）。
+import {
+  sessionSettingsOf,
+  visibilityOf,
+  type HandEvent,
+} from "@proj-poker/engine";
 import type { EventStore } from "../event-store.js";
 import type { CpuProfileSubject } from "../notes/subject.js";
 import type { SessionParticipant } from "../opponents/cpu-pool.js";
@@ -32,14 +37,18 @@ export type ParticipantRef = HeroRef | CpuProfileSubject | GuestRef;
 /** Observer（観察する CPU）。Fixed CPU は永続の cpuProfileId、Guest は Session 限りの id（D106）。 */
 export type ObserverRef = CpuProfileSubject | GuestRef;
 
-/** Observation の context。Raw Observation は共通に使い、Hypothesis が context ごとに分ける（D106）。tournament は Phase 8 で使う枠。 */
+/**
+ * Observation の context。Raw Observation は共通に使い、Hypothesis が context ごとに分ける（D106）。
+ * Hand が属する Session の mode（cash / tournament。D129）で決める（sessionContextOf）。
+ */
 export type ObservationContext = "cash" | "tournament";
 
-/** 抽出が読む Event Store の部分（保存済みの Hand・Session の参加者・論理順序）。 */
+/** 抽出が読む Event Store の部分（保存済みの Hand・Session の参加者・論理順序・Session の最初の Hand）。 */
 export type ObservationStore = Pick<
   EventStore,
   | "finishedHandIds"
   | "sessionIdOfHand"
+  | "sessionHandIds"
   | "sessionParticipants"
   | "savedOrder"
   | "read"
@@ -53,6 +62,8 @@ export interface ObservationSourceHand {
   readonly ord: number;
   /** その Session の CPU の席の参加者（session_participants。v10）。v10 より前の Session・Drill の専用の Session は空。 */
   readonly participants: readonly SessionParticipant[];
+  /** Hand が属する Session の mode から決めた context（sessionContextOf。D106・D129）。 */
+  readonly context: ObservationContext;
   /** その Hand の全 Event（正本。ここで public だけに絞る）。 */
   readonly events: readonly HandEvent[];
 }
@@ -253,8 +264,8 @@ export function extractObservedHands(
           handId: source.handId,
           sessionId: source.sessionId,
           ord: source.ord,
-          // Tournament（Phase 8）はまだ無いので、保存済みの Hand はすべて cash。
-          context: "cash",
+          // Hand が属する Session の mode（D129）。Raw Observation は共通で、Hypothesis が context で分ける（D106）。
+          context: source.context,
           seats: started.seats.map((s) => ({
             playerId: s.playerId,
             participant: refOfSeat.get(s.playerId) ?? null,
@@ -299,8 +310,34 @@ export function observationsOf(hands: readonly ObservedHand[]): Observation[] {
   });
 }
 
-/** 抽出の候補の 1 Hand（Event を読む前）。ObservationSourceHand から events を除いたもの。 */
-export type ObservationCandidate = Omit<ObservationSourceHand, "events">;
+/**
+ * 抽出の候補の 1 Hand（Event を読む前）。ObservationSourceHand から events と context を除いたもの（context は Event を読むときに
+ * sessionContextOf で決める。Cache〔D124〕に行のある Hand は Session の最初の Hand を読まない）。
+ */
+export type ObservationCandidate = Omit<
+  ObservationSourceHand,
+  "events" | "context"
+>;
+
+/**
+ * Hand が属する Session の mode を Observation の context にする（D106・D129）。mode は Session の最初の保存済みの Hand の
+ * SESSION_STARTED の設定の Snapshot から読む（Hand ごとの HAND_STARTED ではなく Session で決めるので、版 9 の Tournament の Hand〔Level を
+ * 持たない〕も tournament になる）。SESSION_STARTED の無い旧版の Session・Tournament の設定の無い Session は cash。Snapshot が壊れていれば
+ * 例外にする（読めない設定を黙って cash として扱わない。sessionSettingsOf）。同じ Session の 2 回目からは memo の値を使う。
+ */
+export function sessionContextOf(
+  store: Pick<ObservationStore, "sessionHandIds" | "read">,
+  candidate: Pick<ObservationCandidate, "handId" | "sessionId">,
+  memo: Map<string, ObservationContext> = new Map(),
+): ObservationContext {
+  const known = memo.get(candidate.sessionId);
+  if (known !== undefined) return known;
+  const first = store.sessionHandIds(candidate.handId)[0] ?? candidate.handId;
+  const settings = sessionSettingsOf(store.read(first).map((s) => s.event));
+  const context = settings?.mode ?? "cash";
+  memo.set(candidate.sessionId, context);
+  return context;
+}
 
 /**
  * Event Store から、Observer が観察しうる保存済みの Hand を選ぶ（Event は読まない。進行中の Hand は ord が無く、Hand の途中の情報は
@@ -347,8 +384,10 @@ export function loadObservationSources(
   store: ObservationStore,
   query: ObservationQuery,
 ): ObservationSourceHand[] {
+  const contexts = new Map<string, ObservationContext>();
   return observationCandidates(store, query).map((c) => ({
     ...c,
+    context: sessionContextOf(store, c, contexts),
     events: store.read(c.handId).map((s) => s.event),
   }));
 }

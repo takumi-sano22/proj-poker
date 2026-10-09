@@ -1,8 +1,13 @@
 // Claude の Opponent Agent（Model Adapter。docs/03 §3・D87）。
+// Tournament の Hand では、KnowledgeState の Public Tournament Context（D109・D130・#188）を別の節で渡す（Cash の Prompt は変えない）。
 // Claude Agent SDK の query() を「1 回の判断」として使い、ローカルでログイン済みの Claude Code の OAuth（サブスク枠）で呼ぶ。API キーは使わない。
 // 渡すのはその CPU の KnowledgeState（その CPU 自身の Memory の要約〔D121〕・Tilt〔D107〕・その CPU から見た Table Tendency〔#141〕を含む）・Legal Action・Persona だけ（D28・docs/05 §1）。出力の検証・Retry・Fallback は Orchestrator（D40・D41）。
 // ログイン切れ・利用枠の上限・子プロセスの失敗は例外（＝障害。D86）にし、形の崩れた出力は不正な出力として Orchestrator の検証に回す。
-import { cardToString, type Card } from "@proj-poker/engine";
+import {
+  cardToString,
+  type Card,
+  type TournamentKnowledge,
+} from "@proj-poker/engine";
 import {
   ClaudeCallError,
   runStructuredQuery,
@@ -40,14 +45,77 @@ export class ClaudeOpponentError extends OpponentOutageError {
   override readonly name = "ClaudeOpponentError";
 }
 
-const SYSTEM_PROMPT = [
-  "あなたはノーリミット・テキサスホールデム（キャッシュゲーム）の卓に座る 1 人のプレイヤーです。",
+/** System Prompt の 2 行目以降（Cash と Tournament で共通）。 */
+const SYSTEM_PROMPT_RULES = [
   "渡された「あなたに見えている情報」と「選べる Action」だけを使い、自分の手番の Action を 1 つ選んでください。",
   "答えは StructuredOutput ツールで、文章を書かずにすぐ返してください。",
   "- action: 選べる Action の type のどれか",
   "- amount: bet / raise のときだけ付ける。この Street での自分の累計額（to 額）の整数で、示された範囲に入れる。それ以外の Action には付けない",
   "- rationale: 判断の理由を日本語 1 文で",
+];
+
+const SYSTEM_PROMPT = [
+  "あなたはノーリミット・テキサスホールデム（キャッシュゲーム）の卓に座る 1 人のプレイヤーです。",
+  ...SYSTEM_PROMPT_RULES,
 ].join("\n");
+
+/**
+ * Tournament の Hand の System Prompt（#188）。1 行目だけを Tournament の卓にする（Cash の SYSTEM_PROMPT は #188 より前と同じ文字列。
+ * どちらを使うかは KnowledgeState の tournament の有無で決める〔構造ゲート〕）。
+ */
+const TOURNAMENT_SYSTEM_PROMPT = [
+  "あなたはノーリミット・テキサスホールデム（トーナメント。Chip を失うと敗退し、敗退の順で賞金が決まる）の卓に座る 1 人のプレイヤーです。",
+  ...SYSTEM_PROMPT_RULES,
+].join("\n");
+
+/** その入力の System Prompt（Tournament の Hand だけ TOURNAMENT_SYSTEM_PROMPT）。 */
+export function systemPromptOf(input: OpponentInput): string {
+  return input.knowledge.tournament === undefined
+    ? SYSTEM_PROMPT
+    : TOURNAMENT_SYSTEM_PROMPT;
+}
+
+/**
+ * Public Tournament Context の節の見出しと読み方（D109・D130・#188）。中身は構造化データ（engine の tournament-knowledge.ts）で、
+ * ここは固定の説明だけ。ICM の数値は決定論のコードが正本で、LLM に計算させない（D109）。Push/Fold の Range は渡さない（D130）。
+ * Tournament の Hand でだけ入れる（Cash の Prompt は変えない）。Persona の節を指す 1 行は、Persona の節があるときだけ足す。
+ */
+const TOURNAMENT_GUIDE = [
+  "## トーナメントの状況（卓の全員が知る公開の情報と、そこから決定論の計算で出した ICM の値）",
+  "remaining は残人数、payoutsByPlace は 1 位からの順位ごとの賞金（pt）です。stage は before_bubble: 入賞圏の手前 / bubble: 次に敗退する 1 人だけが入賞しない / in_the_money: 残っている全員が入賞する / heads_up: 残り 2 人 です。",
+  "seats の stack・stackBb はこの Hand の開始時の Stack とその BB 換算、icmEquity はその Stack での賞金の期待値（pt）、icmEquityPercent は争う賞金の合計に対する割合です。",
+  "bubbleFactors は、その相手と Stack の小さい方を All-in で取り合ったときの「負けで失う賞金の期待値 ÷ 勝ちで得る賞金の期待値」です。1 より大きいほど Chip の損得だけで考えるより負けの痛みが大きく、All-in に関わる判断で必要な勝率が上がります。",
+  "これらの値は計算済みです。自分で計算し直さず、そのまま判断に使ってください。",
+].join("\n");
+
+const TOURNAMENT_PERSONA_LINE =
+  "あなたの性格の「リスク許容度」と「規律」の程度に合わせて考慮してください。";
+
+/** 小数を digits 桁に四捨五入する（Prompt に出すときだけ。比較・判定は丸める前の値で行う。docs/02 §7）。 */
+function roundTo(value: number, digits: number): number {
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+/**
+ * Prompt に出す Tournament Context。BB 換算・ICM Equity（pt と %）は小数第 1 位、Bubble Factor は小数第 2 位に丸める
+ * （docs/02 §7 の表示の丸め。KnowledgeState の値は丸めないまま RuleBot が使う）。
+ */
+function tournamentForPrompt(t: TournamentKnowledge): TournamentKnowledge {
+  return {
+    ...t,
+    seats: t.seats.map((seat) => ({
+      ...seat,
+      stackBb: roundTo(seat.stackBb, 1),
+      icmEquity: roundTo(seat.icmEquity, 1),
+      icmEquityPercent: roundTo(seat.icmEquityPercent, 1),
+    })),
+    bubbleFactors: t.bubbleFactors.map((b) => ({
+      ...b,
+      bubbleFactor: b.bubbleFactor === null ? null : roundTo(b.bubbleFactor, 2),
+    })),
+  };
+}
 
 /**
  * Memory の節の見出しと読み方（D121・#139）。中身は構造化データ（memory-summary.ts）で、ここは固定の説明だけ。
@@ -63,6 +131,10 @@ const MEMORY_GUIDE = [
 
 const MEMORY_PERSONA_LINE =
   "あなたの性格の「相手への適応」と「相手の読みの精度」の程度に合わせて使ってください。";
+
+/** Tournament の Hand の Memory（tournament の Hypothesis。D106・#188）にだけ足す 1 行（Cash の Memory の節は変えない）。 */
+const MEMORY_TOURNAMENT_LINE =
+  "この記憶はトーナメントの Hand だけから数えた傾向です（キャッシュゲームの Hand の傾向は入っていません）。";
 
 /**
  * Table Tendency の節の見出しと読み方（D106・#141）。中身は構造化データ（memory/table-tendency.ts）で、ここは固定の説明だけ。
@@ -100,7 +172,7 @@ export class ClaudeOpponent implements OpponentAgent {
       return await runStructuredQuery({
         query: this.options.query,
         model: this.options.model,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: systemPromptOf(input),
         prompt: buildOpponentPrompt(input, this.options.persona),
         schema: outputSchema(input),
         env: this.options.env,
@@ -149,16 +221,27 @@ export function buildOpponentPrompt(
   // Memory を足す前（#139 より前）と同じ文字列にする（条件付きの指示を文で書かない。Opponent Eval の録画の引数も変えない）。
   // Tilt もその CPU 自身の Internal State なので、この Hand の情報の節に混ぜず、1 以上のときだけ別の節に出す（#140）。
   // Table Tendency（#141）も過去の Hand から作った値なので、この Hand の情報の節に混ぜず、あるときだけ別の節に出す。
-  const { memory, tilt, tableTendency, ...table } = input.knowledge;
+  // Tournament Context（#188）も説明付きの別の節に出す。Cash の Hand には項目が無く、節ごと入れない（Prompt は #188 より前と同じ文字列）。
+  const { memory, tilt, tableTendency, tournament, ...table } = input.knowledge;
   sections.push(
     `## あなたに見えている情報（あなたの ID は ${input.knowledge.viewerId}。Card は 2 文字で、As はスペードの A、Td はダイヤの 10）`,
     JSON.stringify(table, cardReplacer),
   );
-  if (memory !== undefined) {
+  if (tournament !== undefined) {
     sections.push(
-      hasPersona ? `${MEMORY_GUIDE}\n${MEMORY_PERSONA_LINE}` : MEMORY_GUIDE,
-      JSON.stringify(memory),
+      hasPersona
+        ? `${TOURNAMENT_GUIDE}\n${TOURNAMENT_PERSONA_LINE}`
+        : TOURNAMENT_GUIDE,
+      JSON.stringify(tournamentForPrompt(tournament)),
     );
+  }
+  if (memory !== undefined) {
+    const guide = [
+      MEMORY_GUIDE,
+      ...(memory.context === "tournament" ? [MEMORY_TOURNAMENT_LINE] : []),
+      ...(hasPersona ? [MEMORY_PERSONA_LINE] : []),
+    ].join("\n");
+    sections.push(guide, JSON.stringify(memory));
   }
   if (tableTendency !== undefined) {
     sections.push(

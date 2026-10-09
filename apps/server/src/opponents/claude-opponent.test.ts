@@ -2,10 +2,13 @@
 import type { Options, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import {
   PHASE1_CASH_PRESET,
+  TOURNAMENT_PRESETS,
   cardToString,
   getLegalActions,
   projectKnowledgeState,
   startHand,
+  tableConfigForLevel,
+  tournamentKnowledgeOf,
   type HandEvent,
   type HeroView,
   type PlayerAction,
@@ -23,6 +26,7 @@ import {
   buildOpponentPrompt,
   createClaudeOpponentFactory,
   outageKindOf,
+  systemPromptOf,
   type ClaudeQuery,
 } from "./claude-opponent.js";
 import type { OpponentMemorySummary } from "../memory/memory-summary.js";
@@ -322,6 +326,137 @@ describe("ClaudeOpponent", () => {
     const fake = fakeQuery(() => RECORDED.success);
     await agentWith(fake).decide(input, aborted);
     expect(fake.calls[0]?.options.abortController?.signal.aborted).toBe(true);
+  });
+});
+
+/** Tournament の Hand（4 人残り・標準 STT の Level 3）の最初の判断の入力（KnowledgeState に Tournament Context を持つ）。 */
+function tournamentDecisionInput(): {
+  input: OpponentInput;
+  events: readonly HandEvent[];
+} {
+  const STANDARD = TOURNAMENT_PRESETS.stt6_hand_count;
+  const result = startHand({
+    handId: "t-1",
+    seats: [
+      { playerId: "p1", stack: 3_000 },
+      { playerId: "p2", stack: 2_500 },
+      { playerId: "p3", stack: 2_000 },
+      { playerId: "p4", stack: 1_500 },
+    ],
+    buttonPlayerId: "p1",
+    config: tableConfigForLevel(
+      PHASE1_CASH_PRESET,
+      STANDARD.levels[2]!,
+      "big_blind_ante",
+    ),
+    deal: { seed: 3 },
+    tournament: { level: 3, handNumber: 21, playTimeMs: 0 },
+  });
+  if (!result.ok) throw new Error(result.error.message);
+  const legal = getLegalActions(result.value.state);
+  if (legal === null) throw new Error("Actor がいない");
+  return {
+    input: {
+      knowledge: projectKnowledgeState(result.value.events, legal.playerId, {
+        tournament: { config: STANDARD, entrants: 6 },
+      }),
+      legal,
+    },
+    events: result.value.events,
+  };
+}
+
+describe("Tournament の Prompt（#188）", () => {
+  it("Tournament Context は Hand の情報の節に混ぜず、説明つきの節に丸めた構造化データで入れる。節を除けば Context の無い Prompt と同じ", () => {
+    const { input, events } = tournamentDecisionInput();
+    const { tournament, ...cashLike } = input.knowledge;
+    expect(tournament).toBeDefined();
+    const prompt = buildOpponentPrompt(input);
+    const sections = prompt.split("\n\n");
+    const at = sections.findIndex((s) => s.startsWith("## トーナメントの状況"));
+    // この Hand の情報の節の直後に入れる。
+    expect(sections[at - 2]).toMatch(/^## あなたに見えている情報/);
+    expect(sections[at - 1]).not.toContain("bubbleFactors");
+    const shown = JSON.parse(sections[at + 1] ?? "") as typeof tournament;
+    const raw = tournamentKnowledgeOf(events, input.knowledge.viewerId, {
+      config: TOURNAMENT_PRESETS.stt6_hand_count,
+      entrants: 6,
+    });
+    // 丸めは表示だけ（BB 換算・Equity の pt と % は小数第 1 位、Bubble Factor は小数第 2 位）。ほかの項目は同じ。
+    expect(shown).toEqual({
+      ...raw,
+      seats: raw.seats.map((s) => ({
+        ...s,
+        stackBb: Math.round(s.stackBb * 10) / 10,
+        icmEquity: Math.round(s.icmEquity * 10) / 10,
+        icmEquityPercent: Math.round(s.icmEquityPercent * 10) / 10,
+      })),
+      bubbleFactors: raw.bubbleFactors.map((b) => ({
+        ...b,
+        bubbleFactor:
+          b.bubbleFactor === null
+            ? null
+            : Math.round(b.bubbleFactor * 100) / 100,
+      })),
+    });
+    expect(shown?.stage).toBe("bubble");
+    // 節を除けば、Tournament Context の無い KnowledgeState の Prompt と同じ文字列。
+    expect(
+      prompt.replace(sections[at] + "\n\n" + sections[at + 1] + "\n\n", ""),
+    ).toBe(buildOpponentPrompt({ ...input, knowledge: cashLike }));
+    // ICM を計算させない・Push/Fold の Range を渡さない。
+    expect(sections[at]).toContain("自分で計算し直さず");
+    expect(prompt).not.toMatch(/Push\/Fold|Nash/);
+    // 同じ入力からは同じ Prompt（決定論）。
+    expect(buildOpponentPrompt(input)).toBe(prompt);
+  });
+
+  it("System Prompt は Tournament の Hand だけトーナメントの卓にし、Cash は #188 より前と同じ", async () => {
+    const cash = firstDecisionInput().input;
+    const tournament = tournamentDecisionInput().input;
+    expect(systemPromptOf(cash)).toMatch(/^.*（キャッシュゲーム）の卓/);
+    expect(systemPromptOf(tournament)).toMatch(/^.*（トーナメント。/);
+    // 1 行目以外は同じ。
+    expect(systemPromptOf(tournament).split("\n").slice(1)).toEqual(
+      systemPromptOf(cash).split("\n").slice(1),
+    );
+    const fake = fakeQuery(() => RECORDED.success);
+    await agentWith(fake).decide(tournament);
+    expect(fake.calls[0]?.options.systemPrompt).toBe(
+      systemPromptOf(tournament),
+    );
+    expect(buildOpponentPrompt(cash)).not.toContain("トーナメント");
+  });
+
+  it("Persona の節を指す行は Persona の節があるときだけ。Tournament の Memory には Tournament の Hand だけの傾向だと書く", () => {
+    const { input } = tournamentDecisionInput();
+    expect(buildOpponentPrompt(input)).not.toContain("リスク許容度");
+    expect(buildOpponentPrompt(input, "タイトで慎重")).toContain(
+      "「リスク許容度」と「規律」の程度に合わせて",
+    );
+    const memory: OpponentMemorySummary = {
+      policyVersion: "phase7_memory_v1",
+      injectionVersion: "phase7_memory_injection_v1",
+      context: "tournament",
+      subjects: [],
+    };
+    const withMemory = buildOpponentPrompt({
+      ...input,
+      knowledge: { ...input.knowledge, memory },
+    });
+    const sections = withMemory.split("\n\n");
+    const at = sections.findIndex((s) => s.startsWith("## あなたの記憶"));
+    expect(sections[at]).toContain("トーナメントの Hand だけから数えた傾向");
+    expect(JSON.parse(sections[at + 1] ?? "")).toEqual(memory);
+    // Cash の Memory の節には足さない。
+    const cashMemory = buildOpponentPrompt({
+      ...firstDecisionInput().input,
+      knowledge: {
+        ...firstDecisionInput().input.knowledge,
+        memory: { ...memory, context: "cash" },
+      },
+    });
+    expect(cashMemory).not.toContain("トーナメント");
   });
 });
 

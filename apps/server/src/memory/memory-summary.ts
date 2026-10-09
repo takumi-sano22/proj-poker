@@ -3,7 +3,7 @@
 // （Hero・他 CPU）ごとに、上限付きの構造化データへ決定論で畳む（自然言語を正本にしない）。
 // - 入力は 1 人の Observer の Hypothesis だけ。他 CPU の Hypothesis・Hidden の Persona・Hero の弱点（learning/）・
 //   Learning-only Reveal・Tilt は入れない（不変条件 2。import の検査は memory-injection-isolation.test.ts）
-// - context は cash だけを使う（tournament の Hypothesis は Phase 8）
+// - context は今の Hand の Session の mode（cash / tournament）の Hypothesis だけを使う（D106。Raw Observation は共通・Hypothesis は分離。#188）
 // - 計算は Hand の開始時に、保存済みの（終わった）Hand だけから行う。Hand の途中の Event はその Hand の KnowledgeState が持つ
 // - 順序は論理順序（ordinals.ord）と events.seq で決め、壁時計を使わない（D117）
 import {
@@ -24,6 +24,7 @@ import {
 import {
   extractObservedHandsFromStore,
   participantKey,
+  type ObservationContext,
   type ObservationStore,
   type ObserverRef,
   type ParticipantRef,
@@ -71,7 +72,7 @@ export interface MemorySubjectSummary {
   readonly playerId: string;
   /** 席・player id に依存しない Subject の参照。 */
   readonly subject: ParticipantRef;
-  /** Observer がこの Subject を（cash で）見た Hand の数。0 なら初めて同じ卓に座った相手。 */
+  /** Observer がこの Subject を（要約の context で）見た Hand の数。0 なら初めて同じ卓に座った相手。 */
   readonly handsObserved: number;
   /** 傾向の項目（重み付きの機会の多い順。機会の無い項目は入れない）。 */
   readonly items: readonly MemoryItemSummary[];
@@ -83,7 +84,8 @@ export interface OpponentMemorySummary {
   readonly policyVersion: string;
   /** 注入の上限の Version。 */
   readonly injectionVersion: string;
-  readonly context: "cash";
+  /** 使った Hypothesis の context（今の Hand の Session の mode。Cash の Hand は cash で、#188 より前と同じ値）。 */
+  readonly context: ObservationContext;
   /** 今の卓の席順。Observer 自身と、誰か引けない席は入れない。 */
   readonly subjects: readonly MemorySubjectSummary[];
 }
@@ -100,6 +102,8 @@ export interface SummarizeOptions {
   readonly policyVersion: string;
   /** 今の Hand の席（席順）。 */
   readonly seats: readonly MemoryTableSeat[];
+  /** 使う Hypothesis の context（今の Hand の Session の mode）。省略は cash。 */
+  readonly context?: ObservationContext;
   readonly injection?: MemoryInjectionPolicy;
 }
 
@@ -129,7 +133,7 @@ function summarizeItem(
 /**
  * 1 人の Observer の Hypothesis を、今の卓の他の参加者ごとの要約にする（純粋関数。同じ入力なら同じ結果）。
  * - 別の Observer の Hypothesis が混ざっていたら拒否する（他 CPU の Private Memory を混ぜない）
- * - cash の Hypothesis だけを使う
+ * - options.context（省略は cash）の Hypothesis だけを使う（別の context の Hypothesis は混ぜない。D106）
  * - 項目は機会のあるものを重み付きの機会の多い順（同じなら Policy の項目の順）に上限まで
  */
 export function summarizeOpponentMemory(
@@ -137,6 +141,7 @@ export function summarizeOpponentMemory(
   options: SummarizeOptions,
 ): OpponentMemorySummary {
   const injection = options.injection ?? PHASE7_MEMORY_INJECTION_V1;
+  const context = options.context ?? "cash";
   const self = participantKey(options.observer);
   const bySubject = new Map<string, OpponentHypothesis>();
   for (const h of hypotheses) {
@@ -150,7 +155,7 @@ export function summarizeOpponentMemory(
         `Hypothesis の Policy の Version ${h.policyVersion} が ${options.policyVersion} と違う`,
       );
     }
-    if (h.context !== "cash") continue;
+    if (h.context !== context) continue;
     bySubject.set(participantKey(h.subject), h);
   }
 
@@ -181,7 +186,7 @@ export function summarizeOpponentMemory(
   return {
     policyVersion: options.policyVersion,
     injectionVersion: injection.version,
-    context: "cash",
+    context,
     subjects,
   };
 }
@@ -209,6 +214,8 @@ export interface MemoryFromStoreInput {
   readonly seats: readonly MemoryTableSeat[];
   /** Memory を作る CPU の席（参加者の引ける CPU だけ）。 */
   readonly observers: readonly MemoryObserverSeat[];
+  /** 今の Hand の Session の mode（要約に使う Hypothesis の context）。省略は cash。 */
+  readonly context?: ObservationContext;
   readonly policy?: MemoryPolicy;
   /**
    * Observation の Cache（D124・#165。observation-cache.ts）。省略時は Cache を使わず、Event Log から都度抽出する（メモリ内の Event Store）。
@@ -260,6 +267,7 @@ function cachedObservationStore(store: ObservationStore): ObservationStore {
       }
       return events;
     },
+    sessionHandIds: (handId) => store.sessionHandIds(handId),
     sessionParticipants: (sessionId) => {
       let rows = participants.get(sessionId);
       if (rows === undefined) {
@@ -314,6 +322,7 @@ export function buildOpponentMemoriesFromStore(
         observer: seat.observer,
         policyVersion: policy.version,
         seats: input.seats,
+        context: input.context ?? "cash",
       }),
     );
   }

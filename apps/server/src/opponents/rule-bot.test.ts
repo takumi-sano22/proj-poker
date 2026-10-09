@@ -1,10 +1,13 @@
 import {
   PHASE1_CASH_PRESET,
+  TOURNAMENT_PRESETS,
   applyAction,
   getLegalActions,
   projectKnowledgeState,
   startHand,
+  tableConfigForLevel,
   type PlayerAction,
+  type SeatInit,
 } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
 import {
@@ -26,8 +29,10 @@ import {
   RULEBOT_COMPOSITION_V1,
   RULEBOT_MEMORY_V1,
   RULEBOT_TABLE_TENDENCY_V1,
+  RULEBOT_TOURNAMENT_V1,
   RuleBot,
   tableTendencyAdjustedTuning,
+  tournamentAdjustedTuning,
   tiltedPersona,
   tuningFromPersona,
 } from "./rule-bot.js";
@@ -785,5 +790,138 @@ describe("RuleBot の合成（Persona・Tilt・Table Tendency・Memory。#142）
         });
       expect(run()).toEqual(run());
     }
+  });
+});
+
+describe("RuleBot と Tournament Context（#188・D109・D130）", () => {
+  const STANDARD = TOURNAMENT_PRESETS.stt6_hand_count;
+  /** 4 人残り（6 人参加・3 位まで入賞）の Bubble の Stack。 */
+  const BUBBLE: SeatInit[] = [
+    { playerId: "p1", stack: 3_000 },
+    { playerId: "p2", stack: 2_500 },
+    { playerId: "p3", stack: 2_000 },
+    { playerId: "p4", stack: 1_500 },
+  ];
+
+  /**
+   * Tournament の Hand（標準 STT の Level 3）で、最初の Actor が最小額で Raise した後の次の Actor の入力。
+   * tournament が false なら同じ Hand を Cash の KnowledgeState（Tournament Context なし）で作る。
+   */
+  function facingRaise(
+    seats: SeatInit[] = BUBBLE,
+    tournament = true,
+  ): OpponentInput & { aggressor: string } {
+    const result = startHand({
+      handId: "t-r",
+      seats,
+      buttonPlayerId: "p1",
+      config: tableConfigForLevel(
+        PHASE1_CASH_PRESET,
+        STANDARD.levels[2]!,
+        "big_blind_ante",
+      ),
+      deal: { seed: 5 },
+      tournament: { level: 3, handNumber: 21, playTimeMs: 0 },
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    const first = getLegalActions(result.value.state);
+    const raise = first?.actions.find((a) => a.type === "raise");
+    if (first === null || raise?.type !== "raise")
+      throw new Error("Raise できない");
+    const raised = applyAction(result.value.state, first.playerId, {
+      type: "raise",
+      amount: raise.min,
+    });
+    if (!raised.ok) throw new Error(raised.error.message);
+    const events = [...result.value.events, ...raised.value.events];
+    const legal = getLegalActions(raised.value.state);
+    if (legal === null) throw new Error("Actor がいない");
+    return {
+      knowledge: projectKnowledgeState(
+        events,
+        legal.playerId,
+        tournament ? { tournament: { config: STANDARD, entrants: 6 } } : {},
+      ),
+      legal,
+      aggressor: first.playerId,
+    };
+  }
+
+  const persona = PERSONA_PRESETS.tag_regular;
+  const skill = persona.traits.skill;
+  const base = tuningFromPersona(persona);
+
+  it("Raise した相手との Bubble Factor が 1 より大きいと、medium の Call だけを Skill × maxShift × min(1, BF − 1) 下げる", () => {
+    const input = facingRaise();
+    const factor = input.knowledge.tournament?.bubbleFactors.find(
+      (b) => b.opponentId === input.aggressor,
+    )?.bubbleFactor;
+    expect(factor).toBeGreaterThan(1);
+    const tuned = tournamentAdjustedTuning(base, input.knowledge, skill);
+    expect(tuned.mediumLooseCall).toBeCloseTo(
+      base.mediumLooseCall -
+        skill *
+          RULEBOT_TOURNAMENT_V1.maxShift *
+          Math.min(
+            1,
+            ((factor as number) - 1) / RULEBOT_TOURNAMENT_V1.bubbleFactorScale,
+          ),
+      12,
+    );
+    expect(tuned.mediumLooseCall).toBeLessThan(base.mediumLooseCall);
+    // Call 以外のしきい値は変えない。
+    expect({ ...tuned, mediumLooseCall: base.mediumLooseCall }).toEqual(base);
+  });
+
+  it("Tournament Context が無い（Cash）・Skill が 0・額を引き上げた相手がいない・Bubble Factor が 1 以下（Heads-Up）なら元のまま", () => {
+    expect(
+      tournamentAdjustedTuning(
+        base,
+        facingRaise(BUBBLE, false).knowledge,
+        skill,
+      ),
+    ).toBe(base);
+    expect(tournamentAdjustedTuning(base, facingRaise().knowledge, 0)).toBe(
+      base,
+    );
+    const input = facingRaise();
+    expect(
+      tournamentAdjustedTuning(
+        base,
+        { ...input.knowledge, actionHistory: [] },
+        skill,
+      ),
+    ).toBe(base);
+    const headsUp = facingRaise([
+      { playerId: "p1", stack: 6_000 },
+      { playerId: "p2", stack: 3_000 },
+    ]);
+    expect(headsUp.knowledge.tournament?.stage).toBe("heads_up");
+    expect(tournamentAdjustedTuning(base, headsUp.knowledge, skill)).toBe(base);
+  });
+
+  it("composeTuning は Tournament の層を Memory の後に当て、Persona なしは読まない（D71）。Cash の入力では #188 より前と同じ", () => {
+    const tournament = facingRaise();
+    const cash = facingRaise(BUBBLE, false);
+    expect(composeTuning(persona, cash.knowledge)).toEqual(base);
+    expect(composeTuning(persona, tournament.knowledge)).toEqual(
+      tournamentAdjustedTuning(base, tournament.knowledge, skill),
+    );
+    expect(composeTuning(undefined, tournament.knowledge)).toEqual(
+      composeTuning(undefined, cash.knowledge),
+    );
+  });
+
+  it("Tournament Context があっても選ぶ Action は Legal Action の中で、同じ seed・同じ入力なら同じ判断列", () => {
+    const input = facingRaise();
+    const decide = (seed: number) => {
+      const bot = new RuleBot(seed, persona);
+      return Array.from({ length: 30 }, () => bot.choose(input));
+    };
+    const legalTypes = input.legal.actions.map((a) => a.type);
+    for (const action of decide(7)) {
+      expect(legalTypes).toContain(action.type);
+    }
+    expect(decide(7)).toEqual(decide(7));
   });
 });
