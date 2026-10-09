@@ -3,7 +3,7 @@
 // - Strength / Leak・Important Hands・Recommended Drill の候補は段階評価と判断時点の情報だけで選び、収支（結果）を見ない
 // - Stats は Hero の行だけ、Pass B・Persona・他者の札を応答に入れない
 // - Drill の Hand（excludeHandIds）は Hands・M・Stats のどれにも入れない（D116）
-import type { HandEvent } from "@proj-poker/engine";
+import { TOURNAMENT_PRESETS, type HandEvent } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
 import { InMemoryReviewStore } from "../review/review-store.js";
 import type { Assessment, ReviewDraft } from "../review/types.js";
@@ -151,6 +151,38 @@ describe("Session Review（phase6_session_review_v1）", () => {
     expect(result.importantHands.length).toBeLessThanOrEqual(
       PHASE6_SESSION_REVIEW_V1.maxImportantHands,
     );
+  });
+
+  it("Tournament の Session は Leak があっても Drill の候補を出さない（Tournament の Hand は Drill の題材にしない。#189）", () => {
+    const reviews = new InMemoryReviewStore();
+    reviews.append(review(sb, 2, "major_leak"));
+    // Session の最初の Hand の開始の直後に、Tournament の設定の Snapshot を持つ SESSION_STARTED を置く（本番と同じ位置）。
+    const [started, ...rest] = btn.events;
+    const tournamentFirst: PlayedHand = {
+      ...btn,
+      events: [
+        started as HandEvent,
+        {
+          type: "SESSION_STARTED",
+          sessionId: "t1",
+          tournament: TOURNAMENT_PRESETS.stt6_hand_count,
+          seq: 0,
+          handId: btn.handId,
+          visibility: { type: "system" },
+        } as unknown as HandEvent,
+        ...rest,
+      ],
+    };
+    const result = computeSessionReview(
+      [tournamentFirst, sb, multi],
+      reviews,
+      HERO,
+    );
+    expect(result.leaks).toHaveLength(1);
+    expect(result.recommendedDrill).toEqual({
+      available: false,
+      candidate: null,
+    });
   });
 
   it("Important Hands は収支を見ずに選ぶ（Review の無い Hand も Important Spot があれば入る）", () => {

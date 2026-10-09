@@ -33,7 +33,18 @@ import {
   type DrillPolicy,
   type DrillVariant,
 } from "./drill-plan.js";
+import { sessionSettingsOfHand } from "../tournament-session-info.js";
 import type { DrillRecord, DrillStore } from "./drill-store.js";
+
+/**
+ * Tournament の Hand を Drill の題材にするかの暫定 Policy（OI-007。人間判断を経ていない。#189）。
+ * Drill の Spot は Ante と Level（Blind の段階）・Payout を写さず、Cash の卓の Rule で再現するので、Tournament の判断（ICM・Ante の
+ * Dead Money を含む）とは別の Spot になる。KISS で可逆な方として、Tournament の Hand は Drill の対象から外す（写す実装を足すときは版を上げる）。
+ */
+export const DRILL_TOURNAMENT_POLICY = {
+  version: "phase8_drill_tournament_v1",
+  tournamentHands: "excluded",
+} as const;
 
 export type DrillServiceError =
   | OrchestratorError
@@ -175,6 +186,13 @@ export class DrillService {
       return fail(
         "decision_not_found",
         `Hero の判断が無い: ${handId} の ${decisionIndex}`,
+      );
+    }
+    // Tournament の Hand は Drill の題材にしない（DRILL_TOURNAMENT_POLICY。Ante / Level を写さない Spot を作らない）。
+    if (sessionSettingsOfHand(events, handId).mode === "tournament") {
+      return fail(
+        "drill_unavailable",
+        "トーナメントの Hand からは Drill を作らない（Ante・Level・賞金の構造を Drill の Spot に写さないため）",
       );
     }
     const review = latestReview(
