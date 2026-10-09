@@ -241,6 +241,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - **Table Tendency（D122・#153）**（`review-table-tendency.test.ts`・`generate.test.ts`・`identifiers.test.ts`）: Pass AのEvidenceの卓の傾向が、判断のHandと同じSessionの、そのHandより前に保存したHandのpublicのEventだけから作られること（そのHand自身・後のHand・別のSessionのHandを入れない。見えないEvent〔他者の札・Deck。Learning-only Revealの元〕を差し替えても、前のHandのPass Bを先に作っても変わらない）、項目ごとのEvidence IDと決定論の割合、十分な項目が無い・Handが0・無いときEvidence・Prompt・Schemaが#153より前と同じ文字列であること、あるときだけPromptに読み方と項目の説明を添え`exploitBasis`に`observation`を選べること、Grounding（`observation`ならサンプルが十分な項目のidを挙げる）、Pass A へのFollow-upの項目の説明、Pass BのEvidenceに入らないこと、項目名・値の置換。
 - **Table Tendencyの表示（D122・#169）**（`apps/web/src/components/review.test.tsx`・`review-table-tendency.test.ts`・`e2e/tests/review-tendency.spec.ts`）: 根拠の欄が保存済みのEvidenceの値（割合・分子 / 分母・機会があったHand・十分か保留か）をそのまま出すこと、`unavailable`は「卓の傾向はありません」、`opponentObservation`の無い古い記録は欄を出さずエラーにしないこと、Evidenceに紛れたPersona・Memory・Tilt・Revealの値が画面に出ないこと（項目を読む実装の検査）、APIが返す保存済みのReview（status・version）の応答に、作った時のTable Tendencyがそのまま入り、Memory・Hypothesis・Tilt・Personaを指す語と判断時点に見えない札が無いこと、E2E（Heroが毎Hand Foldして11 Hand以上を重ね、Handは`handId`で特定）で画面の値がAPIのEvidenceと一致し、375×667・320×568・1280×720で横スクロールと項目の重なりが無いこと。
 - **出力の検証と生成**（`generate.test.ts`）: Schema（形・enum・文字数）とGrounding（実在しないEvidence ID・Solverの結果が無いのに`solver`・Observationが無いのに`observation`）の不正、1回のRetry、2回続けて不正ならInsufficient Evidence（失敗の記録）、Evidence Sufficiency GateでReview AIを呼ばないこと、`depth`ごとのModel Role、Claudeの呼び出しの失敗を例外のまま伝えること。
+- **文の中の数値のGrounding（#168・D131）**（`numeric-grounding.test.ts`・`generate.test.ts`・`reveal.test.ts`）: 数値表が同じEvidenceから同じ表になり（`N1`から採番）、書式がUIと揃うこと（整数の%・Chipの実額とBB換算・符号付きの簡易EV・TournamentのICMのptと小数第1位の%・賞金のptと割合）、PromptとSystem Promptの指示、照合の誤検知の回帰（参照・丸め・小数・「約」「前後」・全角％・3-Bet・6-max・50/30/20・BB併記・空白なしのBB・席の表示名の数字・Evidenceの文の値）、不正の検出（表に無い%・丸め違い・自分で計算した差・表に無いBB / pt・未知の参照・`{}`の無い参照・単位の重ね書き・額の参照の後ろのBB）、Follow-upでHeroの質問の値を一致として扱うこと、不正なら既存のRetryの枠で1回だけ再要求し2回続けて不正ならInsufficient Evidence（3回目は呼ばない）、通った文は参照を置き換えて保存すること、Pass BへのFollow-upには数値表を出さず照合もしないこと。
 - **保存とAPI**（`review-store.test.ts`・`review-service.test.ts`・`routes/reviews.test.ts`）: Versionの追記と上書きの拒否（メモリ内とSQLiteの両方）、非同期の生成（202・pending）、二重の要求で1回だけ作ること、上限の超過（timeout）・アプリの終了で子プロセスを止めること、生成を1つずつ順に進めること、失敗の種類だけを返すこと、404 / 409 / 400。
 
 ### Review Eval の最小形（Issue #82）
@@ -248,10 +249,12 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - **置き場所**: `apps/server/src/testing/review-eval/`（buildの対象外。AI Opponent Evalと同じ形）。`hands.ts`（積んだDeckとActionの列で最後まで進めた固定Hand）・`harness.ts`（判断ごとにReviewを作る）・`metrics.ts`（集計・合格ライン）・`recording.ts`（録画と再生）・`run.ts`（手動実行）。
 - **代表の判断**: BTNのHeroがUTGのOpenにCall（Preflop）・同じHandのRiverの大きいBetへのCall（Important Spot）・SBのHeroがHUのTurnで最初にBet（SolverのRoot）・3人のFlopでBetにCall（Multiway）の4つ。
 - **本番と同じ経路**: Evidenceは`buildReviewEvidence`、生成は`generateReview`（`ReviewService`と同じ関数）で、差し替えるのはSDKの`query()`だけです。Solverは録画の再生で結果が揃うよう未導入に固定します（Supported のSolver Evidenceを渡したReviewは`--solver`の手動実行で確かめる。録画には使わない）。
-- **手動の Eval**: `pnpm --filter @proj-poker/server eval:review [--repeats 1] [--depth standard|deep] [--solver] [--record]`。Claude CodeのOAuth（サブスク枠。D87）で呼び、指標と合格ラインを表示し、`--record`で録画（`recordings/review-eval.json`）に書きます（障害が1件でもあれば書かない）。
+- **手動の Eval**: `pnpm --filter @proj-poker/server eval:review [--repeats 1] [--depth standard|deep] [--solver] [--record]`。Claude CodeのOAuth（サブスク枠。D87）で呼び、指標と合格ラインを表示し、`--record`で録画（`recordings/review-eval.json`）に書きます（障害が1件でもあれば書かない）。API課金・別の経路（Bedrock / Vertex / Foundry・別の接続先）へ切り替わる変数が親（シェル）か子プロセスのenvにあれば、呼ぶ前に止めます（`assertOAuthRoute`）。1回の実行の呼び出しは番人（`createCallBudget`）で24回までです（#168・D131）。
 - **CI**（`harness.test.ts`）: Claudeを呼ばず、録画した出力を本番と同じ経路で再生して集計し直し、録画時の集計と一致すること・Hindsight Leakと障害が0件であることを確かめます。Evidence・Prompt・Schema・KBが変わると引数の指紋が合わず、再生が失敗します（手動のEvalで録画を取り直す）。
-- **Table Tendency（D122・#153）**: 代表の判断は前のHandを持たない固定Handなので、Opponent Observationは`unavailable`のままで、録画の指紋は#153より前と同じです（録画は取り直していない）。卓の傾向が入るPromptとGroundingは、Fakeと決定論のテストで確かめます（上の「Table Tendency」）。卓の傾向が入ったReviewの実モデルの品質（説明が数値を作らない・個々の相手の傾向として断定しない等）は、まだ録画で測っていません。
+- **Table Tendency（D122・#153）**: 代表の判断は前のHandを持たない固定Handなので、Opponent Observationは`unavailable`のままで、#153では録画の指紋が変わらず、取り直していません（#168で数値表を足したときに取り直した。下記）。卓の傾向が入るPromptとGroundingは、Fakeと決定論のテストで確かめます（上の「Table Tendency」）。卓の傾向が入ったReviewの実モデルの品質（説明が数値を作らない・個々の相手の傾向として断定しない等）は、まだ録画で測っていません。
 - **Tournament（#189）**: `hands.ts`にTournamentの固定Hand（標準6-max STTの4人残り＝Bubble・Level 5。BTNのHeroの10BBのShove〔`BUBBLE_SHOVE`〕と、BBのHeroのBTNのShoveへのCall〔`BUBBLE_CALL`〕）を足し、`harness.ts`の`TOURNAMENT_REVIEW_EVAL_CASES`にしました。本番と同じく`reviewSpotReasons`とSessionの情報を`buildReviewEvidence`へ渡します。実モデル（Claude）を呼ぶ録画はまだ取っていない（OAuthの利用枠を使う判断は人間判断）ので、録画を再生するCIの母集団（`REVIEW_EVAL_CASES`）には入れず、固定の応答（Fake）で本番と同じ経路（Evidence・Prompt・Grounding・Retry・漏れの検査）を通します（`harness.test.ts`）。CashのEvidence・Prompt・Schemaは変えていないので、既存の録画の指紋はそのままです。録画を取るときに`REVIEW_EVAL_CASES`へ入れます。
+
+- **文の中の数値のGrounding（#168・D131）**: Promptに数値表を足したので引数の指紋が変わり、CashのReview Eval（上の4判断 × repeat 3 = 12 Review）を取り直しました（2026-10-09・`claude-sonnet-5-5`・Claude Agent SDK 0.3.289・OAuth。Claudeの呼び出し12回〔上限24〕）。Structured Output Valid率1・Retry率 / Fallback率0・数値Groundingの不正0・Math / KB Grounding率1・Hindsight Leak・障害・識別子の残存0で、合格ラインにすべて届きました。12件の出力の文には参照（`{N3}`）が計155個あり、参照を使わない単位付きの数値は2個（どちらも表の値と一致）でした。Tournamentのケースはまだ録画していません（#202）。
 
 指標の定義（`metrics.ts`）:
 
@@ -264,6 +267,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 | Math Grounding率 | Review AIが書いた判断のうち、Math EvidenceのIDを根拠に挙げた割合 | 0.9以上 |
 | KB Grounding率 | Review AIが書いた判断のうち、KBの項目（実在するID）を根拠に挙げた割合 | 0.5以上 |
 | 識別子の出現率 / 残存率（#96・D101） | Review AIが書いた判断のうち、出力の文に内部の識別子（playerId・Evidenceの項目名・snake_case・Evidenceのid）があった割合（置換の前＝Promptの効き）/ 保存するReviewの文にまだ識別子が残っていた割合（置換の後。置換の対応表に無い未知の識別子） | 残存率 0（1件でも不合格。残った識別子は`residualIdentifiers`に出るので、`review/identifiers.ts`の対応表に足す） |
+| 数値Groundingの不正（#168・D131） | 呼び出しのうち、文の中の数値が数値表と一致しない・数値表に無い参照でGroundingの不正になった数（`numericGroundingInvalids`） | 表示のみ（Structured Output Valid率・Fallback率に含まれる） |
 | Exact GTOの言及 | 説明に「Exact GTO」「厳密なGTO」を含む判断の数（否定の文脈も数える） | 表示のみ（人が読んで確かめる） |
 | Latency | 呼び出しごとの所要時間のmin / median / p90 / max | 表示のみ（上限は`REVIEW_TIMEOUT_MS`。OI-001） |
 
