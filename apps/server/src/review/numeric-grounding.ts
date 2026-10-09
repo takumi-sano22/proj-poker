@@ -550,7 +550,11 @@ export function checkNumericGrounding(
     // 参照を置き換えた後の文で、単位付きの数値を照合する（参照の後ろに "BB" を書いた等も、ここで値として照合される）。
     let resolved = resolveNumericText(text, table);
     for (const name of table.seatNames) {
-      resolved = resolved.replace(new RegExp(escapeRegExp(name), "g"), "席");
+      // 後ろに数字が続くもの（"CPU 1" に対する "CPU 12"）は別の名前なので外さない。
+      resolved = resolved.replace(
+        new RegExp(`${escapeRegExp(name)}(?![0-9０-９])`, "g"),
+        "席",
+      );
     }
     for (const n of unitNumbersIn(resolved)) {
       if (!matchesAny(n, candidatesOf(table, n.unit, extra))) {
