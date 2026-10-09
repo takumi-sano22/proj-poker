@@ -235,7 +235,7 @@ Phase 7 → Phase 8:
 - Cash / Tournament contextのStrategy Hypothesisが分離される
 - Phase 7のCritical E2E / Evalが通る
 
-Phase 7 → Phase 8の各項目と、それを確かめるテスト（Critical E2Eは`e2e/tests/opponent-memory.spec.ts`）の対応は`docs/09` §8・§11にあります。
+Phase 7 → Phase 8の各項目と、それを確かめるテスト（Critical E2Eは`e2e/tests/opponent-memory.spec.ts`）の対応は`docs/09` §8・§11にあります。Phase 8のDefinition of Done（#107）の各項目とテスト（Critical E2Eは`e2e/tests/tournament.spec.ts`）の対応は`docs/09` §8・§12にあります。
 
 各PhaseのDefinition of DoneはParent Issue（#105・#106・#107）が一次情報です。
 

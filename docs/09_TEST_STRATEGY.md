@@ -351,6 +351,25 @@ Phase 7（Rich Opponent Simulation）の通しは、Fixed CPUとGuestの卓で�
 - Heroは毎HandのFoldで、Stackをほぼ減らさずSessionを続ける（Call / Checkだけだと数HandでBustしうる）。Heroが判断しないHand（BBで全員がFoldした等）は、判断のあるHandまで進めてからReviewする。
 - `pnpm e2e --repeat-each=10`で10回続けて通ることを、作業ログ（`docs/taskLog/issue-169-review-tendency-ui.md`）に残しています。
 
+### Phase 8（Tournament）のCritical E2E（Issue #191）
+
+Phase 8の通しは、標準の6-max STT（`stt6_hand_count`。D127の値のまま）を1本（`e2e/tests/tournament.spec.ts`）で最後まで遊びます。
+
+1. 最初の画面で「Tournament（10 Hand ごと）」を選んで始める: 6人の卓・見出しとTournamentの欄にLevel 1・10 / 20・BB Ante 20・次のLevel（11 Hand目から）・残り6 / 6人。進行ログのAnteの行はBBの席の1つだけ（D128）。全員がStarting Stack 1,500から始まる
+2. Blind / Ante: 10 HandでLevel 2（15 / 30・BB Ante 30）に上がる（12 Hand目まで進める）
+3. Resume: 12 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直して同じPresetで「Handを始める」と、同じTournamentの13 Hand目（Level 2・残人数と順位が同じ）として始まり、Stackを持ち越す（Chipの総量9,000は変わらない）
+4. Elimination: CPUのBustで残人数が減り、脱落した順に6位から順位が付く（欄の見出しに脱落の人数、6位のPayoutは0pt）
+5. Heads-Up: 残り2人になると、次のHandは2人の席で始まる
+6. 終了とPayout / Result: Heads-UpでHeroがAll-inして決着させ、Tournamentが終わる。Heroの順位は1位か2位で、順位の決まったPlayerのPayoutはその順位の賞金（50 / 30 / 20%の300 / 180 / 120pt、入賞の外は0pt）と完全に一致する。Heroが優勝なら全員の順位が決まりPayoutの合計は600pt、Heads-UpでBustしたら残ったCPU 1人の順位とPayoutは未決（D129）で合計は300pt。Heroの欄の案内（順位とPayout）とTournamentの欄のResult（未決の注記）
+7. ICMのReview: 最後のHandのHeads-UpのAll-inの判断（Important Spotの理由にShort Stack）のReview（Pass A）で、Mathの見出しが「Chip で計算」、Tournamentの欄（ICM / Prize EquityとChip EV）が別の項目として出る。ICM Equityの表（2人の合計はHeads-Upで争う480pt）と、Chip EVの必要EquityとICMの必要Equityの別の列。固定応答はICMの必要EquityのidをEvidenceとして挙げる
+8. Replay: 最後のHandのReplayでImportant Spotへジャンプする
+9. Restart: 卓に戻り、Heroの欄の選択でTournamentを選んで「新しい Session を始める」と、新しいTournament（1 Hand目・Level 1・6人。前のTournamentのStackを持ち越さず全員1,500）が始まる
+
+- serverの設定は1本目と同じ（`e2e/support/server.ts`。`POKER_SEED`・RuleBot・固定応答で、Claudeを呼ばない。D98）。本番のPresetの値は変えず、テスト用の短いBlind表も足しません。
+- HeroはHeads-UpまではCheck / Foldだけで打ってStackを守り（CPU同士のEliminationで残人数が減る）、Heads-UpではAll-in（できなければCall）で決着を早めます。経路はseed・RuleBot・再起動の位置で決まります（再起動するとseedの並びは先頭から使い直す）。この方針と12 Hand目の後の再起動で、Heroは51 Hand目でHeads-Upに入り、52 Hand目で終わります（UIで20秒ほど）。RuleBot・Engineの変更でHeroがHeads-Upの前にBustするようになったら、前提のassert（「Hero は Heads-Up の前に Bust しない」）で落ちるので、再起動の位置かseedを選び直します。
+- 進行の判定（残人数・順位・Payout）は`GET /api/hands/:handId/tournament`の値で読み、画面の表示はその値と照らして確かめます。HandはhandIdで特定し、「次の Hand へ」の後は画面が新しいHandに切り替わるまで待ちます（`e2e/support/next-hand.ts`）。
+- `--repeat-each=10`を2回続けて通ることを、作業ログ（`docs/taskLog/issue-191-tournament-e2e.md`）に残しています。既存のCashのE2E（`session`・`session-end-layout`・`table-layout`・`learning`・`opponent-memory`・`review-tendency`）はそのまま通します（Cash Regression）。
+
 ## 9. Property / Fuzz
 
 有効な用途:
@@ -400,3 +419,22 @@ Phase 7 → 8のGate（`docs/08` §3.2）の項目と、それを確かめるテ
 | Tiltがdeterministic / versioned / transient | `apps/server/src/opponents/tilt.test.ts`（`phase7_tilt_v1`・State Machineの畳み込み・Sessionごとの Reset）・`tilt-isolation.test.ts`・`e2e/tests/opponent-memory.spec.ts`（§8の5） |
 | Cash / Tournament contextのStrategy Hypothesisが分離される | `apps/server/src/memory/opponent-hypothesis.test.ts`（「Cash と Tournament の Hypothesis は混ざらない（Raw Observation は共通・Hypothesis は context ごと）」） |
 | Phase 7のCritical E2E / Evalが通る | `e2e/tests/opponent-memory.spec.ts`（§8）・`apps/server/src/testing/opponent-eval/memory-eval.test.ts`（§5「Opponent MemoryのEval」） |
+
+## 12. Tournament（Phase 8）のテスト
+
+Phase 8のDefinition of Done（#107）の項目と、それを確かめるテストの対応です。Tournamentの順位・Payout・ResultはEvent Logから都度計算するProjectionで、保存しません（D129）。ICMは決定論のCalculatorで計算し、LLMに計算させません（D130）。
+
+| DoDの項目 | テスト |
+|---|---|
+| 既存Hand Engineを再利用して6-max STTを完走 | `packages/engine/src/tournament.test.ts`（「Rule Profile は Cash と共有し、Blind と Ante を Level の額にする」）・`apps/server/src/tournament-session.test.ts`（「Tournament は Preset の Starting Stack と 1 Level 目の Blind で始め、設定の Snapshot を SESSION_STARTED に残す」）・`e2e/tests/tournament.spec.ts`（§8。開始からHeads-Up・終了まで） |
+| Blind / AnteがVersioned Configで動く | `packages/engine/src/tournament.test.ts`（標準Preset・`validateTournamentConfig`・SESSION_STARTEDのSnapshot）・`packages/engine/src/hand-engine.test.ts`（「startHand の Ante と Tournament の Level」）・`hand-engine.property.test.ts`（「Ante（per_player / big_blind_ante）・不均等 Stack … でも Hand は最後まで進み」）・`apps/server/src/tournament-session.test.ts`（「hand_count: Session の Hand の数で 10 Hand ごとに Level を上げ、その Level の Blind と Big Blind Ante で始める」・Resume後のLevelの再構築） |
+| time-base / hand-count-baseの契約がある | `packages/engine/src/tournament.test.ts`（「hand_count は Session の Hand の数で handsPerLevel ごとに 1 つ上げ」「time_base はプレイ時間の累計で levelDurationMs ごとに 1 つ上げ」）・`apps/server/src/tournament-session.test.ts`（time_baseの累計・時計の巻き戻り）・`apps/server/src/tournament-table.test.ts`（次のLevelまでの残り） |
+| 標準Presetはhand-count + BBA | `packages/engine/src/tournament.test.ts`（「標準 6-max STT は Starting Stack 1,500・10/20 から 10 Hand ごと・BBA の額は BB・50/30/20・参加費 100pt」）・`e2e/tests/tournament.spec.ts`（§8の1・2） |
+| Elimination / Placement / Payoutがdeterministic | `packages/engine/src/tournament-standings.test.ts`（同じHandの複数Bust・Heads-Upへの移行・HeroのBust・打ち切り）・`tournament-payout.test.ts`・`tournament-payout.property.test.ts`（端数・同順位・Σ = Prize Pool）・`apps/server/src/tournament-session.test.ts`（Elimination と順位）・`e2e/tests/tournament.spec.ts`（§8の4〜6） |
+| 50 / 30 / 20 Presetが動く | `packages/engine/src/tournament-payout.test.ts`（「標準 6-max STT は 100pt × 6 = 600pt を 50 / 30 / 20 で 300 / 180 / 120」）・`e2e/tests/tournament.spec.ts`（§8の6） |
+| ICM Calculatorがdeterministicで2〜8人を扱う | `packages/engine/src/icm.test.ts`（手計算のScenario・「8 人を扱える」・「2〜8 人以外 … は拒否する」・Bubble Factor・All-inの必要Equity）・`icm.property.test.ts`（Σ Equity・単調性・対称性） |
+| Chip EVとICMを別EvidenceとしてReviewできる | `apps/server/src/review/tournament-evidence.test.ts`（「Chip EV（Pot Odds と同じ）と ICM の必要 Equity を別の id で並べる」等）・`review-tournament.test.ts`（Grounding: ICMの必要Equityのidを挙げない出力は不正）・`apps/web/src/components/tournament.test.tsx`（TournamentEvidenceView）・`e2e/tests/tournament.spec.ts`（§8の7） |
+| Tournament ContextがCPU KnowledgeStateにPublic情報として入る | `packages/engine/src/tournament-knowledge.test.ts`（「Session の情報を渡すと、viewer から見た Tournament Context を持つ」「Tournament の値に Hole Cards・Deck は入らない」）・`apps/server/src/opponents/rule-bot.test.ts`（「RuleBot と Tournament Context」）・`claude-opponent.test.ts`（「Tournament の Prompt」） |
+| Phase 7 Private MemoryのIsolationがTournamentでも維持 | `apps/server/src/memory/tournament-isolation.test.ts`（Promptの動的な走査）・`observation-cache.test.ts`（「Tournament の context」: 要約はcontextのHypothesisだけ） |
+| Push/Fold Nash SolverをPhase 8完了条件にしない | `apps/server/src/review/review-tournament.test.ts`（「Tournament の Spot は Solver の Capability Gate に mode: tournament で渡り、Unsupported（mode）の正常な Fallback になる」）。Tournament Solverは置かない（D102・`docs/08` §4） |
+| Tournament Critical E2EとCash Regressionが通る | `e2e/tests/tournament.spec.ts`（§8）と、既存のCashのE2E 11本（`session`・`session-end-layout`・`table-layout`・`learning`・`opponent-memory`・`review-tendency`） |
