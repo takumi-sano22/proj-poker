@@ -2,7 +2,8 @@
 // 本番（ReviewService）と Review Eval のハーネスが同じこの関数を通る（LC-050: 評価ハーネスと本番の引数組み立てを揃える）。
 // 1. Evidence Sufficiency Gate: 根拠が足りなければ Review AI を呼ばずに Insufficient Evidence
 // 2. Review AI（Claude。構造化出力）→ 検証（schema → grounding）。不正なら理由を付けて 1 回だけ再要求。
-//    検証を通った文は、内部の識別子（playerId・Evidence の項目名）を表示名・自然な言葉に置換してから返す（identifiers.ts）
+//    検証（文の中の数値と数値表の照合を含む。#168）を通った文は、数値表の参照を決定論の値に置き換え（numeric-grounding.ts）、
+//    内部の識別子（playerId・Evidence の項目名）を表示名・自然な言葉に置換してから返す（identifiers.ts）
 // 3. 2 回続けて不正なら Insufficient Evidence とし、失敗（各回の段と理由）を Review に残す
 // Claude の呼び出しの失敗（未ログイン・利用枠・Timeout 等）は例外のまま投げる（Review は作らず、再実行を待つ）。
 import { MODEL_ROLES } from "../config.js";
@@ -12,6 +13,7 @@ import {
 } from "../claude/structured-query.js";
 import { evidenceIdsOf } from "./evidence.js";
 import { replacementNamesOf, sanitizeOutput } from "./identifiers.js";
+import { buildNumericTable, resolveNumericRefs } from "./numeric-grounding.js";
 import {
   buildReviewPrompt,
   checkReviewOutput,
@@ -118,8 +120,11 @@ export async function generateReview(
     const check = checkReviewOutput(output, evidence);
     options.onAttempt?.({ prompt, output, check });
     if (check.ok) {
-      // 識別子が出ていても Retry はせず、保存の前に既知のものを機械的に置換する（#96・D101）。
-      const value = sanitizeOutput(check.value, replacementNamesOf(evidence));
+      // 数値表の参照（{N3}）を決定論の値に置き換え（#168・D131）、識別子は Retry せずに既知のものを機械的に置換する（#96・D101）。
+      const value = sanitizeOutput(
+        resolveNumericRefs(check.value, buildNumericTable(evidence)),
+        replacementNamesOf(evidence),
+      );
       return {
         ...base,
         concreteModel: model,

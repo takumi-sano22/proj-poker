@@ -12,6 +12,12 @@ import {
   sanitizeOutput,
 } from "./identifiers.js";
 import {
+  buildNumericTable,
+  checkNumericGrounding,
+  numericTableSection,
+  resolveNumericRefs,
+} from "./numeric-grounding.js";
+import {
   REVIEW_MAX_TURNS,
   modelRoleFor,
   type GenerateReviewOptions,
@@ -67,6 +73,7 @@ const PASS_RULES: Readonly<Record<FollowUpTarget["pass"], readonly string[]>> =
     decision: [
       "- この Review は判断の時点に Hero が知り得た情報だけを使った Decision Review です。Hand の結果・相手の実際の札・判断より後に出た Card は Evidence に無く、あなたも知りません。それを聞かれたら scope を out_of_scope にし、Hand 後の答え合わせ（Reveal Review）で確かめられると答えてください。",
       "- 判断の質は結果ではなく、判断の時点の情報で考えてください。",
+      "- 数値は、Evidence から作った「数値表」の参照（{N3} の形）で書いてください。参照は保存のときに表の値に置き換わります。",
     ],
     reveal: [
       "- この Review は Hand の後に学習のために全員の札を見せた答え合わせ（Reveal Review）です。実際の札・実際の Equity を使って答えてよいですが、判断の時点で Hero はそれを知り得なかったことを前提にしてください。",
@@ -134,6 +141,10 @@ export function buildFollowUpPrompt(
     "### Review の説明",
     JSON.stringify(target.explanation),
   ];
+  // Pass A の Review への質問だけ、文の数値を数値表の参照で書かせる（#168・D131。Pass B は範囲外）。
+  if (target.pass === "decision") {
+    sections.push(numericTableSection(buildNumericTable(target.evidence)));
+  }
   // Tournament の Evidence のある Pass A の Review だけ、ICM の読み方を添える（構造ゲート。#189）。
   if (hasTournament(target)) sections.push(TOURNAMENT_GUIDE);
   if (history.length > 0) {
@@ -177,10 +188,15 @@ export function followUpOutputSchema(
   };
 }
 
-/** Follow-up の出力を検証する（schema → grounding）。 */
+/**
+ * Follow-up の出力を検証する（schema → grounding）。Pass A の Review への質問では、答えの数値を数値表と照合する（#168・D131）。
+ * Hero の質問（question）に書かれた単位付きの値は、答えで繰り返しても作り話ではないので一致として扱う。
+ * 返す値の文は参照（{N3}）のまま。保存の前に resolveNumericRefs で表の値へ置き換える。
+ */
 export function checkFollowUpOutput(
   output: unknown,
   target: FollowUpTarget,
+  question = "",
 ): FollowUpOutputCheck {
   const schema = (reason: string) =>
     ({ ok: false, stage: "schema", reason }) as const;
@@ -226,6 +242,16 @@ export function checkFollowUpOutput(
       stage: "grounding",
       reason: `Evidence に無い id: ${unknownIds.join(", ")}`,
     };
+  }
+  if (target.pass === "decision") {
+    const numeric = checkNumericGrounding(
+      [answer],
+      buildNumericTable(target.evidence),
+      [question],
+    );
+    if (numeric !== null) {
+      return { ok: false, stage: "grounding", reason: numeric };
+    }
   }
   return {
     ok: true,
@@ -286,15 +312,20 @@ export async function generateFollowUp(
       signal: options.signalFor?.(),
       maxTurns: REVIEW_MAX_TURNS,
     });
-    const check = checkFollowUpOutput(output, target);
+    const check = checkFollowUpOutput(output, target, question);
     options.onAttempt?.({ prompt, output, check });
     if (check.ok) {
       return {
         ...base,
         generatedBy: "review_ai",
-        // 識別子の置換は Review と同じ（Retry はしない。#96）。
+        // 数値表の参照の置き換え（Pass A への質問だけ。#168）と識別子の置換は Review と同じ（Retry はしない。#96）。
         answer: sanitizeOutput(
-          check.value,
+          target.pass === "decision"
+            ? resolveNumericRefs(
+                check.value,
+                buildNumericTable(target.evidence),
+              )
+            : check.value,
           replacementNamesOf(target.evidence),
         ),
         failure: null,
