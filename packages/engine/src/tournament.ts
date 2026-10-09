@@ -1,7 +1,7 @@
 // Tournament の Session の型と、Tournament の設定（Versioned Config）・標準 Preset（D108・D127・D128・#183）。
 // Tournament は既存の Hand Engine を複製せず、その上に TournamentSession 層を置く（D108）。この Module は設定の型・Preset・検証と、
 // Session の開始の Event（SESSION_STARTED）に残した設定の Snapshot の読み方と、Hand の開始時の Level の決め方（#184）を持つ。
-// Ante の支払いと Pot での扱いは Hand Engine（hand-engine.ts・hand-state.ts。D128）。Elimination・順位（#185。tournament-standings.ts）、Payout の計算（#186）は
+// Ante の支払いと Pot での扱いは Hand Engine（hand-engine.ts・hand-state.ts。D128）。Elimination・順位（#185。tournament-standings.ts）、Payout と Result の計算（#186。tournament-payout.ts）は
 // ここに入れない。
 import type { HandEvent } from "./hand-events.js";
 import {
@@ -44,7 +44,7 @@ export type BlindSchedule =
 
 /**
  * Payout の構造（D108）。percentages は 1 位から順の割合（整数の %。合計 100・上位ほど多いか同じ）。
- * Custom Payout は kind を足して表す。Prize Pool（参加費 × 参加人数）・端数・同順位の扱いは #186（docs/02 §7）。
+ * Custom Payout は kind を足して表す。Prize Pool（参加費 × 参加人数）・端数・同順位の扱いは tournament-payout.ts（#186。docs/02 §7）。
  */
 export interface PayoutStructure {
   readonly kind: "percentages";

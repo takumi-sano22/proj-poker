@@ -139,6 +139,17 @@ export type {
   TournamentStatus,
 } from "./tournament-standings.js";
 
+export {
+  PAYOUT_POLICY_VERSION,
+  payoutsByPlace,
+  prizePoolOf,
+  tournamentResult,
+} from "./tournament-payout.js";
+export type {
+  TournamentResult,
+  TournamentResultPlacement,
+} from "./tournament-payout.js";
+
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
 export type {
   Declaration,

@@ -646,7 +646,7 @@ function shove(view: HeroView): PlayerAction {
   return passive(view);
 }
 
-describe("Tournament の Elimination と順位（D129・#185）", () => {
+describe("Tournament の Elimination と順位（D129・#185）・Payout と Result（#186）", () => {
   it("Hero の Bust（か Hero が最後の 1 人）で Tournament を終え、Hero の順位を Event Log から計算する。Bust した席は次の Hand に座らない", async () => {
     const store = new InMemoryEventStore();
     const orchestrator = orchestratorOn(store);
@@ -708,6 +708,34 @@ describe("Tournament の Elimination と順位（D129・#185）", () => {
     }
     // 同じ Event Log からは同じ順位（決定論。保存せず都度計算する）。
     expect(orchestrator.tournamentStandingsOf(last)).toEqual(standings);
+
+    // Result（#186）: 標準 Preset の Prize Pool は 100pt × 6 = 600pt を 300 / 180 / 120。順位は standings と同じで、
+    // 決まった順位の Payout と、未決の順位（1〜残人数位）の賞金の合計が Prize Pool（Chip とは別の量）。
+    const result = orchestrator.tournamentResultOf(last);
+    if (result === null) throw new Error("Tournament の Result が無い");
+    expect(result.prizePool).toBe(600);
+    expect(result.payoutsByPlace).toEqual([300, 180, 120]);
+    expect(
+      result.placements.map((p) => ({
+        playerId: p.playerId,
+        place: p.place,
+        eliminatedInHandId: p.eliminatedInHandId,
+      })),
+    ).toEqual(standings.placements);
+    const heroResult = result.placements.find((p) => p.playerId === HERO);
+    expect(heroResult?.payout).not.toBeNull();
+    for (const p of result.placements) {
+      expect(p.payout === null).toBe(p.place === null);
+    }
+    const decided = result.placements.reduce(
+      (sum, p) => sum + (p.payout ?? 0),
+      0,
+    );
+    const undecidedPlaces = result.payoutsByPlace
+      .slice(0, undecided.length)
+      .reduce((sum, a) => sum + a, 0);
+    expect(decided + undecidedPlaces).toBe(result.prizePool);
+    expect(orchestrator.tournamentResultOf(last)).toEqual(result);
     orchestrator.close();
   });
 
@@ -717,6 +745,8 @@ describe("Tournament の Elimination と順位（D129・#185）", () => {
     const handId = await playHand(orchestrator, null);
     expect(orchestrator.tournamentStandingsOf(handId)).toBeNull();
     expect(orchestrator.tournamentStandingsOf("unknown")).toBeNull();
+    expect(orchestrator.tournamentResultOf(handId)).toBeNull();
+    expect(orchestrator.tournamentResultOf("unknown")).toBeNull();
     orchestrator.close();
   });
 });
