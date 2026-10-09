@@ -11,10 +11,13 @@ import {
   parseCards,
   projectKnowledgeState,
   startHand,
+  tableConfigForLevel,
   type Card,
   type HandEvent,
   type HandState,
   type PlayerAction,
+  type SeatInit,
+  type TournamentConfig,
 } from "@proj-poker/engine";
 import { PHASE1_TABLE_SETUP } from "../../config.js";
 import type { OpponentInput } from "../../opponents/opponent-agent.js";
@@ -45,6 +48,27 @@ export interface EvalSpot {
   readonly baseSpotId?: string;
   /** 本番の入力に層（Memory・Tilt・Table Tendency）を足す（#155。本番の Orchestrator と同じく KnowledgeState に入れる）。 */
   readonly withLayers?: (input: OpponentInput) => OpponentInput;
+  /** Tournament の Hand（#202）だけ。省略は本番の既定の Cash の卓。 */
+  readonly tournament?: EvalTournament;
+}
+
+/** Tournament の Hand の局面（#202。review-eval の ScriptedTournament と同じ値に、Button と Context の有無を足したもの）。 */
+export interface EvalTournament {
+  /** Session の設定の Snapshot（D129）。 */
+  readonly config: TournamentConfig;
+  /** 参加人数（Prize Pool = 参加費 × 参加人数）。 */
+  readonly entrants: number;
+  /** この Hand の Level（1 始まり）と Session の何 Hand 目か。 */
+  readonly level: number;
+  readonly handNumber: number;
+  readonly button: string;
+  /** 席順（時計回り）と Hand の開始時の Stack（Bust した Player は座らない）。 */
+  readonly seats: readonly SeatInit[];
+  /**
+   * Public Tournament Context を KnowledgeState に入れるか（本番の Tournament の Hand は true）。false は対照で、同じ札・Stack・Blind の
+   * Hand から Context だけを外す（Prompt は Cash と同じ節の組み立てになる）。
+   */
+  readonly context: boolean;
 }
 
 // 本番の既定の卓（6-max・Hero 1 人 + CPU 5 人・100BB。席順は Hero → cpu1 → … → cpu5）。最初の Hand は Hero が Button なので、
@@ -131,13 +155,33 @@ export const OPPONENT_EVAL_SPOTS: readonly EvalSpot[] = [
 
 /** Spot を Engine で判断の直前まで進める。手番が想定と違えば例外（Spot の定義の誤り）。 */
 export function buildSpot(spot: EvalSpot): SpotFixture {
+  const t = spot.tournament;
+  const seats = t?.seats ?? SEATS;
+  const button = t?.button ?? BUTTON;
+  const level = t === undefined ? undefined : t.config.levels[t.level - 1];
+  if (t !== undefined && level === undefined) {
+    throw new Error(`${spot.id}: Level ${t.level} が設定に無い`);
+  }
   const started = startHand({
     handId: `eval-${spot.baseSpotId ?? spot.id}`,
-    seats: SEATS,
-    buttonPlayerId: BUTTON,
+    seats,
+    buttonPlayerId: button,
     // 本番と同じ Preset（Rule Profile の ID も同じ）。ID は Prompt の引数（録画の指紋）に入るので、変えたら録画を取り直す。
-    config: PHASE1_CASH_PRESET,
-    deal: { deck: stackedDeck(spot.holes, spot.board) },
+    // Tournament の Hand は本番と同じく、その Level の Blind・Ante にした卓（tableConfigForLevel）で始める（#202）。
+    config:
+      t === undefined || level === undefined
+        ? PHASE1_CASH_PRESET
+        : tableConfigForLevel(PHASE1_CASH_PRESET, level, t.config.anteKind),
+    deal: { deck: stackedDeck(seats, button, spot.holes, spot.board) },
+    ...(t === undefined
+      ? {}
+      : {
+          tournament: {
+            level: t.level,
+            handNumber: t.handNumber,
+            playTimeMs: 0,
+          },
+        }),
   });
   if (!started.ok) throw new Error(`${spot.id}: ${started.error.kind}`);
   let state = started.value.state;
@@ -158,8 +202,15 @@ export function buildSpot(spot: EvalSpot): SpotFixture {
       `${spot.id}: 手番が ${spot.actorId} ではない（${legal?.playerId ?? "なし"}）`,
     );
   }
+  // Tournament の Hand は本番の cpuTurn と同じく、Session の情報（設定の Snapshot・参加人数）を渡して Context を作る（#202）。
   const input: OpponentInput = {
-    knowledge: projectKnowledgeState(events, spot.actorId),
+    knowledge: projectKnowledgeState(
+      events,
+      spot.actorId,
+      t?.context === true
+        ? { tournament: { config: t.config, entrants: t.entrants } }
+        : {},
+    ),
     legal,
   };
   return {
@@ -176,17 +227,19 @@ export function buildSpot(spot: EvalSpot): SpotFixture {
  * 配布は Button の左から 1 枚ずつ 2 周 → Board（Burn なし）。指定していない位置は使っていない札を新品の Deck 順に詰める。
  */
 function stackedDeck(
+  seats: readonly SeatInit[],
+  buttonPlayerId: string,
   holes: Readonly<Record<string, string>>,
   board: string,
 ): Card[] {
-  const n = SEATS.length;
-  const button = SEATS.findIndex((s) => s.playerId === BUTTON);
+  const n = seats.length;
+  const button = seats.findIndex((s) => s.playerId === buttonPlayerId);
   const slots: (Card | undefined)[] = Array.from(
     { length: 52 },
     () => undefined,
   );
   for (let k = 0; k < n; k++) {
-    const seat = SEATS[(button + 1 + k) % n];
+    const seat = seats[(button + 1 + k) % n];
     const hole = seat === undefined ? undefined : holes[seat.playerId];
     if (hole === undefined) continue;
     const [first, second] = parseCards(hole);

@@ -1,0 +1,533 @@
+{
+  "version": 1,
+  "recordedAt": "2026-10-09T11:53:36.419Z",
+  "model": "claude-haiku-4-5",
+  "sdkVersion": "0.3.289",
+  "spots": [
+    "t0_no_context",
+    "t1_before_bubble_shove",
+    "t2_bubble_shove",
+    "t3_itm_shove",
+    "t4_heads_up_shove",
+    "t5_bubble_call_vs_big",
+    "t6_bubble_call_layers"
+  ],
+  "personas": ["nit", "maniac"],
+  "repeats": 2,
+  "concurrency": 1,
+  "limits": {
+    "maxDecisions": 28,
+    "maxCalls": 56
+  },
+  "modelCalls": 28,
+  "runs": 1,
+  "cases": [
+    {
+      "spotId": "t0_no_context",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "379c38fcea9ce9d5",
+          "output": {
+            "action": "fold",
+            "rationale": "Qh6oは弱いハンドで、高い規律と限定的なプリフロップ参加基準により、ボタン位置でもフォールドが正当化される。"
+          },
+          "ms": 6829
+        }
+      ]
+    },
+    {
+      "spotId": "t0_no_context",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "379c38fcea9ce9d5",
+          "output": {
+            "action": "fold",
+            "rationale": "Q6oは弱すぎてタイトなプレイヤーのレンジに入らず、Nit スタイルに合った規律的なフォールドです。"
+          },
+          "ms": 6916
+        }
+      ]
+    },
+    {
+      "spotId": "t0_no_context",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e1bdfea5f52c941b",
+          "output": {
+            "action": "raise",
+            "amount": 450,
+            "rationale": "マニアックスタイルの極めて高い攻撃性を活かし、ボタンからの積極的レイズで相手をプレッシャーをかける。"
+          },
+          "ms": 7620
+        }
+      ]
+    },
+    {
+      "spotId": "t0_no_context",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "e1bdfea5f52c941b",
+          "output": {
+            "action": "raise",
+            "amount": 450,
+            "rationale": "Maniacキャラの非常に高い攻撃性とブラフ傾向、Buttonの広い参加範囲から、弱い手でも強気にレイズして主導権を握る。"
+          },
+          "ms": 8547
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "3890f82bdbd79c9b",
+          "output": {
+            "action": "fold",
+            "rationale": "Q-6oはNitの極めて低いPreflop Loosenesでは参加対象外であり、規律を優先して弱い手を降ろす。"
+          },
+          "ms": 8448
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "3890f82bdbd79c9b",
+          "output": {
+            "action": "fold",
+            "rationale": "Nit プレイヤーの参加基準では Q6o は手薄く、Bubble 前で bubble factor が高い状況下でのリスク回避が重要。"
+          },
+          "ms": 8649
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "fd0bd972b1151123",
+          "output": {
+            "action": "raise",
+            "amount": 450,
+            "rationale": "攻撃性0.95、Bluff傾向0.90の Maniac として、弱いハンドでもボタンからのレイズで主導権を握り、ブラフを仕掛ける"
+          },
+          "ms": 8299
+        }
+      ]
+    },
+    {
+      "spotId": "t1_before_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "fd0bd972b1151123",
+          "output": {
+            "action": "all_in",
+            "rationale": "Maniac キャラの極度の Looseness と Aggression により、弱い手でも All-in を仕掛けるプレイスタイルに一貫している。"
+          },
+          "ms": 8358
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "0d8e9243eed96a00",
+          "output": {
+            "action": "fold",
+            "rationale": "Qh6cは弱すぎて、bubble factorが高い状況での規律あるNitプレイとして参加価値がない。"
+          },
+          "ms": 9214
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "0d8e9243eed96a00",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble stage の最小 Stack で Q6o という最弱手は、自分の高い規律性とリスク許容度の低さから絶対に参加すべきではない。"
+          },
+          "ms": 9247
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e0c75530662a7462",
+          "output": {
+            "action": "all_in",
+            "rationale": "Bubble での短いスタック、極度の攻撃性と高いリスク許容度、広いプリフロップ参加範囲、ブラフ傾向の高さから、ボタンでの All-in ショブが Maniac プレイヤーの典型的な判断。"
+          },
+          "ms": 9017
+        }
+      ]
+    },
+    {
+      "spotId": "t2_bubble_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "e0c75530662a7462",
+          "output": {
+            "action": "all_in",
+            "rationale": "Buttonからの超攻撃的なManiacスタイルで、敵を圧倒し敗北を強要するブラフオール・イン。"
+          },
+          "ms": 8308
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "ba5c43e8afcacf99",
+          "output": {
+            "action": "fold",
+            "rationale": "Qh6cはプリフロップで参加範囲外の弱い手札で、Nitスタイルの高い規律に合致しているため明確にフォールドします。"
+          },
+          "ms": 8024
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "ba5c43e8afcacf99",
+          "output": {
+            "action": "fold",
+            "rationale": "Q6o は Nit スタイルの Preflop Looseness 0.15 では参加対象外の弱いハンドであり、規律を優先して fold します。"
+          },
+          "ms": 8693
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "9d8e8b0cb4f715c8",
+          "output": {
+            "action": "all_in",
+            "rationale": "短いスタックで弱い手でも、Maniacスタイル（Aggression 0.95、Bluff 0.90、Risk Tolerance 0.90、Discipline 0.15）に一貫して、規律を無視してボタンからアグレッシブにAll-inで勝負する。"
+          },
+          "ms": 9704
+        }
+      ]
+    },
+    {
+      "spotId": "t3_itm_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "9d8e8b0cb4f715c8",
+          "output": {
+            "action": "all_in",
+            "rationale": "Maniacのキャラクターとして攻撃性と規律の低さから、短いStackを活かしてAll-inでプレッシャーをかけるのが一貫したプレイスタイル。"
+          },
+          "ms": 8288
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "e3f9ec83cf570d70",
+          "output": {
+            "action": "fold",
+            "rationale": "Preflop Looseness が 0.15 の Nit として Q6o は参加範囲外であり、規律の高さに従いフォールドすべき。"
+          },
+          "ms": 9488
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "e3f9ec83cf570d70",
+          "output": {
+            "action": "fold",
+            "rationale": "Preflop Looseness が極めて低く、規律が高い Nit として Q-6o は fold する弱い手であり、次の hand でより良い hand を待つべき。"
+          },
+          "ms": 8104
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "1bfcad6783045d30",
+          "output": {
+            "action": "raise",
+            "amount": 450,
+            "rationale": "Maniac のゴリ押し性格と高い攻撃性から、短 Stack での Heads-up preflop で弱い手でも積極的にレイズして相手に圧力をかける。"
+          },
+          "ms": 8414
+        }
+      ]
+    },
+    {
+      "spotId": "t4_heads_up_shove",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "1bfcad6783045d30",
+          "output": {
+            "action": "all_in",
+            "rationale": "Maniacスタイルのオーバーアグレッシブなプレイで、弱いハンドでもボタンからのAll-inシーベットで相手をプレッシャーにかける。"
+          },
+          "ms": 8329
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "058d42e154538aef",
+          "output": {
+            "action": "fold",
+            "rationale": "A9o は bubble stage の high bubble factor 対戦で必要勝率に達しておらず、規律重視の Nit スタイルでは折るべき。"
+          },
+          "ms": 8681
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "058d42e154538aef",
+          "output": {
+            "action": "fold",
+            "rationale": "A9o は Nit のプリフロップ参加基準に達しておらず、Bubble stage での不利な状況で弱手をコールする規律を欠いたプレイになるため。"
+          },
+          "ms": 10239
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "b9d79209a7a739ee",
+          "output": {
+            "action": "all_in",
+            "rationale": "Maniac の極度な攻撃性と低い規律により、A9o で Bubble ステージの ICM リスクを無視して勝負を仕掛ける。"
+          },
+          "ms": 11244
+        }
+      ]
+    },
+    {
+      "spotId": "t5_bubble_call_vs_big",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "b9d79209a7a739ee",
+          "output": {
+            "action": "call",
+            "rationale": "マニアックなキャラクターとして Preflop の広すぎる参加範囲と攻撃性により、弱い Ah9c でも相手の bluff を信じてコールする。"
+          },
+          "ms": 8881
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "nit",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "bdfba7067adea601",
+          "output": {
+            "action": "fold",
+            "rationale": "Bubble での高い規律（0.80）と Nit なプレイスタイル、弱いハンド（Ah9c）、Bubble Factor 2.75 による負けの痛み、リスク許容度の低さ（0.20）から、ここは無条件で Fold するべき。"
+          },
+          "ms": 10802
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "nit",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "bdfba7067adea601",
+          "output": {
+            "action": "fold",
+            "rationale": "Ah9c は Preflop Looseness 0.15 の Nit には参加基準外の弱い手で、Discipline 0.80 で Bubble ステージの不利な All-in Call は回避する。"
+          },
+          "ms": 9520
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "maniac",
+      "repeat": 1,
+      "attempts": [
+        {
+          "paramsHash": "36fc2ffce880c24d",
+          "output": {
+            "action": "call",
+            "rationale": "Maniac スタイルで Discipline が極めて低く、A9o でも広く参加する傾向にあり、Risk Tolerance 0.90 で高リスク選択を好むため、All-in された相手に対してコールする。"
+          },
+          "ms": 12016
+        }
+      ]
+    },
+    {
+      "spotId": "t6_bubble_call_layers",
+      "personaId": "maniac",
+      "repeat": 2,
+      "attempts": [
+        {
+          "paramsHash": "36fc2ffce880c24d",
+          "output": {
+            "action": "call",
+            "rationale": "Maniac スタイルで攻撃性が高く、規律が低いため Bubble stage の bubbleFactor を無視して、既に Pot に入った状況で All-in に Call する。"
+          },
+          "ms": 9433
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "decisions": 28,
+    "calls": 28,
+    "structuredOutputValidRate": 1,
+    "illegalActionRate": 0,
+    "retryRate": 0,
+    "fallbackRate": 0,
+    "outages": 0,
+    "hiddenInformationLeakage": 0,
+    "latencyMs": {
+      "min": 6829,
+      "median": 8681,
+      "p90": 10802,
+      "max": 12016
+    },
+    "personaDifferentiation": 1,
+    "personaDifferentiationBySpot": {
+      "t0_no_context": 1,
+      "t1_before_bubble_shove": 1,
+      "t2_bubble_shove": 1,
+      "t3_itm_shove": 1,
+      "t4_heads_up_shove": 1,
+      "t5_bubble_call_vs_big": 1,
+      "t6_bubble_call_layers": 1
+    },
+    "actionDiversity": {
+      "nit": 0,
+      "maniac": 1.493
+    },
+    "actionCounts": {
+      "nit": {
+        "t0_no_context": {
+          "fold": 2
+        },
+        "t1_before_bubble_shove": {
+          "fold": 2
+        },
+        "t2_bubble_shove": {
+          "fold": 2
+        },
+        "t3_itm_shove": {
+          "fold": 2
+        },
+        "t4_heads_up_shove": {
+          "fold": 2
+        },
+        "t5_bubble_call_vs_big": {
+          "fold": 2
+        },
+        "t6_bubble_call_layers": {
+          "fold": 2
+        }
+      },
+      "maniac": {
+        "t0_no_context": {
+          "raise": 2
+        },
+        "t1_before_bubble_shove": {
+          "raise": 1,
+          "all_in": 1
+        },
+        "t2_bubble_shove": {
+          "all_in": 2
+        },
+        "t3_itm_shove": {
+          "all_in": 2
+        },
+        "t4_heads_up_shove": {
+          "raise": 1,
+          "all_in": 1
+        },
+        "t5_bubble_call_vs_big": {
+          "all_in": 1,
+          "call": 1
+        },
+        "t6_bubble_call_layers": {
+          "call": 2
+        }
+      }
+    },
+    "invalidOutputs": [],
+    "leaks": []
+  }
+}
