@@ -231,7 +231,7 @@ test("6-max STT を開始 → Blind / Ante → Resume → Elimination → Heads-
   await test.step("10 Hand で Level 2 に上がり、Blind と BB Ante が上がる（12 Hand 目まで進める）", async () => {
     status = await finishHand(page, handId, "fold");
     while (status.handNumber < 12) {
-      expect(status.result.status, "Hero は Level 1 で Bust しない").toBe(
+      expect(status.result.status, "Hero は 12 Hand 目までに Bust しない").toBe(
         "in_progress",
       );
       handId = await startNextHand(page);

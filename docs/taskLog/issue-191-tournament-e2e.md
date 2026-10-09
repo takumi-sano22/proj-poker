@@ -58,7 +58,7 @@ Phase 8 の 6-max STT を、開始から Blind / Ante・Resume・Elimination・H
 
 | DoD の項目 | PR | テスト |
 |---|---|---|
-| 既存 Hand Engine を再利用して 6-max STT を完走 | #193・#195・#200・#191 の PR | `packages/engine/src/tournament.test.ts`「Rule Profile は Cash と共有し、Blind と Ante を Level の額にする」・`apps/server/src/tournament-session.test.ts`「Tournament は Preset の Starting Stack と 1 Level 目の Blind で始め、設定の Snapshot を SESSION_STARTED に残す」・`packages/engine/src/tournament-standings.test.ts`（既存の `nextHandSeating` で Heads-Up へ）・`e2e/tests/tournament.spec.ts`（開始から終了まで） |
+| 既存 Hand Engine を再利用して 6-max STT を完走 | #193・#195・#200・#201 | `packages/engine/src/tournament.test.ts`「Rule Profile は Cash と共有し、Blind と Ante を Level の額にする」・`apps/server/src/tournament-session.test.ts`「Tournament は Preset の Starting Stack と 1 Level 目の Blind で始め、設定の Snapshot を SESSION_STARTED に残す」・`packages/engine/src/tournament-standings.test.ts`（既存の `nextHandSeating` で Heads-Up へ）・`e2e/tests/tournament.spec.ts`（開始から終了まで） |
 | Blind / Ante が Versioned Config で動く | #193・#194 | `packages/engine/src/tournament.test.ts`（標準 Preset・`validateTournamentConfig`・SESSION_STARTED の Snapshot）・`hand-engine.test.ts`「startHand の Ante と Tournament の Level」・`hand-engine.property.test.ts`「Ante（per_player / big_blind_ante）・不均等 Stack …」・`apps/server/src/tournament-session.test.ts`「hand_count: Session の Hand の数で 10 Hand ごとに Level を上げ、その Level の Blind と Big Blind Ante で始める」・Resume の Level の再構築 |
 | time-base / hand-count-base の契約がある | #194・#200 | `packages/engine/src/tournament.test.ts`「hand_count は Session の Hand の数で handsPerLevel ごとに 1 つ上げ」「time_base はプレイ時間の累計で levelDurationMs ごとに 1 つ上げ」・`apps/server/src/tournament-session.test.ts`（time_base の累計・時計の巻き戻り）・`apps/server/src/tournament-table.test.ts`（次の Level までの残り） |
 | 標準 Preset は hand-count + BBA | #193・#194 | `packages/engine/src/tournament.test.ts`「標準 6-max STT は Starting Stack 1,500・10/20 から 10 Hand ごと・BBA の額は BB・50/30/20・参加費 100pt」・`e2e/tests/tournament.spec.ts`（Level 1 の 10 / 20・BB Ante 20、Level 2 の 15 / 30・BB Ante 30） |
@@ -69,7 +69,7 @@ Phase 8 の 6-max STT を、開始から Blind / Ante・Resume・Elimination・H
 | Tournament Context が CPU KnowledgeState に Public 情報として入る | #198 | `packages/engine/src/tournament-knowledge.test.ts`「Session の情報を渡すと、viewer から見た Tournament Context を持つ」「Tournament の値に Hole Cards・Deck は入らない（構造の whitelist）」・`apps/server/src/opponents/rule-bot.test.ts`「RuleBot と Tournament Context」・`claude-opponent.test.ts`「Tournament の Prompt」 |
 | Phase 7 Private Memory の Isolation が Tournament でも維持 | #198 | `apps/server/src/memory/tournament-isolation.test.ts`「Tournament の Prompt は公開の Tournament Context と tournament の Memory だけを足し …」・`observation-cache.test.ts`「Tournament の context」 |
 | Push/Fold Nash Solver を Phase 8 完了条件にしない | #197・#199 | `apps/server/src/review/review-tournament.test.ts`「Tournament の Spot は Solver の Capability Gate に mode: tournament で渡り、Unsupported（mode）の正常な Fallback になる」。Tournament の Solver は置いていない（Shove の ICM の必要 Equity は条件付き。D130） |
-| Tournament Critical E2E と Cash Regression が通る | #191 の PR | `e2e/tests/tournament.spec.ts` と既存の Cash の E2E 11 本（CI の `e2e` ジョブ。上の「実行した確認」） |
+| Tournament Critical E2E と Cash Regression が通る | #201 | `e2e/tests/tournament.spec.ts` と既存の Cash の E2E 11 本（CI の `e2e` ジョブ。上の「実行した確認」） |
 
 ## 残課題
 
