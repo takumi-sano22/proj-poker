@@ -30,3 +30,9 @@ export const REVIEW_POLL_MS = 1_500;
  * 超えて待つときだけ出る値。生成は 1 つずつ順に進むので、前の生成の待ちも含む。
  */
 export const REVIEW_DELAY_NOTICE_MS = 40_000;
+
+/**
+ * time-base の Tournament（D128）の進行中の Hand で、次の Level までの残り時間を取り直す間隔（ミリ秒。#190）。暫定値: 表示は分の単位
+ * （切り上げ）なので、30 秒ごとに取り直せば表示が 1 分以上遅れない。ローカルのサーバーへの GET だけ。
+ */
+export const TOURNAMENT_REFRESH_MS = 30_000;

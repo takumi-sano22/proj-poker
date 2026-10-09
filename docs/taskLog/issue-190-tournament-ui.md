@@ -39,9 +39,12 @@ Hero が UI で 6-max STT を始めて完走できるよう、新しい Session 
   - Hand の途中の Hero 欄の高さは Cash と同じ部品なので変わらない（#179 を悪化させない）。Session の終わりの Hero 欄は、`select` が 1 つ増えるため、狭い画面と 720px 台で 1 行（約 50px）高くなる。1280×720 は同じ行に収まる（115px）。Cash の配置の E2E の hit-test は通過。
   - Review: Hero の Shove の判断で、ICM Equity（230pt・47.9% / 250pt・52.1%。Heads-Up で争う 480pt）と、Chip EV / ICM の必要 Equity（49.4% / 49.4%）を別の列で表示。
 
+## レビュー対応
+
+- Codex（1 回目。clean・P2 が 2 件）: ①次の Hand の読み込みに失敗すると前の Tournament の欄が残る → 今の Hand を読めなかったら別の Hand の値を返さない。②time-base の残り時間が卓の状態の変化でしか更新されない → time-base の進行中の Hand は 30 秒ごと（`TOURNAMENT_REFRESH_MS`）にも読み直す。どちらも `hooks/useTournament.ts` だけの修正。
+
 ## 残課題
 
 - Tournament の E2E と README は #191。
-- time-base の残り時間は、卓の状態が進むたびに読み直す（Hand の途中で何も起きなければ表示は進まない）。
 - Session Review の画面に Tournament の Result を出すか（今は卓の欄と Hero の欄だけ）。
 - Session の終わりの Hero 欄の `select` で、狭い画面では 1 行高くなる（Cash も同じ）。
