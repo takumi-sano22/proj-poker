@@ -490,10 +490,24 @@ export function resolveNumericText(text: string, table: NumericTable): string {
   );
 }
 
+/**
+ * N の無い波括弧の数値（"{481}"・"{1,200}"・"{0.5}"。全角の括弧・数字も読む）。参照ではないので grounding 段は通すが、
+ * 保存する文に波括弧が残ると表示が崩れる（#208）。検査は変えず（録画の出力を不正にしない）、保存の前に括弧だけ外す。
+ */
+const BARE_BRACE_NUMBER_PATTERN =
+  /[{｛]\s*([0-9０-９]+(?:[,，][0-9０-９]{3})*(?:[.．][0-9０-９]+)?)\s*[}｝]/g;
+
+/** 波括弧だけを外す（値は変えない）。単位の無い数は D131 で照合の対象外なので、平文にしても扱いは変わらない。 */
+function stripBareBraceNumbers(text: string): string {
+  return text.replace(BARE_BRACE_NUMBER_PATTERN, "$1");
+}
+
 /** 出力（検証済みの値）の文の参照を置き換える。根拠の id（evidenceIds）は触らない。 */
 export function resolveNumericRefs<T>(value: T, table: NumericTable): T {
   const map = (v: unknown): unknown => {
-    if (typeof v === "string") return resolveNumericText(v, table);
+    if (typeof v === "string") {
+      return stripBareBraceNumbers(resolveNumericText(v, table));
+    }
     if (Array.isArray(v)) return v.map(map);
     if (typeof v === "object" && v !== null) {
       return Object.fromEntries(
