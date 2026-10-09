@@ -70,7 +70,7 @@ github-workflow（標準フロー・手順の一次情報）
 | --- | --- |
 | `issue-patrol` | オープン issue 巡回・優先度整理・親 Issue（MVP は #2、Post-MVP は #104〜#107）への sub-issue 紐付け確認・着手候補選定。**実装着手は `github-workflow` にディスパッチ** |
 | `create-issue` | 発見したタスク/課題を GitHub Issue 化し親 Issue へ紐付ける。「issue を作って」 |
-| `release-readme-sync` | Phase 完了時にルート `README.md`（現在のフェーズ・MVP 進捗）を更新 |
+| `release-readme-sync` | Phase 完了時にルート `README.md` の短い「現在の状態」と `docs/phases/` の Phase 履歴を分けて更新 |
 
 ### 品質・レビュー
 
