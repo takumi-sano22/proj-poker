@@ -332,7 +332,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 | Follow-up | 2件ともanswered（1回で検証を通過）・数値Groundingの不正0・漏れ0 |
 
 - 合格ライン（`REVIEW_EVAL_TARGETS`）はStructured Output Valid率（0.889 < 0.9）だけ届きませんでした（9回中1回の数値Groundingの不正。Retryで回復しFallbackは0）。8件ともChip EVとICMの必要Equityを別の値として並べ、Bubble / ITMで「Chip EVではCall、ICMでは損寄り」と書き分けました。
-- 失敗経路: `bubble_call/d0#2`のassumptionsに`{481} Combo`（`N`の無い波括弧）が残りました。数値Grounding（D131）は`{N3}`の参照と単位付きの数値だけを見るので通り、保存する文に波括弧が残ります（値は数値表のCombo数と一致）。検査を変えると録画の出力が不正になり再録画が要るので、この Issue では変えず#208に分けました。
+- 失敗経路: `bubble_call/d0#2`のassumptionsに`{481} Combo`（`N`の無い波括弧）が残りました。数値Grounding（D131）は`{N3}`の参照と単位付きの数値だけを見るので通り、保存する文に波括弧が残ります（値は数値表のCombo数と一致）。検査を変えると録画の出力が不正になり再録画が要るので、この Issue では変えず#208に分けました。#208で、検査は変えずに保存の前の置換（`resolveNumericRefs`）で波括弧だけを外すようにしたので、録画の出力・再生のsummaryは変わりません。
 - 結果を見てPrompt / Policyは変えていません（D132）。CI（`tournament-eval.test.ts`）は録画を本番と同じ経路で再生し、集計（`summary`）とTournamentの指標（`report`）が録画時と一致すること・Hindsight Leak・Privateな情報の漏れ・障害が0件・上限の中で取ったこと・録画に資格情報が無いことを確かめます。
 
 ## 7. Solver Adapter Test

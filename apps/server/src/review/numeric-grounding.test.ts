@@ -257,6 +257,37 @@ describe("参照の置き換え（resolveNumericRefs）", () => {
   });
 });
 
+describe("N の無い波括弧の数値（#208）", () => {
+  it("{481}・{1,200}・{0.5} は波括弧だけを外して平文の数値にする（値は変えない）", () => {
+    const value = {
+      assumptions: ["標準 {481} Combo", "Stack は {1,200}", "SPR は {0.5}"],
+    };
+    expect(resolveNumericRefs(value, table)).toEqual({
+      assumptions: ["標準 481 Combo", "Stack は 1,200", "SPR は 0.5"],
+    });
+  });
+
+  it("参照 {N3} の置き換えは従来どおりで、同じ文の波括弧の数値も外す", () => {
+    const text = `Pot ${ref("判断時点の Pot")} に対し標準 {481} Combo`;
+    expect(resolveNumericRefs(text, table)).toBe("Pot 55 に対し標準 481 Combo");
+  });
+
+  it("波括弧の中が数字だけではないもの・未知の参照は触らない", () => {
+    const text = "{abc} {N999} {12a} {} {1.} {1,20} {a1}";
+    expect(resolveNumericRefs(text, table)).toBe(text);
+  });
+
+  it("全角の括弧・数字も外す", () => {
+    expect(resolveNumericRefs("標準 ｛４８１｝ Combo", table)).toBe(
+      "標準 ４８１ Combo",
+    );
+  });
+
+  it("検査（checkNumericGrounding）は変えない: 波括弧の数値は従来どおり通る", () => {
+    expect(checkNumericGrounding(["標準 {481} Combo"], table)).toBeNull();
+  });
+});
+
 /** 呼ばれるたびに outputs の次の値を返す Fake。受け取った Prompt を記録する。 */
 function scriptedQuery(outputs: readonly unknown[]) {
   const prompts: string[] = [];
@@ -320,6 +351,22 @@ describe("Pass A の生成（generateReview）", () => {
       "必要 Equity は 30%、Equity は 38% なので Call は妥当。",
     );
     expect(draft.assumptions).toEqual(["相手の Range は 34 Combo"]);
+  });
+
+  it("N の無い波括弧の数値（{481}）は Retry せず通り、保存する文からは波括弧が外れる（#208）", async () => {
+    const output = reviewOutput(goodPractical);
+    const fake = scriptedQuery([
+      { ...output, assumptions: ["相手の Range は標準 {481} Combo"] },
+    ]);
+    const draft = await generateReview(river, {
+      depth: "standard",
+      actionSeq: 1,
+      env: {},
+      query: fake.query,
+    });
+    expect(fake.prompts).toHaveLength(1);
+    expect(draft.generatedBy).toBe("review_ai");
+    expect(draft.assumptions).toEqual(["相手の Range は標準 481 Combo"]);
   });
 
   it("2 回続けて数値が不正なら Insufficient Evidence にし、3 回目は呼ばない（Retry の上限は増やさない）", async () => {
@@ -414,5 +461,22 @@ describe("Follow-up（Pass A の Review への質問）", () => {
     expect(fake.prompts).toHaveLength(2);
     expect(draft.generatedBy).toBe("review_ai");
     expect(draft.answer.text).toBe("必要 Equity は 30% です。");
+  });
+
+  it("generateFollowUp: N の無い波括弧の数値（{481}）は保存する答えから波括弧が外れる（#208）", async () => {
+    const fake = scriptedQuery([
+      {
+        scope: "answered",
+        answer: "相手の Range は標準 {481} Combo です。",
+        evidenceIds: [river.math.id],
+      },
+    ]);
+    const draft = await generateFollowUp(target, [], "Range は？", {
+      depth: "standard",
+      env: {},
+      query: fake.query,
+    });
+    expect(fake.prompts).toHaveLength(1);
+    expect(draft.answer.text).toBe("相手の Range は標準 481 Combo です。");
   });
 });
