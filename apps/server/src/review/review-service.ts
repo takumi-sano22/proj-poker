@@ -1,7 +1,8 @@
 // Review Orchestrator（docs/03 §2・§7）。保存済みの Hand の Hero の判断ごとに、Pass A（Decision Review）・Pass B（Reveal Review。#83）の
 // Review と、Review の Version への Follow-up の答えを非同期で作り、Version / ターン付きで追記する。
 // - Pass A の入力は Event Log（正本）から作る判断時点の Hero Information Set だけ（heroInformationSets。Hindsight Leak の防止・不変条件 3）
-//   と、判断の Hand より前に保存した同じ Session の Hand の public の Event だけから作る Hero の Table Tendency（D122・#153）
+//   と、判断の Hand より前に保存した同じ Session の Hand の public の Event だけから作る Hero の Table Tendency（D122・#153）、
+//   Tournament の Hand では Session の設定の Snapshot と参加人数（ICM の Evidence。D109・D130・#189）
 // - Pass B だけが Hand 後の Learning-only Full Reveal（projectLearningReveal）を使う。Pass B の Evidence は Pass A・CPU の入力に渡さない
 // - Follow-up は指定した Pass の Review の Evidence だけで答える（Pass A への質問に Hand 後の情報を混ぜない）
 // - 生成は Hand の進行と切り離して裏で進め、呼び出し側には「待ち（pending）」の状態を返す（docs/03 §7・async ガイダンス 3）
@@ -9,7 +10,6 @@
 //   （Claude・Solver の負荷を抑える）
 // - Claude の呼び出しの失敗（未ログイン・利用枠・Timeout 等）は Review を作らず、失敗の状態を返して再実行を待つ。Event Log は書き換えない
 import {
-  extractImportantSpots,
   heroInformationSets,
   projectLearningReveal,
   type HandEvent,
@@ -25,7 +25,8 @@ import {
   type TableTendency,
 } from "../memory/table-tendency.js";
 import type { SolverAdapter } from "../solver/types.js";
-import { buildReviewEvidence } from "./evidence.js";
+import { tournamentSessionInfoOfHand } from "../tournament-session-info.js";
+import { buildReviewEvidence, reviewSpotReasons } from "./evidence.js";
 import { generateReview } from "./generate.js";
 import { toPlayerNames } from "./identifiers.js";
 import { generateRevealReview } from "./generate-reveal.js";
@@ -516,14 +517,19 @@ export class ReviewService {
     const sets = heroInformationSets(events, this.deps.heroId);
     const set = sets[decisionIndex];
     if (set === undefined) throw new Error("判断が無い");
-    const reasons =
-      extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
-        ?.reasons ?? [];
+    // Tournament の Hand（#189）では Session の設定と参加人数を渡し、ICM の Evidence と Tournament の Important Spot を足す。
+    const tournament = tournamentSessionInfoOfHand(this.deps.events, handId);
+    const reasons = reviewSpotReasons(
+      sets,
+      decisionIndex,
+      tournament ?? undefined,
+    );
     const evidence = await buildReviewEvidence(set, reasons, {
       playerNames: toPlayerNames(this.deps.players),
       kb: this.deps.kb,
       solver: this.deps.solver,
       tableTendency: this.heroTableTendencyBefore(handId),
+      ...(tournament === null ? {} : { tournament }),
       signal: this.closing.signal,
       onSolverFailure: (err) =>
         this.deps.logger?.warn(
@@ -587,9 +593,13 @@ export class ReviewService {
     // Learning-only Full Reveal は Hand が終わった後だけ値を持つ（target で終わった Hand に限っている）。
     const reveal = projectLearningReveal(events);
     if (reveal === null) throw new Error("Hand が終わっていない");
-    const reasons =
-      extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
-        ?.reasons ?? [];
+    // Decision Context の Important Spot の理由は Pass A と同じ（Tournament の理由を含む。Pass B に ICM の Evidence は足さない）。
+    const tournament = tournamentSessionInfoOfHand(this.deps.events, handId);
+    const reasons = reviewSpotReasons(
+      sets,
+      decisionIndex,
+      tournament ?? undefined,
+    );
     const evidence = await buildRevealEvidence(
       set,
       reveal,

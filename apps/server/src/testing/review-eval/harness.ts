@@ -6,13 +6,15 @@ import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import {
   cardToString,
   createDeck,
-  extractImportantSpots,
   heroInformationSets,
 } from "@proj-poker/engine";
 import type { ClaudeQuery } from "../../claude/structured-query.js";
 import { PHASE1_TABLE_SETUP } from "../../config.js";
 import type { LoadedKb } from "../../kb/index.js";
-import { buildReviewEvidence } from "../../review/evidence.js";
+import {
+  buildReviewEvidence,
+  reviewSpotReasons,
+} from "../../review/evidence.js";
 import { generateReview } from "../../review/generate.js";
 import {
   findIdentifiers,
@@ -32,9 +34,12 @@ import { allowedCardsAt, forbiddenKeys, leakedCards } from "../leaks.js";
 import { hashParams } from "../opponent-eval/harness.js";
 import {
   BTN_VS_UTG,
+  BUBBLE_CALL,
+  BUBBLE_SHOVE,
   MULTIWAY_FLOP,
   SB_VS_BTN,
   playScriptedHand,
+  tournamentSessionOf,
   type ScriptedHand,
 } from "./hands.js";
 
@@ -55,6 +60,16 @@ export const REVIEW_EVAL_CASES: readonly ReviewEvalCase[] = [
   { id: "btn_vs_utg/d3", hand: BTN_VS_UTG, decisionIndex: 3 },
   { id: "sb_vs_btn/d2", hand: SB_VS_BTN, decisionIndex: 2 },
   { id: "multiway_flop/d1", hand: MULTIWAY_FLOP, decisionIndex: 1 },
+];
+
+/**
+ * Tournament の代表の判断（#189）。Bubble の Shove と、Bubble の All-in への Call（ICM と Chip EV の必要 Equity を並べる Spot）。
+ * 実モデルの録画はまだ無い（Claude の利用枠を使う録画は人間判断）ので、REVIEW_EVAL_CASES（録画を再生する CI の母集団）とは分け、
+ * 固定の応答（Fake）で本番と同じ経路を通す（harness.test.ts）。録画を取るときに REVIEW_EVAL_CASES へ入れる。
+ */
+export const TOURNAMENT_REVIEW_EVAL_CASES: readonly ReviewEvalCase[] = [
+  { id: "bubble_shove/d0", hand: BUBBLE_SHOVE, decisionIndex: 0 },
+  { id: "bubble_call/d0", hand: BUBBLE_CALL, decisionIndex: 0 },
 ];
 
 export interface ReviewEvalAttempt {
@@ -146,13 +161,14 @@ async function runCase(
   const sets = heroInformationSets(events, "hero");
   const set = sets[c.decisionIndex];
   if (set === undefined) throw new Error(`${c.id}: Hero の判断が無い`);
-  const reasons =
-    extractImportantSpots(sets).find((s) => s.decisionIndex === c.decisionIndex)
-      ?.reasons ?? [];
+  // Tournament の Hand は本番（ReviewService）と同じく Session の情報を渡す（Important Spot の理由と ICM の Evidence。#189）。
+  const tournament = tournamentSessionOf(c.hand);
+  const reasons = reviewSpotReasons(sets, c.decisionIndex, tournament);
   const evidence = await buildReviewEvidence(set, reasons, {
     playerNames: toPlayerNames(PHASE1_TABLE_SETUP.players),
     kb: options.kb,
     solver: options.solver,
+    ...(tournament === undefined ? {} : { tournament }),
   });
   const upto = set.decision.decisionPointSeq;
   const allowed = allowedCardsAt(events, "hero", upto);

@@ -3,14 +3,20 @@
 // Event Log から heroInformationSets で作る（判断時点の Information Set を手で組み立てない）。
 import {
   PHASE1_CASH_PRESET,
+  TOURNAMENT_PRESETS,
   applyAction,
   cardToString,
   createDeck,
   parseCards,
+  recordSessionEvent,
   startHand,
+  tableConfigForLevel,
   type Card,
   type HandEvent,
   type PlayerAction,
+  type SeatInit,
+  type TournamentConfig,
+  type TournamentSessionInfo,
 } from "@proj-poker/engine";
 import { PHASE1_TABLE_SETUP } from "../../config.js";
 
@@ -23,6 +29,29 @@ export interface ScriptedHand {
   readonly board: string;
   /** Hand の終わりまでの Action（席の playerId と Action）。 */
   readonly script: readonly (readonly [string, PlayerAction])[];
+  /** Tournament の Hand（#189）だけ。省略は本番の既定の Cash の卓。 */
+  readonly tournament?: ScriptedTournament;
+}
+
+/** Tournament の Hand の設定（Session の設定の Snapshot・参加人数・この Hand の Level と席）。 */
+export interface ScriptedTournament {
+  readonly config: TournamentConfig;
+  /** 参加人数（Prize Pool = 参加費 × 参加人数）。 */
+  readonly entrants: number;
+  /** この Hand の Level（1 始まり）と Session の何 Hand 目か。 */
+  readonly level: number;
+  readonly handNumber: number;
+  /** 席順（時計回り）と Hand の開始時の Stack（Bust した Player は座らない）。 */
+  readonly seats: readonly SeatInit[];
+}
+
+/** Tournament の Hand の Session の情報（Review の Evidence に渡す値。本番は Event Log の SESSION_STARTED から読む）。 */
+export function tournamentSessionOf(
+  hand: ScriptedHand,
+): TournamentSessionInfo | undefined {
+  return hand.tournament === undefined
+    ? undefined
+    : { config: hand.tournament.config, entrants: hand.tournament.entrants };
 }
 
 // 本番の既定の卓（6-max・Hero 1 人 + CPU 5 人・100BB。席順は hero → cpu1 → … → cpu5）。額は PHASE1_CASH_PRESET（SB 1 / BB 2）の Chip。
@@ -131,25 +160,126 @@ export const MULTIWAY_FLOP: ScriptedHand = {
   ],
 };
 
+/**
+ * 標準 6-max STT（D127）。下の Tournament の Hand はどちらも 4 人残り（6 人参加・3 位まで入賞なので Bubble）・
+ * Level 5（75 / 150・Big Blind Ante 150）で、Chip の合計は参加人数 × Starting Stack（9,000）。
+ */
+const STT6 = TOURNAMENT_PRESETS.stt6_hand_count;
+
+/**
+ * Tournament の Bubble で、BTN の Hero（1,500 = 10BB）が Preflop で Shove し、SB・BB は Fold する（#189）。
+ * Hero の判断: 0 = Shove（Call しうる相手は SB と BB。Hero が Fold した比較点では BB が Pot を取る）。
+ */
+export const BUBBLE_SHOVE: ScriptedHand = {
+  id: "bubble_shove",
+  label: "Tournament の Bubble で、BTN の Hero が 10BB で Shove（K9s）",
+  button: "hero",
+  holes: { hero: "Ks 9s", cpu1: "7d 2c", cpu2: "Jh 4h" },
+  board: "Qc 8d 3s Td 2h",
+  script: [
+    ["cpu3", fold],
+    ["hero", { type: "all_in" }],
+    ["cpu1", fold],
+    ["cpu2", fold],
+  ],
+  tournament: {
+    config: STT6,
+    entrants: 6,
+    level: 5,
+    handNumber: 41,
+    seats: [
+      { playerId: "hero", stack: 1_500 },
+      { playerId: "cpu1", stack: 3_000 },
+      { playerId: "cpu2", stack: 2_500 },
+      { playerId: "cpu3", stack: 2_000 },
+    ],
+  },
+};
+
+/**
+ * Tournament の Bubble で、BB の Hero（3,000）が BTN の Shove（2,500）に Call する（#189）。
+ * Hero の判断: 0 = All-in への Call（相手は BTN。Hero が Fold したら BTN が Pot を取る）。
+ */
+export const BUBBLE_CALL: ScriptedHand = {
+  id: "bubble_call",
+  label: "Tournament の Bubble で、BB の Hero が BTN の Shove に Call（AQo）",
+  button: "cpu2",
+  holes: { hero: "Ah Qd", cpu2: "Kc Kd", cpu1: "8s 5c" },
+  board: "9c 7h 2d 4s 3h",
+  script: [
+    ["cpu1", fold],
+    ["cpu2", { type: "all_in" }],
+    ["cpu3", fold],
+    ["hero", call],
+  ],
+  tournament: {
+    config: STT6,
+    entrants: 6,
+    level: 5,
+    handNumber: 42,
+    seats: [
+      { playerId: "hero", stack: 3_000 },
+      { playerId: "cpu1", stack: 1_500 },
+      { playerId: "cpu2", stack: 2_500 },
+      { playerId: "cpu3", stack: 2_000 },
+    ],
+  },
+};
+
 export const SCRIPTED_HANDS: readonly ScriptedHand[] = [
   BTN_VS_UTG,
   SB_VS_BTN,
   MULTIWAY_FLOP,
 ];
 
-/** Hand を最後まで Engine で進めた Event Log。途中で拒否された・終わらなかったら例外（Hand の定義の誤り）。 */
-export function playScriptedHand(hand: ScriptedHand): HandEvent[] {
+/**
+ * Hand を最後まで Engine で進めた Event Log。途中で拒否された・終わらなかったら例外（Hand の定義の誤り）。
+ * options.sessionId を渡したときだけ、本番の Session の最初の Hand と同じく開始の Event の直後に SESSION_STARTED を置く
+ * （Tournament の Hand は設定の Snapshot を残す。D129。Review Eval の Hand は置かない＝録画の指紋を変えない）。
+ */
+export function playScriptedHand(
+  hand: ScriptedHand,
+  options: { readonly sessionId?: string } = {},
+): HandEvent[] {
+  const t = hand.tournament;
+  const seats = t?.seats ?? SEATS;
+  const level = t === undefined ? undefined : t.config.levels[t.level - 1];
+  if (t !== undefined && level === undefined) {
+    throw new Error(`${hand.id}: Level ${t.level} が設定に無い`);
+  }
   const started = startHand({
     handId: `review-${hand.id}`,
-    seats: SEATS,
+    seats,
     buttonPlayerId: hand.button,
     // 本番と同じ Preset（Rule Profile の ID も同じ）。ID は Prompt の引数（録画の指紋）に入るので、変えたら録画を取り直す。
-    config: PHASE1_CASH_PRESET,
-    deal: { deck: stackedDeck(hand.button, hand.holes, hand.board) },
+    // Tournament の Hand は本番と同じく、その Level の Blind・Ante にした卓（tableConfigForLevel）で始める。
+    config:
+      t === undefined || level === undefined
+        ? PHASE1_CASH_PRESET
+        : tableConfigForLevel(PHASE1_CASH_PRESET, level, t.config.anteKind),
+    deal: { deck: stackedDeck(seats, hand.button, hand.holes, hand.board) },
+    ...(t === undefined
+      ? {}
+      : {
+          tournament: {
+            level: t.level,
+            handNumber: t.handNumber,
+            playTimeMs: 0,
+          },
+        }),
   });
   if (!started.ok) throw new Error(`${hand.id}: ${started.error.kind}`);
   let state = started.value.state;
   const events: HandEvent[] = [...started.value.events];
+  if (options.sessionId !== undefined) {
+    const session = recordSessionEvent(state, {
+      type: "SESSION_STARTED",
+      sessionId: options.sessionId,
+      ...(t === undefined ? {} : { tournament: t.config }),
+    });
+    state = session.state;
+    events.push(...session.events);
+  }
   for (const [playerId, action] of hand.script) {
     const applied = applyAction(state, playerId, action);
     if (!applied.ok) {
@@ -171,18 +301,19 @@ export function playScriptedHand(hand: ScriptedHand): HandEvent[] {
  * Engine の package は testing を公開しないので、Runtime 側のテスト補助として持つ。opponent-eval/spots.ts と同じ）。
  */
 function stackedDeck(
+  seats: readonly SeatInit[],
   button: string,
   holes: Readonly<Record<string, string>>,
   board: string,
 ): Card[] {
-  const n = SEATS.length;
-  const buttonIndex = SEATS.findIndex((s) => s.playerId === button);
+  const n = seats.length;
+  const buttonIndex = seats.findIndex((s) => s.playerId === button);
   const slots: (Card | undefined)[] = Array.from(
     { length: 52 },
     () => undefined,
   );
   for (let k = 0; k < n; k++) {
-    const seat = SEATS[(buttonIndex + 1 + k) % n];
+    const seat = seats[(buttonIndex + 1 + k) % n];
     const hole = seat === undefined ? undefined : holes[seat.playerId];
     if (hole === undefined) continue;
     const [first, second] = parseCards(hole);

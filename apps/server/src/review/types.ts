@@ -2,7 +2,9 @@
 // Review AI に渡すのは構造化した Evidence（ReviewEvidence）だけで、Event Log・global な State・他者の札・Persona は型の上でも渡さない。
 import type {
   ActionType,
+  AllInOutcomes,
   AlternativeAction,
+  AnteKind,
   Card,
   ImportantSpotReason,
   LegalAction,
@@ -12,6 +14,7 @@ import type {
   RangeAssumption,
   RulingCode,
   Street,
+  TournamentStage,
 } from "@proj-poker/engine";
 import type { KbLabel, KbTopic } from "../kb/types.js";
 import type { TableTendencyItemId } from "../memory/table-tendency-policy.js";
@@ -267,6 +270,115 @@ export type UserReadEvidence =
   | { readonly status: "not_collected" }
   | { readonly status: "collected"; readonly items: readonly UserReadItem[] };
 
+/** 1 席の判断時点の ICM Equity（D130・#189）。値は表示・Evidence の丸め（pt・%・BB は小数第 1 位）。 */
+export interface TournamentSeatIcmEvidence {
+  readonly playerId: string;
+  /** Hero の画面に出ている名前（#96）。 */
+  readonly displayName?: string;
+  readonly isHero: boolean;
+  /** ICM の計算に使った Stack（判断時点の手元の Stack + この Hand で出した額。Pot の行方を決めない）。 */
+  readonly icmStack: number;
+  /** icmStack ÷ Big Blind。 */
+  readonly stackBb: number;
+  /** ICM Equity（pt）。 */
+  readonly icmEquity: number;
+  /** 争う賞金の合計に対する ICM Equity の割合（%）。 */
+  readonly icmEquityPercent: number;
+}
+
+/** 判断時点の ICM Equity（D130: Tournament の判断では常に出す）。provenance は id と ICM の Policy の版・方式。 */
+export interface TournamentIcmEvidence {
+  /** `icm:<handId>/d<判断の番号>`。 */
+  readonly id: string;
+  readonly icmPolicyVersion: string;
+  readonly method: string;
+  /** Stack を取った時点（判断時点の手元 + この Hand で出した額）。 */
+  readonly stackBasis: "decision_point";
+  readonly seats: readonly TournamentSeatIcmEvidence[];
+}
+
+/**
+ * All-in の判断の相手 1 人との必要 Equity（D130）。Chip EV と ICM は別の項目・別の id（混同させない。D109）。
+ * 必要 Equity は %（小数第 1 位）。比較・判定は丸める前の値で行い、ここには Review AI と画面へ渡す値だけを置く。
+ */
+export interface TournamentAllInRequirementEvidence {
+  readonly villainId: string;
+  readonly displayName?: string;
+  /** Chip EV の必要 Equity（Pot Odds と同じ考え方。All-in への Call では Pot Odds と一致する）。 */
+  readonly chipEv: {
+    /** `chipev:<handId>/d<判断の番号>/<相手の playerId>`。 */
+    readonly id: string;
+    readonly requiredEquityPercent: number;
+    /** Hero の Stack（Chip）の Fold・勝ち・負け。 */
+    readonly heroStack: AllInOutcomes;
+  };
+  /** ICM の必要 Equity。勝っても負けても ICM Equity が変わらないなら null。 */
+  readonly icm: {
+    /** `icmreq:<handId>/d<判断の番号>/<相手の playerId>`。 */
+    readonly id: string;
+    readonly requiredEquityPercent: number | null;
+    /** Hero の ICM Equity（pt）の Fold・勝ち・負け。 */
+    readonly heroIcmEquity: AllInOutcomes;
+  };
+}
+
+/**
+ * All-in が関わる判断（Shove・All-in への Call）の ICM と Chip EV の必要 Equity（D130）。
+ * Shove は「その 1 人に Call され、ほかは Fold した場合」の条件付きで、Fold Equity・Call の頻度を含まない（前提を assumptions に明記する）。
+ * Multiway の All-in 等、ICM Calculator の範囲外の判断は out_of_scope（Chip EV だけで評価させない。sufficiency.ts）。
+ */
+export type TournamentAllInEvidence =
+  | {
+      readonly status: "available";
+      readonly decision: "call_all_in" | "shove";
+      readonly assumptions: {
+        readonly othersFold: true;
+        readonly foldEquityIncluded: false;
+        readonly callFrequencyIncluded: false;
+        /** Hero が Fold した比較点で今の Pot を取る Player（playerId）。 */
+        readonly potWinnerIfHeroFolds: string;
+        /** 前提の文（Review AI と画面にそのまま出す）。 */
+        readonly notes: readonly string[];
+      };
+      /** call_all_in は相手 1 人、shove は Call しうる相手ごと（席順）。 */
+      readonly requirements: readonly TournamentAllInRequirementEvidence[];
+    }
+  | {
+      readonly status: "out_of_scope";
+      readonly decision: "call_all_in" | "shove";
+      readonly reason: string;
+    };
+
+/**
+ * Tournament の Evidence（D109・D130・#189）。Tournament の Hand の判断だけが持つ（Cash の Evidence は項目ごと持たない。
+ * Cash の Prompt と Review Eval の録画の指紋を変えない）。値は判断時点の公開の情報（Hand の開始の公開の Event・判断時点の Stack）と
+ * Session の設定の Snapshot・参加人数だけから決定論で作る（ICM の数値の正本はこのコード。Review AI は説明だけ）。
+ */
+export interface TournamentEvidence {
+  /** `tournament:<handId>/d<判断の番号>`。公開の Tournament の状況（残人数・Level・Ante・Payout・Stage）。 */
+  readonly id: string;
+  /** 組み立て方の版（REVIEW_TOURNAMENT_POLICY）。 */
+  readonly tournamentPolicyVersion: string;
+  readonly payoutPolicyVersion: string;
+  readonly entrants: number;
+  /** 残人数（この Hand に座っている人数）。 */
+  readonly remaining: number;
+  /** この Hand の Level と Session の何 Hand 目か（Level を持たない旧版の Tournament の Hand は null）。 */
+  readonly level: number | null;
+  readonly handNumber: number | null;
+  readonly anteKind: AnteKind;
+  /** Ante の 1 回分の額（無ければ 0）。 */
+  readonly ante: number;
+  /** Prize Pool（pt）。 */
+  readonly prizePool: number;
+  /** 順位ごとの賞金（pt。1 位から入賞の数だけ）。 */
+  readonly payoutsByPlace: readonly number[];
+  readonly stage: TournamentStage;
+  readonly icm: TournamentIcmEvidence;
+  /** All-in の関わる判断だけ。それ以外は null。 */
+  readonly allIn: TournamentAllInEvidence | null;
+}
+
 /** Review AI へ渡す Evidence の全体（docs/05 §6）。これ以外は渡さない。 */
 export interface ReviewEvidence {
   readonly pass: "decision";
@@ -279,6 +391,8 @@ export interface ReviewEvidence {
   readonly solver: SolverEvidenceItem;
   readonly knowledge: KnowledgeEvidence;
   readonly userRead: UserReadEvidence;
+  /** Tournament の Hand の判断だけ（D109・D130・#189）。Cash の Evidence は項目ごと持たない。 */
+  readonly tournament?: TournamentEvidence;
 }
 
 /** Evidence の ID（docs/04 §8 の Math / Solver / User Read Evidence IDs）。provided は渡した ID、cited は Review AI が根拠に挙げた ID。 */
@@ -291,6 +405,11 @@ export interface EvidenceIdSet {
   readonly userRead: readonly string[];
   /** Table Tendency の項目の id（D122・#153）。卓の傾向が Evidence に無い Review（#153 より前の Review を含む）には無い。 */
   readonly tableTendency?: readonly string[];
+  /**
+   * Tournament の Evidence の id（#189。公開の状況・判断時点の ICM Equity・All-in の Chip EV / ICM の必要 Equity）。
+   * Tournament の Hand の判断の Review だけが持つ。
+   */
+  readonly tournament?: readonly string[];
   readonly cited: readonly string[];
 }
 

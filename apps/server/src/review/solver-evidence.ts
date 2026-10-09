@@ -22,6 +22,11 @@ import {
 import type { SolverEvidenceItem } from "./types.js";
 
 export interface SolverEvidenceOptions {
+  /**
+   * Session の mode（#189）。Tournament の Spot は mode: tournament で Capability Gate に渡す（ICM を扱わない Solver は Unsupported の
+   * 正常な Fallback）。省略は cash。
+   */
+  readonly mode?: "cash" | "tournament";
   readonly signal?: AbortSignal;
   /** Solver の失敗の本文をログに残す（Evidence には決まった文だけを入れる。パス等を Review へ渡さない）。 */
   readonly onFailure?: (error: unknown) => void;
@@ -68,7 +73,7 @@ export async function buildSolverEvidence(
         "Preflop の判断は Solver の対象外（Range と Math・KB で評価する）",
     };
   }
-  const structure = structuralSpot(knowledge);
+  const structure = structuralSpot(knowledge, options.mode ?? "cash");
   const support = solver.supports(structure);
   if (!support.supported) {
     return {
@@ -132,7 +137,10 @@ export async function buildSolverEvidence(
 }
 
 /** Spot の構造（Capability の判定に使う値）。Range はまだ組まない。 */
-function structuralSpot(knowledge: KnowledgeState): AnalysisSpot {
+function structuralSpot(
+  knowledge: KnowledgeState,
+  mode: "cash" | "tournament",
+): AnalysisSpot {
   const active = knowledge.seats.filter((s) => !s.folded);
   const maxCommitted = Math.max(...active.map((s) => s.totalCommitted));
   return {
@@ -141,7 +149,7 @@ function structuralSpot(knowledge: KnowledgeState): AnalysisSpot {
     playerCount: active.length,
     // 全額を出せずに All-in した Player がいれば、Pot ごとに参加資格が違う（Side Pot）。
     sidePot: active.some((s) => s.allIn && s.totalCommitted < maxCommitted),
-    mode: "cash",
+    mode,
     board: knowledge.board,
     pot: knowledge.pot,
     effectiveStack: knowledge.math.effectiveStack,

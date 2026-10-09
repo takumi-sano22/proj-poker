@@ -3,10 +3,13 @@
 // Evidence に入る経路が無い（不変条件 2・3。Hindsight Leak の防止）。Card は Card の形のまま持ち、Prompt を作るときに表記へ直す。
 // Table Tendency（D122・#153）だけは前の Hand から作る値で、呼び出し側（ReviewService）が判断の Hand より前に保存した Hand に絞って作り、
 // 出来上がった値を受け取る（ここでは Event Store を読まない）。
+// Tournament の Hand（#189）では、呼び出し側が Session の設定の Snapshot と参加人数を渡し、判断時点の ICM の Evidence を足す
+// （tournament-evidence.ts。Cash の Evidence は項目ごと持たない）。
 import {
   analyzeDecision,
   classifyPreflop,
   compareRangeProfiles,
+  extractImportantSpots,
   positionName,
   type DecisionAnalysis,
   type HeroInformationSet,
@@ -14,6 +17,7 @@ import {
   type KnowledgeState,
   type PreflopSpot,
   type RangeAssumption,
+  type TournamentSessionInfo,
 } from "@proj-poker/engine";
 import { searchKb, type LoadedKb } from "../kb/index.js";
 import type { KbSpot, KbSpotKind } from "../kb/types.js";
@@ -21,6 +25,11 @@ import type { TableTendency } from "../memory/table-tendency.js";
 import type { SolverAdapter } from "../solver/types.js";
 import type { PlayerNames } from "./identifiers.js";
 import { buildSolverEvidence } from "./solver-evidence.js";
+import {
+  buildTournamentEvidence,
+  tournamentIdsOf,
+  tournamentSpotReasonsOf,
+} from "./tournament-evidence.js";
 import type {
   DecisionContextEvidence,
   EvidenceIdSet,
@@ -46,6 +55,29 @@ export interface EvidenceDeps {
    * 作った値（buildHeroTableTendencyFromStore に beforeOrd を渡した結果）を渡す。省略（Review Eval・テスト）なら入れない。
    */
   readonly tableTendency?: TableTendency;
+  /**
+   * Tournament の Hand の Session の情報（設定の Snapshot・参加人数。#189）。渡したときだけ Tournament の Evidence を足し、
+   * Solver の Capability Gate へ mode: tournament で渡す。Cash の Hand は省略（Evidence・Prompt は #189 より前と同じ）。
+   */
+  readonly tournament?: TournamentSessionInfo;
+}
+
+/**
+ * Review の対象の判断の Important Spot の理由（判断時点の情報だけで選ぶ）。Cash と共通の理由（extractImportantSpots）に、
+ * Tournament の Hand では Bubble / Pay Jump / Short Stack（tournamentImportantSpotReasons）を足す。
+ * 本番（ReviewService の Pass A・Pass B）と Review Eval のハーネスが同じこの関数を通る（LC-050）。
+ */
+export function reviewSpotReasons(
+  sets: readonly HeroInformationSet[],
+  decisionIndex: number,
+  tournament?: TournamentSessionInfo,
+): ImportantSpotReason[] {
+  const reasons =
+    extractImportantSpots(sets).find((s) => s.decisionIndex === decisionIndex)
+      ?.reasons ?? [];
+  const set = sets[decisionIndex];
+  if (tournament === undefined || set === undefined) return [...reasons];
+  return [...reasons, ...tournamentSpotReasonsOf(set, tournament)];
 }
 
 /** Knowledge Evidence に入れる KB の項目数（暫定値）。Prompt の長さと根拠の幅の釣り合いで決める。 */
@@ -83,6 +115,8 @@ export async function buildReviewEvidence(
   );
   await yieldToEventLoop();
   const solver = await buildSolverEvidence(set, deps.solver, {
+    // Tournament の Spot は Capability Gate に mode: tournament で渡す（Cash だけを解く Solver は Unsupported の正常な Fallback。#189）。
+    mode: deps.tournament === undefined ? "cash" : "tournament",
     ...(deps.signal === undefined ? {} : { signal: deps.signal }),
     ...(deps.onSolverFailure === undefined
       ? {}
@@ -102,6 +136,17 @@ export async function buildReviewEvidence(
     solver,
     knowledge: knowledgeEvidence(set.knowledge, deps.kb),
     userRead: userReadEvidence(set, deps.playerNames),
+    // Tournament の Hand だけ（Cash の Evidence は項目ごと持たない。Prompt と録画の指紋を変えない）。
+    ...(deps.tournament === undefined
+      ? {}
+      : {
+          tournament: buildTournamentEvidence(
+            set,
+            deps.tournament,
+            prefix,
+            deps.playerNames,
+          ),
+        }),
   };
 }
 
@@ -192,6 +237,10 @@ export function evidenceIdsOf(
     ...(evidence.opponentObservation.status === "available"
       ? { tableTendency: tableTendencyIdsOf(evidence) }
       : {}),
+    // Tournament の Evidence（#189）があるときだけ持つ（Cash の Review の記録は #189 より前と同じ形）。
+    ...(evidence.tournament === undefined
+      ? {}
+      : { tournament: tournamentIdsOf(evidence.tournament) }),
     cited,
   };
 }
@@ -207,6 +256,7 @@ export function allEvidenceIds(evidence: ReviewEvidence): Set<string> {
     ...ids.knowledge,
     ...ids.userRead,
     ...(ids.tableTendency ?? []),
+    ...(ids.tournament ?? []),
   ]);
 }
 

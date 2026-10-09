@@ -1,20 +1,19 @@
 // Review の文から内部の識別子を消す処理（#96・D101）のテスト。
-import {
-  extractImportantSpots,
-  heroInformationSets,
-  projectLearningReveal,
-} from "@proj-poker/engine";
+import { heroInformationSets, projectLearningReveal } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
 import { loadKb } from "../kb/index.js";
 import { createAmaster97Adapter } from "../solver/amaster97-adapter.js";
 import {
   BTN_VS_UTG,
+  BUBBLE_CALL,
+  BUBBLE_SHOVE,
   MULTIWAY_FLOP,
   SB_VS_BTN,
   playScriptedHand,
+  tournamentSessionOf,
 } from "../testing/review-eval/hands.js";
 import { SAMPLE_TABLE_TENDENCY } from "../testing/table-tendency-fixture.js";
-import { buildReviewEvidence } from "./evidence.js";
+import { buildReviewEvidence, reviewSpotReasons } from "./evidence.js";
 import { buildRevealEvidence } from "./reveal-evidence.js";
 import {
   EVIDENCE_TERMS,
@@ -204,18 +203,26 @@ describe("対応表の網羅（Evidence の項目名・enum の値）", () => {
         }
       }
     };
-    for (const hand of [BTN_VS_UTG, SB_VS_BTN, MULTIWAY_FLOP]) {
+    // Tournament の Hand（#189。Shove・All-in への Call）の Evidence の項目名・値も網羅する。
+    for (const hand of [
+      BTN_VS_UTG,
+      SB_VS_BTN,
+      MULTIWAY_FLOP,
+      BUBBLE_SHOVE,
+      BUBBLE_CALL,
+    ]) {
       const events = playScriptedHand(hand);
       const sets = heroInformationSets(events, "hero");
-      const spots = extractImportantSpots(sets);
+      const tournament = tournamentSessionOf(hand);
       const reveal = projectLearningReveal(events);
       for (const [i, set] of sets.entries()) {
-        const reasons = spots.find((s) => s.decisionIndex === i)?.reasons ?? [];
+        const reasons = reviewSpotReasons(sets, i, tournament);
         // 卓の傾向（D122・#153）がある Evidence の項目名・値も網羅する。
         const evidence = await buildReviewEvidence(set, reasons, {
           kb,
           solver,
           tableTendency: SAMPLE_TABLE_TENDENCY,
+          ...(tournament === undefined ? {} : { tournament }),
         });
         Object.assign(names, replacementNamesOf(evidence));
         walk(evidence);
@@ -258,6 +265,36 @@ describe("evidenceGlossary", () => {
     // 卓の傾向の項目を足しても、他の項目の説明はそのまま。
     const lines = withTendency.split("\n");
     for (const line of decision.split("\n")) expect(lines).toContain(line);
+  });
+
+  it("Tournament（#189）の項目は、Pass A で Tournament の Evidence があるときだけ出す（Cash の Prompt は #189 より前と同じ）", () => {
+    const decision = evidenceGlossary("decision");
+    const withTournament = evidenceGlossary("decision", { tournament: true });
+    for (const glossary of [decision, evidenceGlossary("reveal")]) {
+      expect(glossary).not.toContain("- icmEquity:");
+      expect(glossary).not.toContain("- stage:");
+    }
+    expect(withTournament).toContain("- icmEquity: ICM Equity");
+    expect(withTournament).toContain("- chipEv: Chip EV の必要 Equity");
+    const lines = withTournament.split("\n");
+    for (const line of decision.split("\n")) expect(lines).toContain(line);
+  });
+
+  it("Tournament の項目名・値は置換し、普通の英単語と同じ綴りの項目名は name=値 の形のときだけ置換する", () => {
+    expect(
+      sanitizeText(
+        "stage=bubble で icmEquity が 116.2、in_the_money ではない",
+        {},
+      ),
+    ).toBe(
+      "トーナメントの段階 bubble で ICM Equity（賞金の期待値。pt） が 116.2、入賞圏 ではない",
+    );
+    expect(sanitizeText("the next level and ante", {})).toBe(
+      "the next level and ante",
+    );
+    expect(sanitizeText("foldEquityIncluded=false", {})).toBe(
+      "Fold Equity を含まない",
+    );
   });
 
   it("卓の傾向の項目名・値は置換する（Review AI の文に残さない）", () => {

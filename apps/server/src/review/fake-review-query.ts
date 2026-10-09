@@ -58,13 +58,21 @@ export function parseFakeReviewAssessment(raw: string | undefined): Assessment {
   return found;
 }
 
-/** 種類ごとの固定の応答。evidenceIds は Schema の候補の先頭 2 つ（候補が無ければ空）。 */
+/**
+ * 種類ごとの固定の応答。evidenceIds は Schema の候補の先頭 2 つ（候補が無ければ空）に、Tournament の All-in の判断の ICM の必要 Equity の
+ * id（icmreq:。候補にあるときだけ最初の 1 つ）を足す（Grounding の利用条件を通す。#189）。
+ */
 function fakeOutput(
   kind: CallKind,
   schema: Record<string, unknown>,
   assessment: Assessment,
 ): unknown {
-  const evidenceIds = enumOf(schema, "evidenceIds").slice(0, 2);
+  const candidates = enumOf(schema, "evidenceIds");
+  const icmRequirement = candidates.find((id) => id.startsWith("icmreq:"));
+  const evidenceIds = [
+    ...candidates.slice(0, 2),
+    ...(icmRequirement === undefined ? [] : [icmRequirement]),
+  ];
   switch (kind) {
     case "decision":
       return {
