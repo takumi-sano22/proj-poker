@@ -39,6 +39,7 @@ import {
   checkReviewOutput,
   reviewOutputSchema,
 } from "./review-ai.js";
+import { buildNumericTable } from "./numeric-grounding.js";
 import { checkEvidenceSufficiency } from "./sufficiency.js";
 import type { FollowUpTarget } from "./reveal-types.js";
 import type { ReviewEvidence, SolverEvidenceItem } from "./types.js";
@@ -89,12 +90,19 @@ const solver: SolverEvidenceItem = {
   warnings: [],
 };
 
-/** 検証を通る出力。 */
+/** 数値表（#168）でその説明の行を指す参照（{N3}）。 */
+function ref(e: ReviewEvidence, label: string): string {
+  const row = buildNumericTable(e).rows.find((r) => r.label === label);
+  if (row === undefined) throw new Error(`数値表に無い行: ${label}`);
+  return `{${row.key}}`;
+}
+
+/** 検証を通る出力（数値は数値表の参照と、表の値と一致する生の % で書く）。 */
 function validOutput(e: ReviewEvidence = evidence) {
   return {
     assessment: "reasonable",
     confidence: "medium",
-    practical: `Pot 31 に 24 の Bet で、必要 Equity は約 34%。仮定した Range に対する Equity は約 ${Math.round((e.math.equity?.equity ?? 0) * 100)}% なので Call は妥当。`,
+    practical: `Pot ${ref(e, "判断時点の Pot")} に ${ref(e, "Call に必要な額")} の Call で、必要 Equity は ${ref(e, "Pot Odds")}。仮定した Range に対する Equity は約 ${Math.round((e.math.equity?.equity ?? 0) * 100)}% なので Call は妥当。`,
     theoryBasis: "general_theory",
     theory:
       "Bet の大きさに対して守るべき頻度の考え方では、上位の Hand で Call する。",
@@ -369,6 +377,10 @@ describe("generateReview", () => {
     ]);
     expect(draft.evidenceIds.cited).toEqual(validOutput().evidenceIds);
     expect(draft.evidence).toBe(evidence);
+    // 数値表の参照は保存の前に決定論の値へ置き換わる（#168・D131）。
+    expect(draft.explanation.practical).toBe(
+      `Pot 55 に 24 の Call で、必要 Equity は 30%。仮定した Range に対する Equity は約 ${Math.round((evidence.math.equity?.equity ?? 0) * 100)}% なので Call は妥当。`,
+    );
   });
 
   it("詳しく（deep）は review_deep の具体モデルで呼ぶ（D97）", async () => {

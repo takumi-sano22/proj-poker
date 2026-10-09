@@ -1,4 +1,4 @@
-# D01〜D130の採用済み人間判断。
+# D01〜D131の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -522,3 +522,7 @@
   choice: "ICM は全席の Equity・Bubble Factor・All-in の必要 Equity まで構造化して CPU と Review に渡す（推奨案、AskUserQuestion）"
   status: "採用済み"
   decision: "CPUのPublic Tournament Contextには、全席のStackとBB換算・ICM Equity（ptと%）・Stage（bubble / in the money / heads-up）・自分から見た相手ごとのBubble Factorを構造化して足す（すべて公開のStackから決定論で計算する）。Reviewでは判断時点のICM Equityを常にEvidenceとして出し、All-inが関わる判断（Shove・All-inへのCall）ではChip EVの必要Equity（Pot Odds）とICMの必要Equityを別の項目として並べる。All-inへのCallは相手の額が決まっているのでそのまま計算する。Shoveは「特定の1人にCallされ、ほかはFoldした場合」の条件付きの必要EquityをCallしうる相手ごとに出し、Fold Equity・Callの頻度は含めない（その前提をEvidenceと画面に明記し、Review AIへ前提ごと渡す。Push/Fold Solverを暗黙に入れない。#192のCodexの指摘を受けた人間判断）。ICMの数値は決定論のICM Calculatorが正本で、Review AIとCPUは計算しない。D109の具体化。実装は#187〜#189。"
+- id: D131
+  choice: "Review の文の数値は Evidence から決定論で作った数値表の参照トークンで書かせ、%・pt・BB の付いた生の数値を照合する（案 A。#168 の人間判断、AskUserQuestion）"
+  status: "採用済み"
+  decision: "Pass A（Decision Review）と、Pass Aの Reviewへの Follow-upで、Evidenceから決定論で数値表（参照キーN1, N2…・人が読む説明・UIと揃えた書式の値。額はChipの実額・比率は整数の%・ICMはptと小数第1位の%）を作ってPromptに添え、Review AIには文の数値を参照（{N3}の形）で書かせる。出力の検証のGroundingで、未知の参照と、参照ではない%・pt・BBの付いた数値のうち数値表の値（とEvidenceの文に書かれた値）に表示の丸めの範囲で一致しないものを不正にする。単位の無い数（3-Bet・人数・Level等）は検査しない。不正時は既存のRetryの枠（最大2回）だけを使い、Retryの上限は増やさない。検証を通った文は参照を決定論の値に置き換えてから保存し、DBスキーマは変えない（#169のUIのEvidenceの直接表示は維持）。Pass B（Reveal Review）とPass Bへの Follow-upは範囲外。CashとTournamentで共通。Promptの変更に伴うCashのReview Evalの再録画（4判断 × repeat 3 = 12 Review・最大24呼び出し・OAuth / Agent SDK / buildClaudeEnvの経路だけ）を承認する。D125で横断の品質課題として残した#168を実装するもので、D125は変更しない。D40・D101・D122・D130の具体化。"

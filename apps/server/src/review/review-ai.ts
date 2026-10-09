@@ -6,6 +6,11 @@ import { cardToString, type Card } from "@proj-poker/engine";
 import { allEvidenceIds } from "./evidence.js";
 import { evidenceGlossary } from "./identifiers.js";
 import {
+  buildNumericTable,
+  checkNumericGrounding,
+  numericTableSection,
+} from "./numeric-grounding.js";
+import {
   ASSESSMENTS,
   CONFIDENCES,
   type Assessment,
@@ -56,7 +61,7 @@ export const REVIEW_SYSTEM_PROMPT = [
   "",
   "# 守ること",
   "- Evidence は判断の時点に Hero が知り得た情報と、そこから決定論で計算した値です。Hand の結果・相手の実際の札は渡していません。結果ではなく判断の質を評価してください。",
-  "- 数値（Pot・Pot Odds・Equity・必要 Equity・簡易 EV・Combo 数・頻度）は Evidence の値をそのまま使い、自分で計算し直したり作ったりしないでください。",
+  "- 数値（Pot・Pot Odds・Equity・必要 Equity・簡易 EV・Combo 数・頻度）は、Evidence から作った「数値表」の参照（{N3} の形）で書いてください。参照は保存のときに表の値に置き換わります。自分で計算し直したり、表に無い数値を作ったりしないでください。",
   "- Equity の算出方法が exact なら仮定した Range の全列挙（標本の誤差は無い。試行回数は数えた組の数）、Monte Carlo なら試行回数分の試行による推定です。",
   "- 額は Chip の実額で書き、BB 換算は必要なときに括弧で添えてください。",
   "- Range と Equity は Assumption（仮定した Range）に基づく推定です。断定せず、前提を書いてください。",
@@ -80,7 +85,7 @@ export const REVIEW_SYSTEM_PROMPT = [
 
 /**
  * Tournament の Hand の判断（evidence.tournament がある）の System Prompt（#189）。1 行目だけをトーナメントにし、2 行目以降は Cash と同じ
- * （Cash の System Prompt は #189 より前と同じ文字列のまま。Review Eval の録画の指紋を変えない）。
+ * （Tournament の版を足しても Cash の System Prompt は変えない。Review Eval の録画の指紋を変えない）。
  */
 export const TOURNAMENT_REVIEW_SYSTEM_PROMPT = REVIEW_SYSTEM_PROMPT.replace(
   "ノーリミット・テキサスホールデム（キャッシュゲーム）のコーチです",
@@ -155,6 +160,8 @@ export function buildReviewPrompt(
       tableTendency: hasTableTendency,
       tournament: evidence.tournament !== undefined,
     }),
+    // 文の数値は数値表の参照で書かせる（#168・D131）。表は Evidence から決定論で作る。
+    numericTableSection(buildNumericTable(evidence)),
   ];
   // Hero の読みがあるときだけ扱い方を添える（構造ゲート。読みの無い判断の Prompt は従来と同じ文字列のまま）。
   if (evidence.userRead.status === "collected") {
@@ -164,7 +171,7 @@ export function buildReviewPrompt(
   if (hasTableTendency) {
     sections.push(TABLE_TENDENCY_GUIDE);
   }
-  // Tournament の Evidence があるときだけ読み方を添える（構造ゲート。Cash の Prompt は #189 より前と同じ文字列のまま）。
+  // Tournament の Evidence があるときだけ読み方を添える（構造ゲート。Cash の Prompt には足さない）。
   // All-in の判断・Shove の判断の読み方は、その値があるときだけ節ごと出し分ける（条件付きの指示を文で書かない）。
   if (evidence.tournament !== undefined) {
     sections.push(TOURNAMENT_GUIDE);
@@ -239,7 +246,9 @@ function exploitBases(evidence: ReviewEvidence): string[] {
 /**
  * Review AI の出力を検証する（LLM の出力は何が来るか分からないので unknown で受ける）。
  * 1. schema: 形（知らない項目が無い・enum・文字数・件数）
- * 2. grounding: 根拠の参照（evidenceIds が Evidence に実在する・Solver の結果が無いのに solver を根拠にしない 等）
+ * 2. grounding: 根拠の参照（evidenceIds が Evidence に実在する・Solver の結果が無いのに solver を根拠にしない 等）と、
+ *    文の中の数値（数値表の参照が実在する・% / pt / BB の付いた生の数値が表の値と一致する。#168・D131）
+ * 返す値の文は参照（{N3}）のまま。保存の前に resolveNumericRefs で表の値へ置き換える（generate.ts）。
  */
 export function checkReviewOutput(
   output: unknown,
@@ -348,6 +357,12 @@ export function checkReviewOutput(
       );
     }
   }
+  // 文の中の数値を数値表と照合する（#168・D131）。不正なら既存の Retry の枠（最大 2 回）の中で直させる。
+  const numeric = checkNumericGrounding(
+    [practical, theory.text, exploit.text, ...assumptions, ...changers],
+    buildNumericTable(evidence),
+  );
+  if (numeric !== null) return grounding(numeric);
   return {
     ok: true,
     value: {

@@ -478,6 +478,23 @@ describe("Follow-up", () => {
     expect(revealPrompt).toContain("learning_only");
   });
 
+  it("数値表（#168・D131）は Pass A への質問だけ: Pass B への質問の Prompt には出さず、答えの数値も照合しない（Pass B は範囲外）", async () => {
+    expect(
+      buildFollowUpPrompt(await decisionTarget(), [], "必要 Equity は？"),
+    ).toContain("## 数値表");
+    expect(
+      buildFollowUpPrompt(revealTarget, [], "実際の Equity は？"),
+    ).not.toContain("## 数値表");
+    const answer = {
+      scope: "answered",
+      answer: "実際の Equity は 12% でした。",
+      evidenceIds: [...allRevealEvidenceIds(river.evidence)].slice(0, 1),
+    };
+    expect(checkFollowUpOutput(answer, revealTarget)).toMatchObject({
+      ok: true,
+    });
+  });
+
   it("Pass ごとに範囲の指示を文ごと出し分ける（Pass A は Hand 後の情報を知らない・Pass B は結果で評価を付け直さない）", () => {
     const decision = followUpSystemPrompt("decision");
     const reveal = followUpSystemPrompt("reveal");

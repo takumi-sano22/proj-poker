@@ -1,6 +1,7 @@
 // Review Eval の指標の集計（docs/09 §6 の最小形）。数値はすべてここで機械的に出す（記憶で表を書かない。llm-quality-improvement 鉄則 8）。
 // 決定論で数えられるものだけを扱う。Uncertainty の表現・Assumption を変えたときの Recommendation の変わり方は Judge（人間か LLM）が
 // 要るので、ここでは測らない（docs/09 §6 に未測定と書く）。
+import { NUMERIC_GROUNDING_REASON_PREFIX } from "../../review/numeric-grounding.js";
 import type { ReviewEvalRecord } from "./harness.js";
 
 export interface ReviewEvalSummary {
@@ -16,6 +17,8 @@ export interface ReviewEvalSummary {
   readonly fallbackRate: number;
   /** Insufficient Evidence 率（Gate・Fallback・Review AI 自身の判断のすべて）。 */
   readonly insufficientRate: number;
+  /** 数値 Grounding の不正の数: 呼び出しのうち、文の中の数値が数値表と一致しない・未知の参照で grounding 段の不正になった数（#168・D131）。 */
+  readonly numericGroundingInvalids: number;
   /** 障害（Claude の呼び出しの失敗）の数。障害が出た実行は録画しない。 */
   readonly outages: number;
   /** Hindsight Leak / Hidden Information: Evidence か Prompt に判断時点の Hero が知り得ない情報が入っていた判断の数。1 件でも不合格。 */
@@ -126,6 +129,12 @@ export function summarizeReviewEval(
       ).length,
       reviews,
     ),
+    numericGroundingInvalids: attempts.filter(
+      (a) =>
+        !a.check.ok &&
+        a.check.stage === "grounding" &&
+        a.check.reason.startsWith(NUMERIC_GROUNDING_REASON_PREFIX),
+    ).length,
     outages: records.filter((r) => r.final.kind === "outage").length,
     hindsightLeaks: records.filter((r) => r.leaks.length > 0).length,
     mathGroundingRate: rate(
