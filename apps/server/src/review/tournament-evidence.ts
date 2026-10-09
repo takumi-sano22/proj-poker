@@ -8,6 +8,7 @@
 // 暫定 Policy（OI-007。docs/02 §7・docs/05 §10）。
 import {
   PAYOUT_POLICY_VERSION,
+  extractImportantSpots,
   icmCallAllIn,
   icmEquities,
   icmShove,
@@ -19,6 +20,7 @@ import {
   type AllInOutcomes,
   type HeroInformationSet,
   type IcmSpot,
+  type ImportantSpot,
   type ImportantSpotReason,
   type KnowledgeState,
   type TournamentSessionInfo,
@@ -112,6 +114,36 @@ export function tournamentSpotReasonsOf(
     remaining: facts.remaining,
     payoutsByPlace: facts.payoutsByPlace,
     heroStackBb: hero.stack / facts.bigBlind,
+  });
+}
+
+/**
+ * Hand の Important Spot（判断の順）。Cash と共通の理由（extractImportantSpots）に、Tournament の Hand（tournament を渡したとき）は
+ * 判断ごとの Bubble / Pay Jump / Short Stack（tournamentSpotReasonsOf）を足す。Tournament の理由だけを持つ判断も Important Spot にする。
+ * Review（reviewSpotReasons）・Replay・Session Review が同じこの関数を通り、画面ごとに理由が食い違わないようにする（#190）。
+ */
+export function importantSpotsOf(
+  sets: readonly HeroInformationSet[],
+  tournament?: TournamentSessionInfo,
+): ImportantSpot[] {
+  const spots = extractImportantSpots(sets);
+  if (tournament === undefined) return spots;
+  return sets.flatMap((set): ImportantSpot[] => {
+    const { decision } = set;
+    const reasons = [
+      ...(spots.find((s) => s.decisionIndex === decision.index)?.reasons ?? []),
+      ...tournamentSpotReasonsOf(set, tournament),
+    ];
+    if (reasons.length === 0) return [];
+    return [
+      {
+        decisionIndex: decision.index,
+        street: decision.street,
+        actionSeq: decision.actionSeq,
+        decisionPointSeq: decision.decisionPointSeq,
+        reasons,
+      },
+    ];
   });
 }
 

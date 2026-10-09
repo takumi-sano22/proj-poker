@@ -399,6 +399,26 @@ export function registerHandRoutes(
     },
   );
 
+  // 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の Level・Blind・Ante・次の Level までの残りと、この Hand までの
+  // 残人数・Elimination・順位・Payout（Result）。Event Log から都度計算し（D129）、cash の Hand は tournament: null。
+  // 返すのは公開の情報だけ（CPU の Persona・他者の札・内部の設定は返さない）。このプロセスで進めた Hand だけ（他は 404）。
+  app.get<{ Params: HandParams }>(
+    "/api/hands/:handId/tournament",
+    { schema: { params: handParamsSchema } },
+    (request, reply) => {
+      const { handId } = request.params;
+      if (orchestrator.heroView(handId) === null) {
+        return sendError(reply, {
+          kind: "hand_not_found",
+          message: `Hand が無い: ${handId}`,
+        });
+      }
+      return reply.send({
+        tournament: orchestrator.tournamentTableOf(handId),
+      });
+    },
+  );
+
   // 卓の状態の SSE。接続時に現在の障害の状態（outage イベント）と View を 1 回ずつ送り、以後は Log が進むたびに View を、
   // 障害が起きる・解けるたびに障害の状態を送る。
   // Hand が終わった View の直前に Session の状態（session イベント）を送り、View を送ったらサーバー側から閉じる

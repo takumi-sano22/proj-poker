@@ -33,6 +33,7 @@ import {
   applyPhysicalActions,
   foldHandEvents,
   getLegalActions,
+  levelAt,
   MAX_PLAYERS,
   nextHandSeating,
   nextTournamentProgress,
@@ -50,6 +51,8 @@ import {
   tournamentResult,
   tournamentStandings,
   TOURNAMENT_PRESETS,
+  type AnteKind,
+  type BlindSchedule,
   type CpuSeatMetadata,
   type DrillSpot,
   type EngineError,
@@ -161,6 +164,42 @@ export type SessionStatus =
   | { readonly state: "in_hand" }
   | { readonly state: "ready_for_next_hand" }
   | { readonly state: "ended"; readonly reason: SessionEndReason };
+
+/**
+ * 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の開始時の Level と Blind / Ante、次の Level とそこまでの残り、
+ * この Hand までの Result（残人数・Elimination・順位・Payout）。公開の情報だけで、Hero に返してよい。
+ */
+export interface TournamentTableStatus {
+  /** どの Hand の状況か（client が表示中の Hand と照らし合わせる）。 */
+  readonly handId: string;
+  readonly presetId: TournamentPresetId;
+  readonly schedule: BlindSchedule;
+  /** この Hand の Level（1 始まり）と、設定の Level の数（最後の Level は上げずに続ける）。 */
+  readonly level: number;
+  readonly levelCount: number;
+  /** この Hand が Session の何 Hand 目か（1 始まり）。 */
+  readonly handNumber: number;
+  readonly smallBlind: number;
+  readonly bigBlind: number;
+  readonly anteKind: AnteKind;
+  /** この Hand の Ante の 1 回分の額（無ければ 0）。 */
+  readonly ante: number;
+  /** 次の Level。最後の Level なら null。 */
+  readonly nextLevel: {
+    readonly level: number;
+    readonly smallBlind: number;
+    readonly bigBlind: number;
+    readonly ante: number;
+    /**
+     * 次の Level までの残り。hand_count は次の Level が始まる Hand の番号、time_base は要求の時点の残りのプレイ時間（ms。0 なら
+     * 次の Hand から上がる）。
+     */
+    readonly until:
+      | { readonly kind: "hand_count"; readonly handNumber: number }
+      | { readonly kind: "time_base"; readonly remainingPlayMs: number };
+  } | null;
+  readonly result: TournamentResult;
+}
 
 export type OrchestratorResult<T> =
   | { readonly ok: true; readonly value: T }
@@ -885,6 +924,80 @@ export class HandOrchestrator {
   tournamentResultOf(handId: string): TournamentResult | null {
     const handIds = this.options.store.sessionHandIds(handId);
     return tournamentResult(handIds.map((id) => this.events(id)));
+  }
+
+  /**
+   * 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の開始時の Level・Blind・Ante と次の Level、この Hand までの
+   * Elimination・順位・Payout（Result）を、Event Log から都度計算する（保存しない。D129）。cash の Session・Event の無い Hand は null。
+   * Result はこの Hand までの Hand から作る（進行中の Hand は Bust を決めない。tournamentResult）。値はすべて卓の全員が知る公開の情報
+   * （Blind の Level・Stack が 0 になった Player の順位・設定の Payout）で、CPU の Persona・他者の札は入らない。
+   * time_base の次の Level までの残りは、この Hand の開始時のプレイ時間の累計に、この Hand のこれまでのプレイ時間を足して要求の時点で測る。
+   */
+  tournamentTableOf(handId: string): TournamentTableStatus | null {
+    const started = this.events(handId)[0];
+    if (started?.type !== "HAND_STARTED") return null;
+    const settings = this.sessionSettingsOfSession(handId);
+    if (settings.mode !== "tournament") return null;
+    const config = settings.tournament;
+    // Session の終わった Hand（保存の古い順）から、この Hand までを使う。進行中の Hand はまだ一覧に無いので末尾に足す。
+    const finished = this.options.store.sessionHandIds(handId);
+    const at = finished.indexOf(handId);
+    const handIds = at < 0 ? [...finished, handId] : finished.slice(0, at + 1);
+    const result = tournamentResult(handIds.map((id) => this.events(id)));
+    if (result === null) return null;
+    const progress = this.progressAtStartOf(handId);
+    const level = started.tournament?.level ?? levelAt(config, progress);
+    const next = config.levels[level];
+    const { schedule } = config;
+    return {
+      handId,
+      presetId: config.presetId,
+      schedule,
+      level,
+      levelCount: config.levels.length,
+      handNumber: progress.handNumber,
+      smallBlind: started.smallBlind,
+      bigBlind: started.bigBlind,
+      anteKind: config.anteKind,
+      ante: started.ante?.amount ?? 0,
+      nextLevel:
+        next === undefined
+          ? null
+          : {
+              level: level + 1,
+              smallBlind: next.smallBlind,
+              bigBlind: next.bigBlind,
+              ante: config.anteKind === "none" ? 0 : next.ante,
+              until:
+                schedule.kind === "hand_count"
+                  ? {
+                      kind: "hand_count",
+                      // 次の Level が始まる Hand の番号（levelAt と同じ数え方。1〜handsPerLevel Hand 目が Level 1）。
+                      handNumber: level * schedule.handsPerLevel + 1,
+                    }
+                  : {
+                      kind: "time_base",
+                      // Level は Hand の開始時に決める（Hand の途中では上がらない）ので、0 は「次の Hand から」。
+                      remainingPlayMs: Math.max(
+                        0,
+                        level * schedule.levelDurationMs -
+                          progress.playTimeMs -
+                          this.elapsedPlayMs(handId),
+                      ),
+                    },
+            },
+      result,
+    };
+  }
+
+  /** Hand のこれまでのプレイ時間（ms）。進行中の Hand は今の時点まで、終わった Hand は開始から終わりまで（handPlayTimeMs）。 */
+  private elapsedPlayMs(handId: string): number {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return Math.max(0, this.handPlayTimeMs(handId));
+    return Math.max(
+      0,
+      (rt.playFinishedAt ?? this.playClock()) - rt.playStartedAt,
+    );
   }
 
   /** Hero の View が変わるたびに呼ばれる listener を登録する。戻り値で解除する。未知の Hand なら null。 */

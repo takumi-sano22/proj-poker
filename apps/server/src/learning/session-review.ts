@@ -8,7 +8,6 @@
 // - Hidden Persona・CPU の Private な状態・他者の Hidden Cards・Pass B（Learning-only Reveal）は入力にも応答にも入れない
 // - Drill の Hand は excludeHandIds で除く（D116。呼び出し側が drills テーブルの Hand を渡す）
 import {
-  extractImportantSpots,
   heroInformationSets,
   projectHeroView,
   projectPlayerStats,
@@ -21,8 +20,10 @@ import {
   type PlayerStats,
   type StatTable,
   type Street,
+  type TournamentSessionInfo,
 } from "@proj-poker/engine";
 import { isHandEnd } from "../event-store.js";
+import { importantSpotsOf } from "../review/tournament-evidence.js";
 import type { Assessment, Confidence } from "../review/types.js";
 import type { AbilityEvidence, ScoreSource } from "./ability-evidence.js";
 import {
@@ -215,26 +216,42 @@ export function computeSessionReview(
     abilities: report.abilities,
     strengths,
     leaks,
-    importantHands: importantHands(included, report, heroId, policy),
+    importantHands: importantHands(
+      included,
+      report,
+      heroId,
+      policy,
+      tournamentSessionInfoOf(hands),
+    ),
     heroStats: {
       version: stats.version,
       hands: hero?.hands ?? 0,
       overall: hero?.overall ?? null,
     },
     // Tournament の Session の Hand は Drill の題材にしない（DRILL_TOURNAMENT_POLICY。#189 の暫定 Policy）ので、候補を出さない。
-    recommendedDrill: tournamentSession(hands)
-      ? { available: false, candidate: null }
-      : { available: leaks[0] !== undefined, candidate: leaks[0] ?? null },
+    recommendedDrill:
+      tournamentSessionInfoOf(hands) !== undefined
+        ? { available: false, candidate: null }
+        : { available: leaks[0] !== undefined, candidate: leaks[0] ?? null },
   };
 }
 
-/** Session の最初の Hand の SESSION_STARTED の設定が Tournament か（D129）。SESSION_STARTED の無い旧版の Session は cash。 */
-function tournamentSession(hands: readonly SessionHandRecord[]): boolean {
+/**
+ * Tournament の Session の情報（設定の Snapshot・参加人数）。Session の最初の Hand の SESSION_STARTED の設定が Tournament のときだけ
+ * （D129。SESSION_STARTED の無い旧版の Session・cash は undefined）。参加人数はその Hand に座った人数（tournamentResult と同じ）。
+ */
+function tournamentSessionInfoOf(
+  hands: readonly SessionHandRecord[],
+): TournamentSessionInfo | undefined {
   const first = hands[0];
-  return (
-    first !== undefined &&
-    sessionSettingsOf(first.events)?.mode === "tournament"
-  );
+  if (first === undefined) return undefined;
+  const settings = sessionSettingsOf(first.events);
+  if (settings?.mode !== "tournament") return undefined;
+  const started = first.events[0];
+  if (started?.type !== "HAND_STARTED") {
+    throw new RangeError("Session の最初の Hand に HAND_STARTED が無い");
+  }
+  return { config: settings.tournament, entrants: started.seats.length };
 }
 
 function toDecisionRef(
@@ -273,13 +290,15 @@ function importantHands(
   report: ScoreReport,
   heroId: string,
   policy: SessionReviewPolicy,
+  tournament: TournamentSessionInfo | undefined,
 ): SessionImportantHand[] {
   const leakSet = new Set(policy.leakAssessments);
   const strengthSet = new Set(policy.strengthAssessments);
   const candidates = hands.flatMap((h, i): SessionImportantHand[] => {
     const evidence = report.evidence.filter((e) => e.handId === h.handId);
     const sets = heroInformationSets(h.events, heroId);
-    const spots = extractImportantSpots(sets);
+    // Tournament の Session は Bubble / Pay Jump / Short Stack の理由も足す（Review・Replay と同じ選び方。#190）。
+    const spots = importantSpotsOf(sets, tournament);
     const leakCount = evidence.filter((e) => leakSet.has(e.assessment)).length;
     const strengthCount = evidence.filter((e) =>
       strengthSet.has(e.assessment),

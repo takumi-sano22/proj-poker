@@ -7,7 +7,6 @@
 // step の位置で返す。Review の画面（#84）が判断を選べるよう、Hero の判断（Important Spot でないものも含む）も step の位置で返す。
 // Learning-only Full Reveal は Review の Pass B（#83）で扱い、Replay には入れない（D93）。
 import {
-  extractImportantSpots,
   heroDecisions,
   heroInformationSets,
   projectHeroView,
@@ -18,9 +17,12 @@ import {
   type HeroView,
   type ImportantSpotReason,
   type Street,
+  type TournamentSessionInfo,
 } from "@proj-poker/engine";
 import type { SeatPlayer } from "./config.js";
 import type { EventStore, StoredHandSummary } from "./event-store.js";
+import { importantSpotsOf } from "./review/tournament-evidence.js";
+import { tournamentSessionInfoOfHand } from "./tournament-session-info.js";
 
 /** Hand 一覧に出す件数の上限（新しい順）。ローカル単一ユーザーで、画面で選ぶのに足りる数の暫定値。 */
 export const REPLAY_LIST_LIMIT = 100;
@@ -118,8 +120,9 @@ export function replayImportantSpots(
   events: readonly HandEvent[],
   heroId: string,
   steps: readonly HeroView[],
+  tournament?: TournamentSessionInfo,
 ): ReplayImportantSpot[] {
-  return extractImportantSpots(heroInformationSets(events, heroId)).map(
+  return importantSpotsOf(heroInformationSets(events, heroId), tournament).map(
     (spot) => ({
       stepIndex: decisionStepIndex(steps, spot.decisionPointSeq),
       decisionIndex: spot.decisionIndex,
@@ -231,7 +234,13 @@ export class ReplayService {
           },
       ),
       steps,
-      importantSpots: replayImportantSpots(events, this.heroId, steps),
+      // Tournament の Hand は Bubble / Pay Jump / Short Stack の理由も足す（Review と同じ選び方。#190）。
+      importantSpots: replayImportantSpots(
+        events,
+        this.heroId,
+        steps,
+        tournamentSessionInfoOfHand(this.store, handId) ?? undefined,
+      ),
       decisions: replayDecisions(events, this.heroId, steps),
     };
   }
