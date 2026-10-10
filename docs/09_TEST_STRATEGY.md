@@ -273,7 +273,7 @@ StageごとのAction（Nit / Maniac。各2判断）:
 | S6 S5 + 層 | Fold 2 | Fold 2 | Call 2 | Fold 2 |
 
 - 理由（rationale）の変化: Beforeで「Preflop Looseness 0.15のNitとして範囲外」だけで結論したS1・S3・S4のNitは、Afterでは8判断すべてが10BB・Button / Heads-Up・Stage・Bubble Factorのどれかを理由に挙げました（S4の2判断は「10BBのHeads-Upでも」と状況を挙げたうえで、なお性格の範囲を理由にFold）。ManiacのS5・S6の「ICMのリスクを無視」「bubbleFactorを無視」は0件になり、4判断ともBubble Factor 2.75を「Callの必要勝率が上がる圧力」として挙げました。ManiacのS1〜S4のAll-inも「Bubble Factorの圧力は理解するが」「Button・10BB」と状況を理由にしています。
-- 残る制約: S5・S6でManiacが4判断ともFoldし、BF 2.75のCallでのPersonaの差と層の効果が0になりました（「理解したうえで境界を広めに取る」がActionに出ず、慎重側へ寄りすぎた）。ManiacのS1・S2は1判断ずつFoldし、境界のSpotが割れました。NitはS4のHeads-Up 10BBでもFoldのままです（Push/Fold Solverを持たないので、Shoveしないこと自体は失敗にしない）。repeat 2の少数標本で、揺れと効果を分けられません。結果を見てPromptを変えて録り直していません（D133）。S5・S6の寄りすぎの扱いは#212で人間判断に返しました。
+- 残る制約: S5・S6でManiacが4判断ともFoldし、BF 2.75のCallでのPersonaの差と層の効果が0になりました（「理解したうえで境界を広めに取る」がActionに出ず、慎重側へ寄りすぎた）。ManiacのS1・S2は1判断ずつFoldし、境界のSpotが割れました。NitはS4のHeads-Up 10BBでもFoldのままです（Push/Fold Solverを持たないので、Shoveしないこと自体は失敗にしない）。repeat 2の少数標本で、揺れと効果を分けられません。結果を見てPromptを変えて録り直していません（D133）。S5・S6の寄りすぎの扱いは#212で人間判断に返し、失敗とせず記録だけにすると決めました（D134。次の節）。
 
 ### TournamentのClaude CPUのPersona Differentiationの解釈（Issue #212・D134）
 
