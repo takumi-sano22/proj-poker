@@ -330,13 +330,15 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 client の表示層で、ゲームの進行（Engine・Event Log・server の CPU の進行）を変えない。責務:
 
-1. **入力**: Hero に見える View / 公開 Event だけ（§16.1）。UX-06（#221）の検証で、今の `HeroView.log`（配るたびに Hero に見える Event の全量を運ぶ）から、表示済みの seq より大きい Event を取り出し、各時点の卓を `projectHeroView`（prefix）で作れば、API を足さずに演出の順序を復元できることを確かめた（連続する CPU Action・Street・Showdown・All-in の Runout・Main / Side / Split Pot・Fold の終了・受信の重複 / 欠落・再接続。裁定とその Action を 1 つにまとめた各時点の卓は Replay の `steps` と一致）。この案と、操作の `lastSeq` の契約（表示中の View の値で送る・表示が追いつくまで送信しない）は推奨で、#215 Gate 1 で人間が承認するまで採用済みの事実として扱わない（記録は `docs/taskLog/issue-221-live-presentation-verification.md`）。
+1. **入力**: Hero に見える View / 公開 Event だけ（§16.1）。UX-06（#221）の検証で、今の `HeroView.log`（配るたびに Hero に見える Event の全量を運ぶ）から、表示済みの seq より大きい Event を取り出し、各時点の卓を `projectHeroView`（prefix）で作れば、API を足さずに演出の順序を復元できることを確かめた（連続する CPU Action・Street・Showdown・All-in の Runout・Main / Side / Split Pot・Fold の終了・受信の重複 / 欠落・再接続。裁定とその Action を 1 つにまとめた各時点の卓は Replay の `steps` と一致）。この API 拡張なしの案 A と、情報境界・操作送信の契約は人間が UX06-1〜3=A として承認した（D143。記録は `docs/taskLog/issue-221-live-presentation-verification.md` と #221 のコメント）。
 2. **順序**: 表示を 1 つずつ演出し、終わってから次を出す（キュー）。Flop は 3 枚を順にスライド・フリップし、Turn / River も個別に演出する。Showdown は毎回、公開対象の札・勝者・Pot の配分（Side Pot を含む）を演出する。
 3. **速度**: 表示演出の速度は 標準 / 高速 / 超高速 / 演出なし の4段階で、Skip もできる。Skip・演出なしでも表示の内容（公開札・勝者・Pot の配分・実額）は省かず、省くのは動きだけ。
 4. **Hero の手番の到来**: 順序を保ったまま、残っている通常の演出を自動で速める。Showdown の公開と結果は省かない。
 5. **再接続**: 古い演出のキューを捨て、最新の公開状態に合わせる。見逃した分は Replay で見る。
 6. **Replay との共有**: Live と Replay は演出の部品を共有し、Replay の再生・一時停止・速度は Live と独立に持つ（D93 の Previous / Next / Play / Pause に速度を足す）。
 7. **Fast Forward と別**: Fast Forward（§8）は server の CPU の思考待ちを縮める契約で、表示演出の速度は client の表示だけを速める。
+
+**送信時の鮮度契約（D143）**: Server から届いた最新の `authoritative` View と、演出を終えた `displayed` View を別々に管理する。演出中に操作の下書きを作ってもよいが、確定送信の前に残演出を自動高速化して追いつき、手番・下書きの有効性を最新の公開状態で検査する。可視 `lastSeq(displayed) === lastSeq(authoritative)` になった場合だけ、その表示値で送信する。未表示の最新 seq を先取りして送信せず、無効化された下書きは破棄・通知する（D139・UX-04 #219 と同じ寿命契約）。手番外の操作も同じ鮮度条件を守る。飛び番は欠落と解釈せず、UI に seq を表示しない（UX06-1=A）。
 
 各段階の所要時間（ms）と自動高速化の度合いは OI-012 の暫定値。`prefers-reduced-motion` では既存どおり動きを止める。
 
@@ -369,6 +371,6 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 |---|---|
 | UX-02 #217 | 読み取り専用の Session 状態照会の API の形、照会が Hand を始めない・進めないことの実証、Resume / プロセス再起動との契約 |
 | UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知 |
-| UX-06 #221 | 検証済み: 今の `HeroView.log` だけで復元でき、API の拡張は要らない見込み（§16.4 の 1）。Gate 1 で承認を待つもの: その採用、操作の `lastSeq` の契約（表示が追いつくまで送信しない）、Hero から見た seq の穴（system の記録の有無が推測できる既存の性質）を受け入れるか |
+| UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
 | UX-11 #226 | ETIQUETTE の確認待ちで CPU を止める責務の置き場所・Ack の契約と Event に残すか・Outage / Resume / 再接続との関係・連続する裁定の順序 |
