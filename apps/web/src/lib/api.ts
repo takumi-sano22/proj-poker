@@ -1,4 +1,5 @@
 // Runtime の Hand API（D73: Hero の Action は REST、卓の状態は SSE）。ブラウザは同一 origin の /api だけを呼ぶ（D67）。
+import { parseCurrentSession } from "./view-model.js";
 import type {
   ActionType,
   AnteKind,
@@ -78,6 +79,17 @@ export interface StartHandResponse {
 export type SessionRequest =
   | { readonly mode: "cash" }
   | { readonly mode: "tournament"; readonly presetId: TournamentPresetId };
+
+/**
+ * Home の照会（GET /api/session/current。D136・D144）の今の Session。状態と Session の種類だけ（Session ID・Hand ID・Stack は来ない）。
+ * - in_hand: Hand の途中 / ready_for_next_hand: 次の Hand を始められる（再起動後の Resume を含む）
+ * - ended: このプロセスで Session が終わった（再起動後は来ない）
+ * 「続きから遊ぶ」は Hero の操作で startHand（POST /api/hands）を呼ぶ。照会の結果で自動的に開始しない。
+ */
+export interface CurrentSession {
+  readonly state: "in_hand" | "ready_for_next_hand" | "ended";
+  readonly kind: SessionRequest;
+}
 
 /**
  * 卓に出す Tournament の状況（サーバーの TournamentTableStatus と同じ形。#190）。この Hand の Level・Blind・Ante と次の Level、
@@ -247,6 +259,19 @@ export function startHand(
     "/api/hands",
     session === undefined ? { afterHandId } : { afterHandId, session },
   );
+}
+
+/**
+ * 今の Session の状態を読む（D144。読むだけで Hand を始めない・進めない）。続けられる Session が無い、または知らない state・形の
+ * 合わない応答（#230 で足す paused 等を含む）は null（「続きから遊ぶ」を出さない安全側。parseCurrentSession）。
+ */
+export async function fetchCurrentSession(): Promise<CurrentSession | null> {
+  const body = await getJson<unknown>("/api/session/current");
+  const session =
+    typeof body === "object" && body !== null && "session" in body
+      ? (body as { session: unknown }).session
+      : null;
+  return parseCurrentSession(session);
 }
 
 /**

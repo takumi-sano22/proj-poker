@@ -166,6 +166,15 @@ export type SessionStatus =
   | { readonly state: "ended"; readonly reason: SessionEndReason };
 
 /**
+ * Home の読み取り専用の照会（GET /api/session/current。D136・D144）が返す今の Session。Hero に返してよい値（状態と Session の種類）だけで、
+ * Session ID・Hand ID・Stack・札・Persona は持たない。続けられる Session が無ければ null（currentSession）。
+ */
+export interface CurrentSession {
+  readonly state: SessionStatus["state"];
+  readonly kind: SessionRequest;
+}
+
+/**
  * 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の開始時の Level と Blind / Ante、次の Level とそこまでの残り、
  * この Hand までの Result（残人数・Elimination・順位・Payout）。公開の情報だけで、Hero に返してよい。
  */
@@ -901,6 +910,25 @@ export class HandOrchestrator {
     return this.hands.has(handId) ? this.heroViewOf(handId) : null;
   }
 
+  /**
+   * Home の照会（D144）の今の Session。読むだけで、Hand・Session の作成・Event の追記・CPU の進行をしない。
+   * Session Projection を写さず、開始（startHand）と同じ判定から作る（照会できた状態と実際に続けられる状態をずらさない）:
+   * - 指し先が無い（Cold Start・再起動前の Session が終わっていた・今の卓の設定で続けられない。resumeSession）→ null
+   * - 最後の Hand がこのプロセスに無い（再起動後に戻した Session）→ 次の Hand を始められる（resumeSession が確かめた）
+   * - 最後の Hand が内部エラーで止まった → null（開始は止まった Hand に戻らず新しい Session で始める。lastHandOf）
+   * - それ以外は最後の Hand の Event から（打ち切った Hand は SESSION_ENDED を持つので ended）
+   * ended はこのプロセスで終わった Session だけで、再起動後は指し先が無いので null（終わった Session の履歴は照会しない）。
+   */
+  currentSession(): CurrentSession | null {
+    const current = this.session;
+    if (current === null) return null;
+    const last = this.lastHandOf(current);
+    if (last.kind === "stalled") return null;
+    const kind = this.sessionKindOf(current.lastHandId);
+    if (last.kind !== "live") return { state: "ready_for_next_hand", kind };
+    return { state: this.sessionAfterEvents(last.events).status.state, kind };
+  }
+
   /** その Hand から見た Session の状態（Event Log から作る）。未知の Hand なら null。 */
   sessionStatus(handId: string): SessionStatus | null {
     if (!this.hands.has(handId)) return null;
@@ -1172,14 +1200,30 @@ export class HandOrchestrator {
   private unseenLatestHand(afterHandId: string | null): string | null {
     const current = this.session;
     if (current === null) return null;
-    const rt = this.hands.get(current.lastHandId);
-    if (rt === undefined || rt.failure !== null) return null;
-    const events = this.events(current.lastHandId);
+    const last = this.lastHandOf(current);
+    if (last.kind !== "live") return null;
+    const { events } = last;
     if (events.some((e) => e.type === "HAND_ABORTED")) return null;
     const finished = this.sessionAfterEvents(events).status.state !== "in_hand";
     return finished && afterHandId === current.lastHandId
       ? null
       : current.lastHandId;
+  }
+  /**
+   * 今の Session の最後の Hand の続け方（開始の unseenLatestHand と Home の照会の currentSession が共有する判定。D144）。
+   * - resumed: このプロセスに Hand が無い（再起動後に resumeSession で戻した Session）。次の Hand を始める
+   * - stalled: 内部エラーで止まった。止まった Hand には戻らず、新しい Session で始め直す
+   * - live: このプロセスで進めた Hand（進行中・終わった・打ち切った）。Event から状態を作る
+   */
+  private lastHandOf(
+    current: SessionPointer,
+  ):
+    | { readonly kind: "resumed" | "stalled" }
+    | { readonly kind: "live"; readonly events: readonly HandEvent[] } {
+    const rt = this.hands.get(current.lastHandId);
+    if (rt === undefined) return { kind: "resumed" };
+    if (rt.failure !== null) return { kind: "stalled" };
+    return { kind: "live", events: this.events(current.lastHandId) };
   }
 
   /**

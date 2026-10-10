@@ -1,8 +1,18 @@
 // HeroView（サーバーが Hero に見える Event だけから作った Projection）を画面の部品へ写す純粋関数。
 // ここでは合法性を判定しない（D40）。Legal Action と額の範囲はサーバーが返した legalActions をそのまま使い、
 // 他者の札はサーバーが公開したもの（seats[].holeCards）以外を推測・保持しない（D28）。
-import type { HandEvent, HeroView, SeatView } from "@proj-poker/engine";
-import type { OutageKind, OutageStatus, SessionStatus } from "./api.js";
+import {
+  isTournamentPresetId,
+  type HandEvent,
+  type HeroView,
+  type SeatView,
+} from "@proj-poker/engine";
+import type {
+  CurrentSession,
+  OutageKind,
+  OutageStatus,
+  SessionStatus,
+} from "./api.js";
 import {
   ACTION_TERMS,
   STREET_TERMS,
@@ -76,6 +86,32 @@ export function selectSessionStatus(
   if (incoming.handId !== activeHandId) return current;
   if (current === null || current.handId !== activeHandId) return incoming;
   return current.status.state === "in_hand" ? incoming : current;
+}
+
+/**
+ * GET /api/session/current の session を受け取ってよいかの検査（受け側の whitelist。D144）。知っている state と Session の種類だけで
+ * 組み直す。知らない state（#230 で足す paused 等）・知らない Preset・形の合わない値は null にして、「続きから遊ぶ」を出さない
+ * （照会の拡張で Home が知らない Session を続けたり、別の種類の Session を始めたりしない）。
+ */
+export function parseCurrentSession(value: unknown): CurrentSession | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const state = v["state"];
+  if (
+    state !== "in_hand" &&
+    state !== "ready_for_next_hand" &&
+    state !== "ended"
+  ) {
+    return null;
+  }
+  const kind = v["kind"];
+  if (typeof kind !== "object" || kind === null) return null;
+  const k = kind as Record<string, unknown>;
+  if (k["mode"] === "cash") return { state, kind: { mode: "cash" } };
+  if (k["mode"] === "tournament" && isTournamentPresetId(k["presetId"])) {
+    return { state, kind: { mode: "tournament", presetId: k["presetId"] } };
+  }
+  return null;
 }
 
 /** SSE の session イベントの data を受け取ってよいかの検査（受け側の whitelist）。知っている項目だけで組み直す。 */
