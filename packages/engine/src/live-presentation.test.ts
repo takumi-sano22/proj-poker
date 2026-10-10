@@ -1,5 +1,5 @@
 // UX-06（#221）の技術検証: Live の演出（D140・docs/06 §16.4）の時系列を、Hero に見える HeroView.log だけから復元できるか。
-// 製品のコードは変えない検証テスト。表示側の手順（pendingEvents / stepViews / consume）はこのファイルの中だけに置いた参照実装で、
+// 製品のコードは変えない検証テスト。表示側の手順（pendingEvents / stepViews / presentationSteps / consume）はこのファイルの中だけに置いた参照実装で、
 // UX-07（#222）の Presentation Controller が守る契約の下敷きにする（結果の整理は docs/taskLog/issue-221-live-presentation-verification.md）。
 // 確かめること:
 // - サーバーが配る単位（Command 1 回の追記 = 1 通の View）は複数の Event をまとめて運ぶので、表示側が seq で分けて 1 つずつ演出できる
@@ -98,12 +98,37 @@ function pendingEvents(view: HeroView, displayedSeq: number): HandEvent[] {
   return view.log.filter((e) => e.seq > displayedSeq);
 }
 
-/** 見える Event の列の各時点の卓（Replay の replaySteps と同じ prefix の Projection。操作はさせないので legalActions は null）。 */
+/**
+ * 見える Event の 1 つごとの時点の卓（prefix の Projection。操作はさせないので legalActions は null）。漏えい・Chip の検査用で、
+ * 演出の単位（presentationSteps）より細かい。
+ */
 function stepViews(log: readonly HandEvent[]): HeroView[] {
   return log.map((_, i) => ({
     ...projectHeroView(log.slice(0, i + 1), HERO),
     legalActions: null,
   }));
+}
+
+/**
+ * 演出の単位（Replay の replaySteps と同じまとめ方）。Action に決まった裁定（DEALER_RULING・outcome: action）と、
+ * 直後の同じ Player の ACTION_TAKEN は 1 つにまとめる（同じ追記で置く 1 つの出来事で、裁定だけでは結果が見えない。D90）。
+ */
+function presentationSteps(log: readonly HandEvent[]): HeroView[] {
+  const steps: HeroView[] = [];
+  log.forEach((e, i) => {
+    const next = log[i + 1];
+    const joinsNext =
+      e.type === "DEALER_RULING" &&
+      e.outcome === "action" &&
+      next?.type === "ACTION_TAKEN" &&
+      next.playerId === e.playerId;
+    if (joinsNext) return;
+    steps.push({
+      ...projectHeroView(log.slice(0, i + 1), HERO),
+      legalActions: null,
+    });
+  });
+  return steps;
 }
 
 /**
@@ -218,6 +243,13 @@ describe("Live の演出の時系列を HeroView.log だけから復元できる
     ]);
 
     const final = deliveries.at(-1) as HeroView;
+    // 演出の単位では、Hero の Check の裁定とその ACTION_TAKEN が 1 つにまとまる（Event より 1 つ少ない。Replay と同じ）。
+    expect(presentationSteps(final.log)).toHaveLength(final.log.length - 1);
+    expect(
+      presentationSteps(final.log).some(
+        (s) => s.log.at(-1)?.type === "DEALER_RULING",
+      ),
+    ).toBe(false);
     // Board は Street ごとに 1 つの Event で、Flop は 3 枚を 1 つの Event で運ぶ（3 枚を順に出すのは表示側の演出）。
     const boards = final.log.filter((e) => e.type === "BOARD_DEALT");
     expect(boards.map((e) => [e.street, e.cards.length])).toEqual([

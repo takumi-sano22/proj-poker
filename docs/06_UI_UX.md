@@ -330,7 +330,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 client の表示層で、ゲームの進行（Engine・Event Log・server の CPU の進行）を変えない。責務:
 
-1. **入力**: Hero に見える View / 公開 Event だけ（§16.1）。UX-06（#221）の検証で、今の `HeroView.log`（配るたびに Hero に見える Event の全量を運ぶ）から、表示済みの seq より大きい Event を取り出し、各時点の卓を `projectHeroView`（prefix）で作れば、API を足さずに演出の順序を復元できることを確かめた（連続する CPU Action・Street・Showdown・All-in の Runout・Main / Side / Split Pot・Fold の終了・受信の重複 / 欠落・再接続。各時点の卓は Replay の `steps` と一致）。この案と、操作の `lastSeq` の契約（表示中の View の値で送る・表示が追いつくまで送信しない）は推奨で、#215 Gate 1 で人間が承認するまで採用済みの事実として扱わない（記録は `docs/taskLog/issue-221-live-presentation-verification.md`）。
+1. **入力**: Hero に見える View / 公開 Event だけ（§16.1）。UX-06（#221）の検証で、今の `HeroView.log`（配るたびに Hero に見える Event の全量を運ぶ）から、表示済みの seq より大きい Event を取り出し、各時点の卓を `projectHeroView`（prefix）で作れば、API を足さずに演出の順序を復元できることを確かめた（連続する CPU Action・Street・Showdown・All-in の Runout・Main / Side / Split Pot・Fold の終了・受信の重複 / 欠落・再接続。裁定とその Action を 1 つにまとめた各時点の卓は Replay の `steps` と一致）。この案と、操作の `lastSeq` の契約（表示中の View の値で送る・表示が追いつくまで送信しない）は推奨で、#215 Gate 1 で人間が承認するまで採用済みの事実として扱わない（記録は `docs/taskLog/issue-221-live-presentation-verification.md`）。
 2. **順序**: 表示を 1 つずつ演出し、終わってから次を出す（キュー）。Flop は 3 枚を順にスライド・フリップし、Turn / River も個別に演出する。Showdown は毎回、公開対象の札・勝者・Pot の配分（Side Pot を含む）を演出する。
 3. **速度**: 表示演出の速度は 標準 / 高速 / 超高速 / 演出なし の4段階で、Skip もできる。Skip・演出なしでも表示の内容（公開札・勝者・Pot の配分・実額）は省かず、省くのは動きだけ。
 4. **Hero の手番の到来**: 順序を保ったまま、残っている通常の演出を自動で速める。Showdown の公開と結果は省かない。

@@ -7,7 +7,7 @@ D140（`docs/06` §16.4）の Presentation Controller が、Hero に見える Vi
 ## 結論（要約）
 
 - **API・Event・永続化の拡張は要らない**。今の `HeroView.log` は、Hero に見える Event（`public` と Hero 宛ての `private`）の**全量**を、配るたびに毎回運ぶ。表示側は「表示済みの seq より大きい Event」を seq の順に取り出せば、演出の時系列をそのまま復元できる（重複・順不同・途中の View の欠落・再接続に強い）。
-- 各時点の卓は、`projectHeroView(log.slice(0, i + 1))`（Engine の純関数。`apps/web` は既に `@proj-poker/engine` を実行時に import している）で client が作れ、Replay API の `steps` と一致する（Live と Replay で演出の部品を共有できる）。
+- 各時点の卓は、`projectHeroView(log.slice(0, i + 1))`（Engine の純関数。`apps/web` は既に `@proj-poker/engine` を実行時に import している）で client が作れ、Replay と同じまとめ方（Action に決まった裁定と直後の `ACTION_TAKEN` を 1 つ）をすると Replay API の `steps` と一致する（裁定を含む Hand で確認。Live と Replay で演出の部品を共有できる）。
 - 新しい人間判断が要る API / Event / 永続化の契約は見つからなかった。既存の D の変更も要らない。ただし、**情報境界の既存の残余リスク 1 件**（seq の穴）と、**UX-07 の操作の契約 1 件**（表示が追いつくまでの送信）は、人間の確認を #215 Gate 1 で受ける項目として Issue に記録した（下の「人間判断が要る項目」）。
 
 ## 現行のデータ経路
@@ -62,7 +62,7 @@ Replay（apps/server/src/replay.ts）
 
 検証テスト（製品のコードは変えない）:
 
-- `packages/engine/src/live-presentation.test.ts`（9 件）: 積んだ Deck と Metadata（system の Event）付きで Hand を進め、Orchestrator の `commit` と同じ粒度（Command 1 回 = 1 通の View）で View を作る。
+- `packages/engine/src/live-presentation.test.ts`（9 件。参照実装 `presentationSteps` は Replay と同じまとめ方）: 積んだ Deck と Metadata（system の Event）付きで Hand を進め、Orchestrator の `commit` と同じ粒度（Command 1 回 = 1 通の View）で View を作る。
 - `apps/server/src/routes/live-presentation.test.ts`（4 件）: 実際に listen した app で REST / SSE / Replay API を使う。
 
 | シナリオ | 確かめたこと | 結果 |
@@ -77,7 +77,7 @@ Replay（apps/server/src/replay.ts）
 | SSE の再接続（server） | 切って張り直した最初の 1 通の log は、切る前の log をそのまま先頭に持ち、切断中に進んだ Event を全部含む | 通過 |
 | REST と SSE の重複（server） | REST の応答の View は同じ時点の SSE の View と同一。両方を seq で積むと全量で重複なし | 通過 |
 | 古い表示からの操作（server） | 演出の途中（1 通の途中の Event まで表示）の seq で送ると 409 `stale_view`・Event Log は不変。最新の seq なら 200 | 通過 |
-| Replay との共有（server） | Live の log から client で作る各時点の卓 = Replay API の `steps` | 通過 |
+| Replay との共有（server） | 物理操作（宣言）で進めた裁定を含む Hand で、Live の log から client で作る演出の単位（裁定(action)＋直後の `ACTION_TAKEN` を 1 つ）= Replay API の `steps`。engine 側でも同じまとめ方で Event より 1 つ少ないことを確認 | 通過（Codex の P2 の指摘で、裁定を含む Hand に広げた） |
 | Hero の手番の到来 | 最新の View だけが `legalActions` を持ち、途中の時点の卓（演出中の表示）は持たない | 通過 |
 
 ### 検証で分かった注意点
@@ -103,7 +103,7 @@ Replay（apps/server/src/replay.ts）
 3. **操作の契約（stale_view を防ぐ）**: 送る `lastSeq` は**表示中（`displayed`）の View の値**とし、`authoritative` の値で送らない（演出が追いついていない画面から、Hero が見ていない情報を前提に操作させない）。操作の部品を有効にするのは `lastSeq(displayed) === lastSeq(authoritative)` のときだけ。送信の失敗の再送は今どおり最初の `lastSeq` のまま（server の `stale_view` が二重適用を止める。今回の server テストで確認）。
 4. **Hero の手番の到来（Q20）**: `authoritative.legalActions` が Hero の手番を示し、キューが残っていたら、残りの通常の演出を自動で速める。`CARDS_TABLED` / `POT_AWARDED` の内容は省かない（動きだけ短くする）。
 5. **再接続・Home からの復帰（Q26）**: `EventSource` の `error` → 次の `view`（今の `connection` が `reconnecting` → `open`）と、Play への復帰を「再同期」とみなし、キューを捨てて `displayed = authoritative` にする。切断中に Hand が終わっていた場合も、最新の View（公開済みの札・Board・`awards`）と log の `POT_AWARDED`（Pot ごとの内訳）で結果を静的に出し、内容は省かない。見逃した分は Replay で見られる（log に残っていることを確認済み）。
-6. **Live と Replay の共有**: 演出の部品は「直前の卓・Event・直後の卓」を受け取る形にすると、Live（client の prefix）と Replay（API の `steps`）の両方へそのまま渡せる（両者が一致することを確認済み）。再生 / 一時停止 / 速度は Replay 側が別に持つ。
+6. **Live と Replay の共有**: 演出の部品は「直前の卓・Event・直後の卓」を受け取る形にすると、Live（client の prefix を Replay と同じまとめ方にしたもの）と Replay（API の `steps`）の両方へそのまま渡せる（裁定を含む Hand で一致を確認済み）。再生 / 一時停止 / 速度は Replay 側が別に持つ。
 7. **Fast Forward と別**: Fast Forward は server の思考待ちを縮める。表示演出の速度は `displayed` の進み方だけを変え、`authoritative` の受信・server の進行は変えない。
 8. **テスト**: 今回の 2 つのテストファイルの参照実装（`pendingEvents` / `stepViews` / `consume`）を製品のコードに移すときは、同じ Scenario（連続 CPU・Runout・Side / Split・Fold・重複・欠落・再接続・stale）を製品のコードに対するテストへ置き換える。
 

@@ -210,23 +210,48 @@ describe("Live の演出の受信経路（UX-06・#221）", () => {
     const ok = await act(base, handId, lastSeqOf(view), passiveHero(view));
     expect(ok.status).toBe(200);
   });
-  it("Live の log から client で作る各時点の卓は、Replay の steps と同じ（演出の部品を Live と Replay で共有できる）", async () => {
+  it("Live の log から client で作る演出の単位は、裁定を含む Hand でも Replay の steps と同じ（演出の部品を Live と Replay で共有できる）", async () => {
     const { base } = await listenApp(9);
     const { handId, view: started } = await startHand(base);
+    // 画面と同じ物理的な操作（宣言）で進め、DEALER_RULING を Log に入れる。
     let view = started;
     while (view.status !== "complete") {
-      const res = await act(base, handId, lastSeqOf(view), passiveHero(view));
+      const res = await fetch(`${base}/api/hands/${handId}/physical-actions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          lastSeq: lastSeqOf(view),
+          actions: [
+            {
+              type: "declare",
+              declaration: { kind: passiveHero(view).type },
+            },
+          ],
+        }),
+      });
+      expect(res.status).toBe(200);
       view = ((await res.json()) as { view: HeroView }).view;
     }
+    expect(view.log.some((e) => e.type === "DEALER_RULING")).toBe(true);
     const replay = (await (
       await fetch(`${base}/api/replay/hands/${handId}`)
     ).json()) as { steps: HeroView[] };
-    // Replay は Action に決まった裁定とその ACTION_TAKEN を 1 step にまとめる（replaySteps）。画面からの操作の無いこの Hand では 1 Event = 1 step。
-    expect(view.log.some((e) => e.type === "DEALER_RULING")).toBe(false);
-    const live = view.log.map((_, i) => ({
-      ...projectHeroView(view.log.slice(0, i + 1), HERO),
-      legalActions: null,
-    }));
+    // Replay（replaySteps）と同じく、Action に決まった裁定と直後の同じ Player の ACTION_TAKEN を 1 つにまとめる。
+    const live: HeroView[] = [];
+    view.log.forEach((e, i) => {
+      const next = view.log[i + 1];
+      const joinsNext =
+        e.type === "DEALER_RULING" &&
+        e.outcome === "action" &&
+        next?.type === "ACTION_TAKEN" &&
+        next.playerId === e.playerId;
+      if (joinsNext) return;
+      live.push({
+        ...projectHeroView(view.log.slice(0, i + 1), HERO),
+        legalActions: null,
+      });
+    });
+    expect(live.length).toBeLessThan(view.log.length);
     expect(replay.steps).toEqual(live);
   });
 });
