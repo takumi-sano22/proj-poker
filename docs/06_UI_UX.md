@@ -373,4 +373,4 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 | UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知 |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
-| UX-11 #226 | ETIQUETTE の確認待ちで CPU を止める責務の置き場所・Ack の契約と Event に残すか・Outage / Resume / 再接続との関係・連続する裁定の順序 |
+| UX-11 #226 | ETIQUETTE の確認待ちで CPU を止める責務の置き場所・Ack の契約と Event に残すか・Outage / Resume / 再接続との関係・連続する裁定の順序。先行の検証で、Ack の要る裁定は `DEALER_RULING` の notes から決定論で決まり、今の server は Ack を待たず CPU を進めることを確かめた（検証の記録と推奨案〔人間の承認待ち・採用済みではない〕: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
