@@ -1209,6 +1209,7 @@ export class HandOrchestrator {
       ? null
       : current.lastHandId;
   }
+
   /**
    * 今の Session の最後の Hand の続け方（開始の unseenLatestHand と Home の照会の currentSession が共有する判定。D144）。
    * - resumed: このプロセスに Hand が無い（再起動後に resumeSession で戻した Session）。次の Hand を始める
