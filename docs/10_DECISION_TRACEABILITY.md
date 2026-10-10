@@ -41,7 +41,6 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D132 | Tournament の Claude CPU / Review の実モデル Eval の上限（CPU 7 Spot × 2 Persona × repeat 2 = 最大 28 Decision・56 呼び出し／Review 4 判断 × repeat 2 = 8 Review + Follow-up 2 = 最大 20 呼び出し）。OAuth / Agent SDK / buildClaudeEnv の経路だけ・結果を見て Prompt / Policy を調整しない・CI は録画の再生だけ。#202 |
 | D133 | Tournament の Claude CPU の Prompt で、Public Tournament Context を戦略上の基準・Persona をそこからの偏り・Skill を Context を反映する精度として読ませる（Short Stack で Preflop Looseness を固定 Range と読まない・Bubble Factor を慎重になる圧力として理解させる。Push/Fold Nash / Solver は足さない）。PERSONA_PRESETS・Cash・RuleBot・KnowledgeState は変えない。#202 と同じ 28 Decision / 56 呼び出しで 1 回だけ比較測定・1 変更 1 測定。#207 |
 | D134 | Tournament の Claude CPU の Persona Differentiation は aggregate の品質指標（暫定の合格ライン 0.2 は不変）で、強い Tournament pressure の個別 Spot で Persona が同じ Action に収束しても失敗としない。Spot 別の Persona Differentiation・contextEffect・layerEffect は診断値で Gate にしない。D133 の Prompt と #207 の録画 v2（0.571）を current として維持し、少数標本だけで Prompt を再調整・追加測定しない。実機 Playtest で体感の問題が出たら別 Issue で人間判断。#212 |
-
 | D135〜D142 | Post-Phase8 の横断 UI/UX（#215・#216。Q1〜Q29 の人間判断）: モダン・カジノの世界観と可読性・正確性を守った強めの演出・装飾素材と Card / Chip の構造描画（D135）、Home / Play / Learn と起動時の Home・読み取り専用の Session 状態照会・Learn / Replay の戻り先（D136）、PC / スマホのレイアウトとスマホの Hero 操作パネル（D137）、Chip の Click / Drag の視認性・移動の視覚化・Betting Area の判定領域（D138）、Hero の下書きの保持と無効化（D139）、表示順序を保つ演出・速度4段階・Showdown を省かない・Live / Replay の共有・再接続（D140）、効果音（BGM なし）と音量・ミュートの保存（D141）、RULING → ETIQUETTE の確認 → 再開（D142）。可逆な値と技術検証は OI-012 |
 
 ### Q1〜Q29 と D 番号の対応（#216）
