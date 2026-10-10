@@ -13,6 +13,7 @@ import {
   outageReasonText,
   parseHeroView,
   parseOutageStatus,
+  parseCurrentSession,
   parseSessionStatus,
   seatDirections,
   selectLatestView,
@@ -529,5 +530,44 @@ describe("canFastForward（Hero が Fold した後の Hand の途中だけ操作
     expect(FAST_FORWARD_NOTE).toContain(
       "AI の応答を待つ時間そのものは短くなりません",
     );
+  });
+});
+
+describe("parseCurrentSession（GET /api/session/current の受け側 whitelist。D144）", () => {
+  it("知っている state と Session の種類だけで組み直す（余分な項目は捨てる）", () => {
+    expect(
+      parseCurrentSession({
+        state: "in_hand",
+        kind: { mode: "cash" },
+        handId: "h1",
+      }),
+    ).toEqual({ state: "in_hand", kind: { mode: "cash" } });
+    expect(
+      parseCurrentSession({
+        state: "ready_for_next_hand",
+        kind: { mode: "tournament", presetId: "stt6_hand_count" },
+      }),
+    ).toEqual({
+      state: "ready_for_next_hand",
+      kind: { mode: "tournament", presetId: "stt6_hand_count" },
+    });
+    expect(
+      parseCurrentSession({ state: "ended", kind: { mode: "cash" } }),
+    ).toEqual({ state: "ended", kind: { mode: "cash" } });
+  });
+
+  it("Session が無い（null）・知らない state（#230 の paused 等）・知らない Preset・形の合わない値は null（「続きから」を出さない）", () => {
+    expect(parseCurrentSession(null)).toBeNull();
+    expect(
+      parseCurrentSession({ state: "paused", kind: { mode: "cash" } }),
+    ).toBeNull();
+    expect(
+      parseCurrentSession({
+        state: "in_hand",
+        kind: { mode: "tournament", presetId: "unknown_preset" },
+      }),
+    ).toBeNull();
+    expect(parseCurrentSession({ state: "in_hand" })).toBeNull();
+    expect(parseCurrentSession("in_hand")).toBeNull();
   });
 });

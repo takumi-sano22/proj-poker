@@ -1,10 +1,8 @@
-// UX-02 #217 の技術検証: Home 向けの副作用の無い Session 状態の照会（D136）を、今の Orchestrator / Event Store が支えられるか。
-// 製品の挙動は変えない（検証のテストだけ。新しい API は人間の承認まで作らない）。調べること:
-// - 照会に必要な値（今の Session の有無・Hand の途中か次 Hand 待ちか終わったか・cash / Tournament の種類・再起動後の Resume）が、
-//   読むだけの経路（Orchestrator の Session の指し先・Event Log・Session Projection）から揃うか
-// - 読むだけの経路を何度呼んでも、Hand の開始・CPU の進行（Opponent の判断＝Claude の呼び出しの唯一の入口）・Event の追記が起きないか
-// - Cold Start・再起動（Hand の合間 / Hand の途中）・卓の設定の変更・Session の終了・Tournament・Drill の除外で、照会の答えがどうなるか
-// Session の指し先（this.session）は今は private なので、検証では型を外して読む（公開する形は API の契約と一緒に人間が決める）。
+// Home の読み取り専用の Session 状態の照会（currentSession。UX-02 #217・D136・D144）。
+// - 照会は開始（startHand）と同じ判定から作る: Cold Start・Hand の途中・CPU の思考の途中・再起動（Hand の合間 / 途中 / 卓の設定の変更 /
+//   終わった Session）・AI 障害の後の終了・Tournament・Drill の除外・内部エラーで止まった Hand で、照会の答えと「続きから」の開始がずれない
+// - 何度読んでも、Hand・Session の作成・Opponent の判断（Claude の呼び出しの唯一の入口）・Event の追記が起きない
+// - ended はこのプロセスで終わった Session だけで、再起動後は null（終わった Session の履歴は照会しない）
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,40 +32,9 @@ const TOURNAMENT: SessionRequest = {
   presetId: "stt6_hand_count",
 };
 
-/**
- * Home の照会が返す候補の値（契約の案。docs/taskLog/issue-217-session-readonly-verification.md）。
- * Session ID・Stack・Persona・札は載せない（Home の表示に要らない）。
- */
-type HomeSessionProbe =
-  | { readonly state: "none" }
-  | {
-      readonly state: "in_hand" | "ready_for_next_hand" | "ended";
-      readonly kind: SessionRequest;
-      /** このプロセスで進めた Hand（卓に戻る先）。再起動後の Resume ではこのプロセスに Hand が無いので null。 */
-      readonly handId: string | null;
-    };
-
-interface SessionPointerView {
-  readonly lastHandId: string;
-}
-
-/**
- * 読むだけの経路だけで照会の値を作る（PoC）。Orchestrator の Session の指し先と、公開の読み取り（sessionStatus・sessionKindOf）だけを使う。
- * startHand・heroAction・proceed は呼ばない。
- */
-function probe(orchestrator: HandOrchestrator): HomeSessionProbe {
-  const pointer = (
-    orchestrator as unknown as { session: SessionPointerView | null }
-  ).session;
-  if (pointer === null) return { state: "none" };
-  const kind = orchestrator.sessionKindOf(pointer.lastHandId);
-  // このプロセスで進めた Hand なら、その Hand の Event から状態を作る。
-  const status = orchestrator.sessionStatus(pointer.lastHandId);
-  if (status !== null) {
-    return { state: status.state, kind, handId: pointer.lastHandId };
-  }
-  // 再起動後の Resume: 指し先があるのは Projection が ready_for_next_hand で、今の卓の設定で続けられるときだけ（resumeSession）。
-  return { state: "ready_for_next_hand", kind, handId: null };
+/** 照会（読むだけ）。 */
+function probe(orchestrator: HandOrchestrator) {
+  return orchestrator.currentSession();
 }
 
 /** Event Store の中身の指紋（Hand ごとの Event の件数と論理順序の最後の番号）。追記が起きたら変わる。 */
@@ -94,16 +61,20 @@ function countingOpponents(inner: OpponentFactory = createRuleBot) {
   return { counts, factory };
 }
 
-/** 照会と、今ある読み取り専用の経路を何度も呼ぶ（Home の再描画・複数タブ・リロードの代わり）。 */
-function readRepeatedly(orchestrator: HandOrchestrator, times = 5) {
+/** 照会と、今ある読み取り専用の経路を何度も呼ぶ（Home の再描画・二重タブ・リロードの代わり）。 */
+function readRepeatedly(
+  orchestrator: HandOrchestrator,
+  times = 5,
+  handId: string | null = null,
+) {
   for (let i = 0; i < times; i++) {
-    const p = probe(orchestrator);
-    if (p.state !== "none" && p.handId !== null) {
-      orchestrator.heroView(p.handId);
-      orchestrator.sessionStatus(p.handId);
-      orchestrator.outageStatus(p.handId);
-      orchestrator.fastForwardOf(p.handId);
-      orchestrator.tournamentTableOf(p.handId);
+    probe(orchestrator);
+    if (handId !== null) {
+      orchestrator.heroView(handId);
+      orchestrator.sessionStatus(handId);
+      orchestrator.outageStatus(handId);
+      orchestrator.fastForwardOf(handId);
+      orchestrator.tournamentTableOf(handId);
     }
   }
 }
@@ -137,7 +108,7 @@ async function playHand(
   return started.value.handId;
 }
 
-describe("Home 向けの読み取り専用の Session 照会の技術検証（UX-02 #217・SQLite）", () => {
+describe("Home の読み取り専用の Session 照会（UX-02 #217・SQLite）", () => {
   let dir: string;
   const opened: SqliteEventStore[] = [];
   const orchestrators: HandOrchestrator[] = [];
@@ -187,7 +158,7 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     const before = fingerprint(store);
     const orchestrator = boot(store, "a", { createOpponent: factory });
     readRepeatedly(orchestrator);
-    expect(probe(orchestrator)).toEqual({ state: "none" });
+    expect(probe(orchestrator)).toBeNull();
     expect(fingerprint(store)).toBe(before);
     expect(counts).toEqual({ created: 0, decided: 0 });
   });
@@ -204,11 +175,10 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
 
     const before = { print: fingerprint(store), counts: { ...counts } };
     const events = store.read(handId).length;
-    readRepeatedly(orchestrator, 20);
+    readRepeatedly(orchestrator, 20, handId);
     expect(probe(orchestrator)).toEqual({
       state: "in_hand",
       kind: { mode: "cash" },
-      handId,
     });
     expect(store.read(handId).length).toBe(events);
     expect(fingerprint(store)).toBe(before.print);
@@ -255,7 +225,7 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     const print = fingerprint(store);
     readRepeatedly(orchestrator, 20);
     const p = probe(orchestrator);
-    expect(p.state).toBe("in_hand");
+    expect(p?.state).toBe("in_hand");
     expect(counts.decided).toBe(decided);
     expect(fingerprint(store)).toBe(print);
     release();
@@ -276,7 +246,6 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     expect(probe(resumed)).toEqual({
       state: "ready_for_next_hand",
       kind: { mode: "cash" },
-      handId: null,
     });
     expect(store.latestSessionProjection()?.lastHandId).toBe(handId);
     expect(fingerprint(store)).toBe(before);
@@ -291,10 +260,7 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     if (!started.ok) throw new Error(started.error.message);
     expect(started.value.view.status).not.toBe("complete");
     const midHand = started.value.handId;
-    expect(probe(orchestrator)).toMatchObject({
-      state: "in_hand",
-      handId: midHand,
-    });
+    expect(probe(orchestrator)?.state).toBe("in_hand");
     orchestrators.splice(0).forEach((o) => o.close());
     first.close();
 
@@ -304,7 +270,6 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     expect(probe(resumed)).toEqual({
       state: "ready_for_next_hand",
       kind: { mode: "cash" },
-      handId: null,
     });
     expect(store.latestSessionProjection()?.lastHandId).toBe(finished);
   });
@@ -321,7 +286,7 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
       logger: { warn: () => {}, error: () => {} },
     });
     expect(store.latestSessionProjection()?.state).toBe("ready_for_next_hand");
-    expect(probe(resumed)).toEqual({ state: "none" });
+    expect(probe(resumed)).toBeNull();
   });
 
   it("Session の終了（AI 障害の後に終了を選ぶ）: このプロセスでは ended を返し、再起動後は none（終わった Session は Resume しない）", async () => {
@@ -342,7 +307,7 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     }
     const outage = orchestrator.outageStatus(handId);
     expect(outage?.current).not.toBeNull();
-    expect(probe(orchestrator)).toMatchObject({ state: "in_hand", handId });
+    expect(probe(orchestrator)?.state).toBe("in_hand");
     const resolved = await orchestrator.resolveOutage(
       handId,
       outage?.revision ?? -1,
@@ -352,14 +317,13 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     expect(probe(orchestrator)).toEqual({
       state: "ended",
       kind: { mode: "cash" },
-      handId,
     });
     orchestrators.splice(0).forEach((o) => o.close());
     first.close();
 
     const store = open();
     expect(store.latestSessionProjection()?.state).toBe("ended");
-    expect(probe(boot(store, "b"))).toEqual({ state: "none" });
+    expect(probe(boot(store, "b"))).toBeNull();
   });
 
   it("Tournament: 再起動後も Session の種類（Preset）を照会で返せる（SESSION_STARTED の Snapshot から読む。D129）", async () => {
@@ -374,7 +338,6 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     expect(probe(resumed)).toEqual({
       state: "ready_for_next_hand",
       kind: TOURNAMENT,
-      handId: null,
     });
     expect(fingerprint(store)).toBe(before);
   });
@@ -398,7 +361,6 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
     expect(probe(resumed)).toEqual({
       state: "ready_for_next_hand",
       kind: { mode: "cash" },
-      handId: null,
     });
     expect(
       store.latestSessionProjection(new Set([drill.handId]))?.lastHandId,
@@ -406,12 +368,12 @@ describe("Home 向けの読み取り専用の Session 照会の技術検証（UX
   });
 });
 
-describe("照会と開始の判定のずれ（UX-02 #217・メモリ内の Store）", () => {
+describe("内部エラーで止まった Hand の照会（UX-02 #217・メモリ内の Store）", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("内部エラーで止まった Hand: Event だけから作る照会は in_hand のままだが、開始は新しい Session を作る（照会は開始と同じ判定から作る必要がある）", async () => {
+  it("内部エラーで止まった Hand: Event では in_hand だが開始は新しい Session を作るので、照会は null（「続きから」を出さない）", async () => {
     vi.useFakeTimers();
     let failing = false;
     const store = new (class extends InMemoryEventStore {
@@ -440,11 +402,11 @@ describe("照会と開始の判定のずれ（UX-02 #217・メモリ内の Store
     await vi.advanceTimersByTimeAsync(100);
     failing = false;
 
-    // 照会（PoC）は Event から in_hand と言うが、「続きから」を押すと止まった Hand へは戻らない。
-    expect(probe(orchestrator)).toMatchObject({
-      state: "in_hand",
-      handId: first.value.handId,
-    });
+    // Event だけ見ると in_hand だが、「続きから」を押しても止まった Hand へは戻らない。照会は開始と同じ判定で null。
+    expect(orchestrator.sessionStatus(first.value.handId)?.state).toBe(
+      "in_hand",
+    );
+    expect(probe(orchestrator)).toBeNull();
     const next = await orchestrator.startHand(null);
     if (!next.ok) throw new Error(next.error.message);
     expect(next.value.created).toBe(true);

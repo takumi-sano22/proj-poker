@@ -402,6 +402,12 @@ export function registerHandRoutes(
     },
   );
 
+  // Home の読み取り専用の Session 状態の照会（D136・D144）。状態と Session の種類だけを返し、続けられる Session が無ければ null。
+  // 読むだけで Hand の開始・CPU の進行・Event の追記・Claude の呼び出しをしない（開始は Hero の操作で POST /api/hands）。
+  app.get("/api/session/current", () => ({
+    session: orchestrator.currentSession(),
+  }));
+
   // 卓に出す Tournament の状況（#190・docs/06 §15）。この Hand の Level・Blind・Ante・次の Level までの残りと、この Hand までの
   // 残人数・Elimination・順位・Payout（Result）。Event Log から都度計算し（D129）、cash の Hand は tournament: null。
   // 返すのは公開の情報だけ（CPU の Persona・他者の札・内部の設定は返さない）。このプロセスで進めた Hand だけ（他は 404）。
