@@ -203,7 +203,7 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 - 世界観のデザイントークン（色・光・影・動き）と音声のトークンの具体値（D135・D141。トークンの置き場所は `ui-design-recipes` の `references/proj-poker.md`）
 
 技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは #215 Gate 1 で承認する）:
-- UX-02（#217）: 読み取り専用の Session 状態照会の API の形、照会が Hand を始めない・進めないことの実証、Resume / プロセス再起動との契約（D136）
+- UX-02（#217）: 読み取り専用の Session 状態照会の API の形、照会が Hand を始めない・進めないことの実証、Resume / プロセス再起動との契約（D136）。検証の結果: 必要な値は Orchestrator の Session の指し先・Event・`SESSION_STARTED` の Snapshot を読むだけで揃い、読んでも追記・Hand の開始・CPU の判断は起きない（検証テストあり）。ただし公開の読み取り経路が無く API の追加が要る。照会は Session Projection だけからではなく開始（`startHand`）と同じ判定から作る。人間の承認が要るのは、API の追加と形・`ended` を Home に返すか・#230 との順序（`docs/taskLog/issue-217-session-readonly-verification.md`）
 - UX-04（#219）: 下書きの有効・無効の判定（`operationKey` / `lastSeq` との整合）と寿命、無効化の通知の文言（D139）
 - UX-06（#221）: **解消済み → D143（UX06-1〜3=A の人間承認）**。既存の `HeroView.log` 全量から client が可視 Event を順序再構築する方式を採用し、API/Event/永続化の追加はこの演出のためには行わない。seq 飛び番の残余リスクは受容するが UI に出さず、演出中の操作下書きは保持・送信前に最新表示へ同期して有効性を再検証する。**未検証**: Tournament Ante / BBA と Hand 中 Side Pot の内訳表示は UX-07 #222 / UX-09 #224 で実証する（詳細は `docs/taskLog/issue-221-live-presentation-verification.md`）。
 - UX-10（#225）: 効果音の設定の保存先（既存の BB 補助表示と同じ viewer ごとの `localStorage` が第一候補）とブラウザの自動再生の制約への対応（D141）
