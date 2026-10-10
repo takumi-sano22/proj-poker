@@ -1,4 +1,4 @@
-# D01〜D142の採用済み人間判断。
+# D01〜D143の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -570,3 +570,8 @@
   choice: "Q28=A（ETIQUETTE の確認待ちでも Home / Learn へ移動でき、進行の待ちは続き Play で再確認）・Q29=A（RULING を先に数秒表示して自動で閉じ、続いて ETIQUETTE を明示的に確認して再開）（#216 の人間判断）"
   status: "採用済み"
   decision: "裁定が出たら、RULINGを先に数秒出して自動で閉じ、続けてETIQUETTEをHeroが明示的に確認してから進行を再開する。確認を待つ間もHeroはHome / Learnへ移動でき、進行の待ちは続き、Playに戻ったら確認を再び求める。RULING / ETIQUETTE / COACHINGを同じWarningとして混ぜない（docs/06 §6）こと、裁定の規則（D91）とEvent（D90）は変えない。COACHINGは今どおりHeroが開いたときだけ出す。確認待ちの間にCPUの進行を止める責務の置き場所・確認（Ack）の契約・AI障害（Outage）/ Resumeとの関係はUX-11（#226）で設計し、人間の承認（#215 Gate 1）を経るまで実装しない。「数秒」の値はOI-012の暫定値とする。D47・D86・D90・D91の具体化。"
+
+- id: D143
+  choice: "UX06-1=A（可視 seq の飛び番を受容）・UX06-2=A（演出中の下書き許容・送信前に同期/再検証）・UX06-3=A（現行 API のまま client で演出時系列を復元）（#221 / PR #229 の人間判断）"
+  status: "採用済み"
+  decision: "UX-06 #221 の検証を受け、Live 演出は現在の REST/SSE が運ぶ HeroView.log の可視 Event 全量を、client が seq によって重複排除・順序化し、projectHeroView(prefix) で各時点の卓を作る案 A を採用する。この用途で API / Event / 永続化を追加しない。Action に決まった DEALER_RULING とその直後の同じ Player の ACTION_TAKEN は Replay と同じ 1 step にまとめる。Hero に見えない engine/system/他者宛て private Event による seq の飛び番は現行の間接的な運用情報推測リスクとして受容するが、UI で seq や欠番を表示・意味付けしない。client では最新の authoritative View と演出を終えた displayed View を分離し、未送信の下書きは演出中も保持してよいが、操作を送る前に残演出を自動高速化して最新の可視状態まで同期し、下書き・手番・lastSeq の有効性を再検証する。送信は displayed と authoritative の可視 lastSeq が一致するときに表示中の lastSeq で行い、同期前に最新値を先取りして送信しない。Out-of-Turn 操作も同じ契約に従う。D37・D38・D90・D91・D93・D139・D140 を具体化する。演出中の具体的な速度や再接続 UI の値は OI-012 の暫定値のまま。"
