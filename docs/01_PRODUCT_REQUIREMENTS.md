@@ -195,10 +195,17 @@ Dealerの責務:
 - Etiquette
 - 初心者向け用語補助
 
-速度:
-- Real Table
-- Normal
-- Fast
+速度（D140。旧記述の Real Table / Normal / Fast の3段を置き換えた。#216）:
+- 表示演出の速度は 標準 / 高速 / 超高速 / 演出なし の4段階、Skip 可。Event の表示順序を保ち、Showdown の公開札・勝者・Pot の配分は省かない（省くのは動きだけ）
+- Fast Forward（Hero Fold 後の CPU の待ちの短縮。D93）とは別の契約
+
+### FR-UX-001 — App Shell・演出・効果音（Post-Phase8。#215・D135〜D142）
+
+- 画面は Home / Play / Learn の3領域。起動時は Home で、Home は Hand を進めない読み取り専用の照会だけを使う（D136）
+- モダン・カジノの世界観で、読みやすさと正確性を守った上で強めの演出を許す（D135）
+- PC は中央卓・右の情報パネル・下部の Hero 操作、スマホは折りたためる Hero 操作パネル（D137）。Chip の Click / Drag を保ち視認性を上げる（D138）。未確定の下書きは同じ Hand で有効な間は保持する（D139）
+- 効果音（Card / Chip / Street / 勝利）を足し、BGM は入れない（D141）。RULING → ETIQUETTE の確認 → 再開（D142）
+- 詳細は `docs/06` §16、可逆な値と技術検証は OI-012
 
 ### FR-LIVE-006 — Live Mechanics Score
 
@@ -331,4 +338,5 @@ Play
 - Real Money Gamblingなし
 - Online Multiplayerなし
 - Voice Recognitionなし
+- BGMなし（音は効果音だけ。D141）
 - 3D Casinoなし

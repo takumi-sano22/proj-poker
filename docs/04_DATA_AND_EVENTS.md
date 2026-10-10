@@ -159,6 +159,8 @@ type Visibility =
 - 各CPUが当時何を知っていたか
 - Reviewで何を学習用に開示できるか
 
+**表示の状態は Event Log に入れない（#216・D139〜D141）**: 横断 UI/UX の演出のキュー・表示演出の速度・Hero の未確定の下書き（手に取った Chip・宣言の途中）・効果音の音量とミュートは client の表示状態・viewer の設定で、ゲームの正本ではないので Event に残しません（Event に残すのは今どおり確定して送った物理操作・裁定。D90）。演出は Hero の View と `public` の Event だけを使い、`private`（Hero 以外）・`learning_only`・`engine`・`system` を使いません。ETIQUETTE の確認（Ack）を Event に残すかどうかは UX-11（#226）で決めます（未確定。`docs/06` §16.8・OI-012）。
+
 ## 5. KnowledgeState Projection
 
 `KnowledgeState` はglobal Event Storeそのものではなく、PlayerごとのProjectionです。

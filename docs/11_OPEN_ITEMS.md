@@ -182,6 +182,33 @@ Phase 7でVersion付きのConfig / Policyに暫定値を置き、Eval / Playtest
 
 D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがそのSubjectを見たHandの数に応じた指数減衰（半減期150 Hand）、十分なSampleは機会数15以上（PersonaのSkillで0.5〜1.5倍）。`phase7_tilt_v1`は0〜3の整数の段階で、Trigger（40BB以上のPotの負け・3連敗・ShowdownでBluffが見つかる・大勝ち）で上がり、1 HandごとにPersonaの`recoverySpeed`に応じて下がり、Looseness / Aggressionを段階ごとに上限付きで少しずらす。順序は論理順序（D117）。
 
+## OI-012 — 横断 UI/UX の可逆パラメータと技術検証（#215・#216）
+
+確定（D135〜D142）:
+- モダン・カジノの世界観と、可読性・正確性を守った上での強めの演出（D135）
+- Home / Play / Learn の3領域・起動時は Home・読み取り専用の Session 状態照会（D136）
+- PC の中央卓・右の情報パネル・下部の Hero 操作、スマホの折りたためる Hero 操作パネル（D137）
+- Chip の Click / Drag の維持と視認性の改善・Chip の移動の視覚化・Betting Area の判定領域の確保（D138）
+- 同じ Hand の有効な下書きの保持と、無効化時の破棄・通知（D139）
+- 表示順序の維持・表示演出の速度4段階・Showdown の公開 / 結果を省かない・Live / Replay の部品の共有・再接続時の同期（D140）
+- Card / Chip / Street / 勝利の効果音（BGM なし）・初期 ON・音量とミュートの保存（D141）
+- RULING の自動終了 → ETIQUETTE の明示確認 → 再開、確認待ち中の Home / Learn への移動（D142）
+
+未確定（可逆。Config / Token に暫定値を置き、Playtest で見直す。永久仕様にしない）:
+- RULING を出しておく「数秒」の値（D142）
+- 表示演出の速度4段階ごとの所要時間（ms）・Hero の手番の到来時の自動高速化の度合い（D140）
+- 操作用 Chip の大きさの調整規則（基準は PC 約54px・スマホ約48〜52px。D138）と、卓上の Chip の拡大率
+- スマホで開いた Hero 操作パネルの高さの上限の正確な比率（約65〜70%。D137）と、レスポンシブの画面幅の閾値の再設計（今は 719px / 720px・1024px・359px。`docs/06` §1）
+- 効果音の既定の音量・音源・種類ごとの割り当て（D141。音源の制作は UX-08 #223、再生と設定は UX-10 #225）
+- 世界観のデザイントークン（色・光・影・動き）と音声のトークンの具体値（D135・D141。トークンの置き場所は `ui-design-recipes` の `references/proj-poker.md`）
+
+技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは #215 Gate 1 で承認する）:
+- UX-02（#217）: 読み取り専用の Session 状態照会の API の形、照会が Hand を始めない・進めないことの実証、Resume / プロセス再起動との契約（D136）
+- UX-04（#219）: 下書きの有効・無効の判定（`operationKey` / `lastSeq` との整合）と寿命、無効化の通知の文言（D139）
+- UX-06（#221）: Hero に見える Event / View だけで Live の演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る。`docs/03` §1）、足りなければ API の拡張と情報漏えいのテスト（D140）
+- UX-10（#225）: 効果音の設定の保存先（既存の BB 補助表示と同じ viewer ごとの `localStorage` が第一候補）とブラウザの自動再生の制約への対応（D141）
+- UX-11（#226）: ETIQUETTE の確認待ちで CPU の進行を止める責務の置き場所（server / client）・確認（Ack）の契約と Event に残すかどうか・AI 障害（Outage）/ Resume / 再接続との関係・複数の裁定が続いたときの順序（D142。人間の承認が要る）
+
 ## すでに確定しており、Routine Implementationで再検討しない項目
 
 - Local Single User
