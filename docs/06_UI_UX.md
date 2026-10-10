@@ -293,7 +293,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 ## 16. 横断 UI/UX（Post-Phase8。#215・#216・D135〜D142）
 
-#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装はまだありません**（UX-02〜UX-11。#215 の Gate 0 / Gate 1 を満たすまで機能を実装しない）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、採用済みの事実として扱いません。
+#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装はまだありません**（UX-02〜UX-11。#215 の Gate 0 / Gate 1 を満たすまで機能を実装しない）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144）を除き、採用済みの事実として扱いません。
 
 ### 16.1 守る不変条件
 
@@ -315,7 +315,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
           └──────────── 戻る（戻り先と閲覧位置を保持）─────┘
 ```
 
-- 起動時は必ず Home を出す。Home は読み取り専用の Session 状態の照会だけを使い、Hand を始めない・進めない。続けられる Session があれば「続きから遊ぶ」を出す（照会の形は UX-02 #217。今の `POST /api/hands` は開始の要求なので Home の照会に使わない）。
+- 起動時は必ず Home を出す。Home は読み取り専用の Session 状態の照会だけを使い、Hand を始めない・進めない。続けられる Session があれば「続きから遊ぶ」を出す（照会は D144 の `GET /api/session/current`。今の `POST /api/hands` は開始の要求なので Home の照会に使わず、「続きから遊ぶ」を Hero が押したときだけ呼ぶ。`ended` はこのプロセスで終わった Session だけで再起動後は `null`、知らない state では「続きから」を出さない）。
 - Learn / Replay から戻るときは、戻り先（Home か Play）と閲覧していた Hand・Review の位置を保持する（Q23）。
 - Play を離れている間も、進行中の Hand は今の規則どおり server が進め・止める（Hero の入力待ち・AI 障害・ETIQUETTE の確認待ち。§16.5）。Play に戻ったら最新の公開状態から表示する（§16.4 の再接続と同じ）。
 
@@ -369,7 +369,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 
 | Issue | 決めること |
 |---|---|
-| UX-02 #217 | 検証済み: 照会の値は読むだけの経路から揃い、読んでも Hand・CPU・Event Log は進まない。承認を待つもの: 照会の API の追加と形（GET の案。Session ID・札・Stack は載せない）、`ended` を Home に返すか、#230（Pause / End）との順序。「続きから遊ぶ」は Hero の操作で今の `POST /api/hands` を呼ぶ案 |
+| UX-02 #217 | **採用済み D144**: `GET /api/session/current`（`{session: null}` か state・Session の種類。Session ID・Hand ID・Stack・札は返さない）、開始と同じ読み取り専用の判定から作る、`ended` はこのプロセスの終了だけ、知らない state は安全側、#230（Pause / End）の承認後に追加で拡張 |
 | UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知 |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
