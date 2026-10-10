@@ -1,4 +1,4 @@
-# D01〜D134の採用済み人間判断。
+# D01〜D142の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -538,3 +538,35 @@
   choice: "Tournament の Claude CPU の Persona Differentiation は aggregate の品質指標とし、強い Tournament pressure の個別 Spot で Persona が同じ Action に収束することを失敗としない。#207 の v2 を current として受容する（#212 の人間判断）"
   status: "採用済み"
   decision: "TournamentのClaude CPUのPersona Differentiationは、Spotを平均したaggregateの品質指標として扱い、「どの局面でもPersonaごとに必ず違うActionを選ぶ」ことを意味しない。強いTournament pressureのある個別Spot（例: S5 / S6のBubble・Bubble Factor 2.75でChip LeaderのShoveにA9oでCallするか）で複数PersonaがFold等の同じActionに収束することは、それだけでは失敗としない。PersonaはTournamentの戦略的状況を無視する理由ではなく、Tournament Contextを基準に、戦略的に妥当・境界的な選択肢の中でどちら側へ倒れやすいかを偏らせるために使い、Action差そのものを作ることを目的にしない（Persona差がある＝良い・同じAction＝悪いという評価にしない）。D133のPromptの意味論（Contextを基準・Personaを偏り・SkillをContextを反映する精度・Short StackでPreflop Loosenessを固定Rangeと読まない・Bubble Factorを無視しない）とTOURNAMENT_PERSONA_GUIDEは変えずに維持する。合格ラインはOPPONENT_EVAL_TARGETS.minPersonaDifferentiation = 0.2（暫定）を変えず、#207の録画v2（opponent-tournament-eval-v2.json）はaggregateのPersona Differentiation 0.571でこれを満たし、Structured Output Valid 1・Illegal / Retry / Fallback 0・Hidden Information Leakage 0・障害0のため、currentの録画として受容する。Spot別のPersona Differentiation・contextEffect・layerEffectは診断用の観測値とし、Gateにしない（Spot単位で0だから失敗、というGateを新設しない。S5 / S6のPersona Differentiation 0・Layer Effect 0は記録だけにする）。repeat 2の少数標本（S5 / S6のManiacの4判断・S1 / S2の割れ・S4のNitのFold）だけを根拠にPromptを追加調整せず、Push/Fold Solver / Nash Rangeを持たない現在の構成ではこれらのActionの正誤を判定しない。repeatを増やす・他Persona（TAG / LAG / Calling Station / Weak-tight）を追加測定する・実モデルを呼ぶ・v3録画を作ることはしない。#203等の実機Playtestで「TournamentにするとCPUのPersona差が体感できない・複数Personaが不自然に同じ戦略へ収束する」という実ユーザー視点の問題が確認された場合は別Issueで再検討し、その場合もPrompt・Persona Policy・決定論のTournament Policy・Solver / Rangeのどこを改善するかを人間判断してから進める。D133・D132は変更しない。D85・D109・D130・D132・D133の具体化。#212。"
+- id: D135
+  choice: "Q1=B（モダン・カジノ）・Q5=C（強めのゲーム演出）・Q10=A（背景・光・演出の装飾素材を制作し Card / Chip は構造描画を維持）（#216 の人間判断。#215 の Q1〜Q29）"
+  status: "採用済み"
+  decision: "UIの世界観をモダン・カジノとし、可読性・正確性（実額の常時表示・Dealer Feedbackの3分類・情報境界）を守った上で強めのゲーム演出を許す。docs/06 §1の「Casinoゲーム的な演出より読みやすさを優先」を「読みやすさと正確性を守った上で強い演出を許す」に置き換える（docs の記述の更新で、D43の実卓寄り2Dは変えない）。背景・光・演出などの装飾素材は制作してよいが、Card / ChipはSVG / CSSの構造描画を維持する（D60のまま）。3D・BGM・Voiceは導入しない。D43・D60の具体化。"
+- id: D136
+  choice: "Q2=A（Home / Play / Learn の 3 領域）・Q6=A（起動時は必ず Home、進行中なら「続きから遊ぶ」）・Q23=A（Learn / Replay からの戻り先と閲覧位置を保持）・Q25=A（Home は副作用のない読み取り専用の Session 状態照会を使う）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "画面をHome / Play / Learnの3領域に分け、アプリの起動時は必ずHomeを出し、続けられるSessionがあれば「続きから遊ぶ」を出す。HomeはHandを始めたり進めたりしない読み取り専用のSession状態の照会だけを使い、既存のHandの開始（POST /api/hands）を照会に流用しない。照会のAPIの形・Resume / プロセス再起動との契約はUX-02（#217）で検証して決め、検証前に採用済みの事実として書かない。Learn / Replayから戻るときは戻り先と閲覧中のHand / Reviewの位置を保持する。Resumeの境界（Handの間。D62）とEvent Log正本（D37）は変えない。D62・D95の具体化（Learn は学習の閲覧の領域で、D03 の学習モード / 実戦モードの区別とは別）。"
+- id: D137
+  choice: "Q3=A（PC は中央卓・右に折りたためる情報パネル・下部に Hero 操作）・Q4=A（スマホは折りたたみ式の Hero 操作パネル）・Q7=A（スマホは Hero の手番で自動展開、いつでも手動で変えられる）・Q27=A（スマホで展開したパネルの高さの上限は画面の高さの約 65〜70%、内部スクロール）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "PCは卓を中央に、進行ログ等の情報パネルを右に（折りたためる）、Heroの操作を下部に置く。スマホはHeroの操作パネルを折りたためる形にし、Heroの手番が来たら自動で開き、Heroはいつでも手動で開閉できる。開いたパネルの高さは画面の高さの約65〜70%を上限にして、中身は内部でスクロールする（正確な比率・画面幅の閾値の再設計は可逆な暫定値でOI-012）。右の情報パネルにもPlay中のHUD（統計）は足さない（D32）。実額の常時表示（D49）とRULINGの省略禁止は変えない。D32・D43・D49の具体化。"
+- id: D138
+  choice: "Q11=A（Chip の Click / Drag を維持しサイズ・視認性を改善）・Q13=A（Stack → 手元 → Betting Area の Chip の移動を視覚化）・Q17=A（操作用 Chip の基準は PC 約 54px・スマホ約 48〜52px で適応的に調整）・Q18=A（Betting Area の見た目を縮め、ドロップ判定領域は確保し他の操作と重ねない）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "ChipのClick / Drag両対応（D44）とPrimary Numeric Bet Boxを作らない方針を維持したまま、操作用のChipを大きく見やすくする（基準はPC約54px・スマホ約48〜52pxで、画面に応じて調整する暫定値。OI-012）。Stack → 手元 → Betting AreaのChipの移動を演出で見せる。Betting Areaは見た目を小さくしてよいが、ドロップの判定領域は確保し、他の操作の判定領域と重ねない。物理操作をそのまま送り裁定はRuling Engineが決める（D47・D91）ことは変えない。卓上のChipの拡大率は未確定（OI-012）。D14・D44・D47の具体化。"
+- id: D139
+  choice: "Q12=A（パネルを折りたたんでも未確定の下書きを失わない）・Q24=A（Home / Learn へ移動中も同一 Hand の有効な下書きを保持し、無効化されたら破棄して通知）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "Heroの未確定の物理操作の下書き（手に取ったChip・宣言の途中）は、操作パネルの折りたたみやHome / Learnへの移動では失わず、同じHandで有効な間は保持する。Handが進んで下書きが無効になったら破棄し、そのことをHeroに通知する。下書きはclientの表示状態で、Event Logに残すのは確定して送った物理操作だけ（D90）のまま。有効・無効の判定（operationKey / lastSeqとの整合）と寿命はUX-04（#219）で定義する。プロセスの再起動を跨いだ下書きの復元とHand途中の完全復帰は求めない（D62を変えない）。D44・D62・D90の具体化。"
+- id: D140
+  choice: "Q8=A（Event の表示順序を維持し、完了後に次の表示へ。速度変更 / Skip 可）・Q14=A（Flop 3 枚を順にスライド・フリップ、Turn / River も個別に演出）・Q15=A（毎回の Showdown で公開対象の札・勝者・Pot の配分をフル演出）・Q19=A（表示演出の速度は標準 / 高速 / 超高速 / 演出なし）・Q20=A（Hero の手番の到来時は順序を保って通常の演出を自動で高速化、Showdown の公開 / 結果は飛ばさない）・Q21=A（Live / Replay で演出部品を共有し、Replay の再生 / 一時停止 / 速度は独立）・Q26=A（再接続時は古い演出キューを捨てて最新の公開状態へ同期し、見逃しは Replay で確認）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "卓の表示はHeroに見えるEvent / Viewの順序を保って1つずつ演出し、終わってから次を出す（Presentation Controllerの責務）。表示演出の速度は標準 / 高速 / 超高速 / 演出なしの4段階で、Skipもできる。Flopは3枚を順に、Turn / Riverも個別に演出し、Showdownは毎回、公開対象の札・勝者・Potの配分を演出する。Heroの手番が来たら順序を保ったまま通常の演出を自動で速めるが、Showdownの公開と結果は省かない（Skip・演出なしでも表示の内容は省かず、省くのは動きだけ）。LiveとReplayは演出の部品を共有し、Replayの再生・一時停止・速度はLiveと独立に持つ。再接続したら古い演出のキューを捨てて最新の公開状態に合わせ、見逃した分はReplayで見る。演出はEngine・Event Log・情報境界を変えない表示層で、Hero以外のHidden Cards・Future Cards・system Event・Learning-only Revealを演出に使わない。表示演出の速度とFast Forward（Hero Fold後にCPUの待ちを縮める。D93）は別の契約として持つ。Heroに見えるEvent / Viewだけで演出の順序を復元できるか・APIの拡張が要るかはUX-06（#221）で検証し、具体の所要時間（ms）はOI-012の暫定値とする。D15・D38・D93の具体化（docs/01 FR-LIVE-005の速度の3段を4段階に置き換える）。"
+- id: D141
+  choice: "Q9=A（Card / Chip / Street / 勝利の効果音を導入し BGM は対象外）・Q16=A（効果音は初期 ON、ユーザー操作後の再生許可と設定を尊重）・Q22=A（効果音のマスター音量とミュートを保存）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "Card・Chip・Street・勝利の効果音を足す。BGM・Voice（音声の読み上げ・音声認識）は対象外（D46・docs/00 §6）。効果音の既定はONだが、ブラウザがユーザー操作の後にしか再生を許さない制約と、ユーザーの設定を尊重する。マスター音量とミュートはviewerの表示設定として保存し、ゲームの正本（Event Log）には入れない。保存先・音源の制作と配置・ライセンスはUX-10（#225）とUX-08（#223）で決める。D46の範囲内の追加。"
+- id: D142
+  choice: "Q28=A（ETIQUETTE の確認待ちでも Home / Learn へ移動でき、進行の待ちは続き Play で再確認）・Q29=A（RULING を先に数秒表示して自動で閉じ、続いて ETIQUETTE を明示的に確認して再開）（#216 の人間判断）"
+  status: "採用済み"
+  decision: "裁定が出たら、RULINGを先に数秒出して自動で閉じ、続けてETIQUETTEをHeroが明示的に確認してから進行を再開する。確認を待つ間もHeroはHome / Learnへ移動でき、進行の待ちは続き、Playに戻ったら確認を再び求める。RULING / ETIQUETTE / COACHINGを同じWarningとして混ぜない（docs/06 §6）こと、裁定の規則（D91）とEvent（D90）は変えない。COACHINGは今どおりHeroが開いたときだけ出す。確認待ちの間にCPUの進行を止める責務の置き場所・確認（Ack）の契約・AI障害（Outage）/ Resumeとの関係はUX-11（#226）で設計し、人間の承認（#215 Gate 1）を経るまで実装しない。「数秒」の値はOI-012の暫定値とする。D47・D86・D90・D91の具体化。"
