@@ -3,13 +3,7 @@
   "issue": 223,
   "artDirection": "Emerald Nocturne",
   "status": "git_registered_pending_final_review",
-  "designDecisions": [
-    "AS-01=B",
-    "AS-02=A",
-    "AS-03=A",
-    "AS-04=A",
-    "AS-05=C"
-  ],
+  "designDecisions": ["AS-01=B", "AS-02=A", "AS-03=A", "AS-04=A", "AS-05=C"],
   "assetCount": 26,
   "totalBytes": 302557,
   "assets": [
@@ -23,10 +17,7 @@
       "source": "chatgpt_generated_photo",
       "license": null,
       "fallback": "CSS palette/gradient; keep layout stable",
-      "dimensions": [
-        1600,
-        900
-      ],
+      "dimensions": [1600, 900],
       "alpha": false,
       "trigger": {
         "kind": "static",
@@ -43,10 +34,7 @@
       "source": "chatgpt_generated_photo",
       "license": null,
       "fallback": "CSS palette/gradient; keep layout stable",
-      "dimensions": [
-        720,
-        900
-      ],
+      "dimensions": [720, 900],
       "alpha": false,
       "trigger": {
         "kind": "static",
@@ -63,10 +51,7 @@
       "source": "chatgpt_original_procedural",
       "license": null,
       "fallback": "CSS palette/gradient; keep layout stable",
-      "dimensions": [
-        1024,
-        1024
-      ],
+      "dimensions": [1024, 1024],
       "alpha": true,
       "trigger": {
         "kind": "derived",
@@ -85,10 +70,7 @@
       "source": "chatgpt_original_procedural",
       "license": null,
       "fallback": "CSS palette/gradient; keep layout stable",
-      "dimensions": [
-        1200,
-        640
-      ],
+      "dimensions": [1200, 640],
       "alpha": true,
       "trigger": {
         "kind": "event",
@@ -106,10 +88,7 @@
       "source": "chatgpt_original_procedural",
       "license": null,
       "fallback": "CSS palette/gradient; keep layout stable",
-      "dimensions": [
-        1024,
-        1024
-      ],
+      "dimensions": [1024, 1024],
       "alpha": true,
       "trigger": {
         "kind": "derived",
@@ -464,10 +443,7 @@
       "source": "chatgpt_original_procedural",
       "license": null,
       "fallback": "CSS palette/gradient; keep layout stable",
-      "dimensions": [
-        512,
-        512
-      ],
+      "dimensions": [512, 512],
       "alpha": false,
       "trigger": {
         "kind": "static",
