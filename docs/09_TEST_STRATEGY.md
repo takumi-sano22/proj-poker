@@ -119,7 +119,7 @@ Poker Engine Correctnessとは別に評価します。
 | Retry率 | 判断のうち1回目が不正で再要求した割合 | 0.1以下 |
 | Fallback率（参考に追加） | 判断のうち2回続けて不正で、本番ならRuleBotのFallbackになる割合 | 0.02以下 |
 | Latency | 呼び出しごとの所要時間（子プロセスの起動を含む）のmin / median / p90 / max | 表示のみ（上限は`OPPONENT_TIMEOUT_MS`。OI-001） |
-| Persona Differentiation | Spotごとに、Personaの組の最終Actionの種類の分布の差（Total Variation Distance。0〜1）を平均し、Spotで平均したもの | 0.2以上 |
+| Persona Differentiation | Spotごとに、Personaの組の最終Actionの種類の分布の差（Total Variation Distance。0〜1）を平均し、Spotで平均したもの | 0.2以上（Spotを平均した値で判定。Spot別の値は診断用でGateにしない。D134） |
 | Action Diversity | Personaごとに、全Spotの最終Actionの種類のShannon Entropy（bit） | 表示のみ |
 | Hidden Information Leakage | CPUの入力（Card・Deck・seed・Persona）か実際に送ったPrompt（知ってよい札以外のCard表記・他のPresetの名前）に、知ってはいけない情報が入っていた判断の数 | 0件（1件でも不合格） |
 
@@ -274,6 +274,16 @@ StageごとのAction（Nit / Maniac。各2判断）:
 
 - 理由（rationale）の変化: Beforeで「Preflop Looseness 0.15のNitとして範囲外」だけで結論したS1・S3・S4のNitは、Afterでは8判断すべてが10BB・Button / Heads-Up・Stage・Bubble Factorのどれかを理由に挙げました（S4の2判断は「10BBのHeads-Upでも」と状況を挙げたうえで、なお性格の範囲を理由にFold）。ManiacのS5・S6の「ICMのリスクを無視」「bubbleFactorを無視」は0件になり、4判断ともBubble Factor 2.75を「Callの必要勝率が上がる圧力」として挙げました。ManiacのS1〜S4のAll-inも「Bubble Factorの圧力は理解するが」「Button・10BB」と状況を理由にしています。
 - 残る制約: S5・S6でManiacが4判断ともFoldし、BF 2.75のCallでのPersonaの差と層の効果が0になりました（「理解したうえで境界を広めに取る」がActionに出ず、慎重側へ寄りすぎた）。ManiacのS1・S2は1判断ずつFoldし、境界のSpotが割れました。NitはS4のHeads-Up 10BBでもFoldのままです（Push/Fold Solverを持たないので、Shoveしないこと自体は失敗にしない）。repeat 2の少数標本で、揺れと効果を分けられません。結果を見てPromptを変えて録り直していません（D133）。S5・S6の寄りすぎの扱いは#212で人間判断に返しました。
+
+### TournamentのClaude CPUのPersona Differentiationの解釈（Issue #212・D134）
+
+#207の結果（上の節）を、Promptを変えず・実モデルを呼ばずに人間判断で解釈しました（モデルの呼び出し0回。録画は書き換えていません）。
+
+- **v2をcurrentとして受容**: `recordings/opponent-tournament-eval-v2.json`は、Spotを平均したPersona Differentiationが0.571で、既存の暫定の合格ライン（`OPPONENT_EVAL_TARGETS.minPersonaDifferentiation = 0.2`。変えていない）を満たし、Structured Output Valid 1・Illegal / Retry / Fallback 0・Hidden Information Leakage 0・障害0です。D133のPrompt（`TOURNAMENT_PERSONA_GUIDE`）はそのまま維持します。
+- **Spot単位の差はGateにしない**: Persona Differentiationは「どの局面でもPersonaごとに違うActionを選ぶ」ことを意味しません。強いTournament pressureのあるSpotで複数のPersonaが同じActionに収束するのは、それだけでは失敗ではありません。Spot別のPersona Differentiation・Context Effect（S0 → S2）・Layer Effect（S5 → S6）は診断用の観測値として記録し、Spot単位で0でも不合格にしません。
+- **S5・S6の扱い**: Bubble・Bubble Factor 2.75でChip LeaderのShoveにA9oでCallするかの局面で、NitとManiacがともにFoldした（Persona Differentiation 0・Layer Effect 0）ことは記録だけにし、不具合とはしません。Personaは状況を無視する理由ではなく、境界の判断を偏らせるものです（`docs/05` §10）。
+- **少数標本へ過学習しない**: repeat 2のS5・S6のManiacの4判断・S1・S2の割れ・S4のNitのFoldだけを根拠にPromptを調整しません。Push/Fold Solver / Nash Rangeを持たないので、これらのActionの正誤も判定しません。repeatの追加・他Personaの追加測定・v3の録画はしていません。
+- **再検討の条件**: #203等の実機Playtestで、Tournamentで「CPUのPersona差が体感できない・複数のPersonaが不自然に同じ戦略へ収束する」と分かった場合は、別Issueで、Prompt・Persona Policy・決定論のTournament Policy・Solver / Rangeのどこを直すかを人間判断してから進めます。
 
 ## 6. Review Eval
 

@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D133の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D134の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -40,6 +40,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D131 | Review の文の数値は Evidence から決定論で作った数値表の参照（{N3}）で書かせ、%・pt・BB の付いた生の数値を表と照合する（Pass A と Pass A への Follow-up。Retry の上限は増やさない・保存は置き換えた平文で DB スキーマは不変・Pass B は範囲外・Cash の Review Eval を最大 24 呼び出しで再録画。#168） |
 | D132 | Tournament の Claude CPU / Review の実モデル Eval の上限（CPU 7 Spot × 2 Persona × repeat 2 = 最大 28 Decision・56 呼び出し／Review 4 判断 × repeat 2 = 8 Review + Follow-up 2 = 最大 20 呼び出し）。OAuth / Agent SDK / buildClaudeEnv の経路だけ・結果を見て Prompt / Policy を調整しない・CI は録画の再生だけ。#202 |
 | D133 | Tournament の Claude CPU の Prompt で、Public Tournament Context を戦略上の基準・Persona をそこからの偏り・Skill を Context を反映する精度として読ませる（Short Stack で Preflop Looseness を固定 Range と読まない・Bubble Factor を慎重になる圧力として理解させる。Push/Fold Nash / Solver は足さない）。PERSONA_PRESETS・Cash・RuleBot・KnowledgeState は変えない。#202 と同じ 28 Decision / 56 呼び出しで 1 回だけ比較測定・1 変更 1 測定。#207 |
+| D134 | Tournament の Claude CPU の Persona Differentiation は aggregate の品質指標（暫定の合格ライン 0.2 は不変）で、強い Tournament pressure の個別 Spot で Persona が同じ Action に収束しても失敗としない。Spot 別の Persona Differentiation・contextEffect・layerEffect は診断値で Gate にしない。D133 の Prompt と #207 の録画 v2（0.571）を current として維持し、少数標本だけで Prompt を再調整・追加測定しない。実機 Playtest で体感の問題が出たら別 Issue で人間判断。#212 |
 
 ## 特に重要なClosed Decision
 
