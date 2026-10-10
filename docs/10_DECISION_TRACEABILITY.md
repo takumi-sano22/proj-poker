@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D143の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D144の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -43,6 +43,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D134 | Tournament の Claude CPU の Persona Differentiation は aggregate の品質指標（暫定の合格ライン 0.2 は不変）で、強い Tournament pressure の個別 Spot で Persona が同じ Action に収束しても失敗としない。Spot 別の Persona Differentiation・contextEffect・layerEffect は診断値で Gate にしない。D133 の Prompt と #207 の録画 v2（0.571）を current として維持し、少数標本だけで Prompt を再調整・追加測定しない。実機 Playtest で体感の問題が出たら別 Issue で人間判断。#212 |
 | D135〜D142 | Post-Phase8 の横断 UI/UX（#215・#216。Q1〜Q29 の人間判断）: モダン・カジノの世界観と可読性・正確性を守った強めの演出・装飾素材と Card / Chip の構造描画（D135）、Home / Play / Learn と起動時の Home・読み取り専用の Session 状態照会・Learn / Replay の戻り先（D136）、PC / スマホのレイアウトとスマホの Hero 操作パネル（D137）、Chip の Click / Drag の視認性・移動の視覚化・Betting Area の判定領域（D138）、Hero の下書きの保持と無効化（D139）、表示順序を保つ演出・速度4段階・Showdown を省かない・Live / Replay の共有・再接続（D140）、効果音（BGM なし）と音量・ミュートの保存（D141）、RULING → ETIQUETTE の確認 → 再開（D142）。可逆な値と技術検証は OI-012 |
 | D143 | UX-06 #221 での採用判断: 可視 seq の飛び番を残余リスクとして受容（表示・意味づけしない）、演出中の下書きを維持して送信前に同期・再検証、現行 REST/SSE の HeroView.log から client で演出時系列を復元する案 A。UX06-1〜3=A（#222 / #219 の前提） |
+| D144 | UX-02 #217 での採用判断: Home の照会は GET /api/session/current（state と Session の種類だけ・Session ID / Hand ID / Stack / 札は返さない）、開始と同じ読み取り専用の判定から作る、ended はこのプロセスの終了だけ（再起動後は null）、未知の state は安全側、#230 の承認後に追加で拡張。UX02-1〜3=A（UX-03 #218・#230 の前提） |
 
 ### Q1〜Q29 と D 番号の対応（#216）
 

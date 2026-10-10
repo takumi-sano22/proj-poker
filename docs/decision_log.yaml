@@ -1,4 +1,4 @@
-# D01〜D143の採用済み人間判断。
+# D01〜D144の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -575,3 +575,8 @@
   choice: "UX06-1=A（可視 seq の飛び番を受容）・UX06-2=A（演出中の下書き許容・送信前に同期/再検証）・UX06-3=A（現行 API のまま client で演出時系列を復元）（#221 / PR #229 の人間判断）"
   status: "採用済み"
   decision: "UX-06 #221 の検証を受け、Live 演出は現在の REST/SSE が運ぶ HeroView.log の可視 Event 全量を、client が seq によって重複排除・順序化し、projectHeroView(prefix) で各時点の卓を作る案 A を採用する。この用途で API / Event / 永続化を追加しない。Action に決まった DEALER_RULING とその直後の同じ Player の ACTION_TAKEN は Replay と同じ 1 step にまとめる。Hero に見えない engine/system/他者宛て private Event による seq の飛び番は現行の間接的な運用情報推測リスクとして受容するが、UI で seq や欠番を表示・意味付けしない。client では最新の authoritative View と演出を終えた displayed View を分離し、未送信の下書きは演出中も保持してよいが、操作を送る前に残演出を自動高速化して最新の可視状態まで同期し、下書き・手番・lastSeq の有効性を再検証する。送信は displayed と authoritative の可視 lastSeq が一致するときに表示中の lastSeq で行い、同期前に最新値を先取りして送信しない。Out-of-Turn 操作も同じ契約に従う。D37・D38・D90・D91・D93・D139・D140 を具体化する。演出中の具体的な速度や再接続 UI の値は OI-012 の暫定値のまま。"
+
+- id: D144
+  choice: "UX02-1=A（GET /api/session/current で状態と Session の種類だけを返す）・UX02-2=A（このプロセスで終わった Session は ended を返す）・UX02-3=A（今の状態の列で #217 を先に実装し、#230 の承認後に追加で拡張する）（#217 / PR #236 の人間判断。#217 の追加の検証条件も採用）"
+  status: "採用済み"
+  decision: "Home の読み取り専用の Session 状態の照会を GET /api/session/current とし、{session: null} か {session: {state: in_hand | ready_for_next_hand | ended, kind: {mode: cash} | {mode: tournament, presetId}}} を返す。Session ID・Hand ID・Stack・札・Persona・seed は返さない。照会は Session Projection を写すのではなく、開始（POST /api/hands）と同じ読み取り専用の判定（再起動後の Resume の可否・今の Session の最後の Hand・内部エラーで止まった Hand や打ち切った Hand は続けない）を共通化して作り、照会できた状態と実際に続けられる状態を混同しない。照会は Hand・Session の作成・Event の追記・CPU の推論・Claude の呼び出しをせず、POST /api/hands の冪等性と stale_view の契約を変えない。「続きから遊ぶ」は Hero の明示の操作で既存の POST /api/hands を呼び、照会の結果で自動的に開始しない。ended はこのプロセスで終わった Session の終了を示すだけで、終わった Session の履歴の永続的な照会を新設しない（再起動後は null）。client は知らない state を「続きから」を出さない安全側に扱い、#230（Session の任意終了・一時中断）の契約が人間に承認された後で paused 等を追加で拡張する。#217 では Session Lifecycle の保存・Event・終了理由を先取りせず、Q43=A（未終了の通常 Session は同時に 1 つ）に関わる卓の設定変更・再起動後の判定の差は #230 の設計で解消する。照会と開始の判定は起動・CPU の思考中・再起動・Drill の除外・卓の設定の変更・内部エラー・二重タブでテストする。#215 Gate 1 は解除しない。D62・D95・D116・D136 を具体化する。"
