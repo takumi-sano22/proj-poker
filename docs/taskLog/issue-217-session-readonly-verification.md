@@ -84,8 +84,8 @@ GET /api/session/current        ← 名前は案
 
 ## 実行した確認
 
-- `pnpm --filter @proj-poker/server exec vitest run src/session-readonly-verification.test.ts`: 10 件 pass
-- `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`: 結果は PR の Test plan に記載
+- `apps/server` で `npx vitest run src/session-readonly-verification.test.ts`: 10 件 pass
+- ルートで `pnpm lint` / `pnpm typecheck` / `pnpm format:check`: pass。`pnpm test`: engine 489 / web 160 / server 918 件 pass
 
 ## 残課題
 
