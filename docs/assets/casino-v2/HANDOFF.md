@@ -23,6 +23,8 @@ export ZIP_FILE=/absolute/path/to/ux08-casino-v2-approved-pack.zip
 git fetch origin
 git switch --track origin/feature/223-casino-v2-pack
 unzip -o "$ZIP_FILE" -d .
+# ZIP内にもHANDOFF.mdがあるため、PRの最新の受領手順を維持する
+git restore --source=HEAD -- docs/assets/casino-v2/HANDOFF.md
 git add apps/web/public/assets/casino-v2 docs/assets/casino-v2
 python3 - <<'PY'
 import json,hashlib,pathlib
