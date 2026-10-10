@@ -269,7 +269,7 @@ export async function fetchCurrentSession(): Promise<CurrentSession | null> {
   const body = await getJson<unknown>("/api/session/current");
   const session =
     typeof body === "object" && body !== null && "session" in body
-      ? (body as { session: unknown }).session
+      ? body.session
       : null;
   return parseCurrentSession(session);
 }

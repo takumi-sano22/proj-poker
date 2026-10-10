@@ -225,7 +225,7 @@ describe("Home の読み取り専用の Session 照会（UX-02 #217・SQLite）"
     const print = fingerprint(store);
     readRepeatedly(orchestrator, 20);
     const p = probe(orchestrator);
-    expect(p.state).toBe("in_hand");
+    expect(p?.state).toBe("in_hand");
     expect(counts.decided).toBe(decided);
     expect(fingerprint(store)).toBe(print);
     release();

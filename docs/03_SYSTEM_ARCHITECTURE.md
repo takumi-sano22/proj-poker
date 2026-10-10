@@ -152,7 +152,7 @@ Persistence
 └─ Review Version Store
 ```
 
-**横断 UI/UX の設計（#215・#216・D135〜D144。未実装）**: App Shell と Presentation Controller は `apps/web` の表示層で、Engine・Event Log・server の Hand の進行を変えません。Home は Hand を始めない読み取り専用の Session 状態の照会だけを使い、今の `POST /api/hands`（Hand の開始。冪等だが開始の要求）を流用しません。照会の API の形と Resume との契約は UX-02（#217。人間が D144 で採用: `GET /api/session/current` が state と Session の種類だけを返し、開始と同じ読み取り専用の判定から作る。実装は #217）、Hero に見える View / Event だけで演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る）と API の拡張の要否は UX-06（#221。検証の結果、1 回の追記の View は複数の Event を運ぶが、`log` が見える Event の全量なので client が seq で分けて各時点の卓を `projectHeroView` で作れ、API/Event/永続化の拡張は不要と人間が承認済み D143）、ETIQUETTE の確認待ちで CPU を止める責務と Ack の契約は UX-11（#226。人間の承認が要る）で決めます。Home の照会 API の形は D144 で採用済みです（実装は #217）。ETIQUETTE の Ack の形は引き続き Gate 1 の人間承認待ちであり、推測で確定させません（`docs/06` §16・OI-012）。
+**横断 UI/UX の設計（#215・#216・D135〜D144。UX-02 の照会 API 以外は未実装）**: App Shell と Presentation Controller は `apps/web` の表示層で、Engine・Event Log・server の Hand の進行を変えません。Home は Hand を始めない読み取り専用の Session 状態の照会だけを使い、今の `POST /api/hands`（Hand の開始。冪等だが開始の要求）を流用しません。照会の API の形と Resume との契約は UX-02（#217。人間が D144 で採用: `GET /api/session/current` が state と Session の種類だけを返し、開始と同じ読み取り専用の判定から作る。§1 の表のとおり実装済み）、Hero に見える View / Event だけで演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る）と API の拡張の要否は UX-06（#221。検証の結果、1 回の追記の View は複数の Event を運ぶが、`log` が見える Event の全量なので client が seq で分けて各時点の卓を `projectHeroView` で作れ、API/Event/永続化の拡張は不要と人間が承認済み D143）、ETIQUETTE の確認待ちで CPU を止める責務と Ack の契約は UX-11（#226。人間の承認が要る）で決めます。Home の照会 API は D144 で採用され、server と client の受け側（`parseCurrentSession`）は実装済みです（§1 の表。Home の画面は UX-03 #218）。ETIQUETTE の Ack の形は引き続き Gate 1 の人間承認待ちであり、推測で確定させません（`docs/06` §16・OI-012）。
 
 ## 3. Model Role
 
