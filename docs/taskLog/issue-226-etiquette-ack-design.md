@@ -97,6 +97,7 @@ client
 - **識別子は `(handId, rulingSeq)`**。`handId` は URL のパス、`rulingSeq` は Hero の View にある公開の `DEALER_RULING` の `seq`。Hero に見えない値（system Event の seq・CPU の情報）を使わない。
 - **冪等**: 待っている裁定の `rulingSeq` なら受けて再開する。**すでに確認した `rulingSeq`（`<= ackedThroughSeq` で Ack の要る裁定）なら何もせず 200**（二重クリック・応答の消えた再送）。
 - **古い・未来・存在しない `rulingSeq`**（Ack の要らない裁定の seq を含む）は 409 `stale_etiquette`（`stale_outage` と同じ形）。別 Hand の ID は今どおり 404 / その Hand の状態で判定する（Hand をまたいだ誤送信は seq が一致しても Hand が違うので効かない）。
+- **server が待っていない ETIQUETTE は API を呼ばずに client の中で閉じる**: Hand が終わった（`HAND_FINISHED` / `HAND_ABORTED`）ために `pendingRulingSeq` が `null` の裁定の ETIQUETTE は、client が確認の操作を受けたら表示だけを閉じ、`etiquette-ack` を送らない（送ると `stale_etiquette` になるため。client は `pendingRulingSeq` が自分の出している裁定の seq と一致するときだけ送る）。D142 の「明示的に確認」は client の操作として満たし、server で待つ CPU の進行が無いので server の確認は要らない。
 - **Ack 待ちの間の Hero の操作**（`physical-action` / `action`）は 409 `etiquette_ack_required` で拒否する（推奨）。理由: D142 は「明示的に確認」なので操作での暗黙の確認にしない。拒否すれば待ちの裁定は常に 1 つになる（§8）。User Read（`USER_READ_RECORDED`）は CPU を進めないので拒否しなくてよい。
 - `stale_view` の契約（D143）は変えない。案 A の Ack は Event を追記しないので、Ack で `lastSeq` は変わらない。
 
@@ -112,9 +113,9 @@ client
 
 | 状況 | 推奨の扱い | 根拠 |
 |---|---|---|
-| Hand の自然終了（裁定と同じ追記に `HAND_FINISHED`） | **server は待たない**（止める CPU の進行が無い）。client は ETIQUETTE の確認を出してよいが、次の Hand の開始を server で拒否しない | 事実 8。終わった Hand に Ack を残せない（案 B でも同じ） |
+| Hand の自然終了（裁定と同じ追記に `HAND_FINISHED`） | **server は待たない**（止める CPU の進行が無い）。client は ETIQUETTE の確認を出してよく、確認は API を呼ばず client の中で閉じる（§5）。次の Hand の開始を server で拒否しない | 事実 8。終わった Hand に Ack を残せない（案 B でも同じ） |
 | CPU の障害（Outage）と Ack 待ちが同時 | 障害のダイアログを先に出す（進行を選ぶのが先）。Retry / Emergency Bot を選んでも、Ack の前は CPU を進めない（`canRun` に両方の条件を入れる） | 事実 7。今は Retry で Ack を待たずに進む |
-| 障害で Session 終了を選んだ | `HAND_ABORTED` で Hand が終わるので Ack 待ちは消える | 打ち切った Hand は手番が無い |
+| 障害で Session 終了を選んだ | `HAND_ABORTED` で Hand が終わるので Ack 待ちは消える。出していた ETIQUETTE は API を呼ばず client の中で閉じる（§5） | 打ち切った Hand は手番が無い |
 | Emergency Bot の CPU | 同期の RuleBot でも同じループを通るので、同じく止まる | 停止点がループの先頭なので経路に依らない |
 | 内部エラー（`failure`） | 今どおり進行を止める。Ack を受けても進めない | `canRun` |
 | Session 終了 / 一時中断の予約（#230 Q30・Q31） | 予約は Hand の完了時に適用され、Ack は Hand の途中だけの待ちなので**直交**。Ack 待ちの間に予約しても Hand は Ack の後に最後まで進む | #230 の契約は未確定。衝突は無い見込みだが #230 の設計 PR で再確認する |
@@ -168,6 +169,7 @@ interface EtiquetteAckBody {
 }
 // 200 {view, outage, etiquette}: 受けた（待ちが解けて CPU の進行を再開した）、またはすでに確認済みの seq（何もしない）
 // 409 stale_etiquette: 待っている裁定の seq でない（古い・未来・Ack の要らない裁定）
+// client は pendingRulingSeq が出している裁定の seq と一致するときだけ送る。Hand が終わって待ちが消えた裁定の ETIQUETTE は送らずに閉じる
 // 404 hand_not_found
 // Ack 待ちの間の action / physical-action: 409 etiquette_ack_required（Hand の状態は変えない）
 ```
@@ -186,7 +188,7 @@ interface EtiquetteAckBody {
    ┌──────────┐                                                  │   ▼
    │ Outage   │  ── retry / emergency_bot ──▶ Ack 待ちが残っていれば AwaitingAck へ
    └──────────┘  ── end_session ──▶ HAND_ABORTED（Ack 待ちは消える）
-        Hand の完了（HAND_FINISHED / HAND_ABORTED）: どの状態からでも Ack 待ちは消える（server は待たない）
+        Hand の完了（HAND_FINISHED / HAND_ABORTED）: どの状態からでも Ack 待ちは消える（server は待たない。client は出していた ETIQUETTE を API を呼ばずに閉じる）
 
 停止ポイント: runCpuTurns の while 条件（canRun）＝ wait（思考待ち）と cpuTurn（判断）の前。
               cpuTurn 内の isCurrent も canRun を使うので、待ちの間に返った判断は適用しない。
@@ -211,7 +213,7 @@ server（Fake CPU。今回のテストの `fakeCpus` の「判断を求めた時
 - 冪等: 同じ `rulingSeq` の二重の Ack は 200 で何もしない / 古い・未来・Ack の要らない seq は 409 / 別 Hand は 404 / Ack 待ちの間の操作は 409 で Log を変えない
 - Race: 判断待ちの間の手番外の操作 → 返った判断を適用しない・障害を立てない（今回の事実 6 を回帰に）
 - 障害と同時: 障害の間の手番外の操作 → Retry / Emergency Bot の後も Ack まで止まる / Session 終了で Ack 待ちが消える
-- Hand を終える裁定は待たない / Fast Forward 中 / Drill / Tournament / アプリの終了（`close`）で待ちを残さない
+- Hand を終える裁定は待たない（`pendingRulingSeq` が `null`）・その seq の Ack は 409 になるので client は送らない / Fast Forward 中 / Drill / Tournament / アプリの終了（`close`）で待ちを残さない
 - SSE: 接続時に Ack の状態を 1 回送り、変わるたびに送る（再接続・Home からの復帰）
 
 E2E（UX-12 #227 へ引き継ぐ条件）:
@@ -226,7 +228,7 @@ E2E（UX-12 #227 へ引き継ぐ条件）:
 | ID | 論点 | 推奨 | 他の選択肢 |
 |---|---|---|---|
 | UX11-1 | Ack の状態の置き場所 | **A**: server のメモリ（`ackedThroughSeq`）。要否は Event Log から導く。Event / DB は変えない | B: Event（版 11）に残す（記録できるが、終わった Hand で例外・`stale_view` への影響・Migration） |
-| UX11-2 | Ack の API 契約 | `POST /api/hands/:handId/etiquette-ack {rulingSeq}`、REST の応答と SSE の `etiquette` イベントで `{revision, pendingRulingSeq}` を返す。二重は 200、古い seq は 409 `stale_etiquette` | 状態を `HeroView` に埋め込む（Engine の Projection の契約を変えるので非推奨） |
+| UX11-2 | Ack の API 契約 | `POST /api/hands/:handId/etiquette-ack {rulingSeq}`、REST の応答と SSE の `etiquette` イベントで `{revision, pendingRulingSeq}` を返す。二重は 200、古い seq は 409 `stale_etiquette`。server が待っていない裁定（Hand の終了で消えた）の ETIQUETTE は API を呼ばず client の中で閉じる | 状態を `HeroView` に埋め込む（Engine の Projection の契約を変えるので非推奨） |
 | UX11-3 | Ack 待ちの間の Hero の操作 | **拒否**（409 `etiquette_ack_required`）。明示の確認だけで再開（D142） | 操作を暗黙の Ack として受ける（待ちの裁定が複数になりうる） |
 | UX11-4 | 優先順位 | §7 の表: 自然終了は待たない・障害のダイアログが先で Retry の後も Ack まで止める・Session 終了で消える・#230 の予約とは直交 | 自然終了の後も次の Hand の開始を Ack まで server で拒否する |
 | UX11-5 | Tournament のプレイ時間 | 今どおり Ack 待ちもプレイ時間に入れる（Hero の思考・障害の待ちと同じ） | Ack 待ちの間は Level の時計を止める（`playClock` の扱いの変更） |
