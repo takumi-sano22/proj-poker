@@ -205,7 +205,7 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは #215 Gate 1 で承認する）:
 - UX-02（#217）: 読み取り専用の Session 状態照会の API の形、照会が Hand を始めない・進めないことの実証、Resume / プロセス再起動との契約（D136）
 - UX-04（#219）: 下書きの有効・無効の判定（`operationKey` / `lastSeq` との整合）と寿命、無効化の通知の文言（D139）
-- UX-06（#221）: Hero に見える Event / View だけで Live の演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る。`docs/03` §1）、足りなければ API の拡張と情報漏えいのテスト（D140）
+- UX-06（#221）: Hero に見える Event / View だけで Live の演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る。`docs/03` §1）、足りなければ API の拡張と情報漏えいのテスト（D140）。検証の結果: 今の `HeroView.log` で復元でき、API の拡張は要らない見込み（検証テストあり）。人間の承認が要るのは、その採用・操作の `lastSeq` の契約（表示が追いつくまで送信しない。D91 の手番外の操作の送信も遅れる）・Hero から見た seq の穴を受け入れるか（`docs/taskLog/issue-221-live-presentation-verification.md`）
 - UX-10（#225）: 効果音の設定の保存先（既存の BB 補助表示と同じ viewer ごとの `localStorage` が第一候補）とブラウザの自動再生の制約への対応（D141）
 - UX-11（#226）: ETIQUETTE の確認待ちで CPU の進行を止める責務の置き場所（server / client）・確認（Ack）の契約と Event に残すかどうか・AI 障害（Outage）/ Resume / 再接続との関係・複数の裁定が続いたときの順序（D142。人間の承認が要る）
 

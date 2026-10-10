@@ -151,7 +151,7 @@ Persistence
 └─ Review Version Store
 ```
 
-**横断 UI/UX の設計（#215・#216・D135〜D142。未実装）**: App Shell と Presentation Controller は `apps/web` の表示層で、Engine・Event Log・server の Hand の進行を変えません。Home は Hand を始めない読み取り専用の Session 状態の照会だけを使い、今の `POST /api/hands`（Hand の開始。冪等だが開始の要求）を流用しません。照会の API の形と Resume との契約は UX-02（#217）、Hero に見える View / Event だけで演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る）と API の拡張の要否は UX-06（#221）、ETIQUETTE の確認待ちで CPU を止める責務と Ack の契約は UX-11（#226。人間の承認が要る）で決めます。決まるまで、この節に書いた API・Event を採用済みの事実として扱いません（`docs/06` §16・OI-012）。
+**横断 UI/UX の設計（#215・#216・D135〜D142。未実装）**: App Shell と Presentation Controller は `apps/web` の表示層で、Engine・Event Log・server の Hand の進行を変えません。Home は Hand を始めない読み取り専用の Session 状態の照会だけを使い、今の `POST /api/hands`（Hand の開始。冪等だが開始の要求）を流用しません。照会の API の形と Resume との契約は UX-02（#217）、Hero に見える View / Event だけで演出の順序を復元できるか（今の SSE は Log が進むたびに `HeroView` を送る）と API の拡張の要否は UX-06（#221。検証の結果、1 回の追記の View は複数の Event を運ぶが、`log` が見える Event の全量なので client が seq で分けて各時点の卓を `projectHeroView` で作れ、API の拡張は要らない見込み。採用は Gate 1 の承認待ち）、ETIQUETTE の確認待ちで CPU を止める責務と Ack の契約は UX-11（#226。人間の承認が要る）で決めます。決まるまで、この節に書いた API・Event を採用済みの事実として扱いません（`docs/06` §16・OI-012）。
 
 ## 3. Model Role
 
