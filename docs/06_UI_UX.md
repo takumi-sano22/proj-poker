@@ -369,7 +369,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 
 | Issue | 決めること |
 |---|---|
-| UX-02 #217 | 読み取り専用の Session 状態照会の API の形、照会が Hand を始めない・進めないことの実証、Resume / プロセス再起動との契約 |
+| UX-02 #217 | 検証済み: 照会の値は読むだけの経路から揃い、読んでも Hand・CPU・Event Log は進まない。承認を待つもの: 照会の API の追加と形（GET の案。Session ID・札・Stack は載せない）、`ended` を Home に返すか、#230（Pause / End）との順序。「続きから遊ぶ」は Hero の操作で今の `POST /api/hands` を呼ぶ案 |
 | UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知 |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
