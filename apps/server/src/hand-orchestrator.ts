@@ -26,11 +26,16 @@
 //   プレイ時間の累計）と、前の Hand のプレイ時間（開始から終わりまで）から決め、その Level の Blind / Ante で始めて HAND_STARTED に固定する。
 //   Hand の長さはプロセスの中の単調な時計（playClock）で測る。前のプロセスで終わった Hand（Resume の直後）だけは、保存した記録時刻の差
 //   （壁時計。負なら 0）で測る。どちらも経過時間の計測にだけ使い、順序には使わない（Hand の順は論理順序。D117）。
+// - ETIQUETTE の確認（Ack。D145・#226）: Ack が要るかは Hero に見える DEALER_RULING の notes から決定論で導き（etiquetteAckRulingSeqs）、
+//   どの裁定まで確認したか（ackedThroughSeq）だけを HandRuntime のメモリに持つ（Event・DB・Session Projection は変えない）。
+//   確認を待つ間は CPU を進めず（runCpuTurns の canRun）、Hero の action / physical-action と次の Hand の開始を etiquette_ack_required で
+//   拒否する。Hand が終わっても待ちは残る（このプロセスの間だけ。再起動で消えるのは D62 の範囲）。
 import { randomUUID } from "node:crypto";
 import {
   FIRST_TOURNAMENT_PROGRESS,
   applyAction,
   applyPhysicalActions,
+  etiquetteAckRulingSeqs,
   foldHandEvents,
   getLegalActions,
   levelAt,
@@ -130,6 +135,10 @@ export type OrchestratorError =
   | { readonly kind: "stale_view"; readonly message: string }
   /** 選んだ障害がもう無い・別の障害に変わっている（二重送信・古いダイアログからの送信）。 */
   | { readonly kind: "stale_outage"; readonly message: string }
+  /** 確認（Ack）を送った裁定が、Ack の要る裁定でない・まだ無い・待っている裁定より古いのに確認済みでない（D145）。 */
+  | { readonly kind: "stale_etiquette"; readonly message: string }
+  /** ETIQUETTE の確認（Ack）を待っている。確認まで Hero の操作と次の Hand の開始を受け付けない（D145）。 */
+  | { readonly kind: "etiquette_ack_required"; readonly message: string }
   /** Fast Forward は Hero が Hand から外れている間（Fold 後）だけ入れられる。Hero がまだ Hand にいる、または Hand が終わっている。 */
   | { readonly kind: "not_spectating"; readonly message: string };
 
@@ -241,6 +250,17 @@ export interface OutageStatus {
   } | null;
 }
 
+/**
+ * Hero に返す ETIQUETTE の確認（Ack）の状態（D145）。Hero に見える公開の DEALER_RULING の seq だけを持つ（文言・notes は client が
+ * HeroView.log から作る）。revision は待ちが立つ・解けるたびに進む（OutageStatus とは別の revision。REST と SSE のどちらが先に届いても
+ * 新しい方を選べるようにする）。
+ */
+export interface EtiquetteAckStatus {
+  readonly revision: number;
+  /** 確認を待っている裁定の seq。待っていなければ null。 */
+  readonly pendingRulingSeq: number | null;
+}
+
 /** 障害の後の続け方（D86）。 */
 export type OutageChoice = "retry" | "emergency_bot" | "end_session";
 
@@ -311,6 +331,7 @@ export interface DrillHandStart {
 
 export type HeroViewListener = (view: HeroView) => void;
 export type OutageListener = (status: OutageStatus) => void;
+export type EtiquetteListener = (status: EtiquetteAckStatus) => void;
 
 interface HandRuntime {
   readonly handId: string;
@@ -367,6 +388,14 @@ interface HandRuntime {
   fastForward: boolean;
   /** 今の思考待ち（演出）を今すぐ終わらせる。思考待ちの最中でなければ null（判断待ち・アプリ終了の打ち切りとは別）。 */
   endThinkWait: (() => void) | null;
+  /**
+   * ETIQUETTE の確認（Ack）を済ませた最後の裁定の seq（まだ無ければ -1。D145）。Ack が要るかは Event Log から導き、メモリに持つのは
+   * この位置だけ。Event には残さない（Replay は Ack を待たない）。Hand が終わっても残り、次の Hand の開始の判定に使う。
+   */
+  ackedThroughSeq: number;
+  /** 確認の待ちが立つ・解けた回数（EtiquetteAckStatus.revision）。 */
+  etiquetteRevision: number;
+  readonly etiquetteListeners: Set<EtiquetteListener>;
 }
 
 /** CPU に 1 回判断を求めた結果。 */
@@ -574,6 +603,9 @@ export class HandOrchestrator {
         },
       };
     }
+    // 前の Hand の ETIQUETTE の確認（Ack）が済むまで、新しい Hand を作らない（D145。Hand を返すだけの再要求は上で返している）。
+    const awaiting = this.startAwaitingEtiquette();
+    if (awaiting !== null) return { ok: false, error: awaiting };
     // 続く Session に違う設定・卓の人数に合わない Preset を求められたら、Hand を作る前に拒否する（seed・Hand ID は使わない）。
     const rejection = this.startRejection(request);
     if (rejection !== null) return { ok: false, error: rejection };
@@ -682,6 +714,9 @@ export class HandOrchestrator {
       outageRevision: 0,
       fastForward: false,
       endThinkWait: null,
+      ackedThroughSeq: -1,
+      etiquetteRevision: 0,
+      etiquetteListeners: new Set(),
     };
     this.hands.set(handId, rt);
     await this.proceed(rt);
@@ -773,6 +808,9 @@ export class HandOrchestrator {
       outageRevision: 0,
       fastForward: false,
       endThinkWait: null,
+      ackedThroughSeq: -1,
+      etiquetteRevision: 0,
+      etiquetteListeners: new Set(),
     };
     this.hands.set(handId, rt);
     await this.proceed(rt);
@@ -783,6 +821,7 @@ export class HandOrchestrator {
    * Hero の Action を適用し、次に Hero の手番が来るか Hand が終わるまで CPU を進める。
    * lastSeq は Hero が見ていた HeroView の log の最後の seq。Log がそこから進んでいれば stale_view で拒否する
    * （二重送信や、CPU の行動を見る前の画面からの送信を、手番の判定より先に弾く）。
+   * ETIQUETTE の確認（Ack）を待っている間は etiquette_ack_required で拒否し、状態を変えない（D145）。
    */
   async heroAction(
     handId: string,
@@ -791,6 +830,8 @@ export class HandOrchestrator {
   ): Promise<OrchestratorResult<HeroView>> {
     const rt = this.hands.get(handId);
     if (rt === undefined) return notFound(handId);
+    const awaiting = this.awaitingEtiquette(rt);
+    if (awaiting !== null) return awaiting;
     const events = this.events(handId);
     const stale = this.staleView(events, lastSeq);
     if (stale !== null) return stale;
@@ -806,6 +847,7 @@ export class HandOrchestrator {
    * 1 回で Event Log へ追記する（D90・D91）。lastSeq の扱いは heroAction と同じ。
    * 手番でなければ Out-of-Turn として保留し（CPU は保留を公開の事実として KnowledgeState で見る）、Hero の手番が来た時点で
    * runCpuTurns が拘束か撤回かを裁定する。その後、次に Hero の手番が来るか Hand が終わるまで CPU を進める。
+   * ETIQUETTE の要る裁定を置いたら、確認（Ack）まで CPU を進めない。確認を待っている間の操作は etiquette_ack_required で拒否する（D145）。
    */
   async heroPhysicalAction(
     handId: string,
@@ -814,6 +856,8 @@ export class HandOrchestrator {
   ): Promise<OrchestratorResult<HeroView>> {
     const rt = this.hands.get(handId);
     if (rt === undefined) return notFound(handId);
+    const awaiting = this.awaitingEtiquette(rt);
+    if (awaiting !== null) return awaiting;
     const events = this.events(handId);
     const stale = this.staleView(events, lastSeq);
     if (stale !== null) return stale;
@@ -1135,6 +1179,62 @@ export class HandOrchestrator {
     return { ok: true, value: this.heroViewOf(handId) };
   }
 
+  /** Hero に返す ETIQUETTE の確認（Ack）の状態（D145）。未知の Hand なら null。 */
+  etiquetteStatus(handId: string): EtiquetteAckStatus | null {
+    const rt = this.hands.get(handId);
+    return rt === undefined ? null : this.etiquetteStatusOf(rt);
+  }
+
+  /** 確認（Ack）の待ちが立つ・解けるたびに呼ばれる listener を登録する。戻り値で解除する。未知の Hand なら null。 */
+  subscribeEtiquette(
+    handId: string,
+    listener: EtiquetteListener,
+  ): (() => void) | null {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return null;
+    rt.etiquetteListeners.add(listener);
+    return () => rt.etiquetteListeners.delete(listener);
+  }
+
+  /**
+   * ETIQUETTE の確認（Ack。D145）。rulingSeq は Hero の View にある Ack の要る DEALER_RULING の seq。
+   * - 待っている裁定の seq: 確認した位置を進め、CPU の進行を再開する（障害・内部エラーで止まっていれば、確認だけを受けて進めない）
+   * - すでに確認した Ack の要る裁定の seq（rulingSeq <= ackedThroughSeq）: 何もせず受ける（二重クリック・応答の消えた再送。冪等）。
+   *   より新しい裁定を待っている最中でも、今の待ちは解かない
+   * - それ以外（Ack の要らない裁定・未来・存在しない seq）: stale_etiquette
+   * Ack は Event を追記しないので、Hero の View の lastSeq（stale_view の判定。D143）は変わらない。
+   * Hand が終わった後（HAND_FINISHED / HAND_ABORTED）も同じ経路で確認する。
+   * 再開は 1 回だけ: 位置を進めるのは await より前（同時の 2 本目は確認済みとして何もしない）、進行は advance が 1 本に保つ。
+   */
+  async acknowledgeEtiquette(
+    handId: string,
+    rulingSeq: number,
+  ): Promise<OrchestratorResult<HeroView>> {
+    const rt = this.hands.get(handId);
+    if (rt === undefined) return notFound(handId);
+    const seqs = etiquetteAckRulingSeqs(this.events(handId), this.heroId);
+    if (seqs.includes(rulingSeq) && rulingSeq <= rt.ackedThroughSeq) {
+      return { ok: true, value: this.heroViewOf(handId) };
+    }
+    const pending = this.pendingRulingSeqOf(rt);
+    if (pending === null || rulingSeq !== pending) {
+      return {
+        ok: false,
+        error: {
+          kind: "stale_etiquette",
+          message: `確認を待っている裁定ではない（待っている seq は ${pending ?? "無し"}、送信は ${rulingSeq}）`,
+        },
+      };
+    }
+    // 「その seq までの Ack の要る裁定をすべて確認した」とみなす（待ちは同時に最大 1 つだが、古い待ちを残さない防御）。
+    rt.ackedThroughSeq = rulingSeq;
+    this.changeEtiquette(rt);
+    // 止まった進行の後始末（running の解除）が済んでから進める（済む前だと advance が何もしない。resolveOutage と同じ）。
+    if (rt.running !== null) await rt.running;
+    await this.proceed(rt);
+    return { ok: true, value: this.heroViewOf(handId) };
+  }
+
   /** その Hand の Fast Forward が入っているか（Hand が終わっていれば false）。未知の Hand なら null。 */
   fastForwardOf(handId: string): boolean | null {
     const rt = this.hands.get(handId);
@@ -1180,6 +1280,7 @@ export class HandOrchestrator {
       rt.cancelWait?.();
       rt.listeners.clear();
       rt.outageListeners.clear();
+      rt.etiquetteListeners.clear();
     }
   }
 
@@ -1655,6 +1756,13 @@ export class HandOrchestrator {
       rt.fastForward = false;
       rt.playFinishedAt ??= this.playClock();
     }
+    // ETIQUETTE の要る裁定を置いたら確認を待つ（D145）。待っていた CPU の思考待ち・判断（Hero の手番外の操作で古くなった判断）は
+    // 打ち切って早く返させる（遅れて届いた判断は isCurrent で捨てるので、打ち切りは費用と Ack の後の再開の遅れを減らすだけ）。
+    // 確認の状態は View より先に配る（Hand が終わった View を送ると SSE は閉じるので、その前に届ける）。
+    if (etiquetteAckRulingSeqs(events, this.heroId).length > 0) {
+      rt.cancelWait?.();
+      this.changeEtiquette(rt);
+    }
     if (rt.listeners.size === 0) return;
     const view = this.heroViewOf(rt.handId);
     for (const listener of rt.listeners) {
@@ -1728,8 +1836,82 @@ export class HandOrchestrator {
   }
 
   // 打ち切った Hand は State が complete になる（HAND_ABORTED）ので、手番が無くなって止まる。
+  // ETIQUETTE の確認（Ack）を待つ間も止まる（D145。思考待ち・判断・Emergency Bot・Fast Forward・Drill の前で効く停止点）。
+  // isCurrent もこれを使うので、待ちの間に返った判断は適用しない。
   private canRun(rt: HandRuntime): boolean {
-    return !this.closed && rt.failure === null && rt.outage === null;
+    return (
+      !this.closed &&
+      rt.failure === null &&
+      rt.outage === null &&
+      this.pendingRulingSeqOf(rt) === null
+    );
+  }
+
+  /**
+   * 確認（Ack）を待っている裁定の seq（D145）。Ack の要る Hero への裁定のうち最も新しいものが、確認した位置より後なら待っている。
+   * Event Log（Hero に見える公開の DEALER_RULING）から毎回導き、メモリには確認した位置だけを持つ。
+   */
+  private pendingRulingSeqOf(rt: HandRuntime): number | null {
+    const latest = etiquetteAckRulingSeqs(
+      this.events(rt.handId),
+      this.heroId,
+    ).at(-1);
+    return latest !== undefined && latest > rt.ackedThroughSeq ? latest : null;
+  }
+
+  /** 確認を待っていれば Hero の操作を拒否する失敗（状態は変えない。操作を暗黙の確認にしない。D145）。待っていなければ null。 */
+  private awaitingEtiquette(
+    rt: HandRuntime,
+  ): { ok: false; error: OrchestratorError } | null {
+    const pending = this.pendingRulingSeqOf(rt);
+    if (pending === null) return null;
+    return {
+      ok: false,
+      error: {
+        kind: "etiquette_ack_required",
+        message: `裁定（seq ${pending}）の確認が済むまで操作できない`,
+      },
+    };
+  }
+
+  /**
+   * 今の Session の最後の Hand が確認を待っていれば、新しい Hand の開始を拒否する失敗（D145）。待っていなければ null。
+   * このプロセスに無い Hand（再起動後に戻した Session）は確認の待ちを持たない（D62 の範囲として受容）。
+   */
+  private startAwaitingEtiquette(): OrchestratorError | null {
+    const last = this.session?.lastHandId;
+    const rt = last === undefined ? undefined : this.hands.get(last);
+    if (rt === undefined) return null;
+    const pending = this.pendingRulingSeqOf(rt);
+    if (pending === null) return null;
+    return {
+      kind: "etiquette_ack_required",
+      message: `前の Hand の裁定（seq ${pending}）の確認が済むまで次の Hand を始められない`,
+    };
+  }
+
+  private etiquetteStatusOf(rt: HandRuntime): EtiquetteAckStatus {
+    return {
+      revision: rt.etiquetteRevision,
+      pendingRulingSeq: this.pendingRulingSeqOf(rt),
+    };
+  }
+
+  /** 確認の待ちが立った・解けたことを記録し、購読者（SSE）へ配る。 */
+  private changeEtiquette(rt: HandRuntime): void {
+    rt.etiquetteRevision += 1;
+    if (rt.etiquetteListeners.size === 0) return;
+    const status = this.etiquetteStatusOf(rt);
+    for (const listener of rt.etiquetteListeners) {
+      try {
+        listener(status);
+      } catch (error) {
+        this.logger.warn(
+          { handId: rt.handId, err: error },
+          "確認の状態の配信に失敗した",
+        );
+      }
+    }
   }
 
   /** 障害の状態を変え、購読者（SSE）へ配る。 */
