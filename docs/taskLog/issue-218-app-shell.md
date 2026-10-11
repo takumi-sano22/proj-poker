@@ -56,7 +56,7 @@
 ## 実行した確認
 
 - `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 489・web 206・server 926 件）/ `pnpm format:check`: 通過
-- `pnpm e2e`（全 17 本。新規 `app-shell.spec.ts` の 4 本を含む）: 通過（結果は PR の Test plan に記載）
+- `pnpm e2e`（全 16 本。新規 `app-shell.spec.ts` の 4 本を含む）: 16 passed
 - 画面の実測（Playwright のスクリーンショット）: Home 1280×720・320×568、Learn 1280×720・375×667、Play 1280×900・720×600・320×568、Review 375×667（Learn の一覧から開いた「Learn の一覧へ」）
 - 720×600 で上の席とナビの重なりを `elementFromPoint` で測り、余白を足した後に 320×568〜1280×900 で席・ナビ・表示設定が重ならないことを確かめた（`app-shell.spec.ts` に固定）
 
