@@ -18,7 +18,7 @@
 2. **閲覧位置は画面の指定と分ける**: Review の判断・Replay の Hand と step は、画面が `onPositionChange` で知らせ `viewing` に重ねる。開いた画面の指定（`screen`）は書き換えないので、知らせるたびに画面を作り直さない（key が変わらない）。Learn の画面を隠したまま残す案は、隠れた Replay の `.table` が卓の E2E の CSS セレクタに混ざる・再生のタイマーが走り続けるので採らなかった。
 3. **「続きから遊ぶ」は、この画面で続けている Session があれば卓へ移るだけ**: `useHandSession` に View があるとき開始を送ると、結果を見た終わった Hand の後では `afterHandId` が一致して次の Hand を作ってしまう（Hero が「次の Hand へ」を押していないのに Hand が進む）。View が無いとき（起動の直後・再読み込みの後）だけ既存の `start` を送り、server の冪等な判定（進行中 / 結果を見ていない Hand / 再起動後の次の Hand）にそのまま任せる。
 4. **照会の「Session が無い」と「知らない state」を分ける**（`parseCurrentSessionLookup`）: 知らない state（#230 の paused 等）で「新しい Session を始める」を出すと、server が続けている Session の扱いを Home が知らないまま開始の要求を送る。D144 の安全側に合わせ、知らない state・通信の失敗では開始の Button を出さず「もう一度読み込む」だけにした。
-5. **Drill の卓は Learn の中の画面**: Play は通常の卓だけにして、通常の Session と Drill の Session を混同しない。`drillSession` も `App` で持つので、Play へ移っても Drill を捨てない。
+5. **Drill の卓は Learn の中の画面**: Play は通常の卓だけにして、通常の Session と Drill の Session を混同しない。`drillSession` も `App` で持つので、Play へ移っても Drill を捨てない。Drill の卓の「戻る」も他の Learn の画面と同じ戻り先に従う（レビューで修正。下記）。
 6. **Play で卓が無い間は開始を送らず Home へ誘導**（旧 `StartScreen` は削除）。開始の入口を Home に 1 つにする。
 7. **ナビは画面に固定しない**（見出しの行）。下に固定した Hero の欄・卓を覆わない。
 8. **卓の上の余白**: 上の席（札を含む）は卓の枠の上へはみ出す（720×600 で約 44px）。ナビが見出しの中央寄りに入ったことで、720〜1279px で上の席の箱が Learn の Button の中心を覆った（E2E の hit-test で検出）。席の位置は席数で変わるので、ナビの位置をずらす案は採らず、`.app__table` の上に余白（広い画面 36px・狭い画面 8px）を取った。Drill の卓は説明の面の下の余白が同じ役目なので重ねない（`.drill-banner + .app__main .app__table`）。320px 級では題とナビを 1 行に収める詰め方（題 16px・Button の左右 6px）を足し、見出しが 3 行になるのを 2 行に戻した（見出しの高さ 192px → 155px）。
@@ -63,6 +63,8 @@
 ## レビューでの修正（Codex round 1・P2）
 
 - **終わった Session の後の再読み込みで「新しい Session を始める」が二度押しになる**: 再読み込みの直後は client が終わった Session の最後の Hand を知らず（照会は Hand ID を返さない。D144）、`afterHandId=null` の開始に server の冪等な判定が「結果を見ていない最後の Hand」を返していた。`useHandSession` の開始で、新しい Session を求めた（種類を送った）応答が「見ていない・終わった Session の Hand」（`lib/view-model.ts` の `isUnseenEndedHand`）なら、その Hand を見たものとしてもう 1 回だけ送るようにした。続いている Session の Hand・種類を送らない「続き」・進行中の Hand には当てない（勝手に次の Hand へ進めない）。server の契約は変えていない。E2E（`session-end-layout.spec.ts` の狭い画面の 2 本）に「再読み込み → Home → 1 回で新しい Session」を足し、修正を外すと失敗することを確かめた。
+
+- **（Codex round 2・P2）Drill の卓の「戻る」が戻り先を無視していた**: 結果の欄の「卓に戻る」が常に Play へ移り、Drill の卓には戻るの帯も無かった（Learn の一覧から Session Review → Drill と入った場合に一覧へ戻れない）。Drill の卓も shell の `back` を使い（文言は `backLabel`）、戻るの帯を出すようにした。単体（一覧から入った Drill は一覧へ戻る）と `learning.spec.ts`（卓から入った Drill の帯は「卓に戻る」）で固定。
 
 ## 残課題・既知の挙動
 
