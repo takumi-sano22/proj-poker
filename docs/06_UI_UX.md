@@ -116,7 +116,7 @@ Canonical Actionへ影響する裁定。
 
 同じWarningとして混ぜないでください。
 
-今後（D142・§16.5）: 裁定が出たら RULING を先に数秒出して自動で閉じ、続けて ETIQUETTE を Hero が明示的に確認してから進行を再開します。下の「実装（#66）」の出し方（RULING を次の Hero の手番まで出し続け、ETIQUETTE は Button で開く）は、UX-11（#226）の実装までの現状です。
+今後（D142・§16.5）: 裁定が出たら RULING を先に数秒出して自動で閉じ、続けて ETIQUETTE を Hero が明示的に確認してから進行を再開します。確認（Ack）の契約は D145（§16.8）。下の「実装（#66）」の出し方（RULING を次の Hero の手番まで出し続け、ETIQUETTE は Button で開く）は、UX-11（#226）の実装までの現状です。
 
 実装（#66。`apps/web/src/lib/dealer-feedback.ts`）: 公開 Event の `DEALER_RULING`（裁定の理由 `RulingCode`）と、その直前の操作の Event・直後の `ACTION_TAKEN` から、3 分類を別の項目として決定論で作ります（LLM は使いません）。Event は増やさず、Event Log から作る派生の表示です（D37）。
 
@@ -293,7 +293,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 ## 16. 横断 UI/UX（Post-Phase8。#215・#216・D135〜D142）
 
-#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）だけです**（UX-03〜UX-11 は未実装。#215 の Gate 0 / Gate 1 を満たすまで機能を実装しない）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144）を除き、採用済みの事実として扱いません。
+#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）だけです**（UX-03〜UX-11 は未実装。#215 の Gate 0 / Gate 1 を満たすまで機能を実装しない）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145）を除き、採用済みの事実として扱いません。
 
 ### 16.1 守る不変条件
 
@@ -349,7 +349,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 3. 確認の後に進行を再開する。**COACHING** は今どおり Hero が開いたときだけ出す（自動では出さない）。
 4. 確認を待つ間も Hero は Home / Learn へ移動でき、進行の待ちは続き、Play に戻ったら確認を再び求める。
 
-3 分類を同じ Warning として混ぜない（§6）・裁定の規則（D91）と Event（D90）は変えない。確認待ちで CPU を止める責務・確認（Ack）の契約・AI 障害（§12）のダイアログや再接続・Resume との関係・複数の裁定が続いたときの順序は UX-11（#226）で設計し、#215 Gate 1 で人間が承認するまで実装しない。
+3 分類を同じ Warning として混ぜない（§6）・裁定の規則（D91）と Event（D90）は変えない。確認待ちで CPU を止める責務・確認（Ack）の契約・AI 障害（§12）のダイアログや再接続・Resume との関係・複数の裁定が続いたときの順序は UX-11（#226）で設計し、D145 で採用した（§16.8）。実装は #215 Gate 1 の解除の後。
 
 ### 16.6 効果音と設定の保存先（D141）
 
@@ -373,4 +373,4 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 | UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知 |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
-| UX-11 #226 | ETIQUETTE の確認待ちで CPU を止める責務の置き場所・Ack の契約と Event に残すか・Outage / Resume / 再接続との関係・連続する裁定の順序。先行の検証で、Ack の要る裁定は `DEALER_RULING` の notes から決定論で決まり、今の server は Ack を待たず CPU を進めることを確かめた（検証の記録と推奨案〔人間の承認待ち・採用済みではない〕: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
+| UX-11 #226 | **採用済み D145**: Ack の要否は `DEALER_RULING` の notes から決定論で導き、確認の位置は `HandRuntime` のメモリ（Event / DB は不変）、`POST /api/hands/:handId/etiquette-ack {rulingSeq}` と REST / SSE の `{revision, pendingRulingSeq}`（二重は 200・古い seq は 409 `stale_etiquette`）、Ack 待ちの Hero の操作は 409 `etiquette_ack_required`（User Read は可）、Hand の完了後も待ちを残し確認まで次の Hand を始めない、Outage のダイアログが先で Retry / Emergency Bot の後も Ack まで止める、再起動で待ちが消えるのは D62 の範囲、Tournament のプレイ時間に入るのは Hand の進行中の待ちだけ（T1=A）。#230 の予約との扱いは #230 で再確認。未実装（検証の記録: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
