@@ -81,7 +81,7 @@ describe("BB 補助表示の切り替え（実額は常に出す。D49）", () =
             view={view}
             hero={view.seats[0]!}
             disabled={false}
-            onSubmit={noop}
+            onSubmit={() => true}
           />
         </BbDisplayProvider>,
       );
@@ -227,7 +227,7 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled={false}
-        onSubmit={noop}
+        onSubmit={() => true}
       />,
     );
     expect(declarationLabels(html)).toEqual([
@@ -250,7 +250,7 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled={false}
-        onSubmit={noop}
+        onSubmit={() => true}
       />,
     );
     expect(html).not.toContain("<input");
@@ -265,7 +265,7 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={seat("hero", { stack: 30 })}
         disabled={false}
-        onSubmit={noop}
+        onSubmit={() => true}
       />,
     );
     const chips = [
@@ -289,7 +289,7 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled={false}
-        onSubmit={noop}
+        onSubmit={() => true}
       />,
     );
     // 手番でなければ Legal Action の額は無いので、額を出さない
@@ -304,7 +304,12 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
   it("送信中・保留中はどのボタンも押せない", () => {
     const view = preflopHeroToAct();
     const html = renderToStaticMarkup(
-      <ChipControls view={view} hero={hero(view)} disabled onSubmit={noop} />,
+      <ChipControls
+        view={view}
+        hero={hero(view)}
+        disabled
+        onSubmit={() => true}
+      />,
     );
     const buttons = html.match(/<button[^>]*>/g) ?? [];
     expect(buttons.length).toBeGreaterThan(0);

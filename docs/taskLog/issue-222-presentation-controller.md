@@ -19,7 +19,7 @@ server から届いた最新の `HeroView`（authoritative）と、Hero に今�
 4. **時間の管理は `busyUntil`**: 今の step の演出が終わる時刻まで次を出さない。しばらく待ちが無かった後に届いた step（Hero 自身の操作など）はすぐ出る。所要時間は step の種類（最後の Event）× 速度の倍率（OI-012 の暫定値は `lib/config.ts` の `PRESENTATION_*`）。Hero の手番が来ていれば通常の演出を速め、Showdown の公開と Pot の配分は速めない（Q20）。
 5. **新しい Hand**: このセッションで最初の Hand（読み込み直後・Resume）は最新に合わせ、続く Hand（次の Hand・次の Drill）は Hand の始まり（`HAND_STARTED`・Blind・Ante・Hero の札）までを一度に出してから続きを演出する。
 6. **有界のキュー**: 待ちの step が上限（24。OI-012）を超えたら、古い分を動きなしで表示済みにする（最後の卓は authoritative から作るので内容は欠けない）。
-7. **送信前の整合性（D143・D146）**: `operate(shown, actions)` は、Hero が見ていた卓（displayed）が最新と同じ Hand・同じ `lastSeq` のときだけ、その `lastSeq` で送る。違えば送らずに表示を最新へ合わせ、「操作はまだ送っていません。卓を確かめて、もう一度確定してください」と案内して `"resynced"` を返す。下書きは `ChipControls` に残るので、Hero が状況を見てからもう一度確定する（暗黙に送らない・`stale_view` で自動再送しない）。手番外の操作と User Read も同じ。比べる最新の View は描画を待たない ref（`latestView`）で持つ。
+7. **送信前の整合性（D143・D146）**: `operate(shown, actions)` は、Hero が見ていた卓（displayed）が最新と同じ Hand・同じ `lastSeq` のときだけ、その `lastSeq` で送る。違えば送らずに表示を最新へ合わせ、「操作はまだ送っていません。卓を確かめて、もう一度確定してください」と案内して `"resynced"` を返す。押した宣言は下書きに足さず、Betting Area に出した Chip 等の下書きは `ChipControls` に残るので、Hero が状況を見てからもう一度確定する（暗黙に送らない・`stale_view` で自動再送しない）。手番外の操作と User Read も同じ。比べる最新の View は描画を待たない ref（`latestView`）で持つ。
    - 「同期してから、その値で自動で送る」案は採らなかった: #219 の `anchorContext`（組んだ時点の `currentBet` 等）による再確認が未実装のまま自動で送ると、CPU の Raise の後に古い額の Chip を送りうる（D146 が禁じる暗黙の送信）。送らずに再確定を求める方が D143 の「不一致なら古い操作を送らない」に合い、#219 は `OperateResult` で再確認の UI へつなげられる。
 8. **同期の契機**: SSE の切断後の最初の View・「卓に戻る」で同じ Hand が返った・Play / Drill の卓への復帰（`App` の `screen.kind` の変化）・`visibilitychange`（visible）で `syncNow`。画面の移動では開始・操作を送らない（#218 の契約を維持）。
 9. **優先する表示**: CPU 障害のダイアログ（`outage.current`）がある間は `flush` で最新まで一度に出す（§16.5）。Session の状態（終わりの案内・「次の Hand へ」）は表示が追いついてから渡す。Tournament の欄も、演出の途中は追いついていたときの値を出し続ける（server ではもう Hand が終わった後の Elimination・順位を先に見せない）。
@@ -62,6 +62,14 @@ server から届いた最新の `HeroView`（authoritative）と、Hero に今�
 - `pnpm e2e`: 19 passed（6.8m。新規 `presentation.spec.ts` 3 件を含む）
   - 標準の速さのまま既存の E2E を通すと、長い Session の spec が CI の上限（15 分）を超え（ローカル 14.8m）、review-tendency は 120 秒の上限を超えた。E2E のブラウザの保存値を超高速にして演出のタイマーの経路は通し、標準の速さの挙動は `presentation.spec.ts` が `page.clock` で時計を止めて確かめる形にした（検査の削除・緩和はしていない）
   - 途中の 1 回は、実行中に `App.tsx` を編集したことで Vite が画面を再読み込みし（Home に戻る）、learning / tournament が落ちた。編集を止めて全体を回し直して 19 passed
+
+## 自己レビューでの修正（reviewer agent）
+
+- [P1] 表示が古くて送らなかった宣言（Fold / Check / Call / All-in）が下書きに残り、最新を見て押し直した宣言より先に裁定される → `ChipControls.onSubmit` が送ったかを返し、送らなかったら宣言を下書きに足さない。E2E に検査を追加
+- [P2] SSE 再接続・同じ Hand の開始応答の resync が描画前の最新 View を見ていなかった → `sync(latestView.current)` で合わせる
+- [P3] User Read の guard の案内を server の `stale_view` と同じ文言に・`seenComplete` を displayed の complete で更新・`operate` は送信を始めなかったら `"ignored"`・docs/03 の記述を更新
+- [P3 accept] Flop の CSS の動きが速度の倍率に連動しない（情報の欠落なし。#224 の範囲）
+- 修正後: `pnpm lint` / `typecheck` / `test`（web 239 passed）/ `format:check` 通過、`pnpm e2e` 19 passed（6.7m）
 
 ## 残課題・既知の挙動
 

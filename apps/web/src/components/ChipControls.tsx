@@ -37,7 +37,11 @@ interface ChipControlsProps {
   readonly hero: SeatView;
   /** 送信中など、操作を受け付けないとき。 */
   readonly disabled: boolean;
-  readonly onSubmit: (actions: readonly PhysicalAction[]) => void;
+  /**
+   * 操作を Dealer に渡す。false は表示が最新でなかったので送らなかった（D143）ことを表し、そのときは押した宣言を下書きに足さない
+   * （送らなかった宣言が残ると、Hero が最新の卓を見て押し直した宣言より先に裁定されるため）。
+   */
+  readonly onSubmit: (actions: readonly PhysicalAction[]) => boolean;
 }
 
 /** Drag の元: Stack の Chip 1 枚か、手に取った Chip 全部。 */
@@ -87,8 +91,8 @@ export function ChipControls({
     );
     if (completesTurn(kind)) {
       // Fold / Check / Call / All-in は宣言だけで Action が決まるので、その時点で Dealer に渡す。
-      // 手に取ったまま出していない Chip は卓に出ていないので送らない。
-      onSubmit(next.ops);
+      // 手に取ったまま出していない Chip は卓に出ていないので送らない。表示が古くて送らなかったら、宣言は下書きに足さない。
+      if (!onSubmit(next.ops)) return;
     }
     setDraft(next);
   };

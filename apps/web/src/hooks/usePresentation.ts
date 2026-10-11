@@ -20,8 +20,11 @@ export interface Presentation {
   readonly displayed: HeroView | null;
   /** 表示が最新の View に追いついているか（操作を送れるのはこのときだけ。D143）。 */
   readonly synced: boolean;
-  /** 残りの演出を省いて最新の公開状態に合わせる（Skip・再接続・画面への復帰・送信前の同期）。 */
-  readonly sync: () => void;
+  /**
+   * 残りの演出を省いて最新の公開状態に合わせる（Skip・再接続・画面への復帰・送信前の同期）。latest を渡すとその View に合わせる
+   * （受け取った直後で、まだ描画していない View。省くと最後に描画した View）。
+   */
+  readonly sync: (latest?: HeroView | null) => void;
 }
 
 export function usePresentation(
@@ -63,8 +66,9 @@ export function usePresentation(
     return () => clearTimeout(timer);
   }, [dueAt, current.shownSeq, tick]);
 
-  const sync = useCallback(() => {
-    const { authoritative: view, options: opts } = latest.current;
+  const sync = useCallback((given?: HeroView | null) => {
+    const { authoritative: rendered, options: opts } = latest.current;
+    const view = given ?? rendered;
     if (view === null) return;
     setState((s) => syncNow(s, view, opts.holdThroughSeq));
   }, []);

@@ -158,6 +158,8 @@ test("演出の途中は結果を先に出さず、Skip・画面の復帰・タ�
     await expect(skipOf(page)).toHaveCount(0);
     await expect(heroTurn(page).or(handDone(page))).toBeVisible();
     expect(physicalPosts, "古い表示からは送らない").toBe(before);
+    // 送らなかった宣言は下書きに残らない（残ると、最新の卓を見て押し直した宣言より先に裁定される）。
+    await expect(dockOf(page).getByText(/宣言:\s*フォールド/)).toHaveCount(0);
   });
 });
 

@@ -340,13 +340,21 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     flush: currentOutageStatus?.current != null,
     holdThroughSeq: null,
   });
-  const resync = presentation.sync;
+  // 受け取った直後の View（描画の前）に合わせる。SSE の再接続・同じ Hand の開始の応答は accept と同じ tick で同期するため。
+  const presentationSync = presentation.sync;
+  const resync = useCallback(
+    () => presentationSync(latestView.current),
+    [presentationSync],
+  );
 
   // 結果（complete の View）まで見た最後の Hand。開始の要求で送り、サーバーが再送と「次の Hand」を区別する。
+  // 「見た」は Hero に見せた卓（displayed）で判定する（演出の途中で届いた complete を見たことにしない）。
+  const displayed = presentation.displayed;
   const seenComplete = useRef<string | null>(null);
   useEffect(() => {
-    if (view?.status === "complete") seenComplete.current = view.handId;
-  }, [view]);
+    if (displayed?.status === "complete")
+      seenComplete.current = displayed.handId;
+  }, [displayed]);
 
   /** 開始の要求を送る。afterHandId・session は送ったときの値のまま再送する（再送で次の Hand へ進めない）。 */
   const requestStart = useCallback(
@@ -426,7 +434,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   );
 
   /**
-   * Hand に対する操作（Action・障害の選択）を送る。二重送信を止め、応答を受け取り、失敗したら再送用に覚える。
+   * Hand に対する操作（Action・障害の選択）を送る。二重送信を止め、応答を受け取り、失敗したら再送用に覚える。送信を始めたら true。
    * failed は失敗したときに再送で同じ値を送るための記録。
    */
   const submit = useCallback(
@@ -435,7 +443,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       request: () => Promise<HeroActionResponse>,
       failed: NonNullable<typeof lastFailed.current>,
     ) => {
-      if (inFlight.current) return;
+      if (inFlight.current) return false;
       inFlight.current = true;
       setPending(true);
       setNotice(null);
@@ -452,6 +460,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
           inFlight.current = false;
           setPending(false);
         });
+      return true;
     },
     [acceptResponse],
   );
@@ -488,8 +497,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         setNotice(RESYNCED_NOTICE);
         return "resynced";
       }
-      send(handId, lastSeqOf(shown), actions);
-      return "sent";
+      return send(handId, lastSeqOf(shown), actions) ? "sent" : "ignored";
     },
     [handId, resync, send],
   );
@@ -541,8 +549,12 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       // 読みも、Hero が見ていた卓が最新のときだけ送る（操作と同じ鮮度の条件。D143）。
       const latest = latestView.current;
       if (latest === null || lastSeq !== lastSeqOf(latest)) {
+        // Hero の手番の間に卓が進むのは Hero 自身の記録だけなので、server の stale_view と同じ案内にする（自動で送り直さない）。
         resync();
-        setNotice(RESYNCED_NOTICE);
+        setNotice({
+          ...readNoticeOf(new ApiError("stale_view", "表示が最新ではない")),
+          retryable: false,
+        });
         return false;
       }
       const sentFor = handId;

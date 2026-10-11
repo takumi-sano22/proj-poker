@@ -823,7 +823,7 @@ function DockBody({
         hero={hero}
         disabled={session.pending || ruling?.kind === "pending"}
         // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
-        onSubmit={(actions) => session.operate(view, actions)}
+        onSubmit={(actions) => session.operate(view, actions) !== "resynced"}
       />
     </>
   );
