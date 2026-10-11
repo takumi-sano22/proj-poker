@@ -370,7 +370,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 | Issue | 決めること |
 |---|---|
 | UX-02 #217 | **採用済み D144**: `GET /api/session/current`（`{session: null}` か state・Session の種類。Session ID・Hand ID・Stack・札は返さない）、開始と同じ読み取り専用の判定から作る、`ended` はこのプロセスの終了だけ、知らない state は安全側、#230（Pause / End）の承認後に追加で拡張 |
-| UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知 |
+| UX-04 #219 | 下書きの有効・無効の判定（`operationKey` / `lastSeq`）と寿命、無効化の通知。先行の検証で、`operationKey` は CPU の Action・Hero の手番の到来では変わらず Street・Hand・Hero への裁定で必ず変わること、今の下書きは画面の切り替え・CPU の障害の Dialog でも消えることを確かめた（検証の記録と推奨案〔人間の承認待ち・採用済みではない〕: `docs/taskLog/issue-219-draft-lifecycle-design.md`） |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
 | UX-11 #226 | **採用済み D145**: Ack の要否は `DEALER_RULING` の notes から決定論で導き、確認の位置は `HandRuntime` のメモリ（Event / DB は不変）、`POST /api/hands/:handId/etiquette-ack {rulingSeq}` と REST / SSE の `{revision, pendingRulingSeq}`（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は 409 `stale_etiquette`）、Ack 待ちの Hero の操作は 409 `etiquette_ack_required`（User Read は可）、Hand の完了後も待ちを残し確認まで次の Hand を始めない、Outage のダイアログが先で Retry / Emergency Bot の後も Ack まで止める、再起動で待ちが消えるのは D62 の範囲、Tournament のプレイ時間に入るのは Hand の進行中の待ちだけ（T1=A）。#230 の予約との扱いは #230 で再確認。未実装（検証の記録: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
