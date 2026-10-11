@@ -31,16 +31,6 @@ import {
 /** 既定の 6 人卓で、最初の Hand の Hero の手番に Call 額がある山札（table-layout.spec.ts と同じ）。 */
 const SEED = "20261042";
 
-/** 宣言の Button の名前（Hero 欄の「宣言（Declaration）」の中）。 */
-const DECLARATIONS = [
-  "フォールド（Fold）",
-  "チェック（Check）",
-  "コール（Call）",
-  "ベット（Bet）",
-  "レイズ（Raise）",
-  "オールイン（All-in）",
-] as const;
-
 let dir = "";
 let server: RunningServer | null = null;
 let proxy: CuttableProxy | null = null;
@@ -228,10 +218,11 @@ test("ETIQUETTE の間は CPU・Hero の操作が進まず、確認を連打し�
     const sentBefore = operations();
     const rows = await log.count();
     const tableText = await table.innerText();
-    for (const name of DECLARATIONS) {
-      await expect(declarationButton(page, name)).toBeDisabled();
-    }
-    await expect(dock.getByRole("button", { name: /確定して/ })).toBeDisabled();
+    // 欄の間は Hero 欄の操作の欄を隠す（押せない。外さないので下書きは残る）。
+    await expect(
+      dock.getByRole("group", { name: "宣言（Declaration）" }),
+    ).toBeHidden();
+    await expect(dock.getByRole("button", { name: /確定して/ })).toHaveCount(0);
     // CPU の思考の待ち（1.5 秒）の 2 倍を超えて待っても、進行のログ・卓が変わらない（進まないことの確認だけの固定の待ち）。
     await page.waitForTimeout(3_500);
     expect(await log.count(), "進行のログの行が増えない").toBe(rows);
