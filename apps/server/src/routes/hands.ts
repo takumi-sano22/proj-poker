@@ -3,7 +3,7 @@
 // 物理的な操作（/physical-actions。Ruling Engine で裁定し、操作と裁定も Event Log に残す。D90・D91）。
 // 入力の形は JSON Schema で検証し、合法性（手番・Action の種類・額）は Engine が判定する（D40）。
 // 返す・Push するのは projectHeroView の結果と、Session の状態（Hero 自身の結果と次 Hand の有無）と、
-// CPU の障害の状態（どの CPU の手番か・障害の種類だけ。D86）だけ
+// CPU の障害の状態（どの CPU の手番か・障害の種類だけ。D86）と、ETIQUETTE の確認（Ack）の状態（待っている裁定の seq だけ。D145）だけ
 // （他者の Hole Cards・Deck・seed・CPU の Persona・内部のエラー本文を含めない）。
 import {
   TOURNAMENT_PRESET_IDS,
@@ -14,6 +14,7 @@ import {
 } from "@proj-poker/engine";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type {
+  EtiquetteAckStatus,
   HandOrchestrator,
   OrchestratorError,
   OutageChoice,
@@ -67,6 +68,11 @@ interface OutageChoiceBody {
   /** クライアントが見ていた障害の状態の revision（古いダイアログ・二重送信の検出に使う）。 */
   revision: number;
   choice: OutageChoice;
+}
+
+interface EtiquetteAckBody {
+  /** 確認する裁定の seq（Hero の View の log にある Ack の要る DEALER_RULING。D145）。 */
+  rulingSeq: number;
 }
 
 const handParamsSchema = {
@@ -237,6 +243,13 @@ const outageChoiceBodySchema = {
   },
 } as const;
 
+const etiquetteAckBodySchema = {
+  type: "object",
+  required: ["rulingSeq"],
+  additionalProperties: false,
+  properties: { rulingSeq: { type: "integer", minimum: 0 } },
+} as const;
+
 /** 失敗の種類を HTTP Status へ写す。 */
 const STATUS_BY_ERROR: Record<StartHandError["kind"], number> = {
   hand_not_found: 404,
@@ -244,6 +257,8 @@ const STATUS_BY_ERROR: Record<StartHandError["kind"], number> = {
   tournament_unavailable: 422,
   stale_view: 409,
   stale_outage: 409,
+  stale_etiquette: 409,
+  etiquette_ack_required: 409,
   not_spectating: 409,
   not_actor: 409,
   hand_complete: 409,
@@ -262,8 +277,8 @@ function sendError(
 
 /** SSE の 1 メッセージ。data は JSON（改行を含まない）。 */
 function formatSseEvent(
-  name: "view" | "session" | "outage",
-  data: HeroView | SessionStatus | OutageStatus,
+  name: "view" | "session" | "outage" | "etiquette",
+  data: HeroView | SessionStatus | OutageStatus | EtiquetteAckStatus,
 ): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 }
@@ -300,6 +315,8 @@ export function registerHandRoutes(
         view,
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
+        // ETIQUETTE の確認（Ack）の状態（D145）。Hand を返すだけの再要求でも載せ、再接続・再読み込みで未確認の確認を出し直せるようにする。
+        etiquette: orchestrator.etiquetteStatus(handId),
         fastForward: orchestrator.fastForwardOf(handId) ?? false,
         // 開いた Hand の Session の種類（#190）。まだ結果を見ていない Hand は、求めた設定と違っても新しく作らずに返す（#183）ので、
         // client が選んだ種類と違えば Hero に伝える。
@@ -322,6 +339,7 @@ export function registerHandRoutes(
         view: result.value,
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
+        etiquette: orchestrator.etiquetteStatus(handId),
       });
     },
   );
@@ -347,6 +365,7 @@ export function registerHandRoutes(
         view: result.value,
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
+        etiquette: orchestrator.etiquetteStatus(handId),
       });
     },
   );
@@ -398,6 +417,29 @@ export function registerHandRoutes(
         view: result.value,
         session: orchestrator.sessionStatus(handId),
         outage: orchestrator.outageStatus(handId),
+        etiquette: orchestrator.etiquetteStatus(handId),
+      });
+    },
+  );
+
+  // ETIQUETTE の確認（Ack。D145）。rulingSeq は確認を待っている裁定の seq。受けたら CPU の進行を再開し、その時点の View を返す
+  // （思考待ちがある設定では、CPU の行動は SSE で後から届く）。確認済みの seq の再送は今の待ちを変えずに 200、Ack の要らない・未来・
+  // 存在しない seq は 409（stale_etiquette）。Ack は Event を追記しないので lastSeq は変わらない。Hand が終わった後も同じ経路で確認する。
+  app.post<{ Params: HandParams; Body: EtiquetteAckBody }>(
+    "/api/hands/:handId/etiquette-ack",
+    { schema: { params: handParamsSchema, body: etiquetteAckBodySchema } },
+    async (request, reply) => {
+      const { handId } = request.params;
+      const result = await orchestrator.acknowledgeEtiquette(
+        handId,
+        request.body.rulingSeq,
+      );
+      if (!result.ok) return sendError(reply, result.error);
+      return reply.send({
+        view: result.value,
+        session: orchestrator.sessionStatus(handId),
+        outage: orchestrator.outageStatus(handId),
+        etiquette: orchestrator.etiquetteStatus(handId),
       });
     },
   );
@@ -428,8 +470,9 @@ export function registerHandRoutes(
     },
   );
 
-  // 卓の状態の SSE。接続時に現在の障害の状態（outage イベント）と View を 1 回ずつ送り、以後は Log が進むたびに View を、
-  // 障害が起きる・解けるたびに障害の状態を送る。
+  // 卓の状態の SSE。接続時に現在の障害の状態（outage イベント）・確認（Ack）の状態（etiquette イベント。D145）・View を 1 回ずつ送り、
+  // 以後は Log が進むたびに View を、障害が起きる・解けるたびに障害の状態を、確認の待ちが立つ・解けるたびに確認の状態を送る。
+  // 確認の待ちを立てる裁定は、Orchestrator が View より先に確認の状態を配るので、Hand を終える裁定でも閉じる前に届く。
   // Hand が終わった View の直前に Session の状態（session イベント）を送り、View を送ったらサーバー側から閉じる
   // （クライアントは status が complete の View を受けたら閉じて再接続しないので、Session の状態を先に届ける）。
   // 障害の後に Session 終了が選ばれたら、障害の状態の直後に Session の状態を送る（Hand は途中なので閉じない）。
@@ -456,11 +499,14 @@ export function registerHandRoutes(
 
       let unsubscribe: (() => void) | null = null;
       let unsubscribeOutage: (() => void) | null = null;
+      let unsubscribeEtiquette: (() => void) | null = null;
       const end = () => {
         unsubscribe?.();
         unsubscribe = null;
         unsubscribeOutage?.();
         unsubscribeOutage = null;
+        unsubscribeEtiquette?.();
+        unsubscribeEtiquette = null;
         openStreams.delete(end);
         if (!res.writableEnded) res.end();
       };
@@ -472,6 +518,10 @@ export function registerHandRoutes(
         if (session?.state === "ended" && session.reason === "ai_outage") {
           res.write(formatSseEvent("session", session));
         }
+      };
+      const sendEtiquette = (status: EtiquetteAckStatus) => {
+        if (res.writableEnded || res.destroyed) return;
+        res.write(formatSseEvent("etiquette", status));
       };
       const send = (view: HeroView) => {
         // 切断済みの接続へは書かない（close の通知より先に配信が来ることがある）。
@@ -489,10 +539,16 @@ export function registerHandRoutes(
       openStreams.add(end);
       const initialOutage = orchestrator.outageStatus(handId);
       if (initialOutage !== null) sendOutage(initialOutage);
+      const initialEtiquette = orchestrator.etiquetteStatus(handId);
+      if (initialEtiquette !== null) sendEtiquette(initialEtiquette);
       send(initial);
       if (!res.writableEnded) {
         unsubscribe = orchestrator.subscribe(handId, send);
         unsubscribeOutage = orchestrator.subscribeOutage(handId, sendOutage);
+        unsubscribeEtiquette = orchestrator.subscribeEtiquette(
+          handId,
+          sendEtiquette,
+        );
       }
     },
   );
