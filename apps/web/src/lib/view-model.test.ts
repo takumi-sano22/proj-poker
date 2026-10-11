@@ -13,6 +13,8 @@ import {
   operationKey,
   outageReasonText,
   parseHeroView,
+  parseEtiquetteEvent,
+  parseEtiquetteStatus,
   parseOutageStatus,
   parseCurrentSession,
   parseCurrentSessionLookup,
@@ -20,6 +22,7 @@ import {
   parseSessionStatus,
   seatDirections,
   selectLatestView,
+  selectEtiquetteStatus,
   selectOutageStatus,
   selectSessionStatus,
   waitingMessage,
@@ -658,5 +661,88 @@ describe("isUnseenEndedHand（新しい Session を求めた開始の応答が�
         },
       ),
     ).toBe(false);
+  });
+});
+
+describe("parseEtiquetteStatus / parseEtiquetteEvent（ETIQUETTE の確認の受け側 whitelist。#226）", () => {
+  it("revision と pendingRulingSeq（非負整数 or null）を受け取り、余分な項目は落とす", () => {
+    expect(
+      parseEtiquetteStatus({ revision: 3, pendingRulingSeq: 7, extra: "x" }),
+    ).toEqual({ revision: 3, pendingRulingSeq: 7 });
+    expect(
+      parseEtiquetteStatus({ revision: 0, pendingRulingSeq: null }),
+    ).toEqual({ revision: 0, pendingRulingSeq: null });
+  });
+
+  it("revision が欠落・負・小数・文字列・巨大数なら null", () => {
+    for (const revision of [undefined, -1, 1.5, "1", 2 ** 60, NaN]) {
+      expect(
+        parseEtiquetteStatus({ revision, pendingRulingSeq: null }),
+      ).toBeNull();
+    }
+    expect(parseEtiquetteStatus({ pendingRulingSeq: null })).toBeNull();
+  });
+
+  it("pendingRulingSeq が負・小数・文字列・undefined（欠落）なら null", () => {
+    for (const pendingRulingSeq of [-1, 1.5, "3", undefined]) {
+      expect(
+        parseEtiquetteStatus({ revision: 1, pendingRulingSeq }),
+      ).toBeNull();
+    }
+    expect(parseEtiquetteStatus({ revision: 1 })).toBeNull();
+  });
+
+  it("オブジェクトでない値は null", () => {
+    for (const v of [null, undefined, 1, "x", true]) {
+      expect(parseEtiquetteStatus(v)).toBeNull();
+    }
+  });
+
+  it("SSE の data は JSON の文字列を受け取り、JSON でなければ null", () => {
+    expect(
+      parseEtiquetteEvent(JSON.stringify({ revision: 2, pendingRulingSeq: 4 })),
+    ).toEqual({ revision: 2, pendingRulingSeq: 4 });
+    expect(parseEtiquetteEvent("not json")).toBeNull();
+    expect(parseEtiquetteEvent(JSON.stringify({ revision: "x" }))).toBeNull();
+  });
+});
+
+describe("selectEtiquetteStatus（REST と SSE のどちらが先に届いても新しい確認の状態を残す。#226）", () => {
+  const st = (handId: string, revision: number, seq: number | null) => ({
+    handId,
+    status: { revision, pendingRulingSeq: seq },
+  });
+
+  it("別の Hand の状態は捨てる", () => {
+    const current = st("h1", 1, 5);
+    expect(selectEtiquetteStatus(current, st("h0", 9, null), "h1")).toBe(
+      current,
+    );
+    expect(selectEtiquetteStatus(null, st("h0", 9, null), "h1")).toBeNull();
+  });
+
+  it("今の状態が無い・別の Hand のものなら incoming を採る", () => {
+    const incoming = st("h1", 0, 5);
+    expect(selectEtiquetteStatus(null, incoming, "h1")).toBe(incoming);
+    expect(selectEtiquetteStatus(st("h0", 9, 1), incoming, "h1")).toBe(
+      incoming,
+    );
+  });
+
+  it("同じ Hand では revision の大きい方を採り、同じなら incoming", () => {
+    const current = st("h1", 2, 5);
+    const newer = st("h1", 3, null);
+    expect(selectEtiquetteStatus(current, newer, "h1")).toBe(newer);
+    const same = st("h1", 2, null);
+    expect(selectEtiquetteStatus(current, same, "h1")).toBe(same);
+  });
+
+  it("古い revision で新しい待ちを消さず、確認済みを出し直さない", () => {
+    const waiting = st("h1", 4, 5);
+    expect(selectEtiquetteStatus(waiting, st("h1", 3, null), "h1")).toBe(
+      waiting,
+    );
+    const acked = st("h1", 5, null);
+    expect(selectEtiquetteStatus(acked, st("h1", 4, 5), "h1")).toBe(acked);
   });
 });

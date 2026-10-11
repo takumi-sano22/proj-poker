@@ -48,7 +48,11 @@ async function measureLayout(page: Page): Promise<LayoutMeasure> {
     };
     const dockEl = document.querySelector(".dock");
     if (dockEl === null) throw new Error("Hero 欄が無い");
-    const buttons = [...dockEl.querySelectorAll("button")].map((button) => {
+    // 描画されていない Button（display: none の祖先の下。ETIQUETTE の欄の間に隠す操作の欄など。#226）は押せる対象ではないので測らない。
+    const rendered = [...dockEl.querySelectorAll("button")].filter(
+      (button) => button.getClientRects().length > 0,
+    );
+    const buttons = rendered.map((button) => {
       // elementFromPoint は画面の中の点しか返さないので、Button を画面の中へ入れてから中心を覆う要素を取る（測る前のスクロール位置に依らない）。
       button.scrollIntoView({ block: "nearest" });
       const rect = rectOf(button) as Rect;

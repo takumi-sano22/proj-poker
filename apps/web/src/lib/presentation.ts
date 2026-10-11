@@ -67,8 +67,8 @@ export const INITIAL_PRESENTATION: PresentationState = {
  * 演出の進め方の入力。
  * - speed: 実際に使う速度（prefers-reduced-motion では呼び出し側が演出なしにする）
  * - flush: 演出より優先する表示（CPU の障害のダイアログ）があるので、残りの演出を省いて最新に追いつく
- * - holdThroughSeq: この seq を含む step より先を出さない（null は制限なし）。ETIQUETTE の確認（#226 の client）が、裁定の step を
- *   出したところで表示を止めておくための接続点。今は誰も渡さない
+ * - holdThroughSeq: この seq を含む step より先を出さない（null は制限なし）。ETIQUETTE の確認（Ack。#226・D145）を待つ裁定の seq で、
+ *   裁定の step を出したところで表示を止めておく。受け取り（最初の Hand・有界のキューの切り詰め）・Skip・同期・障害の優先のどれも越えない
  */
 export interface PresentationOptions {
   readonly speed: PresentationSpeed;
@@ -184,15 +184,22 @@ function heldBack(step: PresentationStep, hold: number | null): boolean {
  * - 同じ Hand: 表示済みの位置はそのまま（重複・古い View は位置を動かさない）。待ちが上限を超えたら、古い分を動きなしで表示済みにする
  * - 別の Hand: このセッションで最初の Hand（読み込み直後・Resume）は最新に合わせ、続く Hand（次の Hand・次の Drill）は
  *   Hand の始まり（Blind・Ante・Hero の札）までを出してから続きを演出する
+ * - holdThroughSeq（ETIQUETTE の確認待ち。#226）があれば、どの場合もその seq を含む step より先へは進めない（最初の Hand の
+ *   「最新に合わせる」・上限を超えた分の切り詰めも越えない。確認を待つ裁定の RULING を出す前に、続きの卓を見せない）
  */
 export function receive(
   state: PresentationState,
   authoritative: HeroView,
+  holdThroughSeq: number | null,
 ): PresentationState {
   if (state.handId !== authoritative.handId) {
     const fresh: PresentationState = {
       handId: authoritative.handId,
-      shownSeq: lastSeqOf(authoritative),
+      shownSeq: heldSeq(
+        stepsOf(authoritative),
+        lastSeqOf(authoritative),
+        holdThroughSeq,
+      ),
       busyUntil: 0,
     };
     if (state.handId === null) return fresh;
@@ -202,23 +209,46 @@ export function receive(
       if (!step.events.every((e) => SETUP_EVENT_TYPES.has(e.type))) break;
       shownSeq = step.endSeq;
     }
-    return bound({ ...fresh, shownSeq }, authoritative);
+    return bound({ ...fresh, shownSeq }, authoritative, holdThroughSeq);
   }
-  return bound(state, authoritative);
+  return bound(state, authoritative, holdThroughSeq);
 }
 
-/** 待ちの step を上限までに切り詰める（有界のキュー）。 */
+/**
+ * 待ちの step を上限までに切り詰める（有界のキュー）。holdThroughSeq より先の step は切り詰めでも表示済みにしない
+ * （確認待ちの間は、その先の待ちが上限を超えても残す。確認の後に、改めて切り詰める）。
+ */
 function bound(
   state: PresentationState,
   authoritative: HeroView,
+  holdThroughSeq: number | null,
 ): PresentationState {
   const pending = pendingSteps(state, authoritative);
   const over = pending.length - PRESENTATION_MAX_PENDING_STEPS;
   if (over <= 0) return state;
-  return {
-    ...state,
-    shownSeq: (pending[over - 1] as PresentationStep).endSeq,
-  };
+  const shownSeq = heldSeq(
+    pending,
+    (pending[over - 1] as PresentationStep).endSeq,
+    holdThroughSeq,
+  );
+  return shownSeq <= state.shownSeq ? state : { ...state, shownSeq };
+}
+
+/**
+ * target まで表示済みにしたいときの、holdThroughSeq を越えない位置。hold を含む step（裁定の step）までは表示済みにしてよく、
+ * それより先の step（先頭の Event が hold より後）は表示済みにしない。hold が無ければ target のまま。
+ */
+function heldSeq(
+  steps: readonly PresentationStep[],
+  target: number,
+  holdThroughSeq: number | null,
+): number {
+  if (holdThroughSeq === null) return target;
+  const firstHeld = steps.find((step) => heldBack(step, holdThroughSeq));
+  if (firstHeld === undefined) return target;
+  // 止める step の直前の Event までを表示済みにできる（seq は単調なので、止める step の先頭より前）。
+  const limit = (firstHeld.events[0] as HandEvent).seq - 1;
+  return Math.min(target, limit);
 }
 
 /**
@@ -230,7 +260,7 @@ export function syncNow(
   authoritative: HeroView,
   holdThroughSeq: number | null,
 ): PresentationState {
-  const received = receive(state, authoritative);
+  const received = receive(state, authoritative, holdThroughSeq);
   let shownSeq = received.shownSeq;
   for (const step of pendingSteps(received, authoritative)) {
     if (heldBack(step, holdThroughSeq)) break;
@@ -254,7 +284,7 @@ export function settle(
   if (options.flush) {
     return syncNow(state, authoritative, options.holdThroughSeq);
   }
-  let current = receive(state, authoritative);
+  let current = receive(state, authoritative, options.holdThroughSeq);
   const heroTurn = authoritative.legalActions !== null;
   for (const step of pendingSteps(current, authoritative)) {
     if (heldBack(step, options.holdThroughSeq) || now < current.busyUntil) {
@@ -279,7 +309,7 @@ export function settleWithoutClock(
 ): PresentationState {
   return options.flush || options.speed === "none"
     ? syncNow(state, authoritative, options.holdThroughSeq)
-    : receive(state, authoritative);
+    : receive(state, authoritative, options.holdThroughSeq);
 }
 
 /** 次の step を出せる時刻（待ちが無い・止めている間は null）。タイマーの設定に使う。 */
