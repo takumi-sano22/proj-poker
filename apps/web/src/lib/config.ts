@@ -77,3 +77,10 @@ export const REPLAY_SPEED_SCALE = {
   turbo: 0.25,
   none: 0.25,
 } as const;
+
+/**
+ * Hero への裁定（RULING）を卓の中央に出しておく時間（ミリ秒。D142 の「数秒」。#226）。OI-012 の暫定値。この時間で自動で閉じ、
+ * ETIQUETTE の確認（Ack）が要る裁定なら続けて確認の欄を出す（確認は Hero が明示的に押すまで閉じない。D145）。
+ * 表示演出の速度（演出なしを含む）には掛けない（裁定の事実を読む時間で、演出の動きではない）。
+ */
+export const RULING_OVERLAY_MS = 2_500;

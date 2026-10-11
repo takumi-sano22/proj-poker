@@ -9,10 +9,14 @@
 //   画面へ渡す view は displayed で、Hero の操作は displayed が authoritative に追いついているときだけ、その lastSeq で送る。
 //   追いついていなければ送らずに表示を最新へ合わせ、Hero にもう一度確定させる（古い操作を送らない・暗黙に送らない）。
 //   SSE の再接続・Hand への復帰（resync）では古い演出を捨てて最新の公開状態に合わせる
+// - ETIQUETTE の確認（Ack。#226・D145）の状態も REST の応答と SSE の etiquette イベントの両方から受け、revision の新しい方だけを残す。
+//   確認を待つ間は、表示をその裁定の step で止め（holdThroughSeq）、RULING → ETIQUETTE の欄を出し（useDealerOverlay）、Hero が
+//   明示的に確認したら Ack を送る。進行の再開は server が決め、応答の状態に従う（client は自動で Ack しない・操作を暗黙の確認にしない）
 import type { HeroView, PhysicalAction } from "@proj-poker/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
+  acknowledgeEtiquette as requestEtiquetteAck,
   chooseOutage,
   handStreamUrl,
   recordUserRead,
@@ -27,19 +31,25 @@ import {
   type SessionStatus,
   type TablePlayer,
 } from "../lib/api.js";
+import type { DealerOverlay } from "../lib/dealer-overlay.js";
 import { canSendFrom, type PresentationSpeed } from "../lib/presentation.js";
+import { runStart } from "../lib/start-flow.js";
 import {
-  isUnseenEndedHand,
   lastSeqOf,
+  parseEtiquetteEvent,
+  parseEtiquetteStatus,
   parseHeroView,
   parseOutageStatus,
   parseSessionStatus,
+  selectEtiquetteStatus,
   selectLatestView,
   selectOutageStatus,
   selectSessionStatus,
+  type HandEtiquetteStatus,
   type HandOutageStatus,
   type HandSessionStatus,
 } from "../lib/view-model.js";
+import { useDealerOverlay } from "./useDealerOverlay.js";
 import { usePresentation } from "./usePresentation.js";
 
 export type ConnectionState = "idle" | "open" | "reconnecting" | "lost";
@@ -51,6 +61,27 @@ export type OperateResult = "sent" | "resynced" | "ignored";
 export const RESYNCED_NOTICE: SessionNotice = {
   message:
     "卓の表示を最新の状態に合わせました。操作はまだ送っていません。卓を確かめて、もう一度確定してください。",
+  retryable: false,
+};
+
+/** ETIQUETTE の確認を待っている間に、操作・次の Hand の開始が拒否されたときの案内（D145。自動で確認・再送しない）。 */
+export const ETIQUETTE_REQUIRED_NOTICE: SessionNotice = {
+  message:
+    "Dealer の作法の注意をまだ確認していません。注意の欄の「確認しました」を押すと進行が再開します（操作はまだ送っていません）。",
+  retryable: false,
+};
+
+/** 確認（Ack）を送った裁定が、server の待っている裁定と違った（stale_etiquette。D145）ときの案内。別の seq を自動で確認しない。 */
+export const STALE_ETIQUETTE_NOTICE: SessionNotice = {
+  message:
+    "確認の状態が先に変わっていました。最新の状態を読み直したので、表示中の注意を確かめてください。",
+  retryable: false,
+};
+
+/** 新しい Session を求めたが、前の Session の最後の Hand に確認を待つ注意が残っていたときの案内（#245 の開始の流れ・D145）。 */
+export const ETIQUETTE_BEFORE_NEW_SESSION_NOTICE: SessionNotice = {
+  message:
+    "前の Session の最後の Hand に、まだ確認していない Dealer の作法の注意があります。確認してから、もう一度「新しい Session を始める」を押してください。",
   retryable: false,
 };
 
@@ -81,6 +112,15 @@ export interface HandSession {
   readonly sessionStatus: SessionStatus | null;
   /** 表示中の Hand の CPU の障害の状態。まだ届いていなければ null。 */
   readonly outage: OutageStatus | null;
+  /**
+   * server が ETIQUETTE の確認（Ack）を待っているか（D145）。待っている間は Hero の操作・次の Hand の開始を送らない
+   * （送っても server が etiquette_ack_required で拒否する）。
+   */
+  readonly etiquettePending: boolean;
+  /** 今出す裁定の欄（RULING → ETIQUETTE。#226・D142）。無ければ null。障害のダイアログの間は null（障害を先に出す）。 */
+  readonly dealerOverlay: DealerOverlay | null;
+  /** 出している ETIQUETTE の裁定を確認した（Ack を送る）。送信中・確認を待っていなければ何もしない。 */
+  readonly acknowledgeEtiquette: () => void;
   readonly pending: boolean;
   readonly notice: SessionNotice | null;
   readonly connection: ConnectionState;
@@ -257,6 +297,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   const latestView = useRef<HeroView | null>(null);
   const [session, setSession] = useState<HandSessionStatus | null>(null);
   const [outage, setOutage] = useState<HandOutageStatus | null>(null);
+  const [etiquette, setEtiquette] = useState<HandEtiquetteStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
@@ -297,6 +338,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         revision: number;
         choice: OutageChoice;
       }
+    | {
+        kind: "etiquette";
+        handId: string;
+        rulingSeq: number;
+      }
     | null
   >(null);
 
@@ -322,23 +368,65 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     );
   }, []);
 
-  /** Action・障害の選択の応答（View・Session・障害の状態）を受け取る。 */
+  /** 確認（Ack）の状態を受け取る。形の合わない値・無い値（確認の API の無いサーバー）は捨てて、今の状態のまま。 */
+  const acceptEtiquette = useCallback((handIdOf: string, raw: unknown) => {
+    const status = parseEtiquetteStatus(raw);
+    if (status === null) return;
+    setEtiquette((current) =>
+      selectEtiquetteStatus(
+        current,
+        { handId: handIdOf, status },
+        activeHandId.current,
+      ),
+    );
+  }, []);
+
+  /** Action・障害の選択・確認の応答（View・Session・障害・確認の状態）を受け取る。 */
   const acceptResponse = useCallback(
     (sentFor: string, res: HeroActionResponse) => {
       accept(res.view);
       acceptSession({ handId: sentFor, status: res.session });
       acceptOutage({ handId: sentFor, status: res.outage });
+      acceptEtiquette(sentFor, res.etiquette);
     },
-    [accept, acceptOutage, acceptSession],
+    [accept, acceptEtiquette, acceptOutage, acceptSession],
+  );
+
+  /**
+   * 開始の応答（Hand・View・Session・障害・確認の状態）を画面の Hand として受け取る。同じ Hand ならすでに受け取った新しい View・状態で
+   * 巻き戻さない。戻り値は同じ Hand の続きか。
+   */
+  const adoptStarted = useCallback(
+    (res: StartHandResponse): boolean => {
+      const sameHand = activeHandId.current === res.handId;
+      activeHandId.current = res.handId;
+      setHandId(res.handId);
+      setPlayers(res.players);
+      accept(res.view);
+      acceptSession({ handId: res.handId, status: res.session });
+      acceptOutage({ handId: res.handId, status: res.outage });
+      acceptEtiquette(res.handId, res.etiquette);
+      setFastForwardState({
+        handId: res.handId,
+        enabled: res.fastForward === true,
+      });
+      setConnection("idle");
+      return sameHand;
+    },
+    [accept, acceptEtiquette, acceptOutage, acceptSession],
   );
 
   // Presentation Controller。CPU の障害のダイアログは演出より優先する（出ている間は残りの演出を省いて最新に合わせる。§16.5）。
-  // holdThroughSeq は ETIQUETTE の確認（#226 の client）が裁定の step で表示を止めるための接続点で、今は使わない（null）。
+  // ETIQUETTE の確認を待つ間は、その裁定の step で表示を止める（holdThroughSeq。障害の優先・Skip・同期・再接続も越えない）。
+  // 確認の後（応答の pendingRulingSeq が null）に続きを演出する。
   const currentOutageStatus = outage?.handId === handId ? outage.status : null;
+  const currentEtiquette =
+    etiquette?.handId === handId ? etiquette.status : null;
+  const pendingRulingSeq = currentEtiquette?.pendingRulingSeq ?? null;
   const presentation = usePresentation(view, {
     speed: options.speed ?? "none",
     flush: currentOutageStatus?.current != null,
-    holdThroughSeq: null,
+    holdThroughSeq: pendingRulingSeq,
   });
   // 受け取った直後の View（描画の前）に合わせる。SSE の再接続・同じ Hand の開始の応答は accept と同じ tick で同期するため。
   const presentationSync = presentation.sync;
@@ -356,6 +444,23 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       seenComplete.current = displayed.handId;
   }, [displayed]);
 
+  /**
+   * 開始の応答の Hand を画面に開く。同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。同じ Hand の続きなら、古い演出を
+   * 捨てて最新に合わせる（新しい Hand は Hand の始まりから演出する。lib/presentation.ts の receive）。
+   */
+  const open = useCallback(
+    (res: StartHandResponse) => {
+      const sameHand = adoptStarted(res);
+      setStreamEpoch((n) => n + 1);
+      if (sameHand) resync();
+    },
+    [adoptStarted, resync],
+  );
+
+  // SSE を張り直して、最新の View・障害・確認の状態を読み直す（接続の直後に 1 回ずつ届く）。stale_etiquette・etiquette_ack_required の
+  // 後に使う（応答に状態が無いので。別の seq を自動で確認しない）。
+  const reread = useCallback(() => setStreamEpoch((n) => n + 1), []);
+
   /** 開始の要求を送る。afterHandId・session は送ったときの値のまま再送する（再送で次の Hand へ進めない）。 */
   const requestStart = useCallback(
     (afterHandId: string | null, session?: SessionRequest) => {
@@ -364,34 +469,38 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       setPending(true);
       setNotice(null);
       lastFailed.current = null;
-      // 再送で同じ値を送れるよう、最後に送った afterHandId を覚える（下の 2 回目の送信で変わる）。
-      let sentAfter = afterHandId;
-      startRequest(afterHandId, session)
-        .then((first) => {
-          // 新しい Session を求めたのに、結果を見ていない終わった Session の最後の Hand が返った（再読み込みの直後の Home など）。
-          // Hero は新しい Session を明示的に求めているので、その Hand を見たものとしてもう 1 回だけ送る（#218）。
-          if (!isUnseenEndedHand(afterHandId, session, first)) return first;
-          sentAfter = first.handId;
-          return startRequest(first.handId, session);
-        })
-        .then((res) => {
-          // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
-          // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
-          const sameHand = activeHandId.current === res.handId;
-          activeHandId.current = res.handId;
-          setHandId(res.handId);
-          setPlayers(res.players);
-          accept(res.view);
-          acceptSession({ handId: res.handId, status: res.session });
-          acceptOutage({ handId: res.handId, status: res.outage });
-          setFastForwardState({
-            handId: res.handId,
-            enabled: res.fastForward === true,
-          });
-          setConnection("idle");
-          // 新しい Session として選んだ種類と違う Session の続きが開いた（まだ結果を見ていない Hand・Resume した Session。サーバーは
-          // 開始の再送を冪等にするため、その Hand を新しく作らずに返す）。黙って続けず、選んだ種類はこの Session の後で始められると伝える。
-          if (
+      void runStart(startRequest, afterHandId, session)
+        .then((outcome) => {
+          if (outcome.kind === "failed") {
+            const { error, awaitingHand } = outcome;
+            if (awaitingHand !== null) {
+              // 2 回目の開始が確認待ちで拒否された（D145）。1 回目の応答の終わった Hand と確認の状態を開いて、確認を求める。
+              open(awaitingHand);
+              setNotice(ETIQUETTE_BEFORE_NEW_SESSION_NOTICE);
+            } else if (
+              error instanceof ApiError &&
+              error.kind === "etiquette_ack_required"
+            ) {
+              // 次の Hand の開始が、今の Hand の確認待ちで拒否された。確認の状態を読み直して出し直す（開始を自動で送り直さない）。
+              reread();
+              setNotice(ETIQUETTE_REQUIRED_NOTICE);
+            } else {
+              lastFailed.current = {
+                kind: "start",
+                afterHandId: outcome.sentAfter,
+                session,
+              };
+              setNotice(noticeOf(error));
+            }
+            return;
+          }
+          const { res } = outcome;
+          open(res);
+          if (outcome.awaitingEtiquette) {
+            setNotice(ETIQUETTE_BEFORE_NEW_SESSION_NOTICE);
+          } else if (
+            // 新しい Session として選んだ種類と違う Session の続きが開いた（まだ結果を見ていない Hand・Resume した Session。サーバーは
+            // 開始の再送を冪等にするため、その Hand を新しく作らずに返す）。黙って続けず、選んだ種類はこの Session の後で始められると伝える。
             session !== undefined &&
             res.sessionKind !== undefined &&
             !sameSessionKind(session, res.sessionKind)
@@ -402,25 +511,14 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
               retryable: false,
             });
           }
-          // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。同じ Hand の続きなら、古い演出を捨てて最新に合わせる
-          // （新しい Hand は Hand の始まりから演出する。lib/presentation.ts の receive）。
-          setStreamEpoch((n) => n + 1);
-          if (sameHand) resync();
         })
-        .catch((error: unknown) => {
-          lastFailed.current = {
-            kind: "start",
-            afterHandId: sentAfter,
-            session,
-          };
-          setNotice(noticeOf(error));
-        })
+        .catch((error: unknown) => setNotice(noticeOf(error)))
         .finally(() => {
           inFlight.current = false;
           setPending(false);
         });
     },
-    [accept, acceptOutage, acceptSession, resync, startRequest],
+    [open, reread, startRequest],
   );
 
   const start = useCallback(
@@ -453,6 +551,18 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         .catch((error: unknown) => {
           // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。
           if (activeHandId.current !== sentFor) return;
+          const kind = error instanceof ApiError ? error.kind : "unknown";
+          if (kind === "etiquette_ack_required" || kind === "stale_etiquette") {
+            // 確認の状態が client の知っているものと違った（確認待ちの操作・別の seq の確認）。応答に状態が無いので、最新の状態を
+            // 読み直して出し直す（再送ボタンを出さない・別の seq を自動で確認しない。D145）。
+            reread();
+            setNotice(
+              kind === "stale_etiquette"
+                ? STALE_ETIQUETTE_NOTICE
+                : ETIQUETTE_REQUIRED_NOTICE,
+            );
+            return;
+          }
           lastFailed.current = failed;
           setNotice(noticeOf(error));
         })
@@ -462,7 +572,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         });
       return true;
     },
-    [acceptResponse],
+    [acceptResponse, reread],
   );
 
   /** 物理的な操作を送る。lastSeq は「この操作を送ると決めたときに見ていた View」の値。 */
@@ -488,9 +598,25 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     [submit],
   );
 
+  /** 確認（Ack）を送る。rulingSeq は Hero に見せている ETIQUETTE の裁定の seq（再送でも同じ値を送る）。 */
+  const sendEtiquetteAck = useCallback(
+    (sentFor: string, rulingSeq: number) =>
+      submit(sentFor, () => requestEtiquetteAck(sentFor, rulingSeq), {
+        kind: "etiquette",
+        handId: sentFor,
+        rulingSeq,
+      }),
+    [submit],
+  );
+
   const operate = useCallback(
     (shown: HeroView, actions: readonly PhysicalAction[]): OperateResult => {
       if (handId === null || actions.length === 0) return "ignored";
+      // 確認を待っている間は送らない（server も拒否する。下書きは呼び出し側に残す。D145・D146）。
+      if (pendingRulingSeq !== null) {
+        setNotice(ETIQUETTE_REQUIRED_NOTICE);
+        return "ignored";
+      }
       // Hero が見ていた卓が最新でなければ送らない（未表示の最新の lastSeq を先取りしない。D143）。表示を合わせて、もう一度確定させる。
       if (!canSendFrom(shown, latestView.current)) {
         resync();
@@ -499,10 +625,23 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       }
       return send(handId, lastSeqOf(shown), actions) ? "sent" : "ignored";
     },
-    [handId, resync, send],
+    [handId, pendingRulingSeq, resync, send],
   );
 
   const currentOutage = currentOutageStatus;
+  // RULING → ETIQUETTE の欄（障害のダイアログが出ている間は出さない。障害を先に。D145）。
+  const dealerOverlay = useDealerOverlay(
+    presentation.displayed,
+    pendingRulingSeq,
+    currentOutage?.current != null,
+  );
+  const etiquetteOverlaySeq =
+    dealerOverlay?.kind === "etiquette" ? dealerOverlay.rulingSeq : null;
+  const acknowledgeEtiquette = useCallback(() => {
+    // 出している ETIQUETTE の裁定だけを確認する（Hero が見ていない裁定を確認しない）。二重押しは submit が止める。
+    if (handId === null || etiquetteOverlaySeq === null) return;
+    sendEtiquetteAck(handId, etiquetteOverlaySeq);
+  }, [etiquetteOverlaySeq, handId, sendEtiquetteAck]);
   const resolveOutage = useCallback(
     (choice: OutageChoice) => {
       if (handId === null || currentOutage?.current == null) return;
@@ -593,7 +732,9 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       send(failed.handId, failed.lastSeq, failed.actions);
     else if (failed?.kind === "outage")
       sendOutageChoice(failed.handId, failed.revision, failed.choice);
-  }, [requestStart, send, sendOutageChoice]);
+    else if (failed?.kind === "etiquette")
+      sendEtiquetteAck(failed.handId, failed.rulingSeq);
+  }, [requestStart, send, sendEtiquetteAck, sendOutageChoice]);
 
   // SSE: 接続直後に現在の View が 1 回届き、以後は Log が進むたびに届く。complete を受けたら閉じる。
   // Session の状態（session イベント）は complete の View の直前に届く。
@@ -615,6 +756,20 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       // 形の合わない data は描画に流さない（受け側の whitelist）。
       if (status === null) return;
       acceptOutage({ handId, status });
+    });
+    source.addEventListener("etiquette", (event) => {
+      const data: unknown = event.data;
+      const status =
+        typeof data === "string" ? parseEtiquetteEvent(data) : null;
+      // 形の合わない data は描画に流さない（受け側の whitelist）。
+      if (status === null) return;
+      setEtiquette((current) =>
+        selectEtiquetteStatus(
+          current,
+          { handId, status },
+          activeHandId.current,
+        ),
+      );
     });
     source.addEventListener("view", (event) => {
       const data: unknown = event.data;
@@ -648,6 +803,9 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     sessionStatus:
       session?.handId === handId && presentation.synced ? session.status : null,
     outage: currentOutage,
+    etiquettePending: pendingRulingSeq !== null,
+    dealerOverlay,
+    acknowledgeEtiquette,
     pending,
     notice,
     connection,

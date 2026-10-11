@@ -247,9 +247,9 @@ describe("authoritative と displayed の分離（D143）", () => {
     expect(receive(s, latest, null)).toBe(s);
     expect(receive(receive(s, latest, null), latest, null)).toBe(s);
     // useHandSession は古い View で authoritative を巻き戻さない（selectLatestView）。仮に届いても表示は戻らない。
-    expect(lastSeqOf(displayedView(receive(s, mid, null), mid))).toBeLessThanOrEqual(
-      lastSeqOf(mid),
-    );
+    expect(
+      lastSeqOf(displayedView(receive(s, mid, null), mid)),
+    ).toBeLessThanOrEqual(lastSeqOf(mid));
     const { frames } = playOut(s, latest);
     const steps = frames.map(lastSeqOf);
     expect(new Set(steps).size).toBe(steps.length);
@@ -494,7 +494,11 @@ describe("Hero の送信前の整合性（D143・D146）", () => {
     const latest = t.act("cpu2", { type: "call" });
     expect(canSendFrom(latest, latest)).toBe(true);
     // 演出の途中の卓から送ろうとした（未表示の最新の lastSeq を先取りしない）。
-    const midway = receive(settle(firstHand(first), mid, 0, OPTS), latest, null);
+    const midway = receive(
+      settle(firstHand(first), mid, 0, OPTS),
+      latest,
+      null,
+    );
     expect(canSendFrom(displayedView(midway, latest), latest)).toBe(false);
     expect(canSendFrom(first, latest)).toBe(false);
     expect(canSendFrom(latest, null)).toBe(false);
@@ -687,7 +691,9 @@ describe("ETIQUETTE の確認待ち（holdThroughSeq）と有界のキュー（#
     const { first, auth, hold } = heldHand();
     const pending = stepsOf(auth).filter((s) => s.endSeq > lastSeqOf(first));
     expect(pending.length).toBeGreaterThan(PRESENTATION_MAX_PENDING_STEPS + 5);
-    const index = pending.findIndex((s) => s.events.some((e) => e.seq === hold));
+    const index = pending.findIndex((s) =>
+      s.events.some((e) => e.seq === hold),
+    );
     expect(index).toBeLessThan(pending.length - PRESENTATION_MAX_PENDING_STEPS);
     expect(auth.status).toBe("complete");
   });

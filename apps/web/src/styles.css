@@ -3649,3 +3649,77 @@ input {
     transform: none;
   }
 }
+
+/* ───────── RULING → ETIQUETTE の欄（#226・D142・D145・docs/06 §6） ───────── */
+
+/* 広い画面は卓の中央の流れの中（Board・Pot の下）に置き、Pot の実額を覆わない。分類の色は札（feedback-tag）と左の線で示す */
+.dealer-overlay {
+  display: grid;
+  gap: 8px;
+  width: min(380px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-raise);
+  color: var(--color-on-surface);
+  text-align: left;
+}
+
+.dealer-overlay--ruling {
+  border-left-color: var(--color-feedback-ruling);
+}
+
+.dealer-overlay--etiquette {
+  border-left-color: var(--color-feedback-etiquette);
+}
+
+.dealer-overlay__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dealer-overlay__items {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dealer-overlay__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 13px;
+}
+
+.dealer-overlay__text {
+  flex: 1 1 200px;
+}
+
+.dealer-overlay__terms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dealer-overlay__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-on-surface-muted);
+}
+
+.dealer-overlay__ack {
+  justify-self: start;
+}
+
+/* 狭い画面では Hero の欄の流れの中に置く（卓に重ねない） */
+.dealer-overlay--docked {
+  width: auto;
+  padding: 8px 10px;
+  box-shadow: none;
+}

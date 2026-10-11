@@ -10,6 +10,7 @@ import {
 import type {
   CurrentSession,
   CurrentSessionLookup,
+  EtiquetteAckStatus,
   OutageKind,
   OutageStatus,
   SessionRequest,
@@ -198,6 +199,60 @@ export function selectOutageStatus(
   return incoming.status.revision >= current.status.revision
     ? incoming
     : current;
+}
+
+/** どの Hand の ETIQUETTE の確認（Ack）の状態か（D145）。 */
+export interface HandEtiquetteStatus {
+  readonly handId: string;
+  readonly status: EtiquetteAckStatus;
+}
+
+/**
+ * REST の応答と SSE の etiquette イベントのどちらが先に届いても、新しい確認の状態を残す（障害の状態と同じ選び方）。
+ * - 別の Hand の状態（前の Hand の遅れて届いた応答）は捨てる
+ * - 同じ Hand なら revision が進んでいる方を採る（遅れて届いた古い状態で、確認済みの待ちを出し直さない・新しい待ちを消さない）
+ */
+export function selectEtiquetteStatus(
+  current: HandEtiquetteStatus | null,
+  incoming: HandEtiquetteStatus,
+  activeHandId: string | null,
+): HandEtiquetteStatus | null {
+  if (incoming.handId !== activeHandId) return current;
+  if (current === null || current.handId !== activeHandId) return incoming;
+  return incoming.status.revision >= current.status.revision
+    ? incoming
+    : current;
+}
+
+/**
+ * REST の応答の etiquette・SSE の etiquette イベントの data を受け取ってよいかの検査（受け側の whitelist）。知っている項目だけで
+ * 組み直し、形の合わない値（revision・seq が非負の整数でない等）は null（呼び出し側は今の状態のまま）。
+ */
+export function parseEtiquetteStatus(
+  value: unknown,
+): EtiquetteAckStatus | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  const revision = v["revision"];
+  const pending = v["pendingRulingSeq"];
+  if (!isNonNegativeInteger(revision)) return null;
+  if (pending === null) return { revision, pendingRulingSeq: null };
+  return isNonNegativeInteger(pending)
+    ? { revision, pendingRulingSeq: pending }
+    : null;
+}
+
+/** SSE の etiquette イベントの data（JSON の文字列）を parseEtiquetteStatus で受け取る。 */
+export function parseEtiquetteEvent(raw: string): EtiquetteAckStatus | null {
+  try {
+    return parseEtiquetteStatus(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 const OUTAGE_KINDS: readonly OutageKind[] = [
