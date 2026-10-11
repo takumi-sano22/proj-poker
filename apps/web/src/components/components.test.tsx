@@ -755,7 +755,7 @@ describe("DealerOverlay（RULING → ETIQUETTE の欄。#226）", () => {
     expect(html).toMatch(/<button[^>]*disabled/);
   });
 
-  it("docked（狭い画面）のときだけ docked の class を付ける", () => {
+  it("docked（Hero の欄の流れに置く）のときだけ docked の class を付ける", () => {
     const docked = renderToStaticMarkup(
       <DealerOverlay
         overlay={etiquette}

@@ -3652,7 +3652,7 @@ input {
 
 /* ───────── RULING → ETIQUETTE の欄（#226・D142・D145・docs/06 §6） ───────── */
 
-/* 広い画面は卓の中央の流れの中（Board・Pot の下）に置き、Pot の実額を覆わない。分類の色は札（feedback-tag）と左の線で示す */
+/* Hero の欄の操作の場所に置く（席・Board・Pot の実額・Hero の札と Stack を覆わない）。分類の色は札（feedback-tag）と左の線で示す */
 .dealer-overlay {
   display: grid;
   gap: 8px;
@@ -3724,12 +3724,8 @@ input {
   box-shadow: none;
 }
 
-/* Hero の欄の手番の中身（Feedback・案内・操作の欄）。RULING / ETIQUETTE の欄の間は hidden で隠す（外さないので下書きは残る）。
-   見えている間は箱を作らず、これまでどおり .dock__controls の grid の子として並べる */
-.dock__body {
-  display: contents;
-}
-
-.dock__body[hidden] {
+/* RULING / ETIQUETTE の欄を出している間は、Hero の欄の中身（手番の Feedback・案内・操作の欄・観戦の案内など）を隠し、欄と
+   失敗の案内（.notice）だけを出す。外さずに隠すので Chip・宣言の下書きは残る（D146）。Hero の欄の高さを増やさない（#163・#179） */
+.dock__controls:has(> .dealer-overlay) > :not(.dealer-overlay, .notice) {
   display: none;
 }

@@ -13,7 +13,7 @@ interface DealerOverlayProps {
   readonly overlay: DealerOverlayState;
   /** 送信中（確認を送っている・別の操作の応答待ち）は押せない（二重送信を止める）。 */
   readonly disabled: boolean;
-  /** 狭い画面で Hero の欄に出すとき。 */
+  /** Hero の欄の流れに置くとき（今の画面は常にこれ。影を付けず余白を詰める）。 */
   readonly docked?: boolean;
   readonly onAcknowledge: () => void;
 }

@@ -298,6 +298,8 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   const [session, setSession] = useState<HandSessionStatus | null>(null);
   const [outage, setOutage] = useState<HandOutageStatus | null>(null);
   const [etiquette, setEtiquette] = useState<HandEtiquetteStatus | null>(null);
+  // 同期（resync）で、描画を待たずに最新の確認待ちを使うため ref にも置く（latestView と同じ。同じ tick に届いた待ちを越えない）。
+  const latestEtiquette = useRef<HandEtiquetteStatus | null>(null);
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<SessionNotice | null>(null);
   const [connection, setConnection] = useState<ConnectionState>("idle");
@@ -372,13 +374,13 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   const acceptEtiquette = useCallback((handIdOf: string, raw: unknown) => {
     const status = parseEtiquetteStatus(raw);
     if (status === null) return;
-    setEtiquette((current) =>
-      selectEtiquetteStatus(
-        current,
-        { handId: handIdOf, status },
-        activeHandId.current,
-      ),
+    const next = selectEtiquetteStatus(
+      latestEtiquette.current,
+      { handId: handIdOf, status },
+      activeHandId.current,
     );
+    latestEtiquette.current = next;
+    setEtiquette(next);
   }, []);
 
   /** Action・障害の選択・確認の応答（View・Session・障害・確認の状態）を受け取る。 */
@@ -430,10 +432,15 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   });
   // 受け取った直後の View（描画の前）に合わせる。SSE の再接続・同じ Hand の開始の応答は accept と同じ tick で同期するため。
   const presentationSync = presentation.sync;
-  const resync = useCallback(
-    () => presentationSync(latestView.current),
-    [presentationSync],
-  );
+  const resync = useCallback(() => {
+    const current = latestEtiquette.current;
+    presentationSync(
+      latestView.current,
+      current !== null && current.handId === activeHandId.current
+        ? current.status.pendingRulingSeq
+        : null,
+    );
+  }, [presentationSync]);
 
   // 結果（complete の View）まで見た最後の Hand。開始の要求で送り、サーバーが再送と「次の Hand」を区別する。
   // 「見た」は Hero に見せた卓（displayed）で判定する（演出の途中で届いた complete を見たことにしない）。
@@ -763,13 +770,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         typeof data === "string" ? parseEtiquetteEvent(data) : null;
       // 形の合わない data は描画に流さない（受け側の whitelist）。
       if (status === null) return;
-      setEtiquette((current) =>
-        selectEtiquetteStatus(
-          current,
-          { handId, status },
-          activeHandId.current,
-        ),
-      );
+      acceptEtiquette(handId, status);
     });
     source.addEventListener("view", (event) => {
       const data: unknown = event.data;
@@ -792,7 +793,15 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       );
     });
     return () => source.close();
-  }, [accept, acceptOutage, acceptSession, handId, resync, streamEpoch]);
+  }, [
+    accept,
+    acceptEtiquette,
+    acceptOutage,
+    acceptSession,
+    handId,
+    resync,
+    streamEpoch,
+  ]);
 
   return {
     handId,

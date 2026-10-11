@@ -363,7 +363,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 **実装（#226）**: server は確認まで CPU と次の Hand の開始を止め（server PR）、client は次のとおり出す（client PR）。
 - RULING を出すのは理由（notes）のある Hero への裁定だけ（通常の Action の裁定には出さない）。読み込みの直後・Resume では前に見た裁定を出し直さないが、確認を待っている裁定は RULING → ETIQUETTE の順で出し直す。
 - 優先順位: CPU の障害のダイアログ（§12）が出ている間は RULING / ETIQUETTE を出さず、障害の続け方を選んだ後に確認の待ちが残っていれば出す（Retry / Emergency Bot の後も server は確認まで CPU を進めない）。Session の終わりの案内・Hand の結果は、表示が確認の裁定の step で止まるので確認の後に出る。
-- 確認を待つ間: Hero の宣言・Chip は送れない。欄を出している間は Hero の欄の操作の欄を隠す（外さないので下書きは残る。D146）。server から `etiquette_ack_required` が返ったら専用の案内を出して状態を読み直し、`stale_etiquette` は読み直すだけ（どちらも自動で確認・再送しない）。
+- 確認を待つ間: Hero の宣言・Chip は送れない。欄を出している間は Hero の欄の操作の欄を隠す（外さないので下書きは残る。D146）。server から `etiquette_ack_required` が返ったら専用の案内を出して状態を読み直し、`stale_etiquette` は状態を読み直して案内する（どちらも自動で確認・再送しない）。
 - 終わった Session の最後の Hand が確認待ちのまま新しい Session を求めたときは、その Hand を開いて ETIQUETTE を出し、「確認してから、もう一度『新しい Session を始める』を押してください」と案内する（開始を自動で送り直さない）。
 - 通常の卓と Drill の卓は別々に確認の状態を持つ。Replay は Ack を待たない（確認は Event Log に無い。D145）。
 

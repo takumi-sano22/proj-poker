@@ -125,11 +125,13 @@ test("Hand の途中（Hero の手番）・裁定（RULING）が出た手番・H
     for (const { width, height } of ETIQUETTE_VIEWPORTS) {
       const label = `ETIQUETTE ${width}×${height}`;
       await page.setViewportSize({ width, height });
-      // 広い画面は卓の中央、狭い画面は Hero 欄に、欄は 1 つだけ出る。
+      // 画面の幅に依らず Hero 欄に、欄は 1 つだけ出る（卓の中央には出さない。置き場所の回帰も捕まえる）。
       await expect(etiquetteOverlay(page)).toHaveCount(1);
-      if (width < 720) {
-        await expect(dock.getByRole("alertdialog")).toBeVisible();
-      }
+      await expect(dock.getByRole("alertdialog")).toBeVisible();
+      // 欄の間は Hero 欄の操作の欄を隠す（外さない）。
+      await expect(
+        dock.getByRole("group", { name: "宣言（Declaration）" }),
+      ).toBeHidden();
       // 通常の click（force なし。trial: 覆われていない・安定している）で押せ、フォーカスがそのボタンにある。
       await ackButton(page).click({ trial: true });
       await expect(ackButton(page), `${label}: フォーカス`).toBeFocused();

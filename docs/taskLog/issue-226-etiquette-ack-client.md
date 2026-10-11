@@ -17,7 +17,7 @@ RULING → ETIQUETTE の欄を出し、Hero の明示の確認で Ack を送り�
    （今の Hand の新しい revision だけを残す。OutageStatus と同じ選び方）。
 3. **useHandSession**: REST（開始・Action・障害・Ack・Drill）と SSE `etiquette` から状態を受け、`holdThroughSeq` に待っている裁定の seq を渡す。
    `acknowledgeEtiquette` は出している ETIQUETTE の裁定だけを送る（二重送信は送信中の ref と state で止める）。待ちの間の `operate` は送らない。
-   `etiquette_ack_required` は専用の案内と状態の読み直し（SSE を張り直す）、`stale_etiquette` は読み直しだけ。どちらも自動で確認・再送しない。
+   `etiquette_ack_required` は専用の案内と状態の読み直し（SSE を張り直す）、`stale_etiquette` は読み直しと案内。どちらも自動で確認・再送しない。
 4. **RULING → ETIQUETTE（`lib/dealer-overlay.ts`・`hooks/useDealerOverlay.ts`・`components/DealerOverlay.tsx`）**: 理由（notes）のある Hero への裁定は
    RULING を `RULING_OVERLAY_MS`（2,500ms。OI-012 の暫定値）出して自動で閉じ、確認待ちの裁定なら ETIQUETTE を「確認しました」まで出す。
    障害のダイアログの間は出さない。読み込みの直後は前に見た裁定を出し直さないが、確認待ちの裁定は RULING → ETIQUETTE で出し直す。

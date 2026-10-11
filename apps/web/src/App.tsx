@@ -813,11 +813,10 @@ function DockBody({
     );
   }
   const ruling = heroRulingStatus(view);
-  // RULING / ETIQUETTE の欄を出している間は、Hero の欄の高さを増やさないよう、同じ裁定の Feedback・手番の案内・操作の欄を隠す。
-  // 操作の欄は外さず隠すだけ（Chip・宣言の下書きを消さない。D146）。欄が閉じたら元に戻る。
-  const overlayShown = session.dealerOverlay !== null;
+  // RULING / ETIQUETTE の欄を出している間は、Hero の欄の手番の中身（Feedback・案内・操作の欄）を styles.css で隠す（外さないので
+  // Chip・宣言の下書きは消えない。D146。.dock__controls の子の配置の規則を壊さないよう、包む要素は足さない）。
   return (
-    <div className="dock__body" hidden={overlayShown}>
+    <>
       <HeroFeedback view={view} />
       {view.legalActions !== null ? (
         // 手番の間だけ、判断の前の読み（User Read。D112）を記録できる。閉じている間は案内の右の Button 1 つ。
@@ -847,9 +846,10 @@ function DockBody({
           session.etiquettePending
         }
         // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
-        onSubmit={(actions) => session.operate(view, actions) !== "resynced"}
+        // 送り始めたときだけ宣言を下書きに足す（表示が古い・確認待ち・送信中で送らなかったら足さない）。
+        onSubmit={(actions) => session.operate(view, actions) === "sent"}
       />
-    </div>
+    </>
   );
 }
 
