@@ -765,6 +765,20 @@ describe("UX-11: Hand を終える裁定と次の Hand の開始（D145）", () 
     const next = await orchestrator.startHand("hand-1");
     if (!next.ok) throw new Error(next.error.message);
     expect(next.value).toMatchObject({ handId: "hand-2", created: true });
+    // 別 Hand への誤送信（前の Hand の裁定の seq を新しい Hand へ）は、その Hand の状態で判定して受けない。
+    const crossed = await orchestrator.acknowledgeEtiquette(
+      "hand-2",
+      rulingSeq,
+    );
+    expect(crossed.ok ? null : crossed.error.kind).toBe("stale_etiquette");
+    // 前の Hand への再送は確認済みとして 200（新しい Hand の状態は変えない）。
+    expect(
+      (await orchestrator.acknowledgeEtiquette("hand-1", rulingSeq)).ok,
+    ).toBe(true);
+    expect(orchestrator.etiquetteStatus("hand-2")).toEqual({
+      revision: 0,
+      pendingRulingSeq: null,
+    });
   });
 
   it("Fast Forward（Hero の Fold 後）を入れても、Ack まで CPU を進めない", async () => {
