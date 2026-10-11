@@ -8,7 +8,7 @@
 // Learn には Replay（保存済みの Hand の再生。#68）・Hand Review（#84）・Session Review（#116）・Drill（#117）を置く。Review と Replay は
 // 互いの場面へ移れ、Learn の画面は戻り先（Learn に入る前の領域）と閲覧位置（判断・step）を覚える（lib/shell.ts）。
 // Drill の Hand は Learn の中の別の画面（同じ卓の部品）で 1 Hand だけ遊び、終わったら練習した判断の Review を開ける。
-// Drill の間も通常の卓の Session（SSE）はそのまま残り、「卓に戻る」（Play）で続きに戻る。
+// Drill の間も通常の卓の Session（SSE）はそのまま残り、Play（卓から入った Drill は「卓に戻る」）で続きに戻る。
 // 狭い画面（スマホ幅）では、卓の中央に重ねていた欄（Hand の結果・CPU 障害のダイアログ・Session 終了の案内）が席と重なるので、
 // 画面下に固定した Hero の欄へ置く（#5。広い画面は従来どおり卓の中央）。
 // 新しい Session の開始で Cash / Tournament の Preset を選べる（#190・D128）。Tournament の Hand では、見出しに Level・Blind・Ante を、
@@ -66,7 +66,13 @@ import {
 import { startDrill, type DrillView } from "./lib/drill-api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
-import { INITIAL_SHELL, areaOf, shellReducer, type Area } from "./lib/shell.js";
+import {
+  INITIAL_SHELL,
+  areaOf,
+  backLabel,
+  shellReducer,
+  type Area,
+} from "./lib/shell.js";
 import { handLevelOf, tournamentEndMessage } from "./lib/tournament.js";
 import {
   canFastForward,
@@ -83,10 +89,13 @@ import {
  */
 const TournamentContext = createContext<TournamentTableStatus | null>(null);
 
-/** Drill の卓（#117）で、通常の卓と違う操作（練習した判断の Review・卓に戻る）。 */
+/** Drill の卓（#117）で、通常の卓と違う操作（練習した判断の Review・戻る）。 */
 interface DrillMode {
   readonly decisionIndex: number;
+  /** Drill の画面の戻り先へ移る（Learn の画面と同じ「戻る」。卓から入ったなら卓、Learn の一覧から入ったなら一覧）。 */
   readonly onExit: () => void;
+  /** 戻る Button の文言（「卓に戻る」など。lib/shell.ts の backLabel）。 */
+  readonly exitLabel: string;
 }
 
 export function App() {
@@ -127,7 +136,8 @@ export function App() {
     (next: Area) => dispatch({ type: "area", area: next }),
     [],
   );
-  const backToTable = useCallback(() => selectArea("play"), [selectArea]);
+  // Learn の画面（Drill の卓を含む）の「戻る」。戻り先は画面が持つ（lib/shell.ts）。
+  const goBack = useCallback(() => dispatch({ type: "back" }), []);
   const openReview = useCallback(
     (handId: string, decisionIndex: number | null) =>
       dispatch({
@@ -189,10 +199,11 @@ export function App() {
   const learnBar =
     screen.kind === "replay" ||
     screen.kind === "review" ||
-    screen.kind === "session_review" ? (
+    screen.kind === "session_review" ||
+    screen.kind === "drill" ? (
       <LearnBackBar
         back={screen.back}
-        onBack={() => dispatch({ type: "back" })}
+        onBack={goBack}
         onLearnHome={() => selectArea("learn")}
       />
     ) : null;
@@ -295,7 +306,8 @@ export function App() {
               onOpenSessionReview={openSessionReview}
               drill={{
                 decisionIndex: drill.decisionIndex,
-                onExit: backToTable,
+                onExit: goBack,
+                exitLabel: backLabel(screen.back),
               }}
               banner={
                 <DrillBanner
@@ -464,7 +476,7 @@ interface ViewProps {
 
 /**
  * Hero の欄に出す Session の終わりの案内の状態（無ければ null）。通常の卓は、画面の幅によらず Hero の欄に出す（#158）。
- * Drill の卓は Session の終わりを案内しない（Hand が終わったら「卓に戻る」）。
+ * Drill の卓は Session の終わりを案内しない（Hand が終わったら「戻る」）。
  */
 function sessionEndInDock(
   session: HandSession,
@@ -865,7 +877,7 @@ function HandResult({
   readonly onOpenSessionReview: OpenSessionReview;
   /** 獲得額の一覧だけを出す（Session の終わりの案内と Button は Hero の欄に出すとき。#158）。 */
   readonly awardsOnly?: boolean;
-  /** Drill の Hand（#117）は 1 Hand だけなので、次の Hand・Session の案内の代わりに「卓に戻る」を出す。 */
+  /** Drill の Hand（#117）は 1 Hand だけなので、次の Hand・Session の案内の代わりに「戻る」（卓から入ったなら「卓に戻る」）を出す。 */
   readonly drill?: DrillMode | null;
   readonly docked?: boolean;
   readonly actions?: ReactNode;
@@ -892,7 +904,7 @@ function HandResult({
           className="btn btn--primary btn--md"
           onClick={drill.onExit}
         >
-          卓に戻る
+          {drill.exitLabel}
         </button>
         {actions}
       </div>

@@ -285,6 +285,12 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
       name: "Targeted Drill（練習）",
     });
     await expect(drillHeading).toBeVisible();
+    // Drill の卓も Learn の画面と同じく戻り先を持つ（卓の Session の終わりから入ったので「卓に戻る」）。
+    await expect(
+      page
+        .getByRole("navigation", { name: "Learn の移動" })
+        .getByRole("button", { name: "卓に戻る" }),
+    ).toBeVisible();
     // Drill の卓は Learn の画面で、Play（通常の卓）と混ぜない。Play へ移っても Drill を捨てず、Learn に戻ると同じ Drill の卓。
     // 画面の移動では Hand・Drill の開始を送らない（#218）。
     let starts = 0;

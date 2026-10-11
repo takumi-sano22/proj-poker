@@ -144,6 +144,20 @@ describe("App Shell の画面の移り方（#218・D136）", () => {
     });
   });
 
+  it("Learn の一覧から開いた Session Review の Drill は、戻ると Learn の一覧（卓へは戻さない）", () => {
+    const state = run(
+      { type: "area", area: "play" },
+      { type: "area", area: "learn" },
+      { type: "open", target: { kind: "session_review", handId: "h9" } },
+      { type: "open", target: { kind: "drill" } },
+    );
+    expect(state.screen).toEqual({ kind: "drill", back: "learn" });
+    expect(backLabel("learn")).toBe("Learn の一覧へ");
+    expect(shellReducer(state, { type: "back" }).screen).toEqual({
+      kind: "learn",
+    });
+  });
+
   it("Learn の外での「戻る」・閲覧位置の知らせは何もしない", () => {
     const home = run({ type: "area", area: "home" });
     expect(shellReducer(home, { type: "back" })).toBe(home);
