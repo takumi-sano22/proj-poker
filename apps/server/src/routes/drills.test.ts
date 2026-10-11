@@ -170,6 +170,58 @@ describe("POST /api/drills", () => {
     expect(drillStore.list()).toHaveLength(2);
   });
 
+  it("Drill の Hand でも、ETIQUETTE の要る裁定の後は確認（Ack）まで CPU を進めず、開始の再送は確認の状態を返す（D145）", async () => {
+    const { app, btn, store } = setup();
+    const drill = (await startDrill(app, btn.handId, 1)).json<
+      DrillStartBody & { etiquette: unknown }
+    >();
+    expect(drill.etiquette).toEqual({ revision: 0, pendingRulingSeq: null });
+    // 宣言 2 回 → 2 つ目は採らず（declaration_ignored）、最初の Call で決まる。
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/hands/${drill.handId}/physical-actions`,
+      payload: {
+        lastSeq: drill.view.log.at(-1)?.seq ?? 0,
+        actions: [
+          { type: "declare", declaration: { kind: "call" } },
+          { type: "declare", declaration: { kind: "call" } },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      view: HeroView;
+      etiquette: { revision: number; pendingRulingSeq: number | null };
+    }>();
+    const pending = body.etiquette.pendingRulingSeq;
+    if (pending === null) throw new Error("確認を待っていない");
+    const cpuActionsAfterRuling = () =>
+      store
+        .read(drill.handId)
+        .map((x) => x.event)
+        .filter(
+          (e) =>
+            e.seq > pending &&
+            e.type === "ACTION_TAKEN" &&
+            e.playerId !== "hero",
+        );
+    expect(cpuActionsAfterRuling()).toEqual([]);
+    // 開始の再送（同じ元の判断の進行中の Drill）は、確認の状態を載せて同じ Hand を返す。
+    const again = await startDrill(app, btn.handId, 1);
+    expect(again.statusCode).toBe(200);
+    expect(again.json<{ etiquette: unknown }>().etiquette).toEqual(
+      body.etiquette,
+    );
+
+    const acked = await app.inject({
+      method: "POST",
+      url: `/api/hands/${drill.handId}/etiquette-ack`,
+      payload: { rulingSeq: pending },
+    });
+    expect(acked.statusCode).toBe(200);
+    expect(cpuActionsAfterRuling().length).toBeGreaterThan(0);
+  });
+
   it("Pass A の Review が無い判断・無い Hand・無い判断・Drill の Hand からは始めない", async () => {
     const { app, btn } = setup();
     const noReview = await startDrill(app, btn.handId, 0);

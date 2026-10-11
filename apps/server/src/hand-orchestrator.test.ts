@@ -1773,6 +1773,17 @@ describe("Hero の物理的な操作（#64・D90・D91）", () => {
     const result = await acting;
     if (!result.ok) throw new Error(result.error.message);
     await starting;
+    // 保留の裁定（out_of_turn）は ETIQUETTE が要るので、確認（Ack）まで CPU は進まない（D145）。確認すると続きが進む。
+    const warnedSeq = result.value.log.at(-1)?.seq ?? -1;
+    expect(result.value.log.at(-1)).toMatchObject({
+      type: "DEALER_RULING",
+      outcome: "out_of_turn",
+    });
+    expect(orchestrator.etiquetteStatus("hand-1")?.pendingRulingSeq).toBe(
+      warnedSeq,
+    );
+    const acked = await orchestrator.acknowledgeEtiquette("hand-1", warnedSeq);
+    if (!acked.ok) throw new Error(acked.error.message);
 
     const log = events("hand-1");
     const warned = log.findIndex(
@@ -1812,13 +1823,14 @@ describe("Hero の物理的な操作（#64・D90・D91）", () => {
     expect(personaTerms(log)).toEqual([]);
     expect(forbiddenKeys(result.value)).toEqual([]);
 
-    // 続きは普通に最後まで進む。
-    const final = await playOut(orchestrator, "hand-1", result.value);
+    // 続きは普通に最後まで進む（拘束の裁定は out_of_turn_binding だけなので確認は要らない）。
+    expect(orchestrator.etiquetteStatus("hand-1")?.pendingRulingSeq).toBeNull();
+    const final = await playOut(orchestrator, "hand-1", acked.value);
     expect(final.status).toBe("complete");
     expect(finishedStacks(events("hand-1"))).toBe(TOTAL_CHIPS);
   });
 
-  it("Out-of-Turn: 間の CPU が Raise したら撤回し、Hero の手番で選び直させる（2 回目の操作は保留中なら not_actor）", async () => {
+  it("Out-of-Turn: 間の CPU が Raise したら撤回し、Hero の手番で選び直させる（2 回目の操作は確認待ちなら etiquette_ack_required、確認の後も保留中なら not_actor）", async () => {
     // UTG（cpu3）だけが最小 Raise し、他は Call か Check。
     const cpus = gatedCpus((input) => {
       const raise = input.legal.actions.find((a) => a.type === "raise");
@@ -1834,20 +1846,39 @@ describe("Hero の物理的な操作（#64・D90・D91）", () => {
       { type: "chip_push", chips: [1, 1] },
     ]);
     // 保留中の 2 回目の操作は受け付けない（Log が進んでいるので、見ていた seq を取り直して送る）。
+    // 保留の裁定（out_of_turn）の確認（Ack）の前は、確認待ちとして拒否する（D145。状態は変えない）。
     const pendingView = orchestrator.heroView("hand-1");
     if (pendingView === null) throw new Error("Hand が無い");
-    const again = await orchestrator.heroPhysicalAction(
+    const fold: PhysicalAction[] = [
+      { type: "declare", declaration: { kind: "fold" } },
+    ];
+    const loggedBefore = events("hand-1").length;
+    const beforeAck = await orchestrator.heroPhysicalAction(
       "hand-1",
       lastSeq(pendingView),
-      [{ type: "declare", declaration: { kind: "fold" } }],
+      fold,
     );
-    expect(again.ok ? null : again.error.kind).toBe("not_actor");
+    expect(beforeAck.ok ? null : beforeAck.error.kind).toBe(
+      "etiquette_ack_required",
+    );
+    expect(events("hand-1")).toHaveLength(loggedBefore);
     cpus.release();
     const result = await acting;
     if (!result.ok) throw new Error(result.error.message);
     await starting;
+    // 確認した直後（CPU の判断を待っている間）も、保留中の 2 回目の操作は not_actor（確認は操作の保留を解かない）。
+    const warnedSeq = lastSeq(result.value);
+    const acking = orchestrator.acknowledgeEtiquette("hand-1", warnedSeq);
+    const again = await orchestrator.heroPhysicalAction(
+      "hand-1",
+      lastSeq(result.value),
+      fold,
+    );
+    expect(again.ok ? null : again.error.kind).toBe("not_actor");
+    const acked = await acking;
+    if (!acked.ok) throw new Error(acked.error.message);
 
-    const view = result.value;
+    const view = acked.value;
     expect(view.actorId).toBe(HERO);
     expect(outline(view.log.slice(-1))).toEqual([
       "DEALER_RULING hero pending_out_of_turn no_action",
