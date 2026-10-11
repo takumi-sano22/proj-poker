@@ -9,6 +9,7 @@ import {
 } from "@proj-poker/engine";
 import type {
   CurrentSession,
+  CurrentSessionLookup,
   OutageKind,
   OutageStatus,
   SessionStatus,
@@ -112,6 +113,20 @@ export function parseCurrentSession(value: unknown): CurrentSession | null {
     return { state, kind: { mode: "tournament", presetId: k["presetId"] } };
   }
   return null;
+}
+
+/**
+ * GET /api/session/current の応答の本体（{session}）を Home の照会の結果にする（D144）。`session: null` だけを「Session が無い」とし、
+ * それ以外で parseCurrentSession が受け取れない値（知らない state・知らない Preset・形の合わない応答）は unknown にする。
+ */
+export function parseCurrentSessionLookup(body: unknown): CurrentSessionLookup {
+  if (typeof body !== "object" || body === null || !("session" in body)) {
+    return { kind: "unknown" };
+  }
+  const raw = (body as { readonly session: unknown }).session;
+  if (raw === null) return { kind: "none" };
+  const session = parseCurrentSession(raw);
+  return session === null ? { kind: "unknown" } : { kind: "known", session };
 }
 
 /** SSE の session イベントの data を受け取ってよいかの検査（受け側の whitelist）。知っている項目だけで組み直す。 */

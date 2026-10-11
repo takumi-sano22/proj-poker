@@ -14,6 +14,7 @@ import {
   parseHeroView,
   parseOutageStatus,
   parseCurrentSession,
+  parseCurrentSessionLookup,
   parseSessionStatus,
   seatDirections,
   selectLatestView,
@@ -569,5 +570,43 @@ describe("parseCurrentSession（GET /api/session/current の受け側 whitelist�
     ).toBeNull();
     expect(parseCurrentSession({ state: "in_hand" })).toBeNull();
     expect(parseCurrentSession("in_hand")).toBeNull();
+  });
+});
+
+describe("parseCurrentSessionLookup（Home の照会の結果。D144・#218）", () => {
+  it("session: null だけを「Session が無い」にする", () => {
+    expect(parseCurrentSessionLookup({ session: null })).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("知っている state と種類は known で返す", () => {
+    expect(
+      parseCurrentSessionLookup({
+        session: { state: "in_hand", kind: { mode: "cash" } },
+      }),
+    ).toEqual({
+      kind: "known",
+      session: { state: "in_hand", kind: { mode: "cash" } },
+    });
+  });
+
+  it("知らない state・知らない Preset・形の合わない応答は unknown（「続きから」も新しい Session の開始も出さない）", () => {
+    expect(
+      parseCurrentSessionLookup({
+        session: { state: "paused", kind: { mode: "cash" } },
+      }),
+    ).toEqual({ kind: "unknown" });
+    expect(
+      parseCurrentSessionLookup({
+        session: {
+          state: "in_hand",
+          kind: { mode: "tournament", presetId: "unknown_preset" },
+        },
+      }),
+    ).toEqual({ kind: "unknown" });
+    expect(parseCurrentSessionLookup({})).toEqual({ kind: "unknown" });
+    expect(parseCurrentSessionLookup(null)).toEqual({ kind: "unknown" });
+    expect(parseCurrentSessionLookup("x")).toEqual({ kind: "unknown" });
   });
 });
