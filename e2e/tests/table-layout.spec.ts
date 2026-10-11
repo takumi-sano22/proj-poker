@@ -4,15 +4,25 @@
 // #179: 裁定（RULING）が Hero 欄に出ると欄が約 100px 高くなり、720×600 で Hero の席・Board・Pot が収まらず、320×568 で欄が画面より
 // 高くなった。最初の Hand の Hero の手番で、Call 額があるのに Check を宣言して RULING（check_facing_bet。Action は決まらず Hero の手番の
 // まま）を決定論的に出し、同じ画面の大きさで測る。
+// #226: 裁定（RULING）の後、作法の注意（ETIQUETTE）は Hero が「確認しました」を押すまで進行を止める。RULING の欄 → ETIQUETTE の欄 →
+// 確認 → 進行の再開を通し、ETIQUETTE を出している間の 5 つの画面の大きさで、欄が Pot・Hero の札と Stack に重ならず、「確認しました」を
+// 通常の click で押せて、フォーカスがそこにあることを確かめる。RULING の Feedback の配置（#179）は、確認の後の Hero の手番で測る。
 // 山札の seed は session-end-layout.spec.ts と同じ（既定の 6 人卓・Hero が Call / Check だけで打つと数 Hand で Bust する）。
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import {
+  ackButton,
+  etiquetteOverlay,
+  rulingOverlay,
+} from "../support/etiquette.js";
 import {
   expectClickable,
   expectNoBlockingOverlap,
+  intersects,
   LAYOUT_VIEWPORTS,
+  type Rect,
 } from "../support/layout.js";
 import { startNextHand } from "../support/next-hand.js";
 import {
@@ -27,6 +37,25 @@ import {
 } from "../support/server.js";
 
 const SEED = "20261042";
+
+/** ETIQUETTE の欄を測る画面の大きさ（LAYOUT_VIEWPORTS に無い 1280×900 も足す）。 */
+const ETIQUETTE_VIEWPORTS = [
+  { width: 320, height: 568 },
+  { width: 375, height: 667 },
+  { width: 720, height: 600 },
+  { width: 1280, height: 720 },
+  { width: 1280, height: 900 },
+] as const;
+
+/** 画面の中の矩形（無ければ null）。 */
+async function rectOf(page: Page, selector: string): Promise<Rect | null> {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (el === null) return null;
+    const r = el.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  }, selector);
+}
 
 let dir = "";
 let server: RunningServer | null = null;
@@ -87,6 +116,55 @@ test("Hand の途中（Hero の手番）・裁定（RULING）が出た手番・H
     const call = dock.getByRole("button", { name: /^コール（Call）/ });
     await expect(call.locator(".declaration__amount")).toBeVisible();
     await dock.getByRole("button", { name: /^チェック（Check）/ }).click();
+    // RULING の欄（裁定の事実）→ 数秒で閉じて ETIQUETTE の欄（作法の注意）。check_facing_bet は確認が要る（D145）。
+    await expect(rulingOverlay(page)).toContainText(
+      "相手の Bet があるので、Check の宣言は受けられません。",
+    );
+    await expect(etiquetteOverlay(page)).toBeVisible();
+    await expect(rulingOverlay(page)).toHaveCount(0);
+    for (const { width, height } of ETIQUETTE_VIEWPORTS) {
+      const label = `ETIQUETTE ${width}×${height}`;
+      await page.setViewportSize({ width, height });
+      // 画面の幅に依らず Hero 欄に、欄は 1 つだけ出る（卓の中央には出さない。置き場所の回帰も捕まえる）。
+      await expect(etiquetteOverlay(page)).toHaveCount(1);
+      await expect(dock.getByRole("alertdialog")).toBeVisible();
+      // 欄の間は Hero 欄の操作の欄を隠す（外さない）。
+      await expect(
+        dock.getByRole("group", { name: "宣言（Declaration）" }),
+      ).toBeHidden();
+      // 通常の click（force なし。trial: 覆われていない・安定している）で押せ、フォーカスがそのボタンにある。
+      await ackButton(page).click({ trial: true });
+      await expect(ackButton(page), `${label}: フォーカス`).toBeFocused();
+      // Hero 欄は画面下に sticky で固定され、文書の末尾では通常の位置に戻る（#163・#179 の配置の規則）。欄は Hero 欄の中にあるので、
+      // 既存の Hero 欄の規則（狭い画面は欄が画面の高さに収まる・広い画面は欄を除いた高さに Hero の席・Board・Pot が収まる・Button が
+      // 覆われない・横スクロールが無い）で確かめ、末尾の位置で欄が Pot と Hero の札・Stack に重ならないことを確かめる。
+      await page.evaluate(() =>
+        window.scrollTo(0, document.documentElement.scrollHeight),
+      );
+      await expectNoBlockingOverlap(page, label);
+      const overlay = await rectOf(page, ".dealer-overlay");
+      expect(overlay, `${label}: 欄`).not.toBeNull();
+      for (const [name, selector] of [
+        ["Pot", ".table .pot"],
+        ["Hero の札・Stack", ".dock__hero"],
+      ] as const) {
+        const other = await rectOf(page, selector);
+        if (overlay === null || other === null) continue;
+        expect(
+          intersects(overlay, other),
+          `${label}: 欄と ${name} が重なっている: ${JSON.stringify(overlay)} / ${JSON.stringify(other)}`,
+        ).toBe(false);
+      }
+    }
+    // 確認すると欄が閉じ、Hero の手番の操作が再開する（check_facing_bet は Action を決めないので、Hero の手番のまま）。
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await ackButton(page).click();
+    await expect(etiquetteOverlay(page)).toHaveCount(0);
+    await expect(
+      dock
+        .getByRole("group", { name: "宣言（Declaration）" })
+        .getByRole("button", { name: /^コール（Call）/ }),
+    ).toBeEnabled();
     const ruling = dock.locator(".feedback__item--ruling");
     await expect(ruling).toContainText(
       "相手の Bet があるので、Check の宣言は受けられません。",

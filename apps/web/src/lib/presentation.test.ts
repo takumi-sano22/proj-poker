@@ -191,7 +191,7 @@ function playOut(
 
 /** 最初の Hand を受け取った状態（そのセッションの最初の Hand は最新に合わせる）。 */
 function firstHand(view: HeroView): PresentationState {
-  return receive(INITIAL_PRESENTATION, view);
+  return receive(INITIAL_PRESENTATION, view, null);
 }
 
 describe("authoritative と displayed の分離（D143）", () => {
@@ -212,7 +212,7 @@ describe("authoritative と displayed の分離（D143）", () => {
     t.act("cpu1", { type: "call" });
     const auth = t.act("cpu2", { type: "call" });
     // Hero の手番が来た View を受けても、表示はまだ前の時点（CPU 2 人の Action を出す前）。
-    const received = receive(s, auth);
+    const received = receive(s, auth, null);
     const shown = displayedView(received, auth);
     expect(lastSeqOf(shown)).toBe(lastSeqOf(before));
     expect(shown.legalActions).toBeNull();
@@ -244,12 +244,12 @@ describe("authoritative と displayed の分離（D143）", () => {
     const latest = t.act("cpu2", { type: "call" });
     const s = settle(firstHand(first), latest, 0, OPTS);
     // 1 step 出した後に、同じ View・古い View を何度受けても、同じ状態のまま（同じ step を出し直さない）。
-    expect(receive(s, latest)).toBe(s);
-    expect(receive(receive(s, latest), latest)).toBe(s);
+    expect(receive(s, latest, null)).toBe(s);
+    expect(receive(receive(s, latest, null), latest, null)).toBe(s);
     // useHandSession は古い View で authoritative を巻き戻さない（selectLatestView）。仮に届いても表示は戻らない。
-    expect(lastSeqOf(displayedView(receive(s, mid), mid))).toBeLessThanOrEqual(
-      lastSeqOf(mid),
-    );
+    expect(
+      lastSeqOf(displayedView(receive(s, mid, null), mid)),
+    ).toBeLessThanOrEqual(lastSeqOf(mid));
     const { frames } = playOut(s, latest);
     const steps = frames.map(lastSeqOf);
     expect(new Set(steps).size).toBe(steps.length);
@@ -264,7 +264,7 @@ describe("authoritative と displayed の分離（D143）", () => {
     const auth = t.passive();
     const all = stepsOf(auth).filter((s) => s.endSeq > lastSeqOf(first));
     expect(all.length).toBeGreaterThan(PRESENTATION_MAX_PENDING_STEPS);
-    const r = receive(firstHand(first), auth);
+    const r = receive(firstHand(first), auth, null);
     expect(pendingSteps(r, auth)).toHaveLength(PRESENTATION_MAX_PENDING_STEPS);
     const { frames } = playOut(r, auth);
     expect(frames.at(-1)).toBe(auth);
@@ -299,7 +299,7 @@ describe("Street と Board の公開順序", () => {
     const auth = t.physical(HERO, [
       { type: "declare", declaration: { kind: "check" } },
     ]);
-    const steps = pendingSteps(receive(firstHand(before), auth), auth);
+    const steps = pendingSteps(receive(firstHand(before), auth, null), auth);
     const rulingStep = steps.find((s) =>
       s.events.some((e) => e.type === "DEALER_RULING"),
     );
@@ -327,7 +327,7 @@ describe("Showdown・Side / Split Pot・Uncalled と実額", () => {
     const auth = t.act(HERO, { type: "all_in" });
     expect(auth.status).toBe("complete");
     const { frames } = playOut(firstHand(first), auth);
-    const kinds = pendingSteps(receive(firstHand(first), auth), auth).map(
+    const kinds = pendingSteps(receive(firstHand(first), auth, null), auth).map(
       (s) => s.kind,
     );
     expect(kinds).toContain("showdown");
@@ -371,7 +371,7 @@ describe("Showdown・Side / Split Pot・Uncalled と実額", () => {
     t.act("cpu1", { type: "raise", amount: 40 });
     t.act("cpu2", { type: "fold" });
     const auth = t.act(HERO, { type: "fold" });
-    const kinds = pendingSteps(receive(firstHand(first), auth), auth).map(
+    const kinds = pendingSteps(receive(firstHand(first), auth, null), auth).map(
       (s) => s.kind,
     );
     expect(kinds).not.toContain("showdown");
@@ -407,7 +407,7 @@ describe("速度・Skip・演出なし・Hero の手番の到来", () => {
 
   it("Skip（syncNow）は残りの演出を省いて最新の公開状態（Showdown・Pot の配分を含む）に合わせる", () => {
     const { first, auth } = longHand();
-    const midway = settle(receive(firstHand(first), auth), auth, 0, OPTS);
+    const midway = settle(receive(firstHand(first), auth, null), auth, 0, OPTS);
     expect(isSynced(midway, auth)).toBe(false);
     const skipped = syncNow(midway, auth, null);
     expect(displayedView(skipped, auth)).toBe(auth);
@@ -494,7 +494,11 @@ describe("Hero の送信前の整合性（D143・D146）", () => {
     const latest = t.act("cpu2", { type: "call" });
     expect(canSendFrom(latest, latest)).toBe(true);
     // 演出の途中の卓から送ろうとした（未表示の最新の lastSeq を先取りしない）。
-    const midway = receive(settle(firstHand(first), mid, 0, OPTS), latest);
+    const midway = receive(
+      settle(firstHand(first), mid, 0, OPTS),
+      latest,
+      null,
+    );
     expect(canSendFrom(displayedView(midway, latest), latest)).toBe(false);
     expect(canSendFrom(first, latest)).toBe(false);
     expect(canSendFrom(latest, null)).toBe(false);
@@ -527,7 +531,7 @@ describe("Hand の切り替え・人数・Session の種類", () => {
     const auth2 = h2.act((h2.deliveries[0] as HeroView).actorId as string, {
       type: "call",
     });
-    const r = receive(shown1, auth2);
+    const r = receive(shown1, auth2, null);
     const shown = displayedView(r, auth2);
     expect(shown.handId).toBe("h2");
     expect(
@@ -554,7 +558,7 @@ describe("Hand の切り替え・人数・Session の種類", () => {
         config,
       });
       const auth = t.act("cpu1", { type: "call" });
-      const r = receive(firstHand(prev.passive()), auth);
+      const r = receive(firstHand(prev.passive()), auth, null);
       const shown = displayedView(r, auth);
       expect(shown.log.some((e) => e.type === "ANTE_POSTED")).toBe(true);
       expect(pendingSteps(r, auth).map((s) => s.kind)).toEqual(["action"]);
@@ -616,5 +620,166 @@ describe("描画の中で時刻に依らずに反映する分（settleWithoutClo
     expect(
       isSynced(settleWithoutClock(s, auth, { ...OPTS, flush: true }), auth),
     ).toBe(true);
+  });
+});
+
+// #226 client: ETIQUETTE の確認（Ack）を待つ裁定より先を、どの経路でも出さない（有界のキュー・最初の Hand・続く Hand・Skip・
+// 演出なし・障害の優先）。Ack の要る裁定（check_facing_bet）の後に、24 step を超える公開 Event（CPU の Action・Board・Showdown・
+// Pot の配分）が一度に届く 8 人卓で確かめる（server は Ack まで CPU を進めないが、Hero の手番で Engine が決定論で置く Event や、
+// 再接続・初回の受信で溜まった分は届きうる）。
+describe("ETIQUETTE の確認待ち（holdThroughSeq）と有界のキュー（#226）", () => {
+  /** 8 人卓で、Hero が Call 額のある局面で Check を宣言して check_facing_bet の裁定を受け、Call してから Hand の終わりまで進める。 */
+  function heldHand(handId = "h1") {
+    const t = table({
+      handId,
+      seats: seatsOf(200, 200, 200, 200, 200, 200, 200, 200),
+      button: "cpu1",
+    });
+    const first = t.deliveries[0] as HeroView;
+    while (t.state.players[t.state.actorIndex ?? -1]?.playerId !== HERO) {
+      const actor = t.state.players[t.state.actorIndex ?? -1]?.playerId;
+      if (actor === undefined) throw new Error("actor");
+      t.act(actor, { type: "call" });
+    }
+    t.physical(HERO, [{ type: "declare", declaration: { kind: "check" } }]);
+    t.act(HERO, { type: "call" });
+    const auth = t.passive();
+    const ruling = auth.log.find(
+      (e) => e.type === "DEALER_RULING" && e.playerId === HERO,
+    );
+    if (ruling?.type !== "DEALER_RULING") throw new Error("ruling");
+    expect(ruling.notes).toContain("check_facing_bet");
+    return { t, first, auth, hold: ruling.seq };
+  }
+
+  /** 表示が hold の裁定の step まで（裁定は見える・それより後の Board・Showdown・Pot の配分は見えない）。 */
+  function expectHeldAt(
+    s: PresentationState,
+    auth: HeroView,
+    hold: number,
+  ): void {
+    const shown = displayedView(s, auth);
+    expect(shown.log.some((e) => e.seq === hold)).toBe(true);
+    expect(shown.log.every((e) => e.seq <= hold || isSameStep(e))).toBe(true);
+    expect(shown.board).toHaveLength(0);
+    expect(shown.status).toBe("in_progress");
+    expect(shown.awards).toHaveLength(0);
+    expect(isSynced(s, auth)).toBe(false);
+    function isSameStep(e: HandEvent): boolean {
+      const step = stepsOf(auth).find((st) =>
+        st.events.some((x) => x.seq === hold),
+      );
+      return step?.events.some((x) => x.seq === e.seq) ?? false;
+    }
+  }
+
+  /** 表示済みの位置が、hold の裁定を含む step の終わりより先に無い。 */
+  function expectNotBeyond(
+    s: PresentationState,
+    auth: HeroView,
+    hold: number,
+  ): void {
+    const holdStep = stepsOf(auth).find((st) =>
+      st.events.some((e) => e.seq === hold),
+    );
+    const next = stepsOf(auth).find((st) => (st.events[0]?.seq ?? 0) > hold);
+    expect(holdStep).toBeDefined();
+    expect(s.shownSeq).toBeLessThan(next?.events[0]?.seq ?? Infinity);
+  }
+
+  it("前提: 裁定の後の未表示の step は上限（24）を超え、裁定は古い側にある", () => {
+    const { first, auth, hold } = heldHand();
+    const pending = stepsOf(auth).filter((s) => s.endSeq > lastSeqOf(first));
+    expect(pending.length).toBeGreaterThan(PRESENTATION_MAX_PENDING_STEPS + 5);
+    const index = pending.findIndex((s) =>
+      s.events.some((e) => e.seq === hold),
+    );
+    expect(index).toBeLessThan(pending.length - PRESENTATION_MAX_PENDING_STEPS);
+    expect(auth.status).toBe("complete");
+  });
+
+  it("同じ Hand の receive（有界のキュー）は、古い step を省いても hold の裁定より先へ進めない", () => {
+    const { first, auth, hold } = heldHand();
+    const r = receive(firstHand(first), auth, hold);
+    // 裁定より前の step は省かれてもよいが、裁定の step より先は表示済みにしない。
+    expectNotBeyond(r, auth, hold);
+    const held = playOut(r, auth, { ...OPTS, holdThroughSeq: hold });
+    expectHeldAt(held.state, auth, hold);
+  });
+
+  it("settle / syncNow（Skip）/ settleWithoutClock（演出なし）/ 障害の優先（flush）のどれでも hold を越えない", () => {
+    const { first, auth, hold } = heldHand();
+    const s0 = firstHand(first);
+    const options = { ...OPTS, holdThroughSeq: hold };
+    expectHeldAt(settle(s0, auth, 10_000_000, options), auth, hold);
+    expectHeldAt(syncNow(s0, auth, hold), auth, hold);
+    for (const speed of PRESENTATION_SPEEDS) {
+      const o = { ...options, speed };
+      const s = settleWithoutClock(s0, auth, o);
+      if (speed === "none") expectHeldAt(s, auth, hold);
+      else expectNotBeyond(s, auth, hold);
+      expectHeldAt(playOut(s, auth, o).state, auth, hold);
+    }
+    // 障害のダイアログ（flush）と確認待ちが同時: 最新へ寄せるのは hold の裁定まで（障害を先に出し、確認は解決の後）。
+    const flushed = settle(s0, auth, 0, { ...options, flush: true });
+    expectHeldAt(flushed, auth, hold);
+    expectHeldAt(
+      settleWithoutClock(s0, auth, { ...options, flush: true }),
+      auth,
+      hold,
+    );
+    expect(nextDueAt(flushed, auth, options)).toBeNull();
+  });
+
+  it("このセッションで最初の Hand（再読み込み・初回の受信: handId が null）でも、最新ではなく hold の裁定の step までに合わせる", () => {
+    const { auth, hold } = heldHand();
+    const s = receive(INITIAL_PRESENTATION, auth, hold);
+    expectHeldAt(s, auth, hold);
+    expectHeldAt(syncNow(INITIAL_PRESENTATION, auth, hold), auth, hold);
+    // 確認待ちが無ければ従来どおり最新に合わせる（D140）。
+    expect(isSynced(receive(INITIAL_PRESENTATION, auth, null), auth)).toBe(
+      true,
+    );
+  });
+
+  it("続く Hand（次の Hand・Drill の Hand）を受け取ったときも、Hand の始まりの後の切り詰めで hold を越えない", () => {
+    const prev = table({
+      handId: "h0",
+      seats: seatsOf(200, 200, 200, 200, 200, 200, 200, 200),
+      button: "cpu2",
+    });
+    const shown0 = firstHand(prev.passive());
+    const { auth, hold } = heldHand("h1");
+    const r = receive(shown0, auth, hold);
+    expect(r.handId).toBe("h1");
+    expectNotBeyond(r, auth, hold);
+    expectHeldAt(syncNow(shown0, auth, hold), auth, hold);
+  });
+
+  it("確認（hold を外す）の後は、残りを演出して最新（Board・Showdown・Pot の配分）に追いつく。有界のキューもそこから効く", () => {
+    const { first, auth, hold } = heldHand();
+    const held = syncNow(firstHand(first), auth, hold);
+    const released = receive(held, auth, null);
+    expect(pendingSteps(released, auth).length).toBeLessThanOrEqual(
+      PRESENTATION_MAX_PENDING_STEPS,
+    );
+    const { frames } = playOut(released, auth);
+    expect(frames.at(-1)).toBe(auth);
+    expect(auth.awards.length).toBeGreaterThan(0);
+    // 表示の位置は単調に進む（hold の前へ戻らない）。
+    const seqs = frames.map(lastSeqOf);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    expect(seqs[0]).toBeGreaterThanOrEqual(hold);
+  });
+
+  it("hold の裁定がまだ届いていない（etiquette の状態が View より先に届いた）ときは、その seq までを出す", () => {
+    const { first, auth, hold } = heldHand();
+    const beforeRuling = {
+      ...auth,
+      log: auth.log.filter((e) => e.seq < hold),
+    } as HeroView;
+    const s = syncNow(firstHand(first), beforeRuling, hold);
+    expect(isSynced(s, beforeRuling)).toBe(true);
+    expectHeldAt(syncNow(s, auth, hold), auth, hold);
   });
 });

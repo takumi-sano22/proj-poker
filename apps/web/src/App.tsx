@@ -41,6 +41,7 @@ import {
 import { ChipControls } from "./components/ChipControls.js";
 import { DrillBanner } from "./components/DrillBanner.js";
 import { HeroFeedback } from "./components/DealerFeedback.js";
+import { DealerOverlay } from "./components/DealerOverlay.js";
 import { FastForward } from "./components/FastForward.js";
 import { HandLog } from "./components/HandLog.js";
 import { OpponentNotes } from "./components/OpponentNotes.js";
@@ -633,6 +634,17 @@ function HeroDock({
       </div>
       <div className="dock__controls">
         <Notice session={session} />
+        {/* RULING → ETIQUETTE の欄（#226）は、画面の幅に依らず Hero の欄の操作の場所に出す。卓の中央に置くと、中間幅（720×600 等）で
+            Board を押し上げて席に重なり、画面下に固定した Hero の欄の裏に「確認しました」が隠れるため（卓の公開状況・Pot・Hero の札と
+            Stack を覆わない）。障害のダイアログの間は出ない（障害を先に） */}
+        {session.dealerOverlay !== null && (
+          <DealerOverlay
+            overlay={session.dealerOverlay}
+            disabled={session.pending}
+            docked
+            onAcknowledge={session.acknowledgeEtiquette}
+          />
+        )}
         <DockBody
           view={view}
           nameOf={nameOf}
@@ -668,6 +680,7 @@ function DockBody({
     view.legalActions === null &&
     view.actorId !== null &&
     outage?.current == null &&
+    !session.etiquettePending &&
     session.sessionStatus?.state !== "ended";
   const delayed = useDelayed(
     cpuWaiting
@@ -757,10 +770,13 @@ function DockBody({
     );
   }
   const hero = heroSeatOf(view);
-  const waiting = waitingMessage(
-    view.actorId === null ? null : nameOf(view.actorId),
-    delayed,
-  );
+  // ETIQUETTE の確認を待つ間は、CPU の手番を待っているのではなく進行が止まっている（D145）。
+  const waiting = session.etiquettePending
+    ? "Dealer の作法の注意を確認するまで、進行は止まっています。"
+    : waitingMessage(
+        view.actorId === null ? null : nameOf(view.actorId),
+        delayed,
+      );
   // Fast Forward は Hero が Fold した後（または Hand から外れている間）の観戦だけ。待ちの案内（waiting）は速さに依らず変えない
   // （AI の応答は縮まないので、Fast Forward 中も「<CPU 名> の手番…」のまま出す。D93）。
   const fastForward = canFastForward(view) && (
@@ -797,6 +813,8 @@ function DockBody({
     );
   }
   const ruling = heroRulingStatus(view);
+  // RULING / ETIQUETTE の欄を出している間は、Hero の欄の手番の中身（Feedback・案内・操作の欄）を styles.css で隠す（外さないので
+  // Chip・宣言の下書きは消えない。D146。.dock__controls の子の配置の規則を壊さないよう、包む要素は足さない）。
   return (
     <>
       <HeroFeedback view={view} />
@@ -821,9 +839,15 @@ function DockBody({
         key={operationKey(view)}
         view={view}
         hero={hero}
-        disabled={session.pending || ruling?.kind === "pending"}
+        // ETIQUETTE の確認を待つ間も送れない（下書きは残す。D145・D146）。
+        disabled={
+          session.pending ||
+          ruling?.kind === "pending" ||
+          session.etiquettePending
+        }
         // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
-        onSubmit={(actions) => session.operate(view, actions) !== "resynced"}
+        // 送り始めたときだけ宣言を下書きに足す（表示が古い・確認待ち・送信中で送らなかったら足さない）。
+        onSubmit={(actions) => session.operate(view, actions) === "sent"}
       />
     </>
   );

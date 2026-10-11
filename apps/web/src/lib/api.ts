@@ -54,6 +54,15 @@ export interface OutageStatus {
   } | null;
 }
 
+/**
+ * ETIQUETTE の確認（Ack）の状態（D145。サーバーの EtiquetteAckStatus と同じ形）。pendingRulingSeq は確認を待っている Hero への裁定
+ * （公開の DEALER_RULING）の seq で、待っていなければ null。revision は待ちが立つ・解けるたびに進む（OutageStatus とは別）。
+ */
+export interface EtiquetteAckStatus {
+  readonly revision: number;
+  readonly pendingRulingSeq: number | null;
+}
+
 /** 障害の後の続け方: Retry / Emergency Bot で続行 / Session 終了（D86）。 */
 export type OutageChoice = "retry" | "emergency_bot" | "end_session";
 
@@ -63,6 +72,11 @@ export interface StartHandResponse {
   readonly view: HeroView;
   readonly session: SessionStatus;
   readonly outage: OutageStatus;
+  /**
+   * ETIQUETTE の確認（Ack）の状態（D145）。形を信用せず view-model.ts の parseEtiquetteStatus で受け取る（無い・形が合わなければ
+   * 今の状態のまま。確認の API の無いサーバーでは届かない）。
+   */
+  readonly etiquette?: unknown;
   /** Fast Forward が入っているか（開始の再送・「卓に戻る」で、進行中の Hand の状態を画面へ戻すため）。 */
   readonly fastForward: boolean;
   /**
@@ -125,17 +139,22 @@ export function tournamentPath(handId: string): string {
   return `/api/hands/${encodeURIComponent(handId)}/tournament`;
 }
 
-/** Hero の Action と、障害の続け方の選択の応答。 */
+/** Hero の Action と、障害の続け方の選択と、ETIQUETTE の確認（Ack）の応答。 */
 export interface HeroActionResponse {
   readonly view: HeroView;
   readonly session: SessionStatus;
   readonly outage: OutageStatus;
+  /** ETIQUETTE の確認（Ack）の状態（D145）。StartHandResponse.etiquette と同じく parseEtiquetteStatus で受け取る。 */
+  readonly etiquette?: unknown;
 }
 
 /** サーバーが返す失敗の種類。network は応答が無かった（届かなかった）場合。 */
 export type ApiErrorKind =
   | "stale_view"
   | "stale_outage"
+  // ETIQUETTE の確認（Ack。D145）: 送った seq が確認を待つ裁定でない・確認を待っている間の操作や次の Hand の開始
+  | "stale_etiquette"
+  | "etiquette_ack_required"
   | "not_spectating"
   | "not_actor"
   | "hand_complete"
@@ -173,6 +192,8 @@ export class ApiError extends Error {
 const KNOWN_KINDS: readonly ApiErrorKind[] = [
   "stale_view",
   "stale_outage",
+  "stale_etiquette",
+  "etiquette_ack_required",
   "not_spectating",
   "not_actor",
   "hand_complete",
@@ -321,6 +342,21 @@ export function chooseOutage(
   return postJson<HeroActionResponse>(
     `/api/hands/${encodeURIComponent(handId)}/outage`,
     { revision, choice },
+  );
+}
+
+/**
+ * ETIQUETTE の確認（Ack。D145）を送る。rulingSeq は Hero に見せている確認待ちの裁定の seq（応答の etiquette が今の待ち）。
+ * すでに確認した裁定の seq の再送は 200 で、今の待ち（より新しい裁定）は解けない。待っていない seq は stale_etiquette。
+ * Ack は Event を追記しないので、View の lastSeq は変わらない。
+ */
+export function acknowledgeEtiquette(
+  handId: string,
+  rulingSeq: number,
+): Promise<HeroActionResponse> {
+  return postJson<HeroActionResponse>(
+    `/api/hands/${encodeURIComponent(handId)}/etiquette-ack`,
+    { rulingSeq },
   );
 }
 

@@ -195,7 +195,7 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 - RULING の自動終了 → ETIQUETTE の明示確認 → 再開、確認待ち中の Home / Learn への移動（D142）
 
 未確定（可逆。Config / Token に暫定値を置き、Playtest で見直す。永久仕様にしない）:
-- RULING を出しておく「数秒」の値（D142）
+- RULING を出しておく「数秒」の値（D142。暫定値は `apps/web/src/lib/config.ts` の `RULING_OVERLAY_MS` = 2,500ms。#226）
 - 下書きを無効化したときの通知の文言・表示時間（D146）
 - 表示演出の速度4段階ごとの所要時間（ms）・Hero の手番の到来時の自動高速化の度合い・表示待ちの step の上限・Replay の再生の速度の倍率（D140。暫定値は `apps/web/src/lib/config.ts` の `PRESENTATION_*` / `REPLAY_SPEED_SCALE`。#222）
 - 操作用 Chip の大きさの調整規則（基準は PC 約54px・スマホ約48〜52px。D138）と、卓上の Chip の拡大率

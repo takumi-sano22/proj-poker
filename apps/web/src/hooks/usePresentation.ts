@@ -22,9 +22,13 @@ export interface Presentation {
   readonly synced: boolean;
   /**
    * 残りの演出を省いて最新の公開状態に合わせる（Skip・再接続・画面への復帰・送信前の同期）。latest を渡すとその View に合わせる
-   * （受け取った直後で、まだ描画していない View。省くと最後に描画した View）。
+   * （受け取った直後で、まだ描画していない View。省くと最後に描画した View）。holdThroughSeq も同じく、受け取った直後の確認待ちを
+   * 渡す（省くと最後に描画した options の値。同じ tick に届いた新しい確認待ちを越えないため。#226）。
    */
-  readonly sync: (latest?: HeroView | null) => void;
+  readonly sync: (
+    latest?: HeroView | null,
+    holdThroughSeq?: number | null,
+  ) => void;
 }
 
 export function usePresentation(
@@ -66,12 +70,17 @@ export function usePresentation(
     return () => clearTimeout(timer);
   }, [dueAt, current.shownSeq, tick]);
 
-  const sync = useCallback((given?: HeroView | null) => {
-    const { authoritative: rendered, options: opts } = latest.current;
-    const view = given ?? rendered;
-    if (view === null) return;
-    setState((s) => syncNow(s, view, opts.holdThroughSeq));
-  }, []);
+  const sync = useCallback(
+    (given?: HeroView | null, holdThroughSeq?: number | null) => {
+      const { authoritative: rendered, options: opts } = latest.current;
+      const view = given ?? rendered;
+      if (view === null) return;
+      const hold =
+        holdThroughSeq === undefined ? opts.holdThroughSeq : holdThroughSeq;
+      setState((s) => syncNow(s, view, hold));
+    },
+    [],
+  );
 
   // タブを隠している間はタイマーが間引かれる。戻ってきたら古い演出を続けず、最新の公開状態に合わせる（D140 Q26）。
   useEffect(() => {
