@@ -9,6 +9,7 @@ import { startNextHand } from "../support/next-hand.js";
 import {
   playToHandEnd,
   sessionEnded,
+  countHandStarts,
   startFirstHand,
 } from "../support/play.js";
 import {
@@ -169,6 +170,21 @@ test("Session が終わった後の Button が、画面の高さによらず Her
       }),
     ).toBeVisible();
     await page.getByRole("button", { name: "卓に戻る" }).click();
+    // Session が終わった後の Home は、終わった Session を照会して新しい Session の開始だけを出す（「続きから遊ぶ」は出さない。#218）。
+    // 画面の移動では開始を送らない。
+    const starts = countHandStarts(page);
+    const nav = page.getByRole("navigation", { name: "画面の切り替え" });
+    await nav.getByRole("button", { name: "Home" }).click();
+    const home = page.getByRole("region", { name: "Session" });
+    await expect(home).toContainText("Session は終了しました");
+    await expect(
+      home.getByRole("button", { name: "新しい Session を始める" }),
+    ).toBeVisible();
+    await expect(
+      home.getByRole("button", { name: "続きから遊ぶ" }),
+    ).toHaveCount(0);
+    await nav.getByRole("button", { name: "Play" }).click();
+    expect(starts(), "画面の移動で開始を送らない").toBe(0);
     const next = await startNextHand(page, "新しい Session を始める");
     expect(handIds, "新しい Session の Hand は別の Hand").not.toContain(next);
     expect(await sessionEnded(page), "新しい Session は続く").toBe(false);

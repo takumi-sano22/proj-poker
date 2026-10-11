@@ -259,11 +259,13 @@ test("6-max STT を開始 → Blind / Ante → Resume → Elimination → Heads-
 
     await stopServer(server as RunningServer);
     server = await startServer(dbPath);
+    // 再読み込みすると Home から始まる。Home は続いている Tournament を照会して「続きから遊ぶ」だけを出す（新しい Session の種類は
+    // 出さない）。押して初めて、同じ Session の次の Hand が始まる。
     await page.reload();
-    await page
-      .getByLabel("新しい Session の種類")
-      .selectOption({ label: TOURNAMENT_CHOICE });
-    const resumedHandId = await startFirstHand(page);
+    const home = page.getByRole("region", { name: "Session" });
+    await expect(home).toContainText("Tournament");
+    await expect(home.getByLabel("新しい Session の種類")).toHaveCount(0);
+    const resumedHandId = await startFirstHand(page, "続きから遊ぶ");
     expect(resumedHandId).not.toBe(handId);
     handId = resumedHandId;
 
