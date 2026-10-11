@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D144の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D145の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -44,6 +44,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D135〜D142 | Post-Phase8 の横断 UI/UX（#215・#216。Q1〜Q29 の人間判断）: モダン・カジノの世界観と可読性・正確性を守った強めの演出・装飾素材と Card / Chip の構造描画（D135）、Home / Play / Learn と起動時の Home・読み取り専用の Session 状態照会・Learn / Replay の戻り先（D136）、PC / スマホのレイアウトとスマホの Hero 操作パネル（D137）、Chip の Click / Drag の視認性・移動の視覚化・Betting Area の判定領域（D138）、Hero の下書きの保持と無効化（D139）、表示順序を保つ演出・速度4段階・Showdown を省かない・Live / Replay の共有・再接続（D140）、効果音（BGM なし）と音量・ミュートの保存（D141）、RULING → ETIQUETTE の確認 → 再開（D142）。可逆な値と技術検証は OI-012 |
 | D143 | UX-06 #221 での採用判断: 可視 seq の飛び番を残余リスクとして受容（表示・意味づけしない）、演出中の下書きを維持して送信前に同期・再検証、現行 REST/SSE の HeroView.log から client で演出時系列を復元する案 A。UX06-1〜3=A（#222 / #219 の前提） |
 | D144 | UX-02 #217 での採用判断: Home の照会は GET /api/session/current（state と Session の種類だけ・Session ID / Hand ID / Stack / 札は返さない）、開始と同じ読み取り専用の判定から作る、ended はこのプロセスの終了だけ（再起動後は null）、未知の state は安全側、#230 の承認後に追加で拡張。UX02-1〜3=A（UX-03 #218・#230 の前提） |
+| D145 | UX-11 #226 での採用判断: ETIQUETTE の Ack の要否は DEALER_RULING の notes から決定論で導き、確認の位置は HandRuntime のメモリ（Event / DB は不変）、POST /api/hands/:handId/etiquette-ack と REST / SSE の {revision, pendingRulingSeq}（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は stale_etiquette）、Ack 待ちの操作と次の Hand の開始は etiquette_ack_required、Outage が先で Retry 後も Ack まで止める、再起動での消失は D62 の範囲、Tournament のプレイ時間は Hand の進行中の待ちだけ。UX11-1〜5・T1=A（UX-11 #226 の本実装の前提） |
 
 ### Q1〜Q29 と D 番号の対応（#216）
 
@@ -56,7 +57,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | Q12・Q24 | D139 | UX-04 #219 |
 | Q8・Q14・Q15・Q19・Q20・Q21・Q26 | D140 | UX-06 #221・UX-07 #222・UX-09 #224 |
 | Q9・Q16・Q22 | D141 | UX-08 #223・UX-10 #225 |
-| Q28・Q29 | D142 | UX-11 #226 |
+| Q28・Q29 | D142（Ack の契約は D145） | UX-11 #226 |
 
 UX-06 の人間承認（#221 / D143）: UX06-1=A（`seq` の飛び番は表示・意味づけせず受容）、UX06-2=A（`authoritative` / `displayed` を分離し、未送信下書きを保持して送信時に同期・再検証）、UX06-3=A（現行 API 維持、client が可視 Event の時系列を再構築）。Gate 0 は PR #228 の成果への人間承認により解除済みだが、Gate 1 は他の依存条件が残り未解除。
 
