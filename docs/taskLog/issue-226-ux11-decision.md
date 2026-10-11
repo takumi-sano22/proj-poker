@@ -21,6 +21,7 @@ PR #240（MERGED。ETIQUETTE の Ack 待ちの先行技術設計と検証テス�
 
 - T1=A は今の実装のままで成り立つ: `HandOrchestrator` は `HAND_FINISHED` を追記した時点で `playFinishedAt` を固定し、`elapsedPlayMs` / `handPlayTimeMs` はその値までしか数えない（`apps/server/src/hand-orchestrator.ts`）。Hand の完了後の Ack 待ちは何もしなくても数えられない。
 - PR #240 の作業ログ（`issue-226-etiquette-ack-design.md`）は検証当時の記録なので書き換えない。その中の「実装時の検証テスト」の「Session 終了で Ack 待ちが消える」は、同じ資料の §5・§7（`HAND_ABORTED` の後も待ちを残す）と食い違う。D145 は人間が採用した §5・§7 / UX11-4 の側で記録した。本実装のテストは D145 に合わせる。
+- 「二重は 200・古い seq は 409」は、新しい裁定を待っている最中に確認済みの古い seq が再送されると両方に当てはまる（Codex R1 P1）。人間が採用した設計資料 §5・§8 の定義（`rulingSeq <= ackedThroughSeq` の Ack の要る裁定は何もせず 200、Ack の要らない・未来・存在しない seq は 409）に合わせて、D145 では「待っている seq / 確認済みの seq / それ以外」の 3 つに分けて書いた。確認済みの seq の 200 は今の待ちを解かない（応答の `pendingRulingSeq` で今の待ちを返す）ので、古いタブや再送で新しい裁定を確認したことにはならない。
 - #230 の Session の終了 / 一時中断の予約と、Hand の完了後に残る Ack 待ちの関係は #230 が未承認なので確定させず、D145 に「#230 の設計で再確認」と書いた。
 
 ## 実行した確認
