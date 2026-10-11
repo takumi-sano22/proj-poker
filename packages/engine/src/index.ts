@@ -188,6 +188,11 @@ export type {
 } from "./tournament-knowledge.js";
 
 export { resolveOutOfTurn, rulePhysicalActions } from "./ruling.js";
+export {
+  ETIQUETTE_ACK_CODES,
+  etiquetteAckRulingSeqs,
+  requiresEtiquetteAck,
+} from "./etiquette.js";
 export type {
   Declaration,
   PendingOutOfTurn,

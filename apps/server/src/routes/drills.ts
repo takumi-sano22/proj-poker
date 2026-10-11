@@ -37,6 +37,8 @@ const STATUS_OF: Record<DrillServiceError["kind"], number> = {
   drill_unavailable: 422,
   stale_view: 409,
   stale_outage: 409,
+  stale_etiquette: 409,
+  etiquette_ack_required: 409,
   not_spectating: 409,
   not_actor: 409,
   hand_complete: 409,
@@ -69,6 +71,8 @@ export function registerDrillRoutes(
         view: result.value.view,
         session: orchestrator.sessionStatus(started),
         outage: orchestrator.outageStatus(started),
+        // 進行中の Drill を返す再送でも、ETIQUETTE の確認（Ack）の待ちを出し直せるようにする（D145）。
+        etiquette: orchestrator.etiquetteStatus(started),
         fastForward: orchestrator.fastForwardOf(started) ?? false,
       });
     },

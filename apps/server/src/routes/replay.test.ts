@@ -308,7 +308,22 @@ describe("Replay API（完了した Hand）", () => {
         payload: { lastSeq: lastSeq(view), actions },
       });
       expect(res.statusCode).toBe(200);
-      view = res.json<{ view: HeroView }>().view;
+      const body = res.json<{
+        view: HeroView;
+        etiquette: { pendingRulingSeq: number | null };
+      }>();
+      view = body.view;
+      // ETIQUETTE の要る裁定（Bet に直面した Check の宣言）の後は、確認（Ack）するまで CPU が進まない（D145）。
+      const pending = body.etiquette.pendingRulingSeq;
+      if (pending !== null) {
+        const acked = await app.inject({
+          method: "POST",
+          url: `/api/hands/${started.handId}/etiquette-ack`,
+          payload: { rulingSeq: pending },
+        });
+        expect(acked.statusCode).toBe(200);
+        view = acked.json<{ view: HeroView }>().view;
+      }
     }
     const log = events(started.handId);
     const hand = await getHand(app, started.handId);

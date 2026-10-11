@@ -429,9 +429,10 @@ describe("Hand API（SSE）", () => {
     expect(pushed).toHaveLength(1);
     expect(pushed[0]?.status).toBe("complete");
     // complete の View の直前に Session の状態を送る（6 人卓で Hero が Fold しただけなので Session は続く）。
-    // 接続時は障害の状態（無ければ current: null）を先に 1 回送る。
+    // 接続時は障害の状態（無ければ current: null）と確認（Ack）の状態（待ちが無ければ null。D145）を先に 1 回ずつ送る。
     expect(parseSseEvents(res.body).map((e) => e.name)).toEqual([
       "outage",
+      "etiquette",
       "session",
       "view",
     ]);
@@ -440,6 +441,10 @@ describe("Hand API（SSE）", () => {
       current: null,
     });
     expect(parseSseEvents(res.body)[1]?.data).toEqual({
+      revision: 0,
+      pendingRulingSeq: null,
+    });
+    expect(parseSseEvents(res.body)[2]?.data).toEqual({
       state: "ready_for_next_hand",
     });
   });
