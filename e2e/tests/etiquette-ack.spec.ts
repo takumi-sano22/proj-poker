@@ -215,11 +215,13 @@ test("ETIQUETTE の間は CPU・Hero の操作が進まず、確認を連打し�
       "手番が来るまで操作を待ちましょう。",
     );
     await expect(rulingOverlay(page)).toHaveCount(0);
+    // 欄が Hero 欄にあり、進行が止まっていることを案内する。欄の間は Hero 欄の手番の中身（宣言など）は隠れる。
+    await expect(dock.getByRole("alertdialog")).toContainText(
+      "確認するまで進行は止まっています",
+    );
     await expect(
-      dock.getByText(
-        "Dealer の作法の注意を確認するまで、進行は止まっています。",
-      ),
-    ).toBeVisible();
+      dock.getByRole("group", { name: "宣言（Declaration）" }),
+    ).toBeHidden();
   });
 
   await test.step("ETIQUETTE の間: CPU が進まず、Hero の宣言を押せず、操作の要求を送らない", async () => {
@@ -262,11 +264,10 @@ test("ETIQUETTE の間は CPU・Hero の操作が進まず、確認を連打し�
       .poll(() => log.count(), { timeout: 15_000 })
       .toBeGreaterThan(rows);
     expect(acks(), "確認の要求は 1 回").toBe(1);
+    // 欄が閉じたら Hero 欄の手番の中身が戻る。
     await expect(
-      dock.getByText(
-        "Dealer の作法の注意を確認するまで、進行は止まっています。",
-      ),
-    ).toHaveCount(0);
+      dock.getByRole("group", { name: "宣言（Declaration）" }),
+    ).toBeVisible();
   });
 });
 
