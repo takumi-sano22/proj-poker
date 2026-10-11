@@ -200,6 +200,7 @@ export { nextHandSeating } from "./position.js";
 export type { NextHandSeating, PreviousHandResult } from "./position.js";
 
 export {
+  heroViewStepEnds,
   projectHeroView,
   projectKnowledgeState,
   publicEvents,

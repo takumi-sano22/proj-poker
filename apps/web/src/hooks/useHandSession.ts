@@ -5,6 +5,10 @@
 // - CPU の障害の状態（D86）も REST の応答と SSE の outage イベントの両方から受け、revision の新しい方だけを残す
 // - 新しい Session の設定（Cash / Tournament の Preset。#183・#190）は Hero が選んだ値を持ち、新しい Session を始める操作だけが送る
 //   （「次の Hand へ」・「卓に戻る」は送らず、続く Session をそのまま続ける）
+// - 受け取った最新の View（authoritative）と、Hero に見せる卓（displayed）を分ける（Presentation Controller。#222・D140・D143）。
+//   画面へ渡す view は displayed で、Hero の操作は displayed が authoritative に追いついているときだけ、その lastSeq で送る。
+//   追いついていなければ送らずに表示を最新へ合わせ、Hero にもう一度確定させる（古い操作を送らない・暗黙に送らない）。
+//   SSE の再接続・Hand への復帰（resync）では古い演出を捨てて最新の公開状態に合わせる
 import type { HeroView, PhysicalAction } from "@proj-poker/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -23,6 +27,7 @@ import {
   type SessionStatus,
   type TablePlayer,
 } from "../lib/api.js";
+import { canSendFrom, type PresentationSpeed } from "../lib/presentation.js";
 import {
   isUnseenEndedHand,
   lastSeqOf,
@@ -35,8 +40,19 @@ import {
   type HandOutageStatus,
   type HandSessionStatus,
 } from "../lib/view-model.js";
+import { usePresentation } from "./usePresentation.js";
 
 export type ConnectionState = "idle" | "open" | "reconnecting" | "lost";
+
+/** 操作の送信の結果。sent は送信を始めた（結果は応答で届く）、resynced は表示が古かったので送らずに最新へ合わせた、ignored は送る物が無い。 */
+export type OperateResult = "sent" | "resynced" | "ignored";
+
+/** 表示が最新に追いついていなかったので操作を送らなかったときの案内（D143）。 */
+export const RESYNCED_NOTICE: SessionNotice = {
+  message:
+    "卓の表示を最新の状態に合わせました。操作はまだ送っていません。卓を確かめて、もう一度確定してください。",
+  retryable: false,
+};
 
 export interface SessionNotice {
   readonly message: string;
@@ -52,8 +68,16 @@ export interface SessionNotice {
 export interface HandSession {
   readonly handId: string | null;
   readonly players: readonly TablePlayer[];
+  /** Hero に見せる卓（displayed）。演出の途中なら、表示済みの Event までの卓で、操作（legalActions）を持たない。 */
   readonly view: HeroView | null;
-  /** 表示中の Hand から見た Session の状態。まだ届いていなければ null。 */
+  /** 表示が最新の View（authoritative）に追いついているか。操作を送れるのはこのときだけ（D143）。 */
+  readonly synced: boolean;
+  /** 残りの演出を省いて最新の公開状態に合わせる（Skip・画面への復帰）。 */
+  readonly resync: () => void;
+  /**
+   * 表示中の Hand から見た Session の状態。まだ届いていない・表示が追いついていなければ null（Hand の結果より先に Session の終わりを
+   * 見せない）。
+   */
   readonly sessionStatus: SessionStatus | null;
   /** 表示中の Hand の CPU の障害の状態。まだ届いていなければ null。 */
   readonly outage: OutageStatus | null;
@@ -67,8 +91,15 @@ export interface HandSession {
   /** 新しい Session に求める設定（既定は Cash）。 */
   readonly sessionChoice: SessionRequest;
   readonly setSessionChoice: (choice: SessionRequest) => void;
-  /** Hero の 1 回の手番の物理的な操作（した順）を送る。手番でなくても送る（裁定はサーバー）。 */
-  readonly operate: (actions: readonly PhysicalAction[]) => void;
+  /**
+   * Hero の 1 回の手番の物理的な操作（した順）を送る。手番でなくても送る（裁定はサーバー）。shown は Hero がその操作を組んだときに
+   * 見ていた卓で、それが最新の View と同じ lastSeq のときだけ送る。違えば送らずに表示を最新へ合わせ、"resynced" を返す
+   * （下書きは呼び出し側に残る。#219 の下書きの層はこの戻り値で再確認へつなぐ）。
+   */
+  readonly operate: (
+    shown: HeroView,
+    actions: readonly PhysicalAction[],
+  ) => OperateResult;
   /** 表示中の障害の続け方を選ぶ（Retry / Emergency Bot / Session 終了）。 */
   readonly resolveOutage: (choice: OutageChoice) => void;
   readonly retry: () => void;
@@ -212,13 +243,18 @@ export interface HandSessionOptions {
     afterHandId: string | null,
     session?: SessionRequest,
   ) => Promise<StartHandResponse>;
+  /** 表示演出の速度（prefers-reduced-motion なら呼び出し側が演出なしを渡す）。既定は演出なし（部品単体のテスト）。 */
+  readonly speed?: PresentationSpeed;
 }
 
 export function useHandSession(options: HandSessionOptions = {}): HandSession {
   const startRequest = options.start ?? startHand;
   const [handId, setHandId] = useState<string | null>(null);
   const [players, setPlayers] = useState<readonly TablePlayer[]>([]);
+  // server から届いた最新の View（authoritative）。画面には displayed を渡す。
   const [view, setView] = useState<HeroView | null>(null);
+  // 送信の直前に、描画を待たずに最新の View と比べるため ref にも置く（accept で同時に更新する）。
+  const latestView = useRef<HeroView | null>(null);
   const [session, setSession] = useState<HandSessionStatus | null>(null);
   const [outage, setOutage] = useState<HandOutageStatus | null>(null);
   const [pending, setPending] = useState(false);
@@ -265,9 +301,13 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   >(null);
 
   const accept = useCallback((incoming: HeroView) => {
-    setView((current) =>
-      selectLatestView(current, incoming, activeHandId.current),
+    const next = selectLatestView(
+      latestView.current,
+      incoming,
+      activeHandId.current,
     );
+    latestView.current = next;
+    setView(next);
   }, []);
 
   const acceptSession = useCallback((incoming: HandSessionStatus) => {
@@ -292,11 +332,29 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     [accept, acceptOutage, acceptSession],
   );
 
+  // Presentation Controller。CPU の障害のダイアログは演出より優先する（出ている間は残りの演出を省いて最新に合わせる。§16.5）。
+  // holdThroughSeq は ETIQUETTE の確認（#226 の client）が裁定の step で表示を止めるための接続点で、今は使わない（null）。
+  const currentOutageStatus = outage?.handId === handId ? outage.status : null;
+  const presentation = usePresentation(view, {
+    speed: options.speed ?? "none",
+    flush: currentOutageStatus?.current != null,
+    holdThroughSeq: null,
+  });
+  // 受け取った直後の View（描画の前）に合わせる。SSE の再接続・同じ Hand の開始の応答は accept と同じ tick で同期するため。
+  const presentationSync = presentation.sync;
+  const resync = useCallback(
+    () => presentationSync(latestView.current),
+    [presentationSync],
+  );
+
   // 結果（complete の View）まで見た最後の Hand。開始の要求で送り、サーバーが再送と「次の Hand」を区別する。
+  // 「見た」は Hero に見せた卓（displayed）で判定する（演出の途中で届いた complete を見たことにしない）。
+  const displayed = presentation.displayed;
   const seenComplete = useRef<string | null>(null);
   useEffect(() => {
-    if (view?.status === "complete") seenComplete.current = view.handId;
-  }, [view]);
+    if (displayed?.status === "complete")
+      seenComplete.current = displayed.handId;
+  }, [displayed]);
 
   /** 開始の要求を送る。afterHandId・session は送ったときの値のまま再送する（再送で次の Hand へ進めない）。 */
   const requestStart = useCallback(
@@ -319,6 +377,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         .then((res) => {
           // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
           // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
+          const sameHand = activeHandId.current === res.handId;
           activeHandId.current = res.handId;
           setHandId(res.handId);
           setPlayers(res.players);
@@ -343,8 +402,10 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
               retryable: false,
             });
           }
-          // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。
+          // 同じ Hand ID が返っても SSE を張り直す（切れた接続の復旧）。同じ Hand の続きなら、古い演出を捨てて最新に合わせる
+          // （新しい Hand は Hand の始まりから演出する。lib/presentation.ts の receive）。
           setStreamEpoch((n) => n + 1);
+          if (sameHand) resync();
         })
         .catch((error: unknown) => {
           lastFailed.current = {
@@ -359,7 +420,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
           setPending(false);
         });
     },
-    [accept, acceptOutage, acceptSession, startRequest],
+    [accept, acceptOutage, acceptSession, resync, startRequest],
   );
 
   const start = useCallback(
@@ -373,7 +434,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   );
 
   /**
-   * Hand に対する操作（Action・障害の選択）を送る。二重送信を止め、応答を受け取り、失敗したら再送用に覚える。
+   * Hand に対する操作（Action・障害の選択）を送る。二重送信を止め、応答を受け取り、失敗したら再送用に覚える。送信を始めたら true。
    * failed は失敗したときに再送で同じ値を送るための記録。
    */
   const submit = useCallback(
@@ -382,7 +443,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       request: () => Promise<HeroActionResponse>,
       failed: NonNullable<typeof lastFailed.current>,
     ) => {
-      if (inFlight.current) return;
+      if (inFlight.current) return false;
       inFlight.current = true;
       setPending(true);
       setNotice(null);
@@ -399,6 +460,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
           inFlight.current = false;
           setPending(false);
         });
+      return true;
     },
     [acceptResponse],
   );
@@ -427,14 +489,20 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   );
 
   const operate = useCallback(
-    (actions: readonly PhysicalAction[]) => {
-      if (view === null || handId === null || actions.length === 0) return;
-      send(handId, lastSeqOf(view), actions);
+    (shown: HeroView, actions: readonly PhysicalAction[]): OperateResult => {
+      if (handId === null || actions.length === 0) return "ignored";
+      // Hero が見ていた卓が最新でなければ送らない（未表示の最新の lastSeq を先取りしない。D143）。表示を合わせて、もう一度確定させる。
+      if (!canSendFrom(shown, latestView.current)) {
+        resync();
+        setNotice(RESYNCED_NOTICE);
+        return "resynced";
+      }
+      return send(handId, lastSeqOf(shown), actions) ? "sent" : "ignored";
     },
-    [handId, send, view],
+    [handId, resync, send],
   );
 
-  const currentOutage = outage?.handId === handId ? outage.status : null;
+  const currentOutage = currentOutageStatus;
   const resolveOutage = useCallback(
     (choice: OutageChoice) => {
       if (handId === null || currentOutage?.current == null) return;
@@ -478,6 +546,17 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       text: string,
     ): Promise<boolean> => {
       if (handId === null || inFlight.current) return false;
+      // 読みも、Hero が見ていた卓が最新のときだけ送る（操作と同じ鮮度の条件。D143）。
+      const latest = latestView.current;
+      if (latest === null || lastSeq !== lastSeqOf(latest)) {
+        // Hero の手番の間に卓が進むのは Hero 自身の記録だけなので、server の stale_view と同じ案内にする（自動で送り直さない）。
+        resync();
+        setNotice({
+          ...readNoticeOf(new ApiError("stale_view", "表示が最新ではない")),
+          retryable: false,
+        });
+        return false;
+      }
       const sentFor = handId;
       inFlight.current = true;
       setPending(true);
@@ -503,7 +582,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         setPending(false);
       }
     },
-    [accept, handId],
+    [accept, handId, resync],
   );
 
   const retry = useCallback(() => {
@@ -521,6 +600,8 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   useEffect(() => {
     if (handId === null) return;
     const source = new EventSource(handStreamUrl(handId));
+    // 切れた後に最初に届いた View で、古い演出を捨てて最新の公開状態に合わせる（D140 Q26）。
+    let reconnecting = false;
     source.addEventListener("session", (event) => {
       const data: unknown = event.data;
       const status = typeof data === "string" ? parseSessionStatus(data) : null;
@@ -542,22 +623,30 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       if (incoming === null) return;
       setConnection("open");
       accept(incoming);
+      if (reconnecting) {
+        reconnecting = false;
+        resync();
+      }
       if (incoming.status === "complete") source.close();
     });
     source.addEventListener("error", () => {
       // CLOSED はブラウザが再接続を諦めた状態（Hand が見つからない等）。それ以外は自動で再接続している。
+      reconnecting = true;
       setConnection(
         source.readyState === EventSource.CLOSED ? "lost" : "reconnecting",
       );
     });
     return () => source.close();
-  }, [accept, acceptOutage, acceptSession, handId, streamEpoch]);
+  }, [accept, acceptOutage, acceptSession, handId, resync, streamEpoch]);
 
   return {
     handId,
     players,
-    view,
-    sessionStatus: session?.handId === handId ? session.status : null,
+    view: presentation.displayed,
+    synced: presentation.synced,
+    resync,
+    sessionStatus:
+      session?.handId === handId && presentation.synced ? session.status : null,
     outage: currentOutage,
     pending,
     notice,

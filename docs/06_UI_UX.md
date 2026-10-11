@@ -293,7 +293,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 ## 16. 横断 UI/UX（Post-Phase8。#215・#216・D135〜D142）
 
-#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）と UX-03 の App Shell（#218。§16.2 の「実装」）です**（UX-04〜UX-11 は未実装）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145・UX-04 の D146）を除き、採用済みの事実として扱いません。
+#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）・UX-03 の App Shell（#218。§16.2 の「実装」）・UX-07 の Presentation Controller（#222。§16.4 の「実装」）です**（UX-04・UX-05・UX-08〜UX-11 は未実装）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145・UX-04 の D146）を除き、採用済みの事実として扱いません。
 
 ### 16.1 守る不変条件
 
@@ -343,6 +343,14 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 
 各段階の所要時間（ms）と自動高速化の度合いは OI-012 の暫定値。`prefers-reduced-motion` では既存どおり動きを止める。
 
+**実装（UX-07 #222）**: `useHandSession` が authoritative と displayed を分け、画面には displayed を渡す（規則は `apps/web/src/lib/presentation.ts` の純関数、時刻とタイマーは `hooks/usePresentation.ts`）。
+- **単位と順序**: step の区切りは Replay と同じ Engine の `heroViewStepEnds`（裁定とそれで決まった Action は 1 step）。新しい Hand（次の Hand・次の Drill）は Hand の始まり（Blind・Ante・Hero の札）までを一度に出し、続きの CPU の Action・Board・Showdown・Pot の配分を 1 step ずつ出す。読み込みの直後・Resume の最初の Hand は最新に合わせる。Flop の 3 枚は 1 step の中で順に置く（`styles.css` の `.board__card-in`。動きの長さはトークンで、演出なしでは 0）。
+- **速度**: 卓の右の欄（狭い画面は卓の下）の「演出の速度」で選び、このブラウザに保存する（`proj-poker.display.presentationSpeed`。既定は標準）。演出の待ちがある間だけ「Skip」を出す。`prefers-reduced-motion` では選んだ速度に関わらず演出なしで進め、その旨を添える。Hero の手番が来たら残りの通常の演出を速め（Showdown の公開と Pot の配分は速めない）、どの速度・Skip・演出なしでも最後の卓は authoritative と同じ（省くのは動きだけ）。待ちの step は上限までの有界のキューで、超えた古い分は動きを省いて表示済みにする。
+- **同期**: SSE の再接続（切れた後の最初の View）・「卓に戻る」で同じ Hand が返ったとき・Home / Learn から Play / Drill の卓へ戻ったとき・タブの再表示（`visibilitychange`）で、古い演出を捨てて最新に合わせる（画面の移動では開始・操作を送らない）。CPU の障害のダイアログが出ている間は残りの演出を省いて最新の卓に出す（演出より優先）。Session の状態（終わりの案内・「次の Hand へ」）は表示が追いついてから出す。
+- **送信**: Hero の操作は、Hero が見ていた卓（displayed）が最新と同じ Hand・同じ `lastSeq` のときだけ、その `lastSeq` で送る。違えば送らずに表示を最新へ合わせ、「操作はまだ送っていません。卓を確かめて、もう一度確定してください」と案内する（押した宣言は下書きに足さない。Betting Area に出した Chip 等の下書きは、`operationKey` が変わらなければ操作の欄に残り、送るには Hero がもう一度確定する。手番外の操作も同じ。`stale_view` では自動で送り直さない）。下書きの層（#219）と、状況の変化を示す再確認は #219 で実装する（今の下書きは `ChipControls` が `operationKey` で持つ）。
+- **Replay**: 卓・進行ログ・Dealer Feedback・速度の部品を Live と共有し、再生の速度（「再生の速度」）は Replay の画面が別に持つ（Live の速度・Hand・CPU を変えない）。
+- **ETIQUETTE の確認（#226 の client）への接続点**: 裁定の step までで表示を止める `holdThroughSeq`（RULING を出したまま止め、確認の後に続きを出す）。今は使わない（Ack の API・画面は #226）。
+
 ### 16.5 Dealer の通知の優先順位（D142）
 
 1. 裁定が出たら **RULING** を先に数秒（OI-012）出し、自動で閉じる。
@@ -372,6 +380,6 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 |---|---|
 | UX-02 #217 | **採用済み D144**: `GET /api/session/current`（`{session: null}` か state・Session の種類。Session ID・Hand ID・Stack・札は返さない）、開始と同じ読み取り専用の判定から作る、`ended` はこのプロセスの終了だけ、知らない state は安全側、#230（Pause / End）の承認後に追加で拡張 |
 | UX-04 #219 | **採用済み D146**: 錨は組み始めた時点の displayed の `operationKey`、同じ局面での状況（`currentBet`・Hero の `streetCommitted` 等）の変化は保持して送る前に再確認、Street / Hand / Hero の裁定・Hand の完了・Fold / All-in で破棄、App の層の Session ごとのメモリで持ち画面の移動・Outage の Dialog でも保持、中身のあった破棄だけ非モーダルで通知、Ack 待ちは送れない・`stale_view` で自動再送しない。未実装（検証の記録: `docs/taskLog/issue-219-draft-lifecycle-design.md`・PR #242） |
-| UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。未検証の Tournament Ante / BBA と Hand 途中の Side Pot 派生表示は #222・#224 に引き継ぐ |
+| UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。Tournament Ante / BBA は #222 の Presentation Controller のテスト（Hand の始まりとして一度に出す・最後の卓が authoritative と一致）で確認済み。Hand 途中の Side Pot の内訳の表示（`buildPots` の派生）は #224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
 | UX-11 #226 | **採用済み D145**: Ack の要否は `DEALER_RULING` の notes から決定論で導き、確認の位置は `HandRuntime` のメモリ（Event / DB は不変）、`POST /api/hands/:handId/etiquette-ack {rulingSeq}` と REST / SSE の `{revision, pendingRulingSeq}`（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は 409 `stale_etiquette`）、Ack 待ちの Hero の操作は 409 `etiquette_ack_required`（User Read は可）、Hand の完了後も待ちを残し確認まで次の Hand を始めない、Outage のダイアログが先で Retry / Emergency Bot の後も Ack まで止める、再起動で待ちが消えるのは D62 の範囲、Tournament のプレイ時間に入るのは Hand の進行中の待ちだけ（T1=A）。#230 の予約との扱いは #230 で再確認。未実装（検証の記録: `docs/taskLog/issue-226-etiquette-ack-design.md`） |

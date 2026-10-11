@@ -36,3 +36,44 @@ export const REVIEW_DELAY_NOTICE_MS = 40_000;
  * （切り上げ）なので、30 秒ごとに取り直せば表示が 1 分以上遅れない。ローカルのサーバーへの GET だけ。
  */
 export const TOURNAMENT_REFRESH_MS = 30_000;
+
+/**
+ * Live の表示演出（Presentation Controller。#222・D140）の 1 step の所要時間の基準（ミリ秒。標準の速さ）。OI-012 の暫定値。
+ * step の種類は最後の Event で決める（lib/presentation.ts の stepKindOf）。Flop は 3 枚を順に出すので Turn / River より長い。
+ */
+export const PRESENTATION_STEP_MS = {
+  action: 550,
+  flop: 1_000,
+  board: 650,
+  showdown: 900,
+  pot: 1_000,
+  finish: 400,
+  other: 250,
+} as const;
+
+/** 表示演出の速度 4 段階ごとの所要時間の倍率（OI-012 の暫定値）。演出なしは 0（動きを省き、表示の内容は省かない）。 */
+export const PRESENTATION_SPEED_SCALE = {
+  standard: 1,
+  fast: 0.5,
+  turbo: 0.25,
+  none: 0,
+} as const;
+
+/**
+ * Hero の手番が来たとき、残っている通常の演出（Showdown の公開と Pot の配分以外）に掛ける倍率（OI-012 の暫定値。Q20）。
+ */
+export const PRESENTATION_HERO_TURN_SCALE = 0.25;
+
+/**
+ * 表示待ちの step の上限（有界のキュー）。超えた古い分は動きを省いて表示済みにする（卓は最新の公開状態から作るので内容は欠けない）。
+ * 1 Hand の Hero に見える Event は多くて 100 前後で、通常は超えない。OI-012 の暫定値。
+ */
+export const PRESENTATION_MAX_PENDING_STEPS = 24;
+
+/** Replay の Play の間隔に掛ける倍率（Live とは別に持つ速度。演出なしでも Play は進めるので最小は超高速と同じ）。OI-012 の暫定値。 */
+export const REPLAY_SPEED_SCALE = {
+  standard: 1,
+  fast: 0.5,
+  turbo: 0.25,
+  none: 0.25,
+} as const;

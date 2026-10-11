@@ -310,3 +310,23 @@ function buildTableView(
     awards: state.awards,
   };
 }
+
+/**
+ * Hero に見える Event の列（visibleEvents の結果・HeroView.log）を、表示の 1 step ごとに区切った各 step の最後の Event の位置。
+ * 1 step = 1 Event だが、Action に決まった Dealer の裁定（DEALER_RULING・outcome: action）と、その直後の同じ Player の ACTION_TAKEN は
+ * 1 step にまとめる（同じ追記で置く 1 つの出来事で〔D90〕、裁定だけの step では裁定の結果がまだ見えないため）。
+ * Replay の step（server）と Live の演出の単位（web の Presentation Controller）が同じ区切りを使う（D143・D140）。
+ */
+export function heroViewStepEnds(visible: readonly HandEvent[]): number[] {
+  const ends: number[] = [];
+  visible.forEach((e, i) => {
+    const next = visible[i + 1];
+    const joinsNext =
+      e.type === "DEALER_RULING" &&
+      e.outcome === "action" &&
+      next?.type === "ACTION_TAKEN" &&
+      next.playerId === e.playerId;
+    if (!joinsNext) ends.push(i);
+  });
+  return ends;
+}
