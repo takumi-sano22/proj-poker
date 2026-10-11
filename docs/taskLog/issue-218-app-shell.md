@@ -60,9 +60,12 @@
 - 画面の実測（Playwright のスクリーンショット）: Home 1280×720・320×568、Learn 1280×720・375×667、Play 1280×900・720×600・320×568、Review 375×667（Learn の一覧から開いた「Learn の一覧へ」）
 - 720×600 で上の席とナビの重なりを `elementFromPoint` で測り、余白を足した後に 320×568〜1280×900 で席・ナビ・表示設定が重ならないことを確かめた（`app-shell.spec.ts` に固定）
 
+## レビューでの修正（Codex round 1・P2）
+
+- **終わった Session の後の再読み込みで「新しい Session を始める」が二度押しになる**: 再読み込みの直後は client が終わった Session の最後の Hand を知らず（照会は Hand ID を返さない。D144）、`afterHandId=null` の開始に server の冪等な判定が「結果を見ていない最後の Hand」を返していた。`useHandSession` の開始で、新しい Session を求めた（種類を送った）応答が「見ていない・終わった Session の Hand」（`lib/view-model.ts` の `isUnseenEndedHand`）なら、その Hand を見たものとしてもう 1 回だけ送るようにした。続いている Session の Hand・種類を送らない「続き」・進行中の Hand には当てない（勝手に次の Hand へ進めない）。server の契約は変えていない。E2E（`session-end-layout.spec.ts` の狭い画面の 2 本）に「再読み込み → Home → 1 回で新しい Session」を足し、修正を外すと失敗することを確かめた。
+
 ## 残課題・既知の挙動
 
-- `ended` の Session を、この画面で結果を見ないまま（再読み込みの直後）Home から「新しい Session を始める」と、server の冪等な開始が結果を見ていない最後の Hand（Session の終わり）を先に返す。Session の終わりの案内からもう一度「新しい Session を始める」で新しい Session になる（server の `afterHandId` の契約どおり。変えていない）。
 - 別のタブで新しい Session を始めた後に、このタブの Home で「続きから遊ぶ」を押すと、このタブが持っている前の Hand へ移る（この画面の Session を優先するため）。二重タブは #230 の Session Lifecycle の設計で扱う。
 - `ui-design-recipes` の `references/proj-poker.md`「横断 UI/UX の新しいレイヤー」の App Shell の行は「設計のみ・予定」のまま（`.claude/` の資産は本 PR で編集しない）。実装の置き場所（`lib/shell.ts`・`components/AppShell.tsx`・`.app__table` の余白）への更新が別途必要。
 - Learn の Review の Pass（判断時点 / 答え合わせ）のタブ・Session Review の Profile のタブ・ページのスクロール位置は覚えない（覚えるのは開いた判断と Replay の Hand・step）。

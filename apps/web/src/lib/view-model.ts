@@ -12,7 +12,9 @@ import type {
   CurrentSessionLookup,
   OutageKind,
   OutageStatus,
+  SessionRequest,
   SessionStatus,
+  StartHandResponse,
 } from "./api.js";
 import {
   ACTION_TERMS,
@@ -113,6 +115,26 @@ export function parseCurrentSession(value: unknown): CurrentSession | null {
     return { state, kind: { mode: "tournament", presetId: k["presetId"] } };
   }
   return null;
+}
+
+/**
+ * 新しい Session を求めた開始の応答が、結果をまだ見ていない「終わった Session の最後の Hand」だったか（#218）。
+ * server の開始は冪等で、結果を見ていない最後の Hand を先に返す（afterHandId の契約）。再読み込みの直後に Home の
+ * 「新しい Session を始める」を押すと、client は終わった Session の最後の Hand を知らない（照会は Hand ID を返さない。D144）ので、
+ * この応答が返る。Hero が新しい Session を明示的に求めたときだけ、その Hand を見たものとして開始をもう 1 回送る（呼び出し側）。
+ * 続いている Session（in_hand / ready_for_next_hand）の Hand は対象にしない（勝手に次の Hand へ進めない）。
+ */
+export function isUnseenEndedHand(
+  sentAfterHandId: string | null,
+  request: SessionRequest | undefined,
+  res: Pick<StartHandResponse, "handId" | "view" | "session">,
+): boolean {
+  return (
+    request !== undefined &&
+    res.handId !== sentAfterHandId &&
+    res.view.status === "complete" &&
+    res.session.state === "ended"
+  );
 }
 
 /**
