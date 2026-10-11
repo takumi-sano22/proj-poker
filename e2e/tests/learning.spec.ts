@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { startNextHand } from "../support/next-hand.js";
+import { startFirstHand } from "../support/play.js";
 import {
   startServer,
   stopServer,
@@ -176,7 +177,7 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
   let sessionHandId = "";
   await test.step("2 人卓で、Session が終わる（どちらかの Stack がなくなる）まで Play する", async () => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await startFirstHand(page);
     await expect(page.getByRole("region", { name: "卓" })).toHaveAttribute(
       "data-seat-count",
       "2",
@@ -280,9 +281,37 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
   let drill: Drill | undefined;
   await test.step("おすすめの Drill を始め、Drill の Hand を最後まで遊ぶ", async () => {
     await learning.getByRole("button", { name: "Drill を始める" }).click();
+    const drillHeading = page.getByRole("heading", {
+      name: "Targeted Drill（練習）",
+    });
+    await expect(drillHeading).toBeVisible();
+    // Drill の卓も Learn の画面と同じく戻り先を持つ（卓の Session の終わりから入ったので「卓に戻る」）。
     await expect(
-      page.getByRole("heading", { name: "Targeted Drill（練習）" }),
+      page
+        .getByRole("navigation", { name: "Learn の移動" })
+        .getByRole("button", { name: "卓に戻る" }),
     ).toBeVisible();
+    // Drill の卓は Learn の画面で、Play（通常の卓）と混ぜない。Play へ移っても Drill を捨てず、Learn に戻ると同じ Drill の卓。
+    // 画面の移動では Hand・Drill の開始を送らない（#218）。
+    let starts = 0;
+    const countStart = (request: { method(): string; url(): string }) => {
+      const path = new URL(request.url()).pathname;
+      if (
+        request.method() === "POST" &&
+        (path === "/api/hands" || path === "/api/drills")
+      ) {
+        starts++;
+      }
+    };
+    page.on("request", countStart);
+    const nav = page.getByRole("navigation", { name: "画面の切り替え" });
+    await nav.getByRole("button", { name: "Play" }).click();
+    await expect(drillHeading).toHaveCount(0);
+    await expect(dock.getByText("Session が終了しました。")).toBeVisible();
+    await nav.getByRole("button", { name: "Learn" }).click();
+    await expect(drillHeading).toBeVisible();
+    page.off("request", countStart);
+    expect(starts, "画面の移動で Hand・Drill の開始を送らない").toBe(0);
     await playToHandEnd(page, false);
     await expect(
       dock.getByText("Drill の Hand が終了しました。"),
@@ -373,8 +402,14 @@ test("Session を終わりまで Play → Review → Session Review → Profile 
       page,
       "/api/replay/hands",
     );
+    // 再読み込みすると Home から始まる。Learn の一覧から Replay を開く。
     await page.reload();
-    await page.getByRole("button", { name: "Replay を見る" }).click();
+    await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
+    await page
+      .getByRole("navigation", { name: "画面の切り替え" })
+      .getByRole("button", { name: "Learn" })
+      .click();
+    await page.getByRole("button", { name: "Replay を開く" }).click();
     await expect(page.locator(".replay-item")).toHaveCount(replay.hands.length);
     await page.locator(".replay-item").first().click();
     await expect(page.getByText("Replay（Hero の視点）")).toBeVisible();

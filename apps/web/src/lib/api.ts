@@ -1,5 +1,5 @@
 // Runtime の Hand API（D73: Hero の Action は REST、卓の状態は SSE）。ブラウザは同一 origin の /api だけを呼ぶ（D67）。
-import { parseCurrentSession } from "./view-model.js";
+import { parseCurrentSessionLookup } from "./view-model.js";
 import type {
   ActionType,
   AnteKind,
@@ -262,16 +262,23 @@ export function startHand(
 }
 
 /**
- * 今の Session の状態を読む（D144。読むだけで Hand を始めない・進めない）。続けられる Session が無い、または知らない state・形の
- * 合わない応答（#230 で足す paused 等を含む）は null（「続きから遊ぶ」を出さない安全側。parseCurrentSession）。
+ * Home の照会の結果（D144）。続けられる Session が無い（none）と、知らない state・形の合わない応答（unknown。#230 で足す paused 等）を
+ * 分ける。どちらも「続きから遊ぶ」は出さないが、unknown では新しい Session の開始も出さない（サーバーが続けている Session の扱いを
+ * Home が知らないまま、開始の要求を送らない）。
  */
-export async function fetchCurrentSession(): Promise<CurrentSession | null> {
-  const body = await getJson<unknown>("/api/session/current");
-  const session =
-    typeof body === "object" && body !== null && "session" in body
-      ? body.session
-      : null;
-  return parseCurrentSession(session);
+export type CurrentSessionLookup =
+  | { readonly kind: "none" }
+  | { readonly kind: "known"; readonly session: CurrentSession }
+  | { readonly kind: "unknown" };
+
+/**
+ * 今の Session の状態を読む（GET /api/session/current。D144）。読むだけで Hand・Session を作らない・進めない。
+ * 応答は受け側の whitelist（parseCurrentSessionLookup）を通す。通信の失敗は ApiError で投げる。
+ */
+export async function fetchCurrentSession(): Promise<CurrentSessionLookup> {
+  return parseCurrentSessionLookup(
+    await getJson<unknown>("/api/session/current"),
+  );
 }
 
 /**

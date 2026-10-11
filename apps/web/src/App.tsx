@@ -1,14 +1,18 @@
 // Basic UI: Hero として Hand を続けて遊ぶ画面。Stack は Hand をまたいで持ち越し、Hero の Bust か
 // CPU の全員 Bust で Session が終わる（D80）。
 // 表示はすべてサーバーの HeroView と Session の状態に基づく。クライアントは状態を進めず、合法性も判定しない（D40・D73）。
+// 画面は App Shell（Home / Play / Learn。D136・#218）で切り替える。起動時は必ず Home で、Home は Session の状態を読むだけ（D144）。
+// Hand・Session の開始は Hero が Home の「続きから遊ぶ」・「新しい Session を始める」（と卓の「次の Hand へ」など）を押したときだけで、
+// 画面の移動では開始を送らない。通常の卓と Drill の卓の Session（SSE）は画面の切り替えより上のこの層で持ち、Learn を見ている間も続く。
 // CPU の障害で Hand が止まったら、卓の中央にダイアログを出して続け方を選ばせる（D86）。
-// 見出しの切り替えで Replay（保存済みの Hand の再生。#68）を開く。Replay を見ている間も卓の Session（SSE）はそのまま続く。
-// Hand が終わったら、Hero の欄と Replay から、その Hand の Review（#84）を開ける。Review と Replay は互いの場面へ移れる。
-// Session が終わったら、終了の案内から Session Review（#116）を開ける。Session Review から各 Hand の Review へ移れる。
-// Session Review の Recommended Drill から Targeted Drill（#117）を始められる。Drill の Hand は別の画面（同じ卓の部品）で 1 Hand だけ遊び、
-// 終わったら練習した判断の Review を開ける。Drill の間も通常の卓の Session（SSE）はそのまま残り、「卓に戻る」で続きに戻る。
+// Learn には Replay（保存済みの Hand の再生。#68）・Hand Review（#84）・Session Review（#116）・Drill（#117）を置く。Review と Replay は
+// 互いの場面へ移れ、Learn の画面は戻り先（Learn に入る前の領域）と閲覧位置（判断・step）を覚える（lib/shell.ts）。
+// Drill の Hand は Learn の中の別の画面（同じ卓の部品）で 1 Hand だけ遊び、終わったら練習した判断の Review を開ける。
+// Drill の間も通常の卓の Session（SSE）はそのまま残り、Play（卓から入った Drill は「卓に戻る」）で続きに戻る。
 // 狭い画面（スマホ幅）では、卓の中央に重ねていた欄（Hand の結果・CPU 障害のダイアログ・Session 終了の案内）が席と重なるので、
 // 画面下に固定した Hero の欄へ置く（#5。広い画面は従来どおり卓の中央）。
+// 卓の表示は Presentation Controller（#222・D140・D143）が、受け取った最新の View から 1 つずつ演出して出す（useHandSession の view は
+// Hero に見せている卓）。演出の速度は表示の設定で、Play・Drill の卓へ戻ったとき（Home / Learn からの復帰）は古い演出を捨てて最新に合わせる。
 // 新しい Session の開始で Cash / Tournament の Preset を選べる（#190・D128）。Tournament の Hand では、見出しに Level・Blind・Ante を、
 // 卓の右（狭い画面は卓の下）に Tournament の欄（次の Level・残人数・Payout・Elimination・終わったら Result）を出す。Cash の画面は変えない。
 import type { HeroView } from "@proj-poker/engine";
@@ -16,11 +20,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
+  useReducer,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { Amount } from "./components/Amount.js";
+import {
+  HomeScreen,
+  LearnBackBar,
+  LearnHub,
+  ShellNav,
+} from "./components/AppShell.js";
 import {
   BbDisplayProvider,
   BbDisplayToggle,
@@ -34,6 +46,7 @@ import { HandLog } from "./components/HandLog.js";
 import { OpponentNotes } from "./components/OpponentNotes.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
+import { PresentationControls } from "./components/PresentationControls.js";
 import { ReplayScreen } from "./components/ReplayScreen.js";
 import { ReviewScreen } from "./components/ReviewScreen.js";
 import { SessionReviewScreen } from "./components/SessionReviewScreen.js";
@@ -47,6 +60,10 @@ import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import { useNarrowScreen } from "./hooks/useNarrowScreen.js";
+import {
+  usePresentationSpeed,
+  useReducedMotion,
+} from "./hooks/usePresentationSpeed.js";
 import { useTournament } from "./hooks/useTournament.js";
 import type { ReplayStart } from "./hooks/useReplay.js";
 import {
@@ -57,6 +74,14 @@ import {
 import { startDrill, type DrillView } from "./lib/drill-api.js";
 import { AI_DELAY_NOTICE_MS } from "./lib/config.js";
 import { TERMS, formatChips, termLabel } from "./lib/format.js";
+import {
+  INITIAL_SHELL,
+  areaOf,
+  backLabel,
+  shellReducer,
+  type Area,
+} from "./lib/shell.js";
+import type { PresentationSpeed } from "./lib/presentation.js";
 import { handLevelOf, tournamentEndMessage } from "./lib/tournament.js";
 import {
   canFastForward,
@@ -68,35 +93,44 @@ import {
 } from "./lib/view-model.js";
 
 /**
- * 見ている画面。Replay は開く Hand と step を、Review は Hand と最初に開く判断を、Session Review は Session の Hand（どれか 1 つ）を持つ。
- */
-type Screen =
-  | { readonly kind: "table" }
-  | { readonly kind: "replay"; readonly start: ReplayStart | null }
-  | {
-      readonly kind: "review";
-      readonly handId: string;
-      readonly decisionIndex: number | null;
-    }
-  | { readonly kind: "session_review"; readonly handId: string }
-  | { readonly kind: "drill" };
-
-/**
  * 表示中の Hand の Tournament の状況（#190）。Cash の Hand・まだ読めていない間・別の Hand の値は null（卓の部品は Cash のまま）。
  * Hand の結果・Session の終わりの案内（卓の中央と Hero の欄の両方の経路）が、Hero の順位と Payout を出すために読む。
  */
 const TournamentContext = createContext<TournamentTableStatus | null>(null);
 
-/** Drill の卓（#117）で、通常の卓と違う操作（練習した判断の Review・卓に戻る）。 */
+/** Drill の卓（#117）で、通常の卓と違う操作（練習した判断の Review・戻る）。 */
 interface DrillMode {
   readonly decisionIndex: number;
+  /** Drill の画面の戻り先へ移る（Learn の画面と同じ「戻る」。卓から入ったなら卓、Learn の一覧から入ったなら一覧）。 */
   readonly onExit: () => void;
+  /** 戻る Button の文言（「卓に戻る」など。lib/shell.ts の backLabel）。 */
+  readonly exitLabel: string;
+}
+
+/** 卓の画面の表示演出の設定（速度の選択と、OS の reduced-motion）。 */
+interface PresentationSetting {
+  readonly speed: PresentationSpeed;
+  readonly onSpeedChange: (next: PresentationSpeed) => void;
+  readonly reducedMotion: boolean;
 }
 
 export function App() {
-  const session = useHandSession();
+  // 表示演出の速度（表示の設定）。reduced-motion では動きを止め、演出なしとして進める（内容は省かない）。
+  const [speed, setSpeed] = usePresentationSpeed();
+  const reducedMotion = useReducedMotion();
+  const effectiveSpeed: PresentationSpeed = reducedMotion ? "none" : speed;
+  const presentationSetting: PresentationSetting = {
+    speed,
+    onSpeedChange: setSpeed,
+    reducedMotion,
+  };
+  // 通常の卓と Drill の卓の Session（SSE・送信中の状態）は、画面の切り替えより上のここで持つ（画面を移っても Session を捨てない）。
+  const session = useHandSession({ speed: effectiveSpeed });
   const narrow = useNarrowScreen();
-  const [screen, setScreen] = useState<Screen>({ kind: "table" });
+  // 画面の状態（起動時は Home。D136）。移り方は lib/shell.ts の純粋関数で、API を呼ばない。
+  const [shell, dispatch] = useReducer(shellReducer, INITIAL_SHELL);
+  const { screen } = shell;
+  const area = areaOf(screen);
   // Drill（#117）: 元の判断は ref に置き、開始の要求（再送を含む）はその値で送る。応答の Drill の説明は state に置く。
   const drillSource = useRef<{
     readonly handId: string;
@@ -112,48 +146,122 @@ export function App() {
     setDrill(res.drill);
     return res;
   }, []);
-  const drillSession = useHandSession({ start: requestDrill });
+  const drillSession = useHandSession({
+    start: requestDrill,
+    speed: effectiveSpeed,
+  });
   const startDrillHand = drillSession.start;
   const openDrill = useCallback(
     (handId: string, decisionIndex: number) => {
       drillSource.current = { handId, decisionIndex };
       setDrill(null);
-      setScreen({ kind: "drill" });
+      dispatch({ type: "open", target: { kind: "drill" } });
       startDrillHand();
     },
     [startDrillHand],
   );
-  const backToTable = useCallback(() => setScreen({ kind: "table" }), []);
+  // Play・Drill の卓へ移ったら（Home / Learn からの復帰）、離れていた間の古い演出を捨てて最新の公開状態から見せる（D140 Q26・§16.2）。
+  // 画面の移動では開始・操作を送らない（resync は表示だけ）。
+  const resyncPlay = session.resync;
+  const resyncDrill = drillSession.resync;
+  useEffect(() => {
+    if (screen.kind === "play") resyncPlay();
+    else if (screen.kind === "drill") resyncDrill();
+  }, [screen.kind, resyncPlay, resyncDrill]);
+  const selectArea = useCallback(
+    (next: Area) => dispatch({ type: "area", area: next }),
+    [],
+  );
+  // Learn の画面（Drill の卓を含む）の「戻る」。戻り先は画面が持つ（lib/shell.ts）。
+  const goBack = useCallback(() => dispatch({ type: "back" }), []);
   const openReview = useCallback(
     (handId: string, decisionIndex: number | null) =>
-      setScreen({ kind: "review", handId, decisionIndex }),
+      dispatch({
+        type: "open",
+        target: { kind: "review", handId, decisionIndex },
+      }),
     [],
   );
   const openReplay = useCallback(
     (handId: string, step: number) =>
-      setScreen({ kind: "replay", start: { handId, step } }),
+      dispatch({
+        type: "open",
+        target: { kind: "replay", start: { handId, step } },
+      }),
     [],
   );
   const openSessionReview = useCallback(
-    (handId: string) => setScreen({ kind: "session_review", handId }),
+    (handId: string) =>
+      dispatch({ type: "open", target: { kind: "session_review", handId } }),
     [],
   );
+  // 閲覧位置（Review の判断・Replay の Hand と step）。Learn を離れて戻ったときにそこから見せる（Q23）。
+  const reportReviewPosition = useCallback(
+    (decisionIndex: number | null) =>
+      dispatch({
+        type: "position",
+        position: { kind: "review", decisionIndex },
+      }),
+    [],
+  );
+  const reportReplayPosition = useCallback(
+    (start: ReplayStart | null) =>
+      dispatch({ type: "position", position: { kind: "replay", start } }),
+    [],
+  );
+  // Home の「続きから遊ぶ」。この画面で続けている Session があれば、卓へ移るだけ（開始を送らない。終わった Hand の結果を見たあとに
+  // 送ると次の Hand を作ってしまうため）。無ければ（起動の直後・再読み込みの後）既存の冪等な開始を送る（D144）:
+  // 進行中の Hand はその Hand を、まだ結果を見ていない終わった Hand はその Hand を返し、再起動後の Session は次の Hand を始める。
+  const continueSession = useCallback(() => {
+    selectArea("play");
+    if (session.view === null) session.start();
+  }, [selectArea, session]);
+  // Home の「新しい Session を始める」。選んだ種類で開始を送る（続く Session と違えばサーバーが拒否し、Play の案内から続きに戻れる）。
+  const startNewSession = useCallback(() => {
+    selectArea("play");
+    session.startNewSession();
+  }, [selectArea, session]);
   const { view } = session;
   // 通常の卓の Tournament の状況（Cash の Hand は null）。Drill の卓は Tournament にならないので読まない。
-  const tournament = useTournament(session.handId, view);
+  const latestTournament = useTournament(session.handId, view);
+  // 演出の途中に読んだ状況は、server ではもう Hand が終わった後の値（Elimination・順位）でありうる。表示が最新に追いつくまでは、
+  // 追いついていたときに見せた値を出し続け、Hand の結果より先に結果を見せない（D140）。
+  const [heldTournament, setHeldTournament] = useState(latestTournament);
+  if (session.synced && heldTournament !== latestTournament) {
+    setHeldTournament(latestTournament);
+  }
+  const tournament = session.synced ? latestTournament : heldTournament;
   // 見出しの Level・Ante は表示中の Hand の公開の HAND_STARTED から作る（読み込みを待たない。Cash は null）。
   const handLevel = view === null ? null : handLevelOf(view);
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
   const [showBB, setShowBB] = useBbSetting();
+  // Learn の一覧の入口（今ある機能だけ。通常の卓の Session の Hand から開く）。
+  const lastHandId =
+    view !== null && view.status === "complete" ? view.handId : null;
+  const sessionHandId = session.handId;
+  const learnBar =
+    screen.kind === "replay" ||
+    screen.kind === "review" ||
+    screen.kind === "session_review" ||
+    screen.kind === "drill" ? (
+      <LearnBackBar
+        back={screen.back}
+        onBack={goBack}
+        onLearnHome={() => selectArea("learn")}
+      />
+    ) : null;
 
   return (
     <BbDisplayProvider value={showBB}>
       {/* Fast Forward 中は卓の動きの演出（transition）も止める（D15）。待ちの短縮はサーバー側 */}
-      <div className={`app${session.fastForward ? " app--fast-forward" : ""}`}>
+      <div
+        className={`app${session.fastForward ? " app--fast-forward" : ""}${effectiveSpeed === "none" ? " app--presentation-none" : ""}`}
+      >
         <header className="app__header">
           <h1 className="app__title">proj-poker</h1>
+          <ShellNav area={area} onSelect={selectArea} />
           <div className="app__header-end">
-            {screen.kind === "table" &&
+            {screen.kind === "play" &&
               view !== null &&
               (handLevel === null ? (
                 <p className="app__meta">
@@ -175,23 +283,39 @@ export function App() {
                 </p>
               ))}
             <BbDisplayToggle showBB={showBB} onChange={setShowBB} />
-            <button
-              type="button"
-              className="btn btn--ghost btn--sm"
-              onClick={() =>
-                setScreen(
-                  screen.kind === "table"
-                    ? { kind: "replay", start: null }
-                    : { kind: "table" },
-                )
-              }
-            >
-              {screen.kind === "table" ? "Replay を見る" : "卓に戻る"}
-            </button>
           </div>
         </header>
 
-        {screen.kind === "replay" ? (
+        {learnBar}
+        {screen.kind === "home" ? (
+          <HomeScreen
+            session={session}
+            onContinue={continueSession}
+            onStartNew={startNewSession}
+          />
+        ) : screen.kind === "learn" ? (
+          <LearnHub
+            onOpenReplay={() =>
+              dispatch({
+                type: "open",
+                target: { kind: "replay", start: null },
+              })
+            }
+            onOpenLastHandReview={
+              lastHandId === null ? null : () => openReview(lastHandId, null)
+            }
+            onOpenSessionReview={
+              sessionHandId === null
+                ? null
+                : () => openSessionReview(sessionHandId)
+            }
+            onOpenDrill={
+              drill === null
+                ? null
+                : () => dispatch({ type: "open", target: { kind: "drill" } })
+            }
+          />
+        ) : screen.kind === "replay" ? (
           // 開く Hand・step が変わったら作り直す（Review から別の場面を開いたとき）。
           <ReplayScreen
             key={
@@ -201,6 +325,7 @@ export function App() {
             }
             start={screen.start}
             onOpenReview={openReview}
+            onPositionChange={reportReplayPosition}
           />
         ) : screen.kind === "session_review" ? (
           <SessionReviewScreen
@@ -222,11 +347,13 @@ export function App() {
             <TableScreen
               session={drillSession}
               narrow={narrow}
+              presentation={presentationSetting}
               onOpenReview={openReview}
               onOpenSessionReview={openSessionReview}
               drill={{
                 decisionIndex: drill.decisionIndex,
-                onExit: backToTable,
+                onExit: goBack,
+                exitLabel: backLabel(screen.back),
               }}
               banner={
                 <DrillBanner
@@ -243,13 +370,15 @@ export function App() {
             handId={screen.handId}
             initialDecision={screen.decisionIndex}
             onOpenReplay={openReplay}
+            onPositionChange={reportReviewPosition}
           />
         ) : view === null ? (
-          <StartScreen session={session} />
+          <PlayEmpty session={session} onHome={() => selectArea("home")} />
         ) : (
           <TableScreen
             session={session}
             narrow={narrow}
+            presentation={presentationSetting}
             onOpenReview={openReview}
             onOpenSessionReview={openSessionReview}
             tournament={tournament}
@@ -261,26 +390,37 @@ export function App() {
 }
 
 /**
- * 最初の画面（まだ Hand が無い）。新しい Session の種類（Cash / Tournament の Preset。D128）を選んで始める。
- * 前の Session が続いていて（再起動後の Resume など）種類が違えば、サーバーが拒否し、案内から続きに戻れる（Notice）。
+ * Play で、まだ卓が無いとき（起動の直後に Play を選んだ・開始の応答を待っている・開始に失敗した）。ここからは開始を送らず、Home へ誘導する
+ * （開始は Home の Button と、失敗の案内の再送・続きの Button だけ）。
  */
-function StartScreen({ session }: { readonly session: HandSession }) {
+function PlayEmpty({
+  session,
+  onHome,
+}: {
+  readonly session: HandSession;
+  readonly onHome: () => void;
+}) {
   return (
     <main className="app__empty">
-      <p>No-Limit Texas Hold'em の卓に Hero として座ります。</p>
-      <SessionModePicker
-        value={session.sessionChoice}
-        onChange={session.setSessionChoice}
-        disabled={session.pending}
-      />
-      <button
-        type="button"
-        className="btn btn--primary btn--lg"
-        disabled={session.pending}
-        onClick={session.startNewSession}
-      >
-        Hand を始める
-      </button>
+      {session.pending ? (
+        <p role="status">卓を準備しています…</p>
+      ) : (
+        <>
+          {session.notice === null && (
+            <p>
+              まだ卓に着いていません。Home で続きから遊ぶか、新しい Session
+              を始めてください。
+            </p>
+          )}
+          <button
+            type="button"
+            className="btn btn--secondary btn--md"
+            onClick={onHome}
+          >
+            Home へ
+          </button>
+        </>
+      )}
       <Notice session={session} />
     </main>
   );
@@ -294,6 +434,7 @@ function StartScreen({ session }: { readonly session: HandSession }) {
 function TableScreen({
   session,
   narrow,
+  presentation,
   onOpenReview,
   onOpenSessionReview,
   drill = null,
@@ -302,6 +443,7 @@ function TableScreen({
 }: {
   readonly session: HandSession;
   readonly narrow: boolean;
+  readonly presentation: PresentationSetting;
   readonly onOpenReview: OpenReview;
   readonly onOpenSessionReview: OpenSessionReview;
   readonly drill?: DrillMode | null;
@@ -314,9 +456,7 @@ function TableScreen({
       players.find((p) => p.playerId === playerId)?.displayName ?? playerId,
     [players],
   );
-  if (view === null) {
-    return <StartScreen session={session} />;
-  }
+  if (view === null) return null;
   return (
     // 卓の上の用語（Poker Vocabulary）の詳細は、今の Hand の Hero に見える情報で例を作る。
     // 順位・Payout の案内は表示中の Hand の値だけで作る（useTournament も表示中の Hand の値だけを返す。二重の照合）。
@@ -345,6 +485,14 @@ function TableScreen({
             />
           </div>
           <aside className="app__side">
+            {/* 演出の速度と Skip（Skip は演出の待ちがあるときだけ）。Replay の速度とは別に持つ（Q21） */}
+            <PresentationControls
+              label="演出の速度"
+              speed={presentation.speed}
+              onSpeedChange={presentation.onSpeedChange}
+              onSkip={session.synced ? null : session.resync}
+              reducedMotion={presentation.reducedMotion}
+            />
             {tournament !== null && (
               <TournamentPanel
                 status={tournament}
@@ -385,7 +533,7 @@ interface ViewProps {
 
 /**
  * Hero の欄に出す Session の終わりの案内の状態（無ければ null）。通常の卓は、画面の幅によらず Hero の欄に出す（#158）。
- * Drill の卓は Session の終わりを案内しない（Hand が終わったら「卓に戻る」）。
+ * Drill の卓は Session の終わりを案内しない（Hand が終わったら「戻る」）。
  */
 function sessionEndInDock(
   session: HandSession,
@@ -674,7 +822,8 @@ function DockBody({
         view={view}
         hero={hero}
         disabled={session.pending || ruling?.kind === "pending"}
-        onSubmit={session.operate}
+        // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
+        onSubmit={(actions) => session.operate(view, actions) !== "resynced"}
       />
     </>
   );
@@ -786,7 +935,7 @@ function HandResult({
   readonly onOpenSessionReview: OpenSessionReview;
   /** 獲得額の一覧だけを出す（Session の終わりの案内と Button は Hero の欄に出すとき。#158）。 */
   readonly awardsOnly?: boolean;
-  /** Drill の Hand（#117）は 1 Hand だけなので、次の Hand・Session の案内の代わりに「卓に戻る」を出す。 */
+  /** Drill の Hand（#117）は 1 Hand だけなので、次の Hand・Session の案内の代わりに「戻る」（卓から入ったなら「卓に戻る」）を出す。 */
   readonly drill?: DrillMode | null;
   readonly docked?: boolean;
   readonly actions?: ReactNode;
@@ -813,7 +962,7 @@ function HandResult({
           className="btn btn--primary btn--md"
           onClick={drill.onExit}
         >
-          卓に戻る
+          {drill.exitLabel}
         </button>
         {actions}
       </div>

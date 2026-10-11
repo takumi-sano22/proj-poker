@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   BB_DISPLAY_KEY,
+  DEFAULT_PRESENTATION_SPEED,
+  PRESENTATION_SPEED_KEY,
+  loadPresentationSpeed,
   loadShowBB,
+  savePresentationSpeed,
   saveShowBB,
   type SettingsStorage,
 } from "./display-settings.js";
@@ -56,5 +60,33 @@ describe("BB 補助表示の設定（viewer ごとの保存。D49）", () => {
   it("引数を省くとグローバルの localStorage を使い、無い環境（Node）でも例外にしない", () => {
     expect(() => saveShowBB(true)).not.toThrow();
     expect(loadShowBB()).toBe(true);
+  });
+});
+
+describe("表示演出の速度の保存（#222・D140 Q19）", () => {
+  it("保存した速度を読み、無い・知らない値なら標準", () => {
+    expect(loadPresentationSpeed(memoryStorage().storage)).toBe(
+      DEFAULT_PRESENTATION_SPEED,
+    );
+    expect(DEFAULT_PRESENTATION_SPEED).toBe("standard");
+    expect(
+      loadPresentationSpeed(
+        memoryStorage({ [PRESENTATION_SPEED_KEY]: "turbo" }).storage,
+      ),
+    ).toBe("turbo");
+    expect(
+      loadPresentationSpeed(
+        memoryStorage({ [PRESENTATION_SPEED_KEY]: "warp" }).storage,
+      ),
+    ).toBe("standard");
+  });
+
+  it("切り替えた速度を保存し、保存・読み込みが拒否されても例外にしない", () => {
+    const { storage, data } = memoryStorage();
+    savePresentationSpeed("none", storage);
+    expect(data.get(PRESENTATION_SPEED_KEY)).toBe("none");
+    expect(() => savePresentationSpeed("fast", throwingStorage)).not.toThrow();
+    expect(loadPresentationSpeed(throwingStorage)).toBe("standard");
+    expect(loadPresentationSpeed(null)).toBe("standard");
   });
 });

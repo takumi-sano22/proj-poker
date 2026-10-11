@@ -62,10 +62,17 @@ export function Table({ view, nameOf, center }: TableProps) {
           >
             {Array.from({ length: BOARD_SIZE }, (_, i) => {
               const card = view.board[i];
+              // 出た札は置く動きで見せ、Flop の 3 枚は順に出す（D140 Q14。動きの長さはトークンで、演出なしでは 0）。
               return card === undefined ? (
                 <CardSlot key={i} />
               ) : (
-                <PlayingCard key={i} card={card} />
+                <span
+                  key={i}
+                  className="board__card-in"
+                  style={{ "--board-order": i < 3 ? i : 0 } as CSSProperties}
+                >
+                  <PlayingCard card={card} />
+                </span>
               );
             })}
           </div>

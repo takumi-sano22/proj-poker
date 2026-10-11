@@ -19,6 +19,19 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${E2E_WEB_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // 卓の表示演出（#222・D140）の速度は、このブラウザの保存値を「超高速」にして始める。演出のタイマーの経路は通しつつ、
+    // Hand を何十も進める spec を CI の時間内に収める（標準の速さの挙動は presentation.spec.ts が時計を止めて確かめる）。
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: `http://127.0.0.1:${E2E_WEB_PORT}`,
+          localStorage: [
+            { name: "proj-poker.display.presentationSpeed", value: "turbo" },
+          ],
+        },
+      ],
+    },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {

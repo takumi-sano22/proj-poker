@@ -9,9 +9,12 @@ import {
 } from "@proj-poker/engine";
 import type {
   CurrentSession,
+  CurrentSessionLookup,
   OutageKind,
   OutageStatus,
+  SessionRequest,
   SessionStatus,
+  StartHandResponse,
 } from "./api.js";
 import {
   ACTION_TERMS,
@@ -112,6 +115,40 @@ export function parseCurrentSession(value: unknown): CurrentSession | null {
     return { state, kind: { mode: "tournament", presetId: k["presetId"] } };
   }
   return null;
+}
+
+/**
+ * 新しい Session を求めた開始の応答が、結果をまだ見ていない「終わった Session の最後の Hand」だったか（#218）。
+ * server の開始は冪等で、結果を見ていない最後の Hand を先に返す（afterHandId の契約）。再読み込みの直後に Home の
+ * 「新しい Session を始める」を押すと、client は終わった Session の最後の Hand を知らない（照会は Hand ID を返さない。D144）ので、
+ * この応答が返る。Hero が新しい Session を明示的に求めたときだけ、その Hand を見たものとして開始をもう 1 回送る（呼び出し側）。
+ * 続いている Session（in_hand / ready_for_next_hand）の Hand は対象にしない（勝手に次の Hand へ進めない）。
+ */
+export function isUnseenEndedHand(
+  sentAfterHandId: string | null,
+  request: SessionRequest | undefined,
+  res: Pick<StartHandResponse, "handId" | "view" | "session">,
+): boolean {
+  return (
+    request !== undefined &&
+    res.handId !== sentAfterHandId &&
+    res.view.status === "complete" &&
+    res.session.state === "ended"
+  );
+}
+
+/**
+ * GET /api/session/current の応答の本体（{session}）を Home の照会の結果にする（D144）。`session: null` だけを「Session が無い」とし、
+ * それ以外で parseCurrentSession が受け取れない値（知らない state・知らない Preset・形の合わない応答）は unknown にする。
+ */
+export function parseCurrentSessionLookup(body: unknown): CurrentSessionLookup {
+  if (typeof body !== "object" || body === null || !("session" in body)) {
+    return { kind: "unknown" };
+  }
+  const raw = (body as { readonly session: unknown }).session;
+  if (raw === null) return { kind: "none" };
+  const session = parseCurrentSession(raw);
+  return session === null ? { kind: "unknown" } : { kind: "known", session };
 }
 
 /** SSE の session イベントの data を受け取ってよいかの検査（受け側の whitelist）。知っている項目だけで組み直す。 */

@@ -1,4 +1,5 @@
 import type { HandEvent } from "@proj-poker/engine";
+import type { SessionStatus } from "./api.js";
 import { describe, expect, it } from "vitest";
 import { preflopHeroToAct } from "../testing/fixtures.js";
 import {
@@ -14,6 +15,8 @@ import {
   parseHeroView,
   parseOutageStatus,
   parseCurrentSession,
+  parseCurrentSessionLookup,
+  isUnseenEndedHand,
   parseSessionStatus,
   seatDirections,
   selectLatestView,
@@ -569,5 +572,91 @@ describe("parseCurrentSession（GET /api/session/current の受け側 whitelist�
     ).toBeNull();
     expect(parseCurrentSession({ state: "in_hand" })).toBeNull();
     expect(parseCurrentSession("in_hand")).toBeNull();
+  });
+});
+
+describe("parseCurrentSessionLookup（Home の照会の結果。D144・#218）", () => {
+  it("session: null だけを「Session が無い」にする", () => {
+    expect(parseCurrentSessionLookup({ session: null })).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("知っている state と種類は known で返す", () => {
+    expect(
+      parseCurrentSessionLookup({
+        session: { state: "in_hand", kind: { mode: "cash" } },
+      }),
+    ).toEqual({
+      kind: "known",
+      session: { state: "in_hand", kind: { mode: "cash" } },
+    });
+  });
+
+  it("知らない state・知らない Preset・形の合わない応答は unknown（「続きから」も新しい Session の開始も出さない）", () => {
+    expect(
+      parseCurrentSessionLookup({
+        session: { state: "paused", kind: { mode: "cash" } },
+      }),
+    ).toEqual({ kind: "unknown" });
+    expect(
+      parseCurrentSessionLookup({
+        session: {
+          state: "in_hand",
+          kind: { mode: "tournament", presetId: "unknown_preset" },
+        },
+      }),
+    ).toEqual({ kind: "unknown" });
+    expect(parseCurrentSessionLookup({})).toEqual({ kind: "unknown" });
+    expect(parseCurrentSessionLookup(null)).toEqual({ kind: "unknown" });
+    expect(parseCurrentSessionLookup("x")).toEqual({ kind: "unknown" });
+  });
+});
+
+describe("isUnseenEndedHand（新しい Session を求めた開始の応答が、結果を見ていない終わった Session の Hand か。#218）", () => {
+  const ended = {
+    state: "ended",
+    reason: "hero_busted",
+  } as const satisfies SessionStatus;
+  const complete = { ...preflopHeroToAct(), status: "complete" } as const;
+
+  it("新しい Session を求め、見ていない終わった Session の Hand が返ったら true", () => {
+    expect(
+      isUnseenEndedHand(
+        null,
+        { mode: "cash" },
+        {
+          handId: "h9",
+          view: complete,
+          session: ended,
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("続きの開始（種類を送らない）・見た Hand・続いている Session・進行中の Hand は false（勝手に次へ進めない）", () => {
+    const res = { handId: "h9", view: complete, session: ended };
+    expect(isUnseenEndedHand(null, undefined, res)).toBe(false);
+    expect(isUnseenEndedHand("h9", { mode: "cash" }, res)).toBe(false);
+    expect(
+      isUnseenEndedHand(
+        null,
+        { mode: "cash" },
+        {
+          ...res,
+          session: { state: "ready_for_next_hand" },
+        },
+      ),
+    ).toBe(false);
+    expect(
+      isUnseenEndedHand(
+        null,
+        { mode: "cash" },
+        {
+          ...res,
+          view: preflopHeroToAct(),
+        },
+      ),
+    ).toBe(false);
   });
 });

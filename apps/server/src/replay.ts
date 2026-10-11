@@ -8,6 +8,7 @@
 // Learning-only Full Reveal は Review の Pass B（#83）で扱い、Replay には入れない（D93）。
 import {
   heroDecisions,
+  heroViewStepEnds,
   heroInformationSets,
   projectHeroView,
   visibleEvents,
@@ -88,28 +89,17 @@ export interface ReplayHand {
  * （選べた Action の提示は Phase 5 の Review の範囲）。
  * 例外として、Action に決まった Dealer の裁定（DEALER_RULING・outcome: action）と、その直後の同じ Player の ACTION_TAKEN は
  * 1 step にまとめる。両者は同じ追記で置く 1 つの出来事で（D90）、裁定だけの step では裁定の結果（どの Action になったか）が
- * まだ見えないため。宣言・Chip の操作はそれぞれ 1 step のまま。
+ * まだ見えないため。宣言・Chip の操作はそれぞれ 1 step のまま。区切りは Live の演出と共有する（Engine の heroViewStepEnds）。
  */
 export function replaySteps(
   events: readonly HandEvent[],
   heroId: string,
 ): HeroView[] {
   const visible = visibleEvents(events, heroId);
-  const steps: HeroView[] = [];
-  visible.forEach((e, i) => {
-    const next = visible[i + 1];
-    const joinsNext =
-      e.type === "DEALER_RULING" &&
-      e.outcome === "action" &&
-      next?.type === "ACTION_TAKEN" &&
-      next.playerId === e.playerId;
-    if (joinsNext) return;
-    steps.push({
-      ...projectHeroView(visible.slice(0, i + 1), heroId),
-      legalActions: null,
-    });
-  });
-  return steps;
+  return heroViewStepEnds(visible).map((end) => ({
+    ...projectHeroView(visible.slice(0, end + 1), heroId),
+    legalActions: null,
+  }));
 }
 
 /**

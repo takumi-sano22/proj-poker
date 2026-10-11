@@ -4,7 +4,7 @@
 // Jump to Important Spot（#84・D93）: サーバーが返した Important Spot（判断時点の情報だけから選ばれる）の判断時点の step へ移る。
 // 判断時点の step では、その判断の Review を開ける。Learning-only Full Reveal は Review の答え合わせ（Pass B）で扱い、Replay には出さない。
 import type { HeroView } from "@proj-poker/engine";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   useReplay,
   type ReplayStart,
@@ -26,6 +26,7 @@ import { useShowBB } from "./BbDisplay.js";
 import { HeroFeedback } from "./DealerFeedback.js";
 import { HandLog } from "./HandLog.js";
 import { PlayingCard } from "./PlayingCard.js";
+import { PresentationControls } from "./PresentationControls.js";
 import { Table } from "./Table.js";
 import { Term, VocabularyProvider } from "./Vocabulary.js";
 
@@ -34,13 +35,27 @@ interface ReplayScreenProps {
   readonly start?: ReplayStart | null;
   /** Hand の Review を開く（decisionIndex を渡すとその判断の Review）。 */
   readonly onOpenReview: (handId: string, decisionIndex: number | null) => void;
+  /** 見ている Hand と step（null は一覧）が変わったら知らせる（App Shell が Learn に戻ったときの閲覧位置に使う。#218）。 */
+  readonly onPositionChange?: (position: ReplayStart | null) => void;
 }
 
 export function ReplayScreen({
   start = null,
   onOpenReview,
+  onPositionChange,
 }: ReplayScreenProps) {
   const replay = useReplay(start);
+  // 最初に開く Hand の読み込みが終わるまでは知らせない（読み込み中に離れても、開こうとしていた Hand を覚えたままにする）。
+  const settled = useRef(start === null);
+  const shownHandId = replay.hand?.handId ?? null;
+  const { handLoad, step } = replay;
+  useEffect(() => {
+    if (shownHandId !== null || handLoad === "failed") settled.current = true;
+    if (!settled.current) return;
+    onPositionChange?.(
+      shownHandId === null ? null : { handId: shownHandId, step },
+    );
+  }, [handLoad, onPositionChange, shownHandId, step]);
   return replay.hand === null ? (
     <ReplayList replay={replay} />
   ) : (
@@ -193,6 +208,12 @@ function ReplayPlayer({ replay, hand, onOpenReview }: PlayerProps) {
           />
         </div>
         <aside className="app__side">
+          {/* 再生の速度は Live の演出の速度と別に持つ（卓の部品は Live と共有。D140 Q21） */}
+          <PresentationControls
+            label="再生の速度"
+            speed={replay.speed}
+            onSpeedChange={replay.setSpeed}
+          />
           <HandLog view={view} nameOf={nameOf} />
         </aside>
       </main>
