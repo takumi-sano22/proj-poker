@@ -60,7 +60,7 @@ D139（下書きはパネルの開閉や Home / Learn への移動では失わ�
 `operationKey` が変わったとき（Street・Hand・Hero への裁定。T3〜T6）に破棄する。加えて、key と独立に次でも破棄する（今は `DockBody` の早期 return で暗黙に消えている）:
 
 - Hand の完了（`status: complete`）・Session の終了・新しい Session（#230 の終了 / 一時中断も含む。下書きのスコープが Session なので）
-- Hero が Hand から抜けた（Fold・All-in。どちらも Hero への裁定を伴うので key でも変わる）
+- Hero が Hand から抜けた・操作できなくなった（Fold・All-in。操作による Fold / All-in は Hero への裁定を伴うので key でも変わるが、Blind / Ante の支払いで All-in になる場合は裁定を伴わないので、`folded` / `allIn` の状態でも判定する）
 
 **CPU の障害（Outage）では破棄しない**（今は Dialog の表示で消える。D139 の「同じ Hand で有効な間は保持」に反するので、所有層を移す実装で直す）。障害の間も手番外の操作は送れる（#226 の検証の事実 7）ので、下書きを残してよい。
 
