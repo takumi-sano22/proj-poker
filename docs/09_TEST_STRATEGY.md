@@ -412,7 +412,7 @@ Review AI（Pass A）・Evidence・Versioned Review（#82。`apps/server/src/rev
 - `e2e/`（workspaceの`@proj-poker/e2e`）のPlaywright（Chromiumだけ）で、上の1〜10を1本のテスト（`e2e/tests/session.spec.ts`）として通します。実行はルートの`pnpm e2e`、CIは`check`とは別の`e2e`ジョブです（`.github/workflows/ci.yml`。ブラウザはPlaywrightの版ごとにキャッシュ）。
 - 決定論にするため、serverは`POKER_SEED`（山札のseedの固定の並び）・`OPPONENT_PROVIDER=rulebot`・`REVIEW_PROVIDER=fake`（Review AIを固定応答に差し替え、Claudeを呼ばない）・`BOT_THINK_DELAY_MS=0`・空の一時DBで起動します（`e2e/support/server.ts`）。固定応答は呼び出しの種類（Pass A / Pass B / Follow-up）を構造化出力のSchemaで見分け、`evidenceIds`をSchemaの候補から選ぶので、本番と同じ検証・保存・画面の経路を通ります。
 - HeroはChip操作（最初にCallする手番でCallの額のChipを手に取りBetting Areaへ出して確定）と宣言Button（Call / Check）で手番を進めます。Reviewは最初の判断でPass Aの段階評価→Pass B→Follow-upの答えが出ること、ReplayはImportant Spotへのジャンプを確かめます。
-- 再起動は、2 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直して「Handを始める」で3 Hand目を始めます。3 Hand目の開始時のStackが2 Hand目の終わりのStackと同じ（新しいSessionの均等Stackに戻っていない）・Chipの総量が変わらないことを、Replay APIの値で確かめます。
+- 再起動は、2 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直してHomeの「続きから遊ぶ」で3 Hand目を始めます（Homeの表示では始めない。#218）。3 Hand目の開始時のStackが2 Hand目の終わりのStackと同じ（新しいSessionの均等Stackに戻っていない）・Chipの総量が変わらないことを、Replay APIの値で確かめます。
 - 実際のClaude（OAuth）での通しは手動で1回行い、結果は作業ログ（`docs/taskLog/issue-85-e2e-readme.md`）に残します（D98）。
 
 ### Phase 6のCritical E2E（Issue #119）
@@ -466,9 +466,9 @@ Phase 7（Rich Opponent Simulation）の通しは、Fixed CPUとGuestの卓で�
 
 Phase 8の通しは、標準の6-max STT（`stt6_hand_count`。D127の値のまま）を1本（`e2e/tests/tournament.spec.ts`）で最後まで遊びます。
 
-1. 最初の画面で「Tournament（10 Hand ごと）」を選んで始める: 6人の卓・見出しとTournamentの欄にLevel 1・10 / 20・BB Ante 20・次のLevel（11 Hand目から）・残り6 / 6人。進行ログのAnteの行はBBの席の1つだけ（D128）。全員がStarting Stack 1,500から始まる
+1. Home で「Tournament（10 Hand ごと）」を選んで始める: 6人の卓・見出しとTournamentの欄にLevel 1・10 / 20・BB Ante 20・次のLevel（11 Hand目から）・残り6 / 6人。進行ログのAnteの行はBBの席の1つだけ（D128）。全員がStarting Stack 1,500から始まる
 2. Blind / Ante: 10 HandでLevel 2（15 / 30・BB Ante 30）に上がる（12 Hand目まで進める）
-3. Resume: 12 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直して同じPresetで「Handを始める」と、同じTournamentの13 Hand目（Level 2・残人数と順位が同じ）として始まり、Stackを持ち越す（Chipの総量9,000は変わらない）
+3. Resume: 12 Hand目の後にserverを止めて同じDBで起動し直し、画面を読み込み直すとHomeが続いているTournamentを照会して「続きから遊ぶ」だけを出し（新しいSessionの種類は出さない。#218）、押すと同じTournamentの13 Hand目（Level 2・残人数と順位が同じ）として始まり、Stackを持ち越す（Chipの総量9,000は変わらない）
 4. Elimination: CPUのBustで残人数が減り、脱落した順に6位から順位が付く（欄の見出しに脱落の人数、6位のPayoutは0pt）
 5. Heads-Up: 残り2人になると、次のHandは2人の席で始まる
 6. 終了とPayout / Result: Heads-UpでHeroがAll-inして決着させ、Tournamentが終わる。Heroの順位は1位か2位で、順位の決まったPlayerのPayoutはその順位の賞金（50 / 30 / 20%の300 / 180 / 120pt、入賞の外は0pt）と完全に一致する。Heroが優勝なら全員の順位が決まりPayoutの合計は600pt、Heads-UpでBustしたら残ったCPU 1人の順位とPayoutは未決（D129）で合計は300pt。Heroの欄の案内（順位とPayout）とTournamentの欄のResult（未決の注記）
@@ -480,6 +480,21 @@ Phase 8の通しは、標準の6-max STT（`stt6_hand_count`。D127の値のま�
 - HeroはHeads-UpまではCheck / Foldだけで打ってStackを守り（CPU同士のEliminationで残人数が減る）、Heads-UpではAll-in（できなければCall）で決着を早めます。経路はseed・RuleBot・再起動の位置で決まります（再起動するとseedの並びは先頭から使い直す）。この方針と12 Hand目の後の再起動で、Heroは51 Hand目でHeads-Upに入り、52 Hand目で終わります（UIで20秒ほど）。RuleBot・Engineの変更でHeroがHeads-Upの前にBustするようになったら、前提のassert（「Hero は Heads-Up の前に Bust しない」）で落ちるので、再起動の位置かseedを選び直します。
 - 進行の判定（残人数・順位・Payout）は`GET /api/hands/:handId/tournament`の値で読み、画面の表示はその値と照らして確かめます。HandはhandIdで特定し、「次の Hand へ」の後は画面が新しいHandに切り替わるまで待ちます（`e2e/support/next-hand.ts`）。
 - `--repeat-each=10`を2回続けて通ることを、作業ログ（`docs/taskLog/issue-191-tournament-e2e.md`）に残しています。既存のCashのE2E（`session`・`session-end-layout`・`table-layout`・`learning`・`opponent-memory`・`review-tendency`）はそのまま通します（Cash Regression）。
+
+### App Shell（Home / Play / Learn）の E2E（Issue #218・D136・D144）
+
+`e2e/tests/app-shell.spec.ts` が、起動と画面の移動で Hand・Session の開始を送らないことを、`POST /api/hands` の数（`e2e/support/play.ts` の `countHandStarts`）と保存済みの Hand の数で確かめます。既存の各 spec も、起動・再読み込みの後は Home から Hero の操作（`startFirstHand` の「新しい Session を始める」/「続きから遊ぶ」）で始めます。
+
+1. Cold Start: Home を出し、`GET /api/session/current` だけを読む。卓が無い間の Play・Learn は開始を送らない（Learn の開けない入口は Button を出さない）
+2. 連打: 「新しい Session を始める」を同じ tick に 2 回押しても、開始の要求は 1 回
+3. Hand の途中の往復: Learn・Home・「続きから遊ぶ」を往復しても開始を送らず、卓は同じ Hand
+4. Hand の途中の再読み込み: Home（Hand の途中）から「続きから遊ぶ」で同じ Hand に戻る
+5. Hand の終わりの直後の再読み込み: Home（Hand の合間）から「続きから遊ぶ」で結果を見ていない同じ Hand に戻り、次の Hand は「次の Hand へ」を押して初めて作る
+6. Learn の戻り先と閲覧位置: Review で開いた判断を、Play を挟んで Learn に戻っても見せる。卓から開いた Review は「卓に戻る」で卓へ
+7. 照会の通信エラー・知らない state（`route` で差し替える）では開始の Button を出さない
+8. 320×568・375×667・720×600・1280×720・1280×900: Home・Learn・Play で横スクロールが無く、ナビが卓・Hero 欄・席と重ならず、ナビの Button を覆う要素が無い。キーボード（Tab / Enter）とタッチ（375×667）で移れる
+
+Session の終わりの後の Home（`ended` は新しい Session だけ）は `session-end-layout.spec.ts`、Drill の卓と Play の分離（Play へ移っても Drill を捨てず、移動で Hand・Drill の開始を送らない）は `learning.spec.ts`、再起動後の Tournament の Home（「続きから遊ぶ」だけ）は `tournament.spec.ts` が確かめます。
 
 ## 9. Property / Fuzz
 

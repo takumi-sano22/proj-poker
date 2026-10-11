@@ -24,6 +24,7 @@ import {
   type TablePlayer,
 } from "../lib/api.js";
 import {
+  isUnseenEndedHand,
   lastSeqOf,
   parseHeroView,
   parseOutageStatus,
@@ -305,7 +306,16 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       setPending(true);
       setNotice(null);
       lastFailed.current = null;
+      // 再送で同じ値を送れるよう、最後に送った afterHandId を覚える（下の 2 回目の送信で変わる）。
+      let sentAfter = afterHandId;
       startRequest(afterHandId, session)
+        .then((first) => {
+          // 新しい Session を求めたのに、結果を見ていない終わった Session の最後の Hand が返った（再読み込みの直後の Home など）。
+          // Hero は新しい Session を明示的に求めているので、その Hand を見たものとしてもう 1 回だけ送る（#218）。
+          if (!isUnseenEndedHand(afterHandId, session, first)) return first;
+          sentAfter = first.handId;
+          return startRequest(first.handId, session);
+        })
         .then((res) => {
           // 進行中の Hand があれば、サーバーは新しく作らずその Hand を返す（開始の再送・「卓に戻る」）。
           // 同じ Hand のときも、すでに受け取った新しい View・状態で巻き戻さない。
@@ -337,7 +347,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
           setStreamEpoch((n) => n + 1);
         })
         .catch((error: unknown) => {
-          lastFailed.current = { kind: "start", afterHandId, session };
+          lastFailed.current = {
+            kind: "start",
+            afterHandId: sentAfter,
+            session,
+          };
           setNotice(noticeOf(error));
         })
         .finally(() => {

@@ -39,18 +39,45 @@ export async function playToHandEnd(page: Page): Promise<void> {
   throw new Error("Hand が 30 手番で終わらなかった");
 }
 
-/** 最初の Hand を始め、その handId を返す。 */
-export async function startFirstHand(page: Page): Promise<string> {
+/**
+ * 起動（goto / reload）の直後に出る Home（#218・D136）から、Hero の明示の操作で Hand を始め、その handId を返す。
+ * Home は Session の状態を読むだけなので、押す前の Home の表示（照会の結果）を待ってから押す。
+ * - 新しい Session を始める: Session が無い・終わったとき（種類は押す前に Home の「新しい Session の種類」で選ぶ）
+ * - 続きから遊ぶ: Session が続いているとき（再起動後の Resume など）
+ */
+export async function startFirstHand(
+  page: Page,
+  buttonName:
+    "新しい Session を始める" | "続きから遊ぶ" = "新しい Session を始める",
+): Promise<string> {
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   const [res] = await Promise.all([
     page.waitForResponse(
       (r) =>
         r.request().method() === "POST" &&
         new URL(r.url()).pathname === "/api/hands",
     ),
-    page.getByRole("button", { name: "Hand を始める" }).click(),
+    page.getByRole("button", { name: buttonName }).click(),
   ]);
   expect(res.ok(), "最初の Hand の開始").toBe(true);
   return ((await res.json()) as { handId: string }).handId;
+}
+
+/**
+ * POST /api/hands（Hand の開始の要求）を数え始める。返す関数で、それまでに送った数を読む（画面の移動・Home の表示で開始を送って
+ * いないことの検査に使う。#218）。page.goto の前に呼ぶ。
+ */
+export function countHandStarts(page: Page): () => number {
+  let count = 0;
+  page.on("request", (request) => {
+    if (
+      request.method() === "POST" &&
+      new URL(request.url()).pathname === "/api/hands"
+    ) {
+      count++;
+    }
+  });
+  return () => count;
 }
 
 /** Session が終わったか（Hero の欄の表示）。 */

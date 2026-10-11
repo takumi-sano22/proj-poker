@@ -9,6 +9,7 @@ import { startNextHand } from "../support/next-hand.js";
 import {
   playToHandEnd,
   sessionEnded,
+  countHandStarts,
   startFirstHand,
 } from "../support/play.js";
 import {
@@ -95,6 +96,15 @@ async function measure(page: Page): Promise<{
   }, SESSION_END_BUTTONS);
 }
 
+/** 保存済みの Hand の ID（進行中の Hand を含む）。 */
+async function savedHandIds(page: Page): Promise<string[]> {
+  const res = await page.request.get("/api/replay/hands");
+  expect(res.ok()).toBe(true);
+  return ((await res.json()) as { hands: { handId: string }[] }).hands.map(
+    (h) => h.handId,
+  );
+}
+
 test("Session が終わった後の Button が、画面の高さによらず Hero の席に覆われず押せる（1280×720 を含む）", async ({
   page,
 }) => {
@@ -169,6 +179,21 @@ test("Session が終わった後の Button が、画面の高さによらず Her
       }),
     ).toBeVisible();
     await page.getByRole("button", { name: "卓に戻る" }).click();
+    // Session が終わった後の Home は、終わった Session を照会して新しい Session の開始だけを出す（「続きから遊ぶ」は出さない。#218）。
+    // 画面の移動では開始を送らない。
+    const starts = countHandStarts(page);
+    const nav = page.getByRole("navigation", { name: "画面の切り替え" });
+    await nav.getByRole("button", { name: "Home" }).click();
+    const home = page.getByRole("region", { name: "Session" });
+    await expect(home).toContainText("Session は終了しました");
+    await expect(
+      home.getByRole("button", { name: "新しい Session を始める" }),
+    ).toBeVisible();
+    await expect(
+      home.getByRole("button", { name: "続きから遊ぶ" }),
+    ).toHaveCount(0);
+    await nav.getByRole("button", { name: "Play" }).click();
+    expect(starts(), "画面の移動で開始を送らない").toBe(0);
     const next = await startNextHand(page, "新しい Session を始める");
     expect(handIds, "新しい Session の Hand は別の Hand").not.toContain(next);
     expect(await sessionEnded(page), "新しい Session は続く").toBe(false);
@@ -219,6 +244,24 @@ test.describe("狭い画面での Session の終わり（既存の配置を壊�
           name: "Session の振り返り（Session Review）",
         }),
       ).toBeVisible();
+
+      // 再読み込みの直後（この画面は終わった Session の最後の Hand を知らない）でも、Home の「新しい Session を始める」1 回で
+      // 新しい Session を始める（終わった Hand を出し直して二度押しさせない。#218）。
+      const handsBefore = await savedHandIds(page);
+      const starts = countHandStarts(page);
+      await page.reload();
+      const home = page.getByRole("region", { name: "Session" });
+      await expect(home).toContainText("Session は終了しました");
+      expect(starts(), "再読み込みの Home は開始を送らない").toBe(0);
+      await home
+        .getByRole("button", { name: "新しい Session を始める" })
+        .click();
+      await expect(dock.getByText("Session が終了しました。")).toHaveCount(0);
+      await expect(page.getByRole("region", { name: "卓" })).toBeVisible();
+      await expect
+        .poll(async () => (await savedHandIds(page)).length)
+        .toBe(handsBefore.length + 1);
+      expect(await sessionEnded(page), "新しい Session は続く").toBe(false);
     });
   }
 });

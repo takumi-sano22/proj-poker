@@ -8,7 +8,7 @@
 
 ### Cash の Session
 
-- 最初の画面で Session の種類（Cash / Tournament）を選び、「Hand を始める」を押すと Hero として遊べます。既定は 6-max（Hero + CPU 5 人。人数は `TABLE_SIZE`）です。
+- 起動すると Home が出ます。続けられる Session が無ければ Session の種類（Cash / Tournament）を選び、「新しい Session を始める」を押すと Hero として遊べます。続いている Session があれば「続きから遊ぶ」で続きに戻ります（Home を開くだけでは Hand は始まりません）。見出しの Home / Play / Learn で画面を切り替えられ、切り替えても卓の Hand はそのまま続きます。既定は 6-max（Hero + CPU 5 人。人数は `TABLE_SIZE`）です。
 - Hand が終わったら「次の Hand へ」で Stack を持ち越して続けます。Hero が Bust するか、CPU が全員 Bust すると Session が終わり、「新しい Session を始める」で均等 Stack から始め直せます。
 - サーバーを再起動しても、Hand の合間で止まった Session はそのまま続きます（Stack・Button・Emergency Bot を持ち越す）。
 
@@ -21,7 +21,7 @@
 ### 表示の切り替え・Replay・Fast Forward（`docs/06` §2・§8・§10）
 
 - 「BB 補助表示」で BB 換算の表示を ON / OFF できます（実額は常に出ます。設定はこのブラウザに保存）。
-- 「Replay を見る」で保存済みの Hand の一覧を開き、選んだ Hand を「前へ / 再生 / 一時停止 / 次へ」で一手ずつ見返せます。「卓に戻る」で卓の画面に戻ります（Replay を見ている間も卓の Hand はそのまま続きます）。
+- Learn の「Replay を開く」で保存済みの Hand の一覧を開き、選んだ Hand を「前へ / 再生 / 一時停止 / 次へ」で一手ずつ見返せます。Play で卓の画面に戻ります（Replay を見ている間も卓の Hand はそのまま続きます。Learn に戻ると、見ていた Hand・Review の位置から見せます）。
 - Hero が Fold した後の観戦中だけ、Hero 欄の Fast Forward で CPU の思考の待ち（演出）を縮められます。Claude の応答時間そのものは縮みません。
 
 ### Hand Review（`docs/05` §6〜§8・`docs/06` §10）
@@ -40,7 +40,7 @@
 
 ### Tournament（`docs/06` §15・`docs/02` §7）
 
-- 最初の画面か Session の終わりの案内で Tournament を選んで開始します。標準 Preset は 6-max STT（hand-count）と time-base です。
+- Home か Session の終わりの案内で Tournament を選んで開始します。標準 Preset は 6-max STT（hand-count）と time-base です。
 - 見出しに Level・Blind・Ante、卓の右（狭い画面は卓の下）の欄に次の Level までの残り・残人数・Payout・脱落が出ます。終わったら Hero の順位と Payout の Result が Hero の欄に出ます。
 - Review の根拠に「Tournament（ICM / Prize Equity と Chip EV）」の欄が出ます。
 

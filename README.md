@@ -68,7 +68,7 @@ pnpm install
 pnpm dev                 # apps/server（127.0.0.1:3001）と apps/web（Vite）を同時に起動
 ```
 
-ブラウザで Vite が表示する URL（既定は `http://127.0.0.1:5173`）を開き、「Hand を始める」を押すと遊べます。既定の CPU は RuleBot なので、Claude と Solver が無くても遊べます（Hand Review には Claude のログインが必要です）。
+ブラウザで Vite が表示する URL（既定は `http://127.0.0.1:5173`）を開くと Home が出ます。「新しい Session を始める」を押すと遊べます（続いている Session があれば「続きから遊ぶ」）。既定の CPU は RuleBot なので、Claude と Solver が無くても遊べます（Hand Review には Claude のログインが必要です）。
 
 環境変数・Claude の認証・Solver の導入・開発コマンド・E2E は [`docs/guides/SETUP_AND_DEVELOPMENT.md`](./docs/guides/SETUP_AND_DEVELOPMENT.md) にあります。
 

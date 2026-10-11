@@ -30,6 +30,8 @@ interface ReviewScreenProps {
   readonly initialDecision: number | null;
   /** Replay の指定の step を開く。 */
   readonly onOpenReplay: (handId: string, step: number) => void;
+  /** 開いている判断（null は一覧）が変わったら知らせる（App Shell が Learn に戻ったときの閲覧位置に使う。#218）。 */
+  readonly onPositionChange?: (decisionIndex: number | null) => void;
 }
 
 type Load =
@@ -41,10 +43,14 @@ export function ReviewScreen({
   handId,
   initialDecision,
   onOpenReplay,
+  onPositionChange,
 }: ReviewScreenProps) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [selected, setSelected] = useState<number | null>(initialDecision);
+  useEffect(() => {
+    onPositionChange?.(selected);
+  }, [onPositionChange, selected]);
 
   // Hand（判断の一覧と Important Spot・判断時点の step）を読む。Hand が変わったら前の応答は捨てる。
   useEffect(() => {

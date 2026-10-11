@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { startNextHand } from "../support/next-hand.js";
+import { startFirstHand } from "../support/play.js";
 import {
   startServer,
   stopServer,
@@ -172,7 +173,7 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
   let firstHandId = "";
   await test.step("6-max の Session を始め、Chip 操作と宣言で Hand を最後まで Play する", async () => {
     await page.goto("/");
-    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await startFirstHand(page);
     await expect(page.getByRole("region", { name: "卓" })).toHaveAttribute(
       "data-seat-count",
       "6",
@@ -269,8 +270,9 @@ test("6-max の Session を Play → Review → Replay → 次の Hand → 再�
 
     await stopServer(server as RunningServer);
     server = await startServer(dbPath);
+    // 再起動後の再読み込みも Home から。Home は続いている Session を照会するだけで、「続きから遊ぶ」を押して初めて次の Hand が始まる。
     await page.reload();
-    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await startFirstHand(page, "続きから遊ぶ");
     await expect(page.getByRole("region", { name: "卓" })).toBeVisible();
 
     const hands = await replayHands(page);
@@ -305,7 +307,7 @@ test.describe("狭い画面（375px）での卓の配置（#5）", () => {
   }) => {
     server = await startServer(join(dir, "poker.sqlite"));
     await page.goto("/");
-    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await startFirstHand(page);
     await playHand(page, false);
 
     const dock = page.getByRole("region", { name: "Hero" });
@@ -378,7 +380,7 @@ test.describe("User Read と Note / Tag（#115）", () => {
     server = await startServer(join(dir, "poker.sqlite"));
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/");
-    await page.getByRole("button", { name: "Hand を始める" }).click();
+    await startFirstHand(page);
     await recordReadAndNotes(page);
   });
 
@@ -394,7 +396,7 @@ test.describe("User Read と Note / Tag（#115）", () => {
     }) => {
       server = await startServer(join(dir, "poker.sqlite"));
       await page.goto("/");
-      await page.getByRole("button", { name: "Hand を始める" }).click();
+      await startFirstHand(page);
       await recordReadAndNotes(page);
     });
   });
