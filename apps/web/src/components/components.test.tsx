@@ -13,6 +13,7 @@ import { BbDisplayProvider, BbDisplayToggle } from "./BbDisplay.js";
 import { ChipControls } from "./ChipControls.js";
 import { ChipPile, ChipStack } from "./ChipStack.js";
 import { DealerFeedback } from "./DealerFeedback.js";
+import { DealerOverlay } from "./DealerOverlay.js";
 import { FastForward } from "./FastForward.js";
 import { HandLog } from "./HandLog.js";
 import { OpponentNotes } from "./OpponentNotes.js";
@@ -693,5 +694,84 @@ describe("CPU の Note / Tag（#115）", () => {
         <OpponentNotes handId="h1" players={players} seatedIds={["hero"]} />,
       ),
     ).toBe("");
+  });
+});
+
+describe("DealerOverlay（RULING → ETIQUETTE の欄。#226）", () => {
+  const item = (category: "ruling" | "etiquette") => ({
+    category,
+    text: category === "ruling" ? "裁定の文" : "作法の文",
+    terms: [],
+  });
+  const ruling = {
+    kind: "ruling",
+    rulingSeq: 5,
+    items: [item("ruling")],
+  } as const;
+  const etiquette = {
+    kind: "etiquette",
+    rulingSeq: 5,
+    items: [item("etiquette")],
+  } as const;
+
+  it("RULING は role=status でボタンを持たず、分類の札は ruling だけ", () => {
+    const html = renderToStaticMarkup(
+      <DealerOverlay overlay={ruling} disabled={false} onAcknowledge={noop} />,
+    );
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain("<button");
+    expect(html).toContain("dealer-overlay--ruling");
+    expect(html).toContain("feedback-tag--ruling");
+    expect(html).not.toContain("feedback-tag--etiquette");
+    expect(html).not.toContain("feedback-tag--coaching");
+    expect(html).toContain("裁定の文");
+  });
+
+  it("ETIQUETTE は role=alertdialog と「確認しました」ボタンを持ち、分類の札は etiquette だけ", () => {
+    const html = renderToStaticMarkup(
+      <DealerOverlay
+        overlay={etiquette}
+        disabled={false}
+        onAcknowledge={noop}
+      />,
+    );
+    expect(html).toContain('role="alertdialog"');
+    expect(html).toMatch(/<button[^>]*>確認しました<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*disabled/);
+    expect(html).toContain("feedback-tag--etiquette");
+    expect(html).not.toContain("feedback-tag--ruling");
+    expect(html).not.toContain("feedback-tag--coaching");
+    expect(html).toContain("作法の文");
+  });
+
+  it("送信中（disabled）は確認ボタンを押せない", () => {
+    const html = renderToStaticMarkup(
+      <DealerOverlay
+        overlay={etiquette}
+        disabled={true}
+        onAcknowledge={noop}
+      />,
+    );
+    expect(html).toMatch(/<button[^>]*disabled/);
+  });
+
+  it("docked（狭い画面）のときだけ docked の class を付ける", () => {
+    const docked = renderToStaticMarkup(
+      <DealerOverlay
+        overlay={etiquette}
+        disabled={false}
+        docked
+        onAcknowledge={noop}
+      />,
+    );
+    expect(docked).toContain("dealer-overlay--docked");
+    const plain = renderToStaticMarkup(
+      <DealerOverlay
+        overlay={etiquette}
+        disabled={false}
+        onAcknowledge={noop}
+      />,
+    );
+    expect(plain).not.toContain("dealer-overlay--docked");
   });
 });
