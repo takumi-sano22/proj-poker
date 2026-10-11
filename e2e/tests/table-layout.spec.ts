@@ -135,7 +135,13 @@ test("Hand の途中（Hero の手番）・裁定（RULING）が出た手番・H
       // 通常の click（force なし。trial: 覆われていない・安定している）で押せ、フォーカスがそのボタンにある。
       await ackButton(page).click({ trial: true });
       await expect(ackButton(page), `${label}: フォーカス`).toBeFocused();
-      // 押せる位置（trial が画面へ入れた位置）で、欄が Pot と Hero の札・Stack に重ならない。
+      // Hero 欄は画面下に sticky で固定され、文書の末尾では通常の位置に戻る（#163・#179 の配置の規則）。欄は Hero 欄の中にあるので、
+      // 既存の Hero 欄の規則（狭い画面は欄が画面の高さに収まる・広い画面は欄を除いた高さに Hero の席・Board・Pot が収まる・Button が
+      // 覆われない・横スクロールが無い）で確かめ、末尾の位置で欄が Pot と Hero の札・Stack に重ならないことを確かめる。
+      await page.evaluate(() =>
+        window.scrollTo(0, document.documentElement.scrollHeight),
+      );
+      await expectNoBlockingOverlap(page, label);
       const overlay = await rectOf(page, ".dealer-overlay");
       expect(overlay, `${label}: 欄`).not.toBeNull();
       for (const [name, selector] of [
