@@ -11,6 +11,8 @@
 // Drill の間も通常の卓の Session（SSE）はそのまま残り、Play（卓から入った Drill は「卓に戻る」）で続きに戻る。
 // 狭い画面（スマホ幅）では、卓の中央に重ねていた欄（Hand の結果・CPU 障害のダイアログ・Session 終了の案内）が席と重なるので、
 // 画面下に固定した Hero の欄へ置く（#5。広い画面は従来どおり卓の中央）。
+// 卓の表示は Presentation Controller（#222・D140・D143）が、受け取った最新の View から 1 つずつ演出して出す（useHandSession の view は
+// Hero に見せている卓）。演出の速度は表示の設定で、Play・Drill の卓へ戻ったとき（Home / Learn からの復帰）は古い演出を捨てて最新に合わせる。
 // 新しい Session の開始で Cash / Tournament の Preset を選べる（#190・D128）。Tournament の Hand では、見出しに Level・Blind・Ante を、
 // 卓の右（狭い画面は卓の下）に Tournament の欄（次の Level・残人数・Payout・Elimination・終わったら Result）を出す。Cash の画面は変えない。
 import type { HeroView } from "@proj-poker/engine";
@@ -18,6 +20,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useReducer,
   useRef,
   useState,
@@ -43,6 +46,7 @@ import { HandLog } from "./components/HandLog.js";
 import { OpponentNotes } from "./components/OpponentNotes.js";
 import { OutageDialog } from "./components/OutageDialog.js";
 import { PlayingCard } from "./components/PlayingCard.js";
+import { PresentationControls } from "./components/PresentationControls.js";
 import { ReplayScreen } from "./components/ReplayScreen.js";
 import { ReviewScreen } from "./components/ReviewScreen.js";
 import { SessionReviewScreen } from "./components/SessionReviewScreen.js";
@@ -56,6 +60,10 @@ import { Term, VocabularyProvider } from "./components/Vocabulary.js";
 import { useDelayed } from "./hooks/useDelayed.js";
 import { useHandSession, type HandSession } from "./hooks/useHandSession.js";
 import { useNarrowScreen } from "./hooks/useNarrowScreen.js";
+import {
+  usePresentationSpeed,
+  useReducedMotion,
+} from "./hooks/usePresentationSpeed.js";
 import { useTournament } from "./hooks/useTournament.js";
 import type { ReplayStart } from "./hooks/useReplay.js";
 import {
@@ -73,6 +81,7 @@ import {
   shellReducer,
   type Area,
 } from "./lib/shell.js";
+import type { PresentationSpeed } from "./lib/presentation.js";
 import { handLevelOf, tournamentEndMessage } from "./lib/tournament.js";
 import {
   canFastForward,
@@ -98,9 +107,25 @@ interface DrillMode {
   readonly exitLabel: string;
 }
 
+/** 卓の画面の表示演出の設定（速度の選択と、OS の reduced-motion）。 */
+interface PresentationSetting {
+  readonly speed: PresentationSpeed;
+  readonly onSpeedChange: (next: PresentationSpeed) => void;
+  readonly reducedMotion: boolean;
+}
+
 export function App() {
+  // 表示演出の速度（表示の設定）。reduced-motion では動きを止め、演出なしとして進める（内容は省かない）。
+  const [speed, setSpeed] = usePresentationSpeed();
+  const reducedMotion = useReducedMotion();
+  const effectiveSpeed: PresentationSpeed = reducedMotion ? "none" : speed;
+  const presentationSetting: PresentationSetting = {
+    speed,
+    onSpeedChange: setSpeed,
+    reducedMotion,
+  };
   // 通常の卓と Drill の卓の Session（SSE・送信中の状態）は、画面の切り替えより上のここで持つ（画面を移っても Session を捨てない）。
-  const session = useHandSession();
+  const session = useHandSession({ speed: effectiveSpeed });
   const narrow = useNarrowScreen();
   // 画面の状態（起動時は Home。D136）。移り方は lib/shell.ts の純粋関数で、API を呼ばない。
   const [shell, dispatch] = useReducer(shellReducer, INITIAL_SHELL);
@@ -121,7 +146,10 @@ export function App() {
     setDrill(res.drill);
     return res;
   }, []);
-  const drillSession = useHandSession({ start: requestDrill });
+  const drillSession = useHandSession({
+    start: requestDrill,
+    speed: effectiveSpeed,
+  });
   const startDrillHand = drillSession.start;
   const openDrill = useCallback(
     (handId: string, decisionIndex: number) => {
@@ -132,6 +160,14 @@ export function App() {
     },
     [startDrillHand],
   );
+  // Play・Drill の卓へ移ったら（Home / Learn からの復帰）、離れていた間の古い演出を捨てて最新の公開状態から見せる（D140 Q26・§16.2）。
+  // 画面の移動では開始・操作を送らない（resync は表示だけ）。
+  const resyncPlay = session.resync;
+  const resyncDrill = drillSession.resync;
+  useEffect(() => {
+    if (screen.kind === "play") resyncPlay();
+    else if (screen.kind === "drill") resyncDrill();
+  }, [screen.kind, resyncPlay, resyncDrill]);
   const selectArea = useCallback(
     (next: Area) => dispatch({ type: "area", area: next }),
     [],
@@ -187,7 +223,14 @@ export function App() {
   }, [selectArea, session]);
   const { view } = session;
   // 通常の卓の Tournament の状況（Cash の Hand は null）。Drill の卓は Tournament にならないので読まない。
-  const tournament = useTournament(session.handId, view);
+  const latestTournament = useTournament(session.handId, view);
+  // 演出の途中に読んだ状況は、server ではもう Hand が終わった後の値（Elimination・順位）でありうる。表示が最新に追いつくまでは、
+  // 追いついていたときに見せた値を出し続け、Hand の結果より先に結果を見せない（D140）。
+  const [heldTournament, setHeldTournament] = useState(latestTournament);
+  if (session.synced && heldTournament !== latestTournament) {
+    setHeldTournament(latestTournament);
+  }
+  const tournament = session.synced ? latestTournament : heldTournament;
   // 見出しの Level・Ante は表示中の Hand の公開の HAND_STARTED から作る（読み込みを待たない。Cash は null）。
   const handLevel = view === null ? null : handLevelOf(view);
   // BB 補助表示の設定（viewer ごとにこのブラウザへ保存。実額は設定に関わらず常に出す。D49）
@@ -211,7 +254,9 @@ export function App() {
   return (
     <BbDisplayProvider value={showBB}>
       {/* Fast Forward 中は卓の動きの演出（transition）も止める（D15）。待ちの短縮はサーバー側 */}
-      <div className={`app${session.fastForward ? " app--fast-forward" : ""}`}>
+      <div
+        className={`app${session.fastForward ? " app--fast-forward" : ""}${effectiveSpeed === "none" ? " app--presentation-none" : ""}`}
+      >
         <header className="app__header">
           <h1 className="app__title">proj-poker</h1>
           <ShellNav area={area} onSelect={selectArea} />
@@ -302,6 +347,7 @@ export function App() {
             <TableScreen
               session={drillSession}
               narrow={narrow}
+              presentation={presentationSetting}
               onOpenReview={openReview}
               onOpenSessionReview={openSessionReview}
               drill={{
@@ -332,6 +378,7 @@ export function App() {
           <TableScreen
             session={session}
             narrow={narrow}
+            presentation={presentationSetting}
             onOpenReview={openReview}
             onOpenSessionReview={openSessionReview}
             tournament={tournament}
@@ -387,6 +434,7 @@ function PlayEmpty({
 function TableScreen({
   session,
   narrow,
+  presentation,
   onOpenReview,
   onOpenSessionReview,
   drill = null,
@@ -395,6 +443,7 @@ function TableScreen({
 }: {
   readonly session: HandSession;
   readonly narrow: boolean;
+  readonly presentation: PresentationSetting;
   readonly onOpenReview: OpenReview;
   readonly onOpenSessionReview: OpenSessionReview;
   readonly drill?: DrillMode | null;
@@ -436,6 +485,14 @@ function TableScreen({
             />
           </div>
           <aside className="app__side">
+            {/* 演出の速度と Skip（Skip は演出の待ちがあるときだけ）。Replay の速度とは別に持つ（Q21） */}
+            <PresentationControls
+              label="演出の速度"
+              speed={presentation.speed}
+              onSpeedChange={presentation.onSpeedChange}
+              onSkip={session.synced ? null : session.resync}
+              reducedMotion={presentation.reducedMotion}
+            />
             {tournament !== null && (
               <TournamentPanel
                 status={tournament}
@@ -765,7 +822,8 @@ function DockBody({
         view={view}
         hero={hero}
         disabled={session.pending || ruling?.kind === "pending"}
-        onSubmit={session.operate}
+        // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
+        onSubmit={(actions) => session.operate(view, actions)}
       />
     </>
   );

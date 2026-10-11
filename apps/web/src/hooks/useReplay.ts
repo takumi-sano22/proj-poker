@@ -2,6 +2,7 @@
 // どの step を見せるか（Previous / Next / Play / Pause）だけをクライアントで持つ。卓の状態はクライアントで進めない（D38）。
 // 古い応答で画面を戻さないよう、取得のたびに番号を振り、最後に出した要求の応答だけを採る（一覧と Hand で別々に数える）。
 // Jump to Important Spot（#84・D93）は、サーバーが返した判断時点の step の位置へ移るだけ（状態は作らない）。
+// 再生の速度（#222・D140 Q21）は Live の表示演出の速度とは別にここで持つ。Replay の操作は Live の Hand・CPU・Event を進めない。
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchReplayHand,
@@ -9,7 +10,8 @@ import {
   type ReplayHand,
   type ReplayHandSummary,
 } from "../lib/api.js";
-import { REPLAY_STEP_MS } from "../lib/config.js";
+import { REPLAY_SPEED_SCALE, REPLAY_STEP_MS } from "../lib/config.js";
+import type { PresentationSpeed } from "../lib/presentation.js";
 import {
   nextStepIndex,
   playStartIndex,
@@ -27,6 +29,9 @@ export interface ReplayState {
   readonly handLoad: ReplayLoad;
   readonly step: number;
   readonly playing: boolean;
+  /** 再生の速度（Live の演出の速度と独立）。 */
+  readonly speed: PresentationSpeed;
+  readonly setSpeed: (next: PresentationSpeed) => void;
   readonly refresh: () => void;
   /** Hand を開く。step を渡すとその step から見せる（Review から判断時点の場面を開くとき）。 */
   readonly open: (handId: string, step?: number) => void;
@@ -53,6 +58,7 @@ export function useReplay(start: ReplayStart | null = null): ReplayState {
   const [handLoad, setHandLoad] = useState<ReplayLoad>("idle");
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState<PresentationSpeed>("standard");
   const listRequest = useRef(0);
   const handRequest = useRef(0);
 
@@ -135,10 +141,10 @@ export function useReplay(start: ReplayStart | null = null): ReplayState {
     if (!playingNow) return;
     const timer = setTimeout(
       () => setStep((i) => nextStepIndex(i, length)),
-      REPLAY_STEP_MS,
+      REPLAY_STEP_MS * REPLAY_SPEED_SCALE[speed],
     );
     return () => clearTimeout(timer);
-  }, [playingNow, step, length]);
+  }, [playingNow, step, length, speed]);
 
   // 最初に開いたときに一覧を取る。開く Hand の指定があれば、その Hand も開く（指定は最初の 1 回だけ使う）。
   const startRef = useRef(start);
@@ -155,6 +161,8 @@ export function useReplay(start: ReplayStart | null = null): ReplayState {
     handLoad,
     step,
     playing: playingNow,
+    speed,
+    setSpeed,
     refresh,
     open,
     close,

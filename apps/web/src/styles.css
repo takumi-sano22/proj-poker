@@ -3584,3 +3584,68 @@ input {
   color: var(--color-on-surface-muted);
   font-size: 0.875rem;
 }
+
+/* ───────── 表示演出の速度・Skip（#222。Live と Replay で共有） ───────── */
+
+.presentation-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.presentation-controls__speed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-on-surface-muted);
+  font-size: 13px;
+}
+
+.presentation-controls__select {
+  min-height: 44px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: 13px;
+}
+
+.presentation-controls__select:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.presentation-controls__note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-on-surface-muted);
+  font-size: 12px;
+}
+
+/* 演出なし（設定・prefers-reduced-motion）は動きを止める。表示の内容は変えない（D140）。 */
+.app--presentation-none {
+  --duration-fast: 0ms;
+  --duration-base: 0ms;
+}
+
+/* Board の札は出たときに置く動きを付け、Flop の 3 枚は順に出す（D140 Q14）。所要時間はトークンなので、演出なし・
+   reduced-motion・Fast Forward では 0 になり、札はすぐに見える。 */
+.board__card-in {
+  display: inline-flex;
+  animation: board-card-in var(--duration-base) var(--ease-out) both;
+  animation-delay: calc(var(--board-order, 0) * var(--duration-base));
+}
+
+@keyframes board-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) rotateY(80deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

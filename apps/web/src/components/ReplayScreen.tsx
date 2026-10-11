@@ -26,6 +26,7 @@ import { useShowBB } from "./BbDisplay.js";
 import { HeroFeedback } from "./DealerFeedback.js";
 import { HandLog } from "./HandLog.js";
 import { PlayingCard } from "./PlayingCard.js";
+import { PresentationControls } from "./PresentationControls.js";
 import { Table } from "./Table.js";
 import { Term, VocabularyProvider } from "./Vocabulary.js";
 
@@ -207,6 +208,12 @@ function ReplayPlayer({ replay, hand, onOpenReview }: PlayerProps) {
           />
         </div>
         <aside className="app__side">
+          {/* 再生の速度は Live の演出の速度と別に持つ（卓の部品は Live と共有。D140 Q21） */}
+          <PresentationControls
+            label="再生の速度"
+            speed={replay.speed}
+            onSpeedChange={replay.setSpeed}
+          />
           <HandLog view={view} nameOf={nameOf} />
         </aside>
       </main>
