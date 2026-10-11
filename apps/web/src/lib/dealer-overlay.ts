@@ -1,4 +1,4 @@
-// RULING → ETIQUETTE の Overlay の順序（#226・D142・D145）。卓の中央（狭い画面では Hero の欄）に出す裁定の欄を、Hero に見せている卓
+// RULING → ETIQUETTE の Overlay の順序（#226・D142・D145）。Hero の欄に出す裁定の欄を、Hero に見せている卓
 // （displayed）と ETIQUETTE の確認（Ack）の状態から決定論で決める純関数。時刻（RULING を閉じるタイマー）は hooks/useDealerOverlay.ts が持つ。
 // - RULING: 理由（notes）のある Hero への裁定を、表示に出た時点で先に出す（数秒で自動で閉じる。D142）
 // - ETIQUETTE: server が確認を待っている裁定（pendingRulingSeq）だけ。RULING を閉じた後に出し、Hero が確認するまで閉じない（D145）

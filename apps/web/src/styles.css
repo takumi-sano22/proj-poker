@@ -3717,9 +3717,19 @@ input {
   justify-self: start;
 }
 
-/* 狭い画面では Hero の欄の流れの中に置く（卓に重ねない） */
+/* Hero の欄の操作の場所に置く（卓に重ねない。画面の幅に依らない） */
 .dealer-overlay--docked {
   width: auto;
   padding: 8px 10px;
   box-shadow: none;
+}
+
+/* Hero の欄の手番の中身（Feedback・案内・操作の欄）。RULING / ETIQUETTE の欄の間は hidden で隠す（外さないので下書きは残る）。
+   見えている間は箱を作らず、これまでどおり .dock__controls の grid の子として並べる */
+.dock__body {
+  display: contents;
+}
+
+.dock__body[hidden] {
+  display: none;
 }

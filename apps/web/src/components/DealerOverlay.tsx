@@ -1,5 +1,5 @@
-// RULING → ETIQUETTE の欄（#226・D142・D145・docs/06 §6）。広い画面は卓の中央（Board・Pot の下に流れで置き、Pot の実額を覆わない）、
-// 狭い画面は Hero の欄の中に出す（席・Hero の札・Stack に重ねない。CPU の障害のダイアログと同じ置き場所の規則）。
+// RULING → ETIQUETTE の欄（#226・D142・D145・docs/06 §6）。画面の幅に依らず Hero の欄の操作の場所に出す（卓の中央に置くと中間幅で
+// Board を押し上げて席に重なり、画面下に固定した Hero の欄の裏に隠れる。席・Board・Pot の実額・Hero の札と Stack を覆わない）。
 // - RULING: 裁定の事実。数秒で自動で閉じる（閉じる時刻は hooks/useDealerOverlay.ts）。操作を求めないので status で読み上げる
 // - ETIQUETTE: 作法の注意。Hero が「確認しました」を押すまで閉じない（進行は server が止めている）。マウス・タッチ・キーボード
 //   （Tab で移って Enter / Space）のどれでも押せる。出たときにボタンへフォーカスを移す

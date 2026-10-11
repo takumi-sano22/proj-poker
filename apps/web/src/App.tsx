@@ -562,38 +562,6 @@ function TableCenter({
   readonly onOpenSessionReview: OpenSessionReview;
   readonly drill: DrillMode | null;
 }) {
-  // RULING → ETIQUETTE の欄（#226）は、結果・Session の終わりの欄より上に出す（障害のダイアログの間は出ない。障害を先に）。
-  const dealer = session.dealerOverlay !== null && (
-    <DealerOverlay
-      overlay={session.dealerOverlay}
-      disabled={session.pending}
-      onAcknowledge={session.acknowledgeEtiquette}
-    />
-  );
-  return (
-    <>
-      {dealer}
-      <TableCenterBody
-        view={view}
-        nameOf={nameOf}
-        session={session}
-        onOpenSessionReview={onOpenSessionReview}
-        drill={drill}
-      />
-    </>
-  );
-}
-
-function TableCenterBody({
-  view,
-  nameOf,
-  session,
-  onOpenSessionReview,
-  drill,
-}: ViewProps & {
-  readonly onOpenSessionReview: OpenSessionReview;
-  readonly drill: DrillMode | null;
-}) {
   const sessionEnd = sessionEndInDock(session, drill);
   if (view.status === "complete") {
     return (
@@ -666,8 +634,10 @@ function HeroDock({
       </div>
       <div className="dock__controls">
         <Notice session={session} />
-        {/* 狭い画面では RULING → ETIQUETTE の欄を Hero の欄に出す（卓の中央に重ねない。#226） */}
-        {narrow && session.dealerOverlay !== null && (
+        {/* RULING → ETIQUETTE の欄（#226）は、画面の幅に依らず Hero の欄の操作の場所に出す。卓の中央に置くと、中間幅（720×600 等）で
+            Board を押し上げて席に重なり、画面下に固定した Hero の欄の裏に「確認しました」が隠れるため（卓の公開状況・Pot・Hero の札と
+            Stack を覆わない）。障害のダイアログの間は出ない（障害を先に） */}
+        {session.dealerOverlay !== null && (
           <DealerOverlay
             overlay={session.dealerOverlay}
             disabled={session.pending}
@@ -843,11 +813,12 @@ function DockBody({
     );
   }
   const ruling = heroRulingStatus(view);
-  // 狭い画面で RULING / ETIQUETTE の欄を Hero の欄に出している間は、同じ裁定を Hero の欄の Feedback に重ねて出さない。
-  const overlayInDock = narrow && session.dealerOverlay !== null;
+  // RULING / ETIQUETTE の欄を出している間は、Hero の欄の高さを増やさないよう、同じ裁定の Feedback・手番の案内・操作の欄を隠す。
+  // 操作の欄は外さず隠すだけ（Chip・宣言の下書きを消さない。D146）。欄が閉じたら元に戻る。
+  const overlayShown = session.dealerOverlay !== null;
   return (
-    <>
-      {!overlayInDock && <HeroFeedback view={view} />}
+    <div className="dock__body" hidden={overlayShown}>
+      <HeroFeedback view={view} />
       {view.legalActions !== null ? (
         // 手番の間だけ、判断の前の読み（User Read。D112）を記録できる。閉じている間は案内の右の Button 1 つ。
         <div className="dock__turn">
@@ -878,7 +849,7 @@ function DockBody({
         // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
         onSubmit={(actions) => session.operate(view, actions) !== "resynced"}
       />
-    </>
+    </div>
   );
 }
 
