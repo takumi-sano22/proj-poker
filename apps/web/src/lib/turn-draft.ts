@@ -123,10 +123,10 @@ export function operationOutcome(
 function invalidReason(slot: DraftSlot, view: HeroView): DiscardReason | null {
   const key = operationKey(view);
   if (key !== slot.anchorKey) {
-    const [anchorHand, anchorStreet] = slot.anchorKey.split(":");
-    const [hand, street] = key.split(":");
-    if (anchorHand !== hand) return "hand";
-    if (anchorStreet !== street) return "street";
+    // operationKey は `handId:street:裁定の数`。handId に ":" が入っても分けられるよう、後ろから分ける
+    const handAndStreet = (k: string) => k.slice(0, k.lastIndexOf(":"));
+    if (!slot.anchorKey.startsWith(`${view.handId}:`)) return "hand";
+    if (handAndStreet(slot.anchorKey) !== handAndStreet(key)) return "street";
     return "ruling";
   }
   if (view.status === "complete") return "hand_complete";

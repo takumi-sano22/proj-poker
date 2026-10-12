@@ -92,7 +92,7 @@ Buttonによって口頭宣言の代替を行います。
 
 宣言 Button（#65）は Fold / Check / Call / Bet / Raise / All-in を局面によらず全部出し、手番でなくても押せます（合法でない宣言・手番でない宣言の扱いは裁定が決める）。Fold / Check / Call / All-in は宣言だけで Action が決まるので、押した時点でそれまでの操作と一緒に Dealer に渡します。Bet / Raise は続けて Chip を出してから確定します。手に Chip を持っていればその額を「この Street の累計（to 額）」として額も宣言し、持っていなければ額なしで宣言します（額は続けて出した Chip で決まる）。裁定の結果は Hero 欄に Dealer Feedback（§6）として出し、保留中は Hero の手番で裁定されるまで次の操作を送れません。
 
-今後（D139・D146・§16.3）: 操作パネルの折りたたみや Home / Learn への移動では、未確定の下書き（手に取った Chip・宣言の途中）を失いません。
+下書き（D139・D146・§16.3。#219）: 手元の Chip・Betting Area に出した Chip と宣言の途中は、Home / Learn / Replay / Review への移動・CPU の障害のダイアログ・RULING / ETIQUETTE の欄の間も失いません。組んだ後に CPU の Bet / Raise で状況が変わったら、送る前に変化の前後を示し、もう一度確定したときだけ送ります。
 
 Voice RecognitionはScope外です。
 
@@ -293,7 +293,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 ## 16. 横断 UI/UX（Post-Phase8。#215・#216・D135〜D142）
 
-#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）・UX-03 の App Shell（#218。§16.2 の「実装」）・UX-07 の Presentation Controller（#222。§16.4 の「実装」）・UX-08 の素材の納品（#223。`docs/assets/casino-v2/`。画面への組み込みは UX-09 #224・UX-10 #225）・UX-11 の RULING / ETIQUETTE と確認待ち（#226。§16.5 の「実装」。欄の配置は D147）です**（UX-04 #219・UX-05 #220・UX-09 #224・UX-10 #225 は未実装）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145・D147・UX-04 の D146）を除き、採用済みの事実として扱いません。
+#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）・UX-03 の App Shell（#218。§16.2 の「実装」）・UX-07 の Presentation Controller（#222。§16.4 の「実装」）・UX-08 の素材の納品（#223。`docs/assets/casino-v2/`。画面への組み込みは UX-09 #224・UX-10 #225）・UX-11 の RULING / ETIQUETTE と確認待ち（#226。§16.5 の「実装」。欄の配置は D147）・UX-04 の下書きの寿命（#219。§16.3 の「実装」）です**（UX-05 #220・UX-09 #224・UX-10 #225 は未実装）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145・D147・UX-04 の D146）を除き、採用済みの事実として扱いません。
 
 ### 16.1 守る不変条件
 
@@ -325,7 +325,13 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 - **PC**: 卓を中央、右に情報パネル（進行ログ・Note / Tag・Tournament の欄など。折りたためる）、下部に Hero の操作。右のパネルにも Play 中の HUD（統計）は置かない（D32）。
 - **スマホ**: Hero の操作パネルを折りたためる形にし、Hero の手番で自動で開き、Hero はいつでも開閉できる。開いた高さの上限は画面の高さの約65〜70%で、中身は内部でスクロールする（OI-012）。今の「狭い画面で Hero 欄が画面の 7〜9 割を占める」制約（§1・`ui-design-recipes` の `references/proj-poker.md`「既知のずれ」）を解くための判断。
 - **Chip**: Click / Drag の両方を保ち、操作用の Chip を大きく（PC 約54px・スマホ約48〜52px を基準に画面で調整。OI-012）する。Stack → 手元 → Betting Area の移動を演出で見せる。Betting Area は見た目を小さくしてよいが、ドロップの判定領域は確保し、他の操作の判定領域と重ねない。数値の Bet Box・Slider は今どおり作らない。
-- **下書きの寿命**: 手に取った Chip・宣言の途中などの未確定の下書きは client の表示状態で、パネルの折りたたみや Home / Learn への移動では失わない。同じ Hand で有効な間だけ保持し、Hand が進んで無効になったら破棄して Hero に知らせる。寿命の契約は D146（UX-04 #219。未実装）: 有効性は組み始めた時点の displayed View の `operationKey`（Hand・Street・Hero への裁定の数）に結びつけ、CPU の Action・手番の到来・Ack では保持し、Street / Hand の変化・Hero への新しい裁定・Hand の完了・Fold / All-in・Session の終了では破棄する。同じ局面のまま CPU の Bet / Raise で組んだ時点の状況（`currentBet`・Hero の `streetCommitted` 等）が変わったら、下書きは保持するが、送る前に変化を示してもう一度確定させる（client は Chip・宣言を補正せず、暗黙に送らない）。下書きは画面の切り替えより上の層に Session ごとのメモリで持ち、Home / Learn / Replay / Review への移動・CPU の障害の Dialog の間も有効なら保持する。中身のあった下書きを破棄したときだけ操作パネルの近くに短い非モーダルの通知を出す（空なら出さない。文言・表示時間は OI-012）。Ack 待ちの間は送れず（D145）、`stale_view` で自動で送り直さない。ブラウザの再読み込み・プロセスの再起動を跨いだ復元は求めない（D62）。
+- **下書きの寿命**: 手に取った Chip・宣言の途中などの未確定の下書きは client の表示状態で、パネルの折りたたみや Home / Learn への移動では失わない。同じ Hand で有効な間だけ保持し、Hand が進んで無効になったら破棄して Hero に知らせる。寿命の契約は D146（UX-04 #219）: 有効性は組み始めた時点の displayed View の `operationKey`（Hand・Street・Hero への裁定の数）に結びつけ、CPU の Action・手番の到来・Ack では保持し、Street / Hand の変化・Hero への新しい裁定・Hand の完了・Fold / All-in・Session の終了では破棄する。同じ局面のまま CPU の Bet / Raise で組んだ時点の状況（`currentBet`・Hero の `streetCommitted` 等）が変わったら、下書きは保持するが、送る前に変化を示してもう一度確定させる（client は Chip・宣言を補正せず、暗黙に送らない）。下書きは画面の切り替えより上の層に Session ごとのメモリで持ち、Home / Learn / Replay / Review への移動・CPU の障害の Dialog の間も有効なら保持する。中身のあった下書きを破棄したときだけ操作パネルの近くに短い非モーダルの通知を出す（空なら出さない。文言・表示時間は OI-012）。Ack 待ちの間は送れず（D145）、`stale_view` で自動で送り直さない。ブラウザの再読み込み・プロセスの再起動を跨いだ復元は求めない（D62）。
+- **実装（UX-04 #219）**: 下書きは `useHandSession` の `turnDraft`（通常の卓と Drill の卓で別々）が持ち、規則は `lib/turn-draft.ts`。
+  - 錨: 最初に Chip を手に取る・出す・Bet / Raise を宣言した時点の displayed の `operationKey` と状況（`currentBet`・Hero の `streetCommitted`）。中身を全部戻した下書きは持たず、次に組み始めた時点を錨にする。
+  - 再確認: 送る前（表示を最新に合わせた後）に状況を比べ、変わっていれば送らずに操作の欄の下へ「組んだ後に卓の状況が変わりました。まだ送っていません。」と、Bet の額・Hero の出し済み・Call に要る額の前後と送る操作を示し、「この内容で確定して Dealer に渡す」でだけ送る。確定の前にさらに変わったら送らずに示し直し、下書きを変えたら再確認を取り下げる（次の送信で比べ直す）。
+  - Fold / Check / Call / All-in の宣言は、送ったときだけ操作に入る（送らなかった・再確認になった・拒否された宣言は下書きに残らない）。
+  - 送信: 送り始めただけでは下書きを捨てず、結果が分かるまで変えさせない。受理（応答、または最新の View で送った時点の直後に Hero の操作の Event）で黙って捨てる。`stale_view` 等の拒否では元の下書きに戻し、自動で送り直さない。応答が届かなければ「同じ操作をもう一度送る」（送ったときの `lastSeq`・操作のまま。受理済みなら server が `stale_view` で弾く）だけを出す。
+  - 通知: 中身のあった下書きを無効化で捨てたときだけ、Hero の欄の案内の下に理由と「この操作は送っていません」を非モーダルで出す（`DRAFT_DISCARD_NOTICE_MS`。OI-012。閉じられる）。Home / Learn にいる間に捨てたら、卓に戻ったときに出す。
 
 ### 16.4 Presentation Controller（D140）
 
@@ -347,7 +353,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 - **単位と順序**: step の区切りは Replay と同じ Engine の `heroViewStepEnds`（裁定とそれで決まった Action は 1 step）。新しい Hand（次の Hand・次の Drill）は Hand の始まり（Blind・Ante・Hero の札）までを一度に出し、続きの CPU の Action・Board・Showdown・Pot の配分を 1 step ずつ出す。読み込みの直後・Resume の最初の Hand は最新に合わせる。Flop の 3 枚は 1 step の中で順に置く（`styles.css` の `.board__card-in`。動きの長さはトークンで、演出なしでは 0）。
 - **速度**: 卓の右の欄（狭い画面は卓の下）の「演出の速度」で選び、このブラウザに保存する（`proj-poker.display.presentationSpeed`。既定は標準）。演出の待ちがある間だけ「Skip」を出す。`prefers-reduced-motion` では選んだ速度に関わらず演出なしで進め、その旨を添える。Hero の手番が来たら残りの通常の演出を速め（Showdown の公開と Pot の配分は速めない）、どの速度・Skip・演出なしでも最後の卓は authoritative と同じ（省くのは動きだけ）。待ちの step は上限までの有界のキューで、超えた古い分は動きを省いて表示済みにする。
 - **同期**: SSE の再接続（切れた後の最初の View）・「卓に戻る」で同じ Hand が返ったとき・Home / Learn から Play / Drill の卓へ戻ったとき・タブの再表示（`visibilitychange`）で、古い演出を捨てて最新に合わせる（画面の移動では開始・操作を送らない）。CPU の障害のダイアログが出ている間は残りの演出を省いて最新の卓に出す（演出より優先）。Session の状態（終わりの案内・「次の Hand へ」）は表示が追いついてから出す。
-- **送信**: Hero の操作は、Hero が見ていた卓（displayed）が最新と同じ Hand・同じ `lastSeq` のときだけ、その `lastSeq` で送る。違えば送らずに表示を最新へ合わせ、「操作はまだ送っていません。卓を確かめて、もう一度確定してください」と案内する（押した宣言は下書きに足さない。Betting Area に出した Chip 等の下書きは、`operationKey` が変わらなければ操作の欄に残り、送るには Hero がもう一度確定する。手番外の操作も同じ。`stale_view` では自動で送り直さない）。下書きの層（#219）と、状況の変化を示す再確認は #219 で実装する（今の下書きは `ChipControls` が `operationKey` で持つ）。
+- **送信**: Hero の操作は、Hero が見ていた卓（displayed）が最新と同じ Hand・同じ `lastSeq` のときだけ、その `lastSeq` で送る。違えば送らずに表示を最新へ合わせ、「操作はまだ送っていません。卓を確かめて、もう一度確定してください」と案内する（押した宣言は下書きに足さない。Betting Area に出した Chip 等の下書きは、`operationKey` が変わらなければ操作の欄に残り、送るには Hero がもう一度確定する。手番外の操作も同じ。`stale_view` では自動で送り直さない）。下書きは画面の切り替えより上（#219。§16.3 の「実装」）が持ち、表示を合わせた時点で錨を照合する（`operationKey` が違えば捨てて通知、状況が違えば再確認を示す）。
 - **Replay**: 卓・進行ログ・Dealer Feedback・速度の部品を Live と共有し、再生の速度（「再生の速度」）は Replay の画面が別に持つ（Live の速度・Hand・CPU を変えない）。
 - **ETIQUETTE の確認（#226 の client）**: 確認を待つ裁定の seq を `holdThroughSeq` に渡し、その裁定の step より先を出さない（待ちの上限を超えた分の切り詰め・読み込みの直後の「最新に合わせる」・Skip・同期・障害の優先も越えない）。確認の後に続きを演出する。
 
@@ -386,7 +392,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 | Issue | 決めること |
 |---|---|
 | UX-02 #217 | **採用済み D144**: `GET /api/session/current`（`{session: null}` か state・Session の種類。Session ID・Hand ID・Stack・札は返さない）、開始と同じ読み取り専用の判定から作る、`ended` はこのプロセスの終了だけ、知らない state は安全側、#230（Pause / End）の承認後に追加で拡張 |
-| UX-04 #219 | **採用済み D146**: 錨は組み始めた時点の displayed の `operationKey`、同じ局面での状況（`currentBet`・Hero の `streetCommitted` 等）の変化は保持して送る前に再確認、Street / Hand / Hero の裁定・Hand の完了・Fold / All-in で破棄、App の層の Session ごとのメモリで持ち画面の移動・Outage の Dialog でも保持、中身のあった破棄だけ非モーダルで通知、Ack 待ちは送れない・`stale_view` で自動再送しない。未実装（検証の記録: `docs/taskLog/issue-219-draft-lifecycle-design.md`・PR #242） |
+| UX-04 #219 | **採用済み D146**: 錨は組み始めた時点の displayed の `operationKey`、同じ局面での状況（`currentBet`・Hero の `streetCommitted` 等）の変化は保持して送る前に再確認、Street / Hand / Hero の裁定・Hand の完了・Fold / All-in で破棄、App の層の Session ごとのメモリで持ち画面の移動・Outage の Dialog でも保持、中身のあった破棄だけ非モーダルで通知、Ack 待ちは送れない・`stale_view` で自動再送しない。実装は §16.3（検証の記録: `docs/taskLog/issue-219-draft-lifecycle-design.md`・PR #242） |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。Tournament Ante / BBA は #222 の Presentation Controller のテスト（Hand の始まりとして一度に出す・最後の卓が authoritative と一致）で確認済み。Hand 途中の Side Pot の内訳の表示（`buildPots` の派生）は #224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
 | UX-11 #226 | **採用済み D145**: Ack の要否は `DEALER_RULING` の notes から決定論で導き、確認の位置は `HandRuntime` のメモリ（Event / DB は不変）、`POST /api/hands/:handId/etiquette-ack {rulingSeq}` と REST / SSE の `{revision, pendingRulingSeq}`（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は 409 `stale_etiquette`）、Ack 待ちの Hero の操作は 409 `etiquette_ack_required`（User Read は可）、Hand の完了後も待ちを残し確認まで次の Hand を始めない、Outage のダイアログが先で Retry / Emergency Bot の後も Ack まで止める、再起動で待ちが消えるのは D62 の範囲、Tournament のプレイ時間に入るのは Hand の進行中の待ちだけ（T1=A）。#230 の予約との扱いは #230 で再確認。欄の配置は D147（Hero 欄の操作の場所・卓の中央は必須にしない）。実装は §16.5（server #244・client #247。検証の記録: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
