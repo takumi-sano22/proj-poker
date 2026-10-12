@@ -433,6 +433,20 @@ describe("送信の状態（sent は受理の確定ではない）", () => {
     expect(rejected.slot?.inFlight?.phase).toBe("unknown");
   });
 
+  it("結果不明のまま別の Hand に移ったら、別の Hand の log で結果を判定せずに捨てる", () => {
+    const start = table("h1").view();
+    const lastSeq = lastSeqOf(start);
+    const unknown = settleSend(
+      markSending(pushed(start), start, lastSeq, [CHIP_5]),
+      lastSeq,
+      { kind: "unknown" },
+    );
+    const next = table("h2").view();
+    const r = reconcile(unknown, next, next);
+    expect(r.slot).toBeNull();
+    expect(r.discarded?.reason).toBe("hand");
+  });
+
   it("別の送信（lastSeq の違う）の応答では何も変えない", () => {
     const t = table();
     const start = t.view();

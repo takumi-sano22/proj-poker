@@ -160,7 +160,16 @@ export function reconcile(
 ): DraftState {
   let slot = state.slot;
   if (slot === null || displayed === null) return state;
-  if (slot.inFlight !== null && authoritative !== null) {
+  // 別の Hand に移った（送った操作の結果が分からないまま次の Hand を開いた等）。送った時点の seq は別の Hand の log と比べられないので、
+  // 結果を判定せずに捨てる（中身があれば通知する）。
+  if (!slot.anchorKey.startsWith(`${displayed.handId}:`)) {
+    return discard(state, "hand");
+  }
+  if (
+    slot.inFlight !== null &&
+    authoritative !== null &&
+    authoritative.handId === displayed.handId
+  ) {
     const outcome = operationOutcome(authoritative, slot.inFlight.lastSeq);
     if (outcome === "accepted") return { ...state, slot: null };
     if (outcome === "rejected" && slot.inFlight.phase === "unknown") {
