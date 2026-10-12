@@ -205,7 +205,7 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 - RULING / ETIQUETTE の欄の寸法・余白（配置の場所は D147 で確定。寸法は可逆）
 - 世界観のデザイントークン（色・光・影・動き）と音声のトークンの具体値（D135・D141。トークンの置き場所は `ui-design-recipes` の `references/proj-poker.md`）
 
-技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは #215 Gate 1 で承認する）:
+技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは人間が承認する。#215 Gate 1 は 2026-10-11 に解除済みで、残る UX-10 等は各 Issue で人間が承認する）:
 - UX-02（#217）: **解消済み → D144（UX02-1〜3=A の人間承認）**。Home の照会は `GET /api/session/current` で、開始と同じ読み取り専用の判定から作り、Hand・Event・CPU・Claude を動かさない（検証は PR #236・`docs/taskLog/issue-217-session-readonly-verification.md`）。`paused` 等の状態と Q43=A に関わる判定の差は #230 の設計で扱う
 - UX-04（#219）: **解消済み → D146（UX04-1〜3=A の人間承認）**。下書きの錨は組み始めた時点の displayed の `operationKey`、状況の変化は保持して送る前に再確認、画面の切り替えより上の層に Session ごとのメモリで持つ、中身のあった破棄だけ非モーダルで通知（検証は PR #242・`docs/taskLog/issue-219-draft-lifecycle-design.md`）。通知の文言・表示時間は上の OI-012 の暫定値
 - UX-06（#221）: **解消済み → D143（UX06-1〜3=A の人間承認）**。既存の `HeroView.log` 全量から client が可視 Event を順序再構築する方式を採用し、API/Event/永続化の追加はこの演出のためには行わない。seq 飛び番の残余リスクは受容するが UI に出さず、演出中の操作下書きは保持・送信前に最新表示へ同期して有効性を再検証する。Tournament Ante / BBA は UX-07 #222 のテストで確認済み。**未検証**: Hand 中 Side Pot の内訳表示は UX-09 #224 で実証する（詳細は `docs/taskLog/issue-221-live-presentation-verification.md`）。

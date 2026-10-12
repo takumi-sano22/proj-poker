@@ -21,10 +21,14 @@
 7. `docs/assets/casino-v2/HANDOFF.md`: 「Draft PR #239」「マージ前」「#223 Open」「Gate 1 未解除」を、#239 MERGED `bbd1c3e`・#223 Closed・Gate 0 / 1 解除済み・
    Gate 2 未解除に直した。素材のバイナリ・`manifest.json`・SHA-256 は変えていない。
 
+8. Codex R1 の P1（Gate 1 の状態が正本間で食い違う）を受け、same-root sweep で「Gate 1 未解除」「Draft PR #239・マージ待ち」の古い記述を直した:
+   `docs/10`（UX-06 の段落に 2026-10-11 の解除を追記。当時の記述は残す）・`docs/11` OI-012 と `docs/06` §16.8 の「#215 Gate 1 で承認する」・
+   `docs/assets/casino-v2/ART_DIRECTION.md`（状態の行と引き継ぎの行。素材・manifest は無変更）。
+
 ## 変更ファイル
 
 `docs/decision_log.yaml`・`docs/00_DOCUMENTATION_INDEX.md`・`docs/03_SYSTEM_ARCHITECTURE.md`（横断 UI/UX の段落の範囲表記）・`docs/06_UI_UX.md`・`docs/10_DECISION_TRACEABILITY.md`・`docs/11_OPEN_ITEMS.md`・
-`docs/assets/casino-v2/HANDOFF.md`・`README.md`・`.claude/skills/{sync-check,test-and-review}/SKILL.md`・
+`docs/assets/casino-v2/HANDOFF.md`・`docs/assets/casino-v2/ART_DIRECTION.md`・`README.md`・`.claude/skills/{sync-check,test-and-review}/SKILL.md`・
 `.claude/skills/ui-design-recipes/references/proj-poker.md`・本ログ
 
 ## 判断理由
