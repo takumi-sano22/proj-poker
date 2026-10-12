@@ -3,9 +3,9 @@
 ## 現在の状態
 
 - ユーザーが Emerald Nocturne の画像・代表SFXを採用（AS-01=B / AS-02=A / AS-03=A / AS-04=A / AS-05=C）。
-- **初回登録は画像6件＋音源20件を含む31ファイル。権利・Trigger契約の文書2件を追加した現在は、合計33ファイルを Draft PR #239 に登録済み**。すべてのバイナリは制作時のファイルと同一で、ファイルパス・バイト数・SHA-256を維持。
+- **初回登録は画像6件＋音源20件を含む31ファイル。権利・Trigger契約の文書2件を追加した合計33ファイルを PR #239 で登録し、main へマージ済み（`bbd1c3e`）**。すべてのバイナリは制作時のファイルと同一で、ファイルパス・バイト数・SHA-256を維持。
 - M1=A により Schema v2 の `trigger` を使い、実 Event / 派生 / client / presentation / session_result を区別。M2=A により第三者再利用ライセンスは未設定。
-- **現時点はメタデータ差分の独立レビュー・最終PR検収待ち。マージ前。** #215 Gate 0 は解除済み、Gate 1/2 は未解除。
+- **PR #239 は独立レビュー・CI・人間の条件付き承認を経てマージ済みで、#223 は Closed。** #215 Gate 0 / Gate 1 は解除済み、Gate 2 は未解除。
 - プレイ用の React/CSS/Engine/Event/DB は変更しない。#224/#225 の組込は後続。
 
 ## 元の承認済み ZIP の識別
@@ -20,7 +20,7 @@
 
 ```bash
 git fetch origin
-# #239 の worktree で実施。既存 worktree がある場合、別checkoutを作らない。
+# main（#239 マージ後）の作業ツリーで実施する。
 python3 - <<'PY'
 import json, hashlib, pathlib
 m = json.loads(pathlib.Path("docs/assets/casino-v2/manifest.json").read_text())
@@ -49,4 +49,4 @@ pnpm test
 - 画像の実体・SFX音源を変更しない。消す・再圧縮・再生成は新たな人間判断を要する。
 - `docs/assets/casino-v2/manifest.json` は用途/条件の台帳、`TRIGGER_CONTRACT.md` は Game Event と Cue の境界、`ASSET_RIGHTS.md` は M2=A の暫定的な配布方針、`ART_DIRECTION.md` は見た目/演出の方針。
 - `preview.webp` は見本であって実機 UI のスクリーンショットではない。
-- Draft PR #239 は改定された Manifest / 権利文書への独立レビュー・CIと人間の最終承認を経て Ready/マージする。現時点で #223 は Open、#215 Gate1/2は閉じたまま。
+- PR #239 は改定された Manifest / 権利文書への独立レビュー・CIと人間の最終承認を経てマージした（`bbd1c3e`）。#223 は Closed、#215 Gate 0 / Gate 1 は解除済み、Gate 2 は未解除。素材の画面への組み込みは #224（演出）/ #225（効果音）で行う。

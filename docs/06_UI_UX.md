@@ -293,7 +293,7 @@ Emergency Bot利用は記録し、後のOpponent Quality分析で通常Handと�
 
 ## 16. 横断 UI/UX（Post-Phase8。#215・#216・D135〜D142）
 
-#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）・UX-03 の App Shell（#218。§16.2 の「実装」）・UX-07 の Presentation Controller（#222。§16.4 の「実装」）です**（UX-04・UX-05・UX-08〜UX-11 は未実装）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145・UX-04 の D146）を除き、採用済みの事実として扱いません。
+#203 の実機プレイを受けて人間が決めた Q1〜Q29（D135〜D142。Q と D の対応は `docs/10`）の設計の正本です。**この節は設計で、実装は UX-02 の照会 API（`GET /api/session/current`。D144）・UX-03 の App Shell（#218。§16.2 の「実装」）・UX-07 の Presentation Controller（#222。§16.4 の「実装」）・UX-08 の素材の納品（#223。`docs/assets/casino-v2/`。画面への組み込みは UX-09 #224・UX-10 #225）・UX-11 の RULING / ETIQUETTE と確認待ち（#226。§16.5 の「実装」。欄の配置は D147）です**（UX-04 #219・UX-05 #220・UX-09 #224・UX-10 #225 は未実装）。可逆な値は OI-012 の暫定値で、ここに書いた数値は目安です。技術検証で決める事項（§16.8）は、人間が採用した行（UX-06 の D143・UX-02 の D144・UX-11 の D145・D147・UX-04 の D146）を除き、採用済みの事実として扱いません。
 
 ### 16.1 守る不変条件
 
@@ -360,7 +360,7 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 
 3 分類を同じ Warning として混ぜない（§6）・裁定の規則（D91）と Event（D90）は変えない。確認待ちで CPU を止める責務・確認（Ack）の契約・AI 障害（§12）のダイアログや再接続・Resume との関係・複数の裁定が続いたときの順序は UX-11（#226）で設計し、D145 で採用した（§16.8）。
 
-**実装（#226）**: server は確認まで CPU と次の Hand の開始を止め（server PR）、client は次のとおり出す（client PR）。
+**実装（#226）**: server は確認まで CPU と次の Hand の開始を止め（server PR #244）、client は次のとおり出す（client PR #247）。欄は Hero 欄の操作の場所に出す（D147。卓の中央は必須にせず、#224 で中央の演出を検討するときも Board・Pot・席・Hero の視認性・hit-test・この Ack の導線を壊さない。寸法は OI-012）。
 - RULING を出すのは理由（notes）のある Hero への裁定だけ（通常の Action の裁定には出さない）。読み込みの直後・Resume では前に見た裁定を出し直さないが、確認を待っている裁定は RULING → ETIQUETTE の順で出し直す。
 - 優先順位: CPU の障害のダイアログ（§12）が出ている間は RULING / ETIQUETTE を出さず、障害の続け方を選んだ後に確認の待ちが残っていれば出す（Retry / Emergency Bot の後も server は確認まで CPU を進めない）。Session の終わりの案内・Hand の結果は、表示が確認の裁定の step で止まるので確認の後に出る。
 - 確認を待つ間: Hero の宣言・Chip は送れない。欄を出している間は Hero の欄の操作の欄を隠す（外さないので下書きは残る。D146）。server から `etiquette_ack_required` が返ったら専用の案内を出して状態を読み直し、`stale_etiquette` は状態を読み直して案内する（どちらも自動で確認・再送しない）。
@@ -389,4 +389,4 @@ client の表示層で、ゲームの進行（Engine・Event Log・server の CP
 | UX-04 #219 | **採用済み D146**: 錨は組み始めた時点の displayed の `operationKey`、同じ局面での状況（`currentBet`・Hero の `streetCommitted` 等）の変化は保持して送る前に再確認、Street / Hand / Hero の裁定・Hand の完了・Fold / All-in で破棄、App の層の Session ごとのメモリで持ち画面の移動・Outage の Dialog でも保持、中身のあった破棄だけ非モーダルで通知、Ack 待ちは送れない・`stale_view` で自動再送しない。未実装（検証の記録: `docs/taskLog/issue-219-draft-lifecycle-design.md`・PR #242） |
 | UX-06 #221 | **採用済み D143**: 可視 Event 全量を現在の `HeroView.log` から client が再構築（API 拡張なし）、seq の飛び番を受容、演出中の下書き保持・送信前の同期と再検証。Tournament Ante / BBA は #222 の Presentation Controller のテスト（Hand の始まりとして一度に出す・最後の卓が authoritative と一致）で確認済み。Hand 途中の Side Pot の内訳の表示（`buildPots` の派生）は #224 に引き継ぐ |
 | UX-10 #225 | 効果音の設定の保存先・自動再生の制約への対応 |
-| UX-11 #226 | **採用済み D145**: Ack の要否は `DEALER_RULING` の notes から決定論で導き、確認の位置は `HandRuntime` のメモリ（Event / DB は不変）、`POST /api/hands/:handId/etiquette-ack {rulingSeq}` と REST / SSE の `{revision, pendingRulingSeq}`（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は 409 `stale_etiquette`）、Ack 待ちの Hero の操作は 409 `etiquette_ack_required`（User Read は可）、Hand の完了後も待ちを残し確認まで次の Hand を始めない、Outage のダイアログが先で Retry / Emergency Bot の後も Ack まで止める、再起動で待ちが消えるのは D62 の範囲、Tournament のプレイ時間に入るのは Hand の進行中の待ちだけ（T1=A）。#230 の予約との扱いは #230 で再確認。実装は §16.5（検証の記録: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
+| UX-11 #226 | **採用済み D145**: Ack の要否は `DEALER_RULING` の notes から決定論で導き、確認の位置は `HandRuntime` のメモリ（Event / DB は不変）、`POST /api/hands/:handId/etiquette-ack {rulingSeq}` と REST / SSE の `{revision, pendingRulingSeq}`（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は 409 `stale_etiquette`）、Ack 待ちの Hero の操作は 409 `etiquette_ack_required`（User Read は可）、Hand の完了後も待ちを残し確認まで次の Hand を始めない、Outage のダイアログが先で Retry / Emergency Bot の後も Ack まで止める、再起動で待ちが消えるのは D62 の範囲、Tournament のプレイ時間に入るのは Hand の進行中の待ちだけ（T1=A）。#230 の予約との扱いは #230 で再確認。欄の配置は D147（Hero 欄の操作の場所・卓の中央は必須にしない）。実装は §16.5（server #244・client #247。検証の記録: `docs/taskLog/issue-226-etiquette-ack-design.md`） |
