@@ -366,6 +366,7 @@ describe("送信の状態（sent は受理の確定ではない）", () => {
     const sending = markSending(s, start, lastSeqOf(start), actions);
     const rejected = settleSend(sending, lastSeqOf(start), {
       kind: "rejected",
+      notApplied: false,
     });
     expect(isLocked(rejected)).toBe(false);
     expect(rejected.slot?.draft.ops).toEqual([
@@ -428,12 +429,23 @@ describe("送信の状態（sent は受理の確定ではない）", () => {
     );
     const retried = markSending(unknown, heroTurn, lastSeq, [CHIP_5]);
     expect(retried.slot?.inFlight?.uncertain).toBe(true);
-    const rejected = settleSend(retried, lastSeq, { kind: "rejected" });
-    expect(isLocked(rejected)).toBe(true);
-    expect(rejected.slot?.inFlight?.phase).toBe("unknown");
+    // stale_view（前の送信が受理されたかもしれない）では固定を解かない
+    const stale = settleSend(retried, lastSeq, {
+      kind: "rejected",
+      notApplied: false,
+    });
+    expect(isLocked(stale)).toBe(true);
+    expect(stale.slot?.inFlight?.phase).toBe("unknown");
+    // lastSeq が一致した上での拒否（illegal_action 等）なら、前の送信も適用されていないので固定を解いて元の下書きに戻す
+    const illegal = settleSend(retried, lastSeq, {
+      kind: "rejected",
+      notApplied: true,
+    });
+    expect(isLocked(illegal)).toBe(false);
+    expect(illegal.slot?.draft.ops).toEqual([CHIP_5]);
   });
 
-  it("結果不明のまま別の Hand に移ったら、別の Hand の log で結果を判定せずに捨てる", () => {
+  it("結果不明のまま別の Hand に移ったら、別の Hand の log で結果を判定せずに、通知せずに捨てる", () => {
     const start = table("h1").view();
     const lastSeq = lastSeqOf(start);
     const unknown = settleSend(
@@ -444,7 +456,8 @@ describe("送信の状態（sent は受理の確定ではない）", () => {
     const next = table("h2").view();
     const r = reconcile(unknown, next, next);
     expect(r.slot).toBeNull();
-    expect(r.discarded?.reason).toBe("hand");
+    // 受理されていた可能性があるので「送っていない」とは通知しない
+    expect(r.discarded).toBeNull();
   });
 
   it("別の送信（lastSeq の違う）の応答では何も変えない", () => {

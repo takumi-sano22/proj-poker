@@ -504,6 +504,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   // 「見た」は Hero に見せた卓（displayed）で判定する（演出の途中で届いた complete を見たことにしない）。
   const displayed = presentation.displayed;
   const seenComplete = useRef<string | null>(null);
+  // 送信の応答の処理（描画の外）で、最後に描画した displayed を読むため ref にも置く。
+  const displayedRef = useRef<HeroView | null>(null);
+  useEffect(() => {
+    displayedRef.current = displayed;
+  }, [displayed]);
   useEffect(() => {
     if (displayed?.status === "complete")
       seenComplete.current = displayed.handId;
@@ -624,7 +629,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
           onSettled?.(
             kind === "network" || kind === "unknown"
               ? { kind: "unknown" }
-              : { kind: "rejected" },
+              : {
+                  kind: "rejected",
+                  notApplied:
+                    kind !== "stale_view" && kind !== "etiquette_ack_required",
+                },
           );
           // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。
           if (activeHandId.current !== sentFor) return;
@@ -677,7 +686,15 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
         sentFor,
         () => sendHeroPhysicalActions(sentFor, lastSeq, actions),
         null,
-        (result) => updateDraft((s) => settleSend(s, lastSeq, result)),
+        // 応答の前に届いた最新の View で結果が分かっていることがあるので、記録を更新したら照合し直す（effect は View が変わるまで走らない）。
+        (result) =>
+          updateDraft((s) =>
+            reconcile(
+              settleSend(s, lastSeq, result),
+              displayedRef.current,
+              latestView.current,
+            ),
+          ),
       );
       if (started) {
         updateDraft((s) => markSending(s, shown, lastSeq, actions));
@@ -743,7 +760,10 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       const latest = latestView.current;
       if (!canSendFrom(shown, latest)) {
         resync();
-        if (latest === null || latest.handId !== shown.handId) return;
+        if (latest === null || latest.handId !== shown.handId) {
+          setNotice(RESYNCED_NOTICE);
+          return;
+        }
         const result = check(draftRef.current, latest);
         // 状況が同じでも、表示を合わせたので Hero にもう一度確定させる（送らない）。捨てた・変化を示したときはその表示が案内になる。
         if (result.kind !== "send") updateDraft(() => result.state);
@@ -788,9 +808,14 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     const sent = draftRef.current.slot?.inFlight;
     const shown = displayed;
     if (handId === null || shown === null || sent?.phase !== "unknown") return;
+    // 確認を待っている間は送らない（server も拒否する。D145）。
+    if (pendingRulingSeq !== null) {
+      setNotice(ETIQUETTE_REQUIRED_NOTICE);
+      return;
+    }
     // 送ったときの lastSeq・操作のまま送り直す（最新の lastSeq に書き換えない。受理済みなら server が stale_view で弾く）。
     send(handId, shown, sent.lastSeq, sent.actions);
-  }, [displayed, handId, send]);
+  }, [displayed, handId, pendingRulingSeq, send]);
 
   const dismissDiscarded = useCallback(
     (id: number) => updateDraft((s) => dismissDiscardedNotice(s, id)),

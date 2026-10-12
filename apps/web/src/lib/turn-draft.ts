@@ -138,8 +138,11 @@ function invalidReason(slot: DraftSlot, view: HeroView): DiscardReason | null {
 function discard(state: DraftState, reason: DiscardReason): DraftState {
   const slot = state.slot;
   if (slot === null) return state;
-  // 中身のあった下書きだけ通知する（UX04-3=A。空の下書きは黙って捨てる）。
-  if (!hasContent(slot.draft)) return { ...state, slot: null };
+  // 中身のあった下書きだけ通知する（UX04-3=A。空の下書きは黙って捨てる）。送った操作の結果が分からないまま捨てるとき（別の Hand へ
+  // 移った）は、受理されていた可能性があり「送っていない」と言えないので通知しない。
+  if (!hasContent(slot.draft) || slot.inFlight !== null) {
+    return { ...state, slot: null };
+  }
   return {
     slot: null,
     discarded: { id: state.nextNoticeId, reason },
@@ -348,8 +351,12 @@ export function markSending(
 /** 送信の応答が届いた。accepted は 200（受理。裁定は応答の View にある）。 */
 export type SendResult =
   | { readonly kind: "accepted" }
-  /** server が拒否した（stale_view・etiquette_ack_required 等。この送信は適用されていない）。 */
-  | { readonly kind: "rejected" }
+  /**
+   * server が拒否した（この送信は適用されていない）。notApplied は、前の送信も含めて送った時点の操作が適用されていないと拒否から分かるか。
+   * server は Ack 待ち → lastSeq の完全一致（stale_view）→ 操作の検証の順に判定するので、stale_view・etiquette_ack_required 以外の拒否
+   * （illegal_action・not_actor・invalid_input 等）は lastSeq が一致していた＝前の送信も適用されていないことを示す。
+   */
+  | { readonly kind: "rejected"; readonly notApplied: boolean }
   /** 応答が届かなかった（通信の失敗・応答の消失）。受理されたかどうか分からない。 */
   | { readonly kind: "unknown" };
 
@@ -375,7 +382,7 @@ export function settleSend(
     case "accepted":
       return { ...state, slot: null };
     case "rejected":
-      if (inFlight.uncertain) {
+      if (inFlight.uncertain && !result.notApplied) {
         return {
           ...state,
           slot: { ...slot, inFlight: { ...inFlight, phase: "unknown" } },
