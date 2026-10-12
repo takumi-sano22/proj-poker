@@ -1,12 +1,13 @@
 // UX-04（#219）の技術検証: Hero の操作の下書き（TurnDraft）の寿命を決める鍵（operationKey / lastSeqOf）が、
-// 実際の Engine の進行でどう変わるかを固定する。製品のコードは変えない検証テスト。
-// 結果の整理と推奨の契約（人間の承認前の案であり、採用済みではない）は docs/taskLog/issue-219-draft-lifecycle-design.md。
+// 実際の Engine の進行でどう変わるかを固定する。検証の整理は docs/taskLog/issue-219-draft-lifecycle-design.md、採用した契約は D146。
+// 本実装（lib/turn-draft.ts）の規則のテストは turn-draft.test.ts。ここは鍵の性質の固定（T2 だけは本実装の成功条件に置き換えた）。
 // 確かめること:
 // - CPU の Action で可視 seq が進んだだけ・Hero の手番が来ただけでは operationKey は変わらない（下書きを保持できる）
 // - Street の変化・Hand の変化・Hero への裁定（action / no_action / 保留した Out-of-Turn とその解決）では必ず変わる
 // - Hero の物理的な操作が受理されると、必ず Hero への DEALER_RULING が 1 つ増える（送った下書きは key の変化で必ず捨てられる）
 // - Engine が拒否した操作は Event を足さないので key も lastSeq も変わらない（下書きは残る）
-// - CPU の Raise で Hero の Call の額が変わっても operationKey は変わらない（今の key では「状況の変化」を検知できない）
+// - CPU の Raise で Hero の Call の額が変わっても operationKey は変わらない。状況の変化は anchorContext の比較で検知し、
+//   下書きを保持したまま、Hero がもう一度確定するまで送らない（D146・UX04-1=A。#242 の T2 を本実装の成功条件に置き換えた）
 // - 演出の途中（displayed = prefix）と最新（authoritative）で operationKey / lastSeq が食い違う局面がある（D143 の同期・再検証が要る）
 import {
   applyAction,
@@ -23,6 +24,15 @@ import {
   type PlayerAction,
 } from "@proj-poker/engine";
 import { describe, expect, it } from "vitest";
+import { pickChip, pushHand } from "./chip-ops.js";
+import {
+  INITIAL_DRAFT_STATE,
+  actionsToSend,
+  checkSend,
+  confirmChange,
+  edit,
+  reconcile,
+} from "./turn-draft.js";
 import { lastSeqOf, operationKey } from "./view-model.js";
 
 const HERO = "hero";
@@ -118,17 +128,37 @@ describe("UX-04 検証: CPU の進行と Hero の手番の到来", () => {
     );
   });
 
-  it("CPU の Raise で Hero の Call の額が変わっても operationKey は変わらない（今の key は Hero の状況の変化を検知しない）", () => {
+  it("CPU の Raise で Hero の Call の額が変わっても operationKey は変わらないが、anchorContext の変化を検知し、下書きを保持して再確認を求める（T2 の置き換え）", () => {
     const t = table();
     const before = t.view();
     const toCallBefore = toCallOf(before);
+    // 手番外に BB 分の Chip を組む（錨は組み始めた時点の displayed の operationKey と状況）
+    let draft = edit(INITIAL_DRAFT_STATE, before, before, (d) =>
+      pickChip(d, 200, 1),
+    );
+    draft = edit(draft, before, before, pushHand);
     const afterRaise = t.cpu("cpu1", {
       type: "raise",
       amount: CONFIG.bigBlind * 4,
     });
-    // Hero が Call に要る額は増えたが、key は同じ。手番外に組んだ下書き（例: BB 分の Chip）はそのまま残り、送ると額の足りない操作になる。
     expect(toCallOf(afterRaise)).toBeGreaterThan(toCallBefore);
     expect(operationKey(afterRaise)).toBe(operationKey(before));
+    // key が同じなので下書きは捨てない
+    draft = reconcile(draft, afterRaise, afterRaise);
+    expect(draft.slot?.draft.ops).toEqual([{ type: "chip_push", chips: [1] }]);
+    // 送ろうとしても、状況が変わったので送らずに変化を示す（Chip・宣言は補正しない）
+    const actions = actionsToSend(draft.slot, null);
+    const check = checkSend(draft, afterRaise, actions);
+    expect(check.kind).toBe("changed");
+    expect(check.state.slot?.change).toEqual({
+      from: { currentBet: CONFIG.bigBlind, heroCommitted: CONFIG.bigBlind },
+      to: { currentBet: CONFIG.bigBlind * 4, heroCommitted: CONFIG.bigBlind },
+      actions,
+    });
+    // Hero がもう一度明示的に確定したときだけ、組んだとおりの操作を送る
+    const confirmed = confirmChange(check.state, afterRaise);
+    expect(confirmed.kind).toBe("send");
+    expect(confirmed.actions).toEqual(actions);
   });
 
   it("Street が変わると operationKey は変わる（CPU の Action で Street が閉じる場合も）", () => {

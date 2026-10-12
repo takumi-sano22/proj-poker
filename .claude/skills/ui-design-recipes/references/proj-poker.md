@@ -75,13 +75,13 @@
 
 ## 横断 UI/UX の新しいレイヤー（#215・D135〜D147）
 
-設計の正本は `docs/06` §16、可逆な値は `docs/11` OI-012。**実装済み**は App Shell（#218）・Presentation Controller（#222）・RULING / ETIQUETTE と確認待ち（#226）・素材の納品（#223。組み込みは #224 / #225）。**未実装**の行は部品名が予定で、実装する Issue が決める。
+設計の正本は `docs/06` §16、可逆な値は `docs/11` OI-012。**実装済み**は App Shell（#218）・Presentation Controller（#222）・RULING / ETIQUETTE と確認待ち（#226）・Hero の操作の下書きの寿命（#219）・素材の納品（#223。組み込みは #224 / #225）。**未実装**の行は部品名が予定で、実装する Issue が決める。
 
 | レイヤー | 置き場所 | 守ること |
 | --- | --- | --- |
 | App Shell（Home / Play / Learn）【実装済み #218】 | `components/AppShell.tsx`・`lib/shell.ts`。`App.tsx` の画面の状態の上に Shell を置く | 起動時は Home。Home は読み取り専用の照会だけ（UX-02 #217・`hooks/useCurrentSession.ts`）。Learn / Replay の戻り先と閲覧位置を保持。席が見出しと重ならないことを `e2e/tests/app-shell.spec.ts` が測る |
 | 右の情報パネル（PC） / 折りたためる Hero 操作パネル（スマホ）【未実装 #220】 | 既存の進行ログ・Note / Tag・Tournament の欄・`App.tsx` の `HeroDock` を組み替える（UX-05 #220） | HUD を足さない（D32）。スマホは手番で自動で開き、高さの上限は画面の約65〜70%で内部スクロール |
-| Chip の操作と移動の演出【未実装 #219 / #220 / #224】 | `ChipControls.tsx`・`useChipDrag.ts` | Click / Drag の両方。ドロップの判定領域を他の操作と重ねない。下書きは折りたたみ・画面の移動で失わない（UX-04 #219・D146） |
+| Chip の操作と移動の演出【下書きの寿命は実装済み #219・UI の改修と移動の演出は未実装 #220 / #224】 | `ChipControls.tsx`・`useChipDrag.ts`。下書きは `useHandSession` の `turnDraft`（規則は `lib/turn-draft.ts`）、再確認の欄は `.draft-change`、捨てた通知は `DraftNotice.tsx` | Click / Drag の両方。ドロップの判定領域を他の操作と重ねない。下書きは折りたたみ・画面の移動で失わない（D146）。再確認・結果不明の欄は操作の grid の幅いっぱいに操作の行の下へ置き、Button と重ねない |
 | Presentation Controller【実装済み #222】 | `hooks/usePresentation.ts`・`lib/presentation.ts`・`components/PresentationControls.tsx`。Live と Replay（`useReplay.ts`）で step の区切りを共有 | Hero に見える View / Event だけ。authoritative と displayed を分ける・順序を保つ・速度4段階（所要時間は `lib/config.ts` の `PRESENTATION_*`）・Showdown の内容を省かない・再接続でキューを捨てる。Fast Forward と別 |
 | Dealer の通知（RULING → ETIQUETTE）【実装済み #226】 | `components/DealerOverlay.tsx`・`hooks/useDealerOverlay.ts`・`lib/dealer-overlay.ts`。**Hero 欄の操作の場所**に出す（D147） | RULING を数秒（`RULING_OVERLAY_MS`）→ 自動で閉じる → ETIQUETTE を明示確認 → 再開。3 分類を混ぜない（色は `--color-feedback-*`）。欄を出す間は操作の欄を CSS で隠すが外さない（下書きを消さない）。CPU 障害のダイアログ（`OutageDialog.tsx`）が先。卓の中央に演出を足す（#224）ときも Board・Pot・席・Hero の視認性・hit-test・この Ack の導線を壊さない |
 | 効果音と設定【未実装 #225】 | 表示設定（`lib/display-settings.ts` と同じ viewer の保存が第一候補。UX-10 #225） | 既定 ON・自動再生の制約を尊重・音量とミュートを保存。Event Log に入れない |

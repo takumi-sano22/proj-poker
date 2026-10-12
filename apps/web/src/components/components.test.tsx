@@ -10,7 +10,9 @@ import {
 import { preflopHeroToAct, seat } from "../testing/fixtures.js";
 import { Amount } from "./Amount.js";
 import { BbDisplayProvider, BbDisplayToggle } from "./BbDisplay.js";
+import { EMPTY_DRAFT } from "../lib/chip-ops.js";
 import { ChipControls } from "./ChipControls.js";
+import { DraftDiscardedNotice } from "./DraftNotice.js";
 import { ChipPile, ChipStack } from "./ChipStack.js";
 import { DealerFeedback } from "./DealerFeedback.js";
 import { DealerOverlay } from "./DealerOverlay.js";
@@ -82,7 +84,9 @@ describe("BB 補助表示の切り替え（実額は常に出す。D49）", () =
             view={view}
             hero={view.seats[0]!}
             disabled={false}
-            onSubmit={() => true}
+            draft={EMPTY_DRAFT}
+            onEdit={noop}
+            onSubmit={noop}
           />
         </BbDisplayProvider>,
       );
@@ -228,7 +232,9 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled={false}
-        onSubmit={() => true}
+        draft={EMPTY_DRAFT}
+        onEdit={noop}
+        onSubmit={noop}
       />,
     );
     expect(declarationLabels(html)).toEqual([
@@ -251,7 +257,9 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled={false}
-        onSubmit={() => true}
+        draft={EMPTY_DRAFT}
+        onEdit={noop}
+        onSubmit={noop}
       />,
     );
     expect(html).not.toContain("<input");
@@ -266,7 +274,9 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={seat("hero", { stack: 30 })}
         disabled={false}
-        onSubmit={() => true}
+        draft={EMPTY_DRAFT}
+        onEdit={noop}
+        onSubmit={noop}
       />,
     );
     const chips = [
@@ -290,7 +300,9 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled={false}
-        onSubmit={() => true}
+        draft={EMPTY_DRAFT}
+        onEdit={noop}
+        onSubmit={noop}
       />,
     );
     // 手番でなければ Legal Action の額は無いので、額を出さない
@@ -302,6 +314,81 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>確定して Dealer に渡す/);
   });
 
+  it("下書きは props から出す（画面の切り替えより上が持つ。#219）。手元の Chip・出した Chip・宣言を、組んだ順に出す", () => {
+    const view = preflopHeroToAct({ actorId: "cpu1", legalActions: null });
+    const html = renderToStaticMarkup(
+      <ChipControls
+        view={view}
+        hero={hero(view)}
+        disabled={false}
+        draft={{
+          hand: [25],
+          ops: [
+            { type: "chip_push", chips: [5] },
+            { type: "declare", declaration: { kind: "raise" } },
+          ],
+        }}
+        onEdit={noop}
+        onSubmit={noop}
+      />,
+    );
+    expect(html).toContain('chip-hand__amount">25<');
+    expect(html).toContain('betting-area__amount">5<');
+    expect(html).toContain("宣言: レイズ（Raise）");
+    expect(html).not.toMatch(
+      /<button[^>]*disabled=""[^>]*>確定して Dealer に渡す/,
+    );
+  });
+
+  it("組んだ後に状況が変わったら、変化の前後と送る操作を示し、もう一度の確定を求める（UX04-1=A。Chip・宣言は補正しない）", () => {
+    const view = preflopHeroToAct();
+    const html = renderToStaticMarkup(
+      <ChipControls
+        view={view}
+        hero={hero(view)}
+        disabled={false}
+        draft={{ hand: [], ops: [{ type: "chip_push", chips: [1, 1] }] }}
+        change={{
+          from: { currentBet: 2, heroCommitted: 2 },
+          to: { currentBet: 8, heroCommitted: 2 },
+          actions: [
+            { type: "chip_push", chips: [1, 1] },
+            { type: "declare", declaration: { kind: "call" } },
+          ],
+        }}
+        onEdit={noop}
+        onSubmit={noop}
+        onConfirm={noop}
+      />,
+    );
+    expect(html).toContain(
+      "組んだ後に卓の状況が変わりました。まだ送っていません。",
+    );
+    expect(html).toContain("<dt>この Street の Bet の額</dt><dd>2 → 8</dd>");
+    expect(html).toContain("<dt>Call に要る額</dt><dd>0 → 6</dd>");
+    expect(html).toContain("送る操作: 出した Chip 2・宣言 コール（Call）");
+    expect(html).toContain("この内容で確定して Dealer に渡す");
+  });
+
+  it("送った操作の応答が届かなかったら、同じ操作の再送だけを出す", () => {
+    const view = preflopHeroToAct();
+    const html = renderToStaticMarkup(
+      <ChipControls
+        view={view}
+        hero={hero(view)}
+        disabled
+        draft={{ hand: [], ops: [{ type: "chip_push", chips: [5] }] }}
+        unknown
+        onEdit={noop}
+        onSubmit={noop}
+        onResend={noop}
+      />,
+    );
+    expect(html).toContain("同じ操作をもう一度送る");
+    // 新しい操作（確定・宣言・Chip）は押せない
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>確定して Dealer に渡す/);
+  });
+
   it("送信中・保留中はどのボタンも押せない", () => {
     const view = preflopHeroToAct();
     const html = renderToStaticMarkup(
@@ -309,7 +396,9 @@ describe("ChipControls（Chip の Click / Drag と宣言 Button。docs/06 §4・
         view={view}
         hero={hero(view)}
         disabled
-        onSubmit={() => true}
+        draft={EMPTY_DRAFT}
+        onEdit={noop}
+        onSubmit={noop}
       />,
     );
     const buttons = html.match(/<button[^>]*>/g) ?? [];
@@ -773,5 +862,21 @@ describe("DealerOverlay（RULING → ETIQUETTE の欄。#226）", () => {
       />,
     );
     expect(plain).not.toContain("dealer-overlay--docked");
+  });
+});
+
+describe("下書きを捨てた通知（#219・D146・UX04-3=A）", () => {
+  it("非モーダルの status で、理由と送っていないことを伝え、閉じられる", () => {
+    const html = renderToStaticMarkup(
+      <DraftDiscardedNotice
+        notice={{ id: 1, reason: "street" }}
+        onDismiss={noop}
+      />,
+    );
+    expect(html).toContain('class="notice notice--draft" role="status"');
+    expect(html).toContain("Street が進んだため");
+    expect(html).toContain("この操作は送っていません。");
+    expect(html).toContain(">閉じる<");
+    expect(html).not.toContain("dialog");
   });
 });
