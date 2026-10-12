@@ -12,7 +12,10 @@
 // - ETIQUETTE の確認（Ack。#226・D145）の状態も REST の応答と SSE の etiquette イベントの両方から受け、revision の新しい方だけを残す。
 //   確認を待つ間は、表示をその裁定の step で止め（holdThroughSeq）、RULING → ETIQUETTE の欄を出し（useDealerOverlay）、Hero が
 //   明示的に確認したら Ack を送る。進行の再開は server が決め、応答の状態に従う（client は自動で Ack しない・操作を暗黙の確認にしない）
-import type { HeroView, PhysicalAction } from "@proj-poker/engine";
+// - Hero の未送信の操作の下書き（TurnDraft。#219・D146）もここ（画面の切り替えより上・Session ごと）に持つ。寿命の規則は
+//   lib/turn-draft.ts の純関数で、ここは displayed / authoritative と送信の結果を渡すだけ。操作の部品（ChipControls）が外れても
+//   （Home / Learn / Replay / Review・障害のダイアログ・RULING / ETIQUETTE の欄）下書きは消えない。メモリだけに置き、保存しない
+import type { Declaration, HeroView, PhysicalAction } from "@proj-poker/engine";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ApiError,
@@ -34,6 +37,23 @@ import {
 import type { DealerOverlay } from "../lib/dealer-overlay.js";
 import { canSendFrom, type PresentationSpeed } from "../lib/presentation.js";
 import { runStart } from "../lib/start-flow.js";
+import type { TurnDraft } from "../lib/chip-ops.js";
+import {
+  INITIAL_DRAFT_STATE,
+  actionsToSend,
+  checkSend,
+  confirmChange,
+  dismissDiscarded as dismissDiscardedNotice,
+  edit as editDraft,
+  markSending,
+  reconcile,
+  settleSend,
+  shownDraft,
+  type ContextChange,
+  type DiscardNotice,
+  type DraftState,
+  type SendResult,
+} from "../lib/turn-draft.js";
 import {
   lastSeqOf,
   parseEtiquetteEvent,
@@ -54,13 +74,20 @@ import { usePresentation } from "./usePresentation.js";
 
 export type ConnectionState = "idle" | "open" | "reconnecting" | "lost";
 
-/** 操作の送信の結果。sent は送信を始めた（結果は応答で届く）、resynced は表示が古かったので送らずに最新へ合わせた、ignored は送る物が無い。 */
-export type OperateResult = "sent" | "resynced" | "ignored";
-
 /** 表示が最新に追いついていなかったので操作を送らなかったときの案内（D143）。 */
 export const RESYNCED_NOTICE: SessionNotice = {
   message:
     "卓の表示を最新の状態に合わせました。操作はまだ送っていません。卓を確かめて、もう一度確定してください。",
+  retryable: false,
+};
+
+/**
+ * 送った操作の応答が届かなかったときの案内。server が受けたかどうか分からないので、同じ時点・同じ操作の再送だけを操作の欄に出す
+ * （届いていれば server が stale_view で弾くので二重には適用されない。新しい操作と混ぜない）。
+ */
+export const OPERATION_UNKNOWN_NOTICE: SessionNotice = {
+  message:
+    "送った操作がサーバーに届いたか確認できませんでした。操作の欄の「同じ操作をもう一度送る」で、同じ時点の操作として送り直せます（届いていれば二重には適用されません）。",
   retryable: false,
 };
 
@@ -131,15 +158,8 @@ export interface HandSession {
   /** 新しい Session に求める設定（既定は Cash）。 */
   readonly sessionChoice: SessionRequest;
   readonly setSessionChoice: (choice: SessionRequest) => void;
-  /**
-   * Hero の 1 回の手番の物理的な操作（した順）を送る。手番でなくても送る（裁定はサーバー）。shown は Hero がその操作を組んだときに
-   * 見ていた卓で、それが最新の View と同じ lastSeq のときだけ送る。違えば送らずに表示を最新へ合わせ、"resynced" を返す
-   * （下書きは呼び出し側に残る。#219 の下書きの層はこの戻り値で再確認へつなぐ）。
-   */
-  readonly operate: (
-    shown: HeroView,
-    actions: readonly PhysicalAction[],
-  ) => OperateResult;
+  /** Hero の未送信の操作の下書き（#219・D146）と、その送信・再確認の操作。 */
+  readonly turnDraft: TurnDraftControls;
   /** 表示中の障害の続け方を選ぶ（Retry / Emergency Bot / Session 終了）。 */
   readonly resolveOutage: (choice: OutageChoice) => void;
   readonly retry: () => void;
@@ -158,6 +178,38 @@ export interface HandSession {
     targetPlayerId: string | null,
     text: string,
   ) => Promise<boolean>;
+}
+
+/** 送った操作の今の段階。sending は応答待ち、unknown は応答が届かず結果が分からない（同じ操作の再送だけを許す）。 */
+export type DraftPhase = "idle" | "sending" | "unknown";
+
+export interface TurnDraftControls {
+  /** 画面に出す下書き（手元の Chip・Betting Area に出した Chip と宣言の順番）。送っている間は送った操作の列。 */
+  readonly draft: TurnDraft;
+  /** 組み始めた後に状況（currentBet・Hero の出し済みの額）が変わり、もう一度の確定を待っている操作（UX04-1=A）。 */
+  readonly change: ContextChange | null;
+  readonly phase: DraftPhase;
+  /** 中身のあった下書きを無効化で捨てたときの通知（UX04-3=A）。 */
+  readonly discarded: DiscardNotice | null;
+  /**
+   * 下書きを変える。shown は Hero が見ている卓（displayed）。下書きが無ければ shown の operationKey と状況を錨にして組み始める。
+   * 送った操作の結果を待つ間は変えない。
+   */
+  readonly edit: (
+    shown: HeroView,
+    change: (draft: TurnDraft) => TurnDraft,
+  ) => void;
+  /**
+   * 下書きを Dealer に渡す。completing は宣言だけで決まる宣言（Fold / Check / Call / All-in）で、送れたときだけ操作に入る
+   * （送らなかったら下書きに残さない）。表示が最新でなければ送らずに合わせ、錨の operationKey と状況を照合する（D143・D146）。
+   */
+  readonly submit: (shown: HeroView, completing: Declaration | null) => void;
+  /** 示した状況の変化を確認して、もう一度確定する。その間にさらに変わっていたら送らずに示し直す。 */
+  readonly confirm: (shown: HeroView) => void;
+  /** 応答が届かなかった操作を、同じ lastSeq・同じ操作で送り直す（新しい操作として送り直さない）。 */
+  readonly resend: () => void;
+  /** 下書きを捨てた通知を閉じる。 */
+  readonly dismissDiscarded: (id: number) => void;
 }
 
 /** User Read の記録の失敗の案内。手番が過ぎた・Hand が終わったときは、読みを残せる時点を伝える。 */
@@ -313,26 +365,32 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
   } | null>(null);
   const [fastForwardPending, setFastForwardPending] = useState(false);
   const fastForwardInFlight = useRef(false);
+  // Hero の操作の下書き（#219）。送信の直前に描画を待たずに読むため ref にも置く（updateDraft で同時に更新する）。
+  const [draftState, setDraftState] = useState<DraftState>(INITIAL_DRAFT_STATE);
+  const draftRef = useRef<DraftState>(INITIAL_DRAFT_STATE);
+  const updateDraft = useCallback(
+    (change: (current: DraftState) => DraftState) => {
+      const next = change(draftRef.current);
+      if (next === draftRef.current) return;
+      draftRef.current = next;
+      setDraftState(next);
+    },
+    [],
+  );
   // SSE を張り直すための世代。開始が成功するたびに進める。
   const [streamEpoch, setStreamEpoch] = useState(0);
 
   // 遅れて届いた応答がどの Hand のものかを判定するため、現在の Hand を ref でも持つ。
   const activeHandId = useRef<string | null>(null);
   const inFlight = useRef(false);
-  // 再送ボタンで同じ操作をやり直すために、最後に失敗した操作を覚えておく。
-  // 操作は送ったときの handId と lastSeq ごと覚え、再送でも同じ値を送る。応答だけが失われて実は適用済みだった場合、
-  // サーバーが stale_view で弾くので、次の手番へ誤って適用されない（現在の View の lastSeq で送り直さない）。
+  // 再送ボタンで同じ要求をやり直すために、最後に失敗した要求（開始・障害の選択・確認）を覚えておく。
+  // 送ったときの値ごと覚え、再送でも同じ値を送る。物理的な操作の再送は下書きの層（turnDraft.resend）が、送ったときの lastSeq と
+  // 操作の列を持つ（応答だけが失われて実は適用済みだった場合、サーバーが stale_view で弾くので、次の手番へ誤って適用されない）。
   const lastFailed = useRef<
     | {
         kind: "start";
         afterHandId: string | null;
         session: SessionRequest | undefined;
-      }
-    | {
-        kind: "operation";
-        handId: string;
-        lastSeq: number;
-        actions: readonly PhysicalAction[];
       }
     | {
         kind: "outage";
@@ -540,13 +598,15 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
 
   /**
    * Hand に対する操作（Action・障害の選択）を送る。二重送信を止め、応答を受け取り、失敗したら再送用に覚える。送信を始めたら true。
-   * failed は失敗したときに再送で同じ値を送るための記録。
+   * failed は失敗したときに再送で同じ値を送るための記録（null なら覚えない。物理的な操作は下書きの層が同じ操作の再送を持つ）。
+   * onSettled は応答の結果（受理・拒否・届かなかった）を、別の Hand へ移った後でも伝える（下書きの送信の記録を外すため）。
    */
   const submit = useCallback(
     (
       sentFor: string,
       request: () => Promise<HeroActionResponse>,
-      failed: NonNullable<typeof lastFailed.current>,
+      failed: NonNullable<typeof lastFailed.current> | null,
+      onSettled?: (result: SendResult) => void,
     ) => {
       if (inFlight.current) return false;
       inFlight.current = true;
@@ -554,11 +614,20 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
       setNotice(null);
       lastFailed.current = null;
       request()
-        .then((res) => acceptResponse(sentFor, res))
+        .then((res) => {
+          acceptResponse(sentFor, res);
+          onSettled?.({ kind: "accepted" });
+        })
         .catch((error: unknown) => {
+          const kind = error instanceof ApiError ? error.kind : "unknown";
+          // network（届かなかった）と unknown（5xx・壊れた応答）は、server が受けたかどうか分からない。それ以外は server の拒否。
+          onSettled?.(
+            kind === "network" || kind === "unknown"
+              ? { kind: "unknown" }
+              : { kind: "rejected" },
+          );
           // 送信中に別の Hand へ移っていたら、前の Hand の失敗は表示しない。
           if (activeHandId.current !== sentFor) return;
-          const kind = error instanceof ApiError ? error.kind : "unknown";
           if (kind === "etiquette_ack_required" || kind === "stale_etiquette") {
             // 確認の状態が client の知っているものと違った（確認待ちの操作・別の seq の確認）。応答に状態が無いので、最新の状態を
             // 読み直して出し直す（再送ボタンを出さない・別の seq を自動で確認しない。D145）。
@@ -567,6 +636,17 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
               kind === "stale_etiquette"
                 ? STALE_ETIQUETTE_NOTICE
                 : ETIQUETTE_REQUIRED_NOTICE,
+            );
+            return;
+          }
+          if (failed === null) {
+            // 物理的な操作: 届いたか分からなければ、同じ操作の再送は操作の欄に出す（再送ボタンを二重に出さない）。
+            // stale_view は最新の状態を読み直して、表示を合わせる（下書きは残り、自動で送り直さない。D146）。
+            if (kind === "stale_view") reread();
+            setNotice(
+              kind === "network" || kind === "unknown"
+                ? OPERATION_UNKNOWN_NOTICE
+                : noticeOf(error),
             );
             return;
           }
@@ -582,15 +662,29 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     [acceptResponse, reread],
   );
 
-  /** 物理的な操作を送る。lastSeq は「この操作を送ると決めたときに見ていた View」の値。 */
+  /**
+   * 物理的な操作を送る。lastSeq は「この操作を送ると決めたときに見ていた View」の値。送り始めたら下書きに送った操作を記録し
+   * （送り始めただけでは捨てない）、応答の結果で記録を更新する（lib/turn-draft.ts の markSending / settleSend）。
+   */
   const send = useCallback(
-    (sentFor: string, lastSeq: number, actions: readonly PhysicalAction[]) =>
-      submit(
+    (
+      sentFor: string,
+      shown: HeroView,
+      lastSeq: number,
+      actions: readonly PhysicalAction[],
+    ) => {
+      const started = submit(
         sentFor,
         () => sendHeroPhysicalActions(sentFor, lastSeq, actions),
-        { kind: "operation", handId: sentFor, lastSeq, actions },
-      ),
-    [submit],
+        null,
+        (result) => updateDraft((s) => settleSend(s, lastSeq, result)),
+      );
+      if (started) {
+        updateDraft((s) => markSending(s, shown, lastSeq, actions));
+      }
+      return started;
+    },
+    [submit, updateDraft],
   );
 
   /** 障害の続け方を送る。revision は「この選択をしたときに見ていた障害の状態」の値（再送でも同じ値を送る）。 */
@@ -616,24 +710,104 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     [submit],
   );
 
-  const operate = useCallback(
-    (shown: HeroView, actions: readonly PhysicalAction[]): OperateResult => {
-      if (handId === null || actions.length === 0) return "ignored";
-      // 確認を待っている間は送らない（server も拒否する。下書きは呼び出し側に残す。D145・D146）。
+  // 表示・受信が変わるたびに下書きを照合する: 有効性は Hero が見ている卓（displayed）の operationKey、送った操作の結果は最新の
+  // View（authoritative）で判定する（lib/turn-draft.ts の reconcile）。画面に何を出していても（Home / Learn に移っていても）走る。
+  useEffect(() => {
+    updateDraft((s) => reconcile(s, displayed, latestView.current));
+  }, [displayed, view, updateDraft]);
+
+  /**
+   * 下書きの操作を送る前の共通の照合。送ってよければ送る。
+   * - 確認を待っている間は送らない（server も拒否する。下書きは残す。D145・D146）
+   * - Hero が見ていた卓が最新でなければ送らない（未表示の最新の lastSeq を先取りしない。D143）。表示を最新へ合わせ、最新の卓で
+   *   錨を照合して、捨てる・状況の変化を示す・もう一度確定させる（同期の後に Hero が見て決める）
+   * - 最新なら錨を照合し、operationKey が違えば捨て、状況が違えば変化を示して再確認を待ち、同じならその卓の lastSeq で送る
+   */
+  const sendChecked = useCallback(
+    (
+      shown: HeroView,
+      actions: readonly PhysicalAction[],
+      check: (
+        state: DraftState,
+        view: HeroView,
+      ) => {
+        readonly kind: "send" | "changed" | "discarded" | "ignored";
+        readonly state: DraftState;
+      },
+    ) => {
+      if (handId === null || actions.length === 0) return;
       if (pendingRulingSeq !== null) {
         setNotice(ETIQUETTE_REQUIRED_NOTICE);
-        return "ignored";
+        return;
       }
-      // Hero が見ていた卓が最新でなければ送らない（未表示の最新の lastSeq を先取りしない。D143）。表示を合わせて、もう一度確定させる。
-      if (!canSendFrom(shown, latestView.current)) {
+      const latest = latestView.current;
+      if (!canSendFrom(shown, latest)) {
         resync();
-        setNotice(RESYNCED_NOTICE);
-        return "resynced";
+        if (latest === null || latest.handId !== shown.handId) return;
+        const result = check(draftRef.current, latest);
+        // 状況が同じでも、表示を合わせたので Hero にもう一度確定させる（送らない）。捨てた・変化を示したときはその表示が案内になる。
+        if (result.kind !== "send") updateDraft(() => result.state);
+        if (result.kind === "send") setNotice(RESYNCED_NOTICE);
+        return;
       }
-      return send(handId, lastSeqOf(shown), actions) ? "sent" : "ignored";
+      const result = check(draftRef.current, shown);
+      updateDraft(() => result.state);
+      if (result.kind === "send")
+        send(handId, shown, lastSeqOf(shown), actions);
     },
-    [handId, pendingRulingSeq, resync, send],
+    [handId, pendingRulingSeq, resync, send, updateDraft],
   );
+
+  const editTurnDraft = useCallback(
+    (shown: HeroView, change: (draft: TurnDraft) => TurnDraft) =>
+      updateDraft((s) => editDraft(s, shown, latestView.current, change)),
+    [updateDraft],
+  );
+
+  const submitTurnDraft = useCallback(
+    (shown: HeroView, completing: Declaration | null) => {
+      const current = reconcile(draftRef.current, shown, latestView.current);
+      updateDraft(() => current);
+      const actions = actionsToSend(current.slot, completing);
+      sendChecked(shown, actions, (state, view) =>
+        checkSend(state, view, actions),
+      );
+    },
+    [sendChecked, updateDraft],
+  );
+
+  const confirmTurnDraft = useCallback(
+    (shown: HeroView) => {
+      const actions = draftRef.current.slot?.change?.actions ?? [];
+      sendChecked(shown, actions, confirmChange);
+    },
+    [sendChecked],
+  );
+
+  const resendTurnDraft = useCallback(() => {
+    const sent = draftRef.current.slot?.inFlight;
+    const shown = displayed;
+    if (handId === null || shown === null || sent?.phase !== "unknown") return;
+    // 送ったときの lastSeq・操作のまま送り直す（最新の lastSeq に書き換えない。受理済みなら server が stale_view で弾く）。
+    send(handId, shown, sent.lastSeq, sent.actions);
+  }, [displayed, handId, send]);
+
+  const dismissDiscarded = useCallback(
+    (id: number) => updateDraft((s) => dismissDiscardedNotice(s, id)),
+    [updateDraft],
+  );
+
+  const turnDraft: TurnDraftControls = {
+    draft: shownDraft(draftState.slot),
+    change: draftState.slot?.change ?? null,
+    phase: draftState.slot?.inFlight?.phase ?? "idle",
+    discarded: draftState.discarded,
+    edit: editTurnDraft,
+    submit: submitTurnDraft,
+    confirm: confirmTurnDraft,
+    resend: resendTurnDraft,
+    dismissDiscarded,
+  };
 
   const currentOutage = currentOutageStatus;
   // RULING → ETIQUETTE の欄（障害のダイアログが出ている間は出さない。障害を先に。D145）。
@@ -735,13 +909,11 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     const failed = lastFailed.current;
     if (failed?.kind === "start")
       requestStart(failed.afterHandId, failed.session);
-    else if (failed?.kind === "operation")
-      send(failed.handId, failed.lastSeq, failed.actions);
     else if (failed?.kind === "outage")
       sendOutageChoice(failed.handId, failed.revision, failed.choice);
     else if (failed?.kind === "etiquette")
       sendEtiquetteAck(failed.handId, failed.rulingSeq);
-  }, [requestStart, send, sendEtiquetteAck, sendOutageChoice]);
+  }, [requestStart, sendEtiquetteAck, sendOutageChoice]);
 
   // SSE: 接続直後に現在の View が 1 回届き、以後は Log が進むたびに届く。complete を受けたら閉じる。
   // Session の状態（session イベント）は complete の View の直前に届く。
@@ -822,7 +994,7 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
     startNewSession,
     sessionChoice,
     setSessionChoice,
-    operate,
+    turnDraft,
     resolveOutage,
     retry,
     // サーバーは Hand の終了で切る。complete の View を受けた時点で、先に画面でも通常の表示に戻す。

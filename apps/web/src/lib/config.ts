@@ -84,3 +84,9 @@ export const REPLAY_SPEED_SCALE = {
  * 表示演出の速度（演出なしを含む）には掛けない（裁定の事実を読む時間で、演出の動きではない）。
  */
 export const RULING_OVERLAY_MS = 2_500;
+
+/**
+ * 中身のあった Hero の操作の下書きを無効化で捨てたときの通知を出しておく時間（ミリ秒。#219・D146 の「短い非モーダルの通知」）。
+ * OI-012 の暫定値。通知を出せる画面（卓の Hero の欄）に戻ってから数える（Home / Learn にいる間に捨てても、戻ったときに見せる）。
+ */
+export const DRAFT_DISCARD_NOTICE_MS = 6_000;

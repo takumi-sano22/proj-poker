@@ -2018,6 +2018,58 @@ input {
   align-self: stretch;
 }
 
+/* 下書きの再確認（組んだ後に状況が変わった。#219・D146）と、結果の分からない送信の案内。操作の grid の幅いっぱいに、
+   操作の行の下へ置く（Button の判定領域と重ねない）。非モーダルで、進行を止めない */
+.draft-change,
+.draft-unknown {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-feedback-ruling);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  font-size: 13px;
+}
+
+.draft-change p,
+.draft-unknown p {
+  margin: 0;
+}
+
+.draft-change__title {
+  flex-basis: 100%;
+  font-weight: 600;
+}
+
+.draft-change__rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin: 0;
+}
+
+.draft-change__row {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.draft-change__row dt {
+  color: var(--color-on-surface-muted);
+}
+
+.draft-change__row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.draft-change__actions {
+  flex-basis: 100%;
+}
+
 /* 5 枚の Chip と手元が 1 行に収まらない幅（320px など）では、手元を次の行に回す（重ねない） */
 @media (max-width: 359px) {
   .chip-controls {

@@ -39,6 +39,7 @@ import {
   useBbSetting,
 } from "./components/BbDisplay.js";
 import { ChipControls } from "./components/ChipControls.js";
+import { DraftDiscardedNotice } from "./components/DraftNotice.js";
 import { DrillBanner } from "./components/DrillBanner.js";
 import { HeroFeedback } from "./components/DealerFeedback.js";
 import { DealerOverlay } from "./components/DealerOverlay.js";
@@ -634,6 +635,13 @@ function HeroDock({
       </div>
       <div className="dock__controls">
         <Notice session={session} />
+        {/* 中身のあった下書きを無効化で捨てたときだけ、操作の欄の近くに短く出す（非モーダル。#219・D146）。 */}
+        {session.turnDraft.discarded !== null && (
+          <DraftDiscardedNotice
+            notice={session.turnDraft.discarded}
+            onDismiss={session.turnDraft.dismissDiscarded}
+          />
+        )}
         {/* RULING → ETIQUETTE の欄（#226）は、画面の幅に依らず Hero の欄の操作の場所に出す。卓の中央に置くと、中間幅（720×600 等）で
             Board を押し上げて席に重なり、画面下に固定した Hero の欄の裏に「確認しました」が隠れるため（卓の公開状況・Pot・Hero の札と
             Stack を覆わない）。障害のダイアログの間は出ない（障害を先に） */}
@@ -834,20 +842,27 @@ function DockBody({
         <p className="dock__message">{waiting}</p>
       )}
       {/* 手番でなくても操作できる（Out-of-Turn も裁定の対象。D91）。保留中は Hero の手番で裁定されるまで次の操作を送れない。
-          操作の下書きは、裁定が 1 つ進む・Street が進むたびに捨てる（送った操作を持ち越さない）。 */}
+          操作の下書きは useHandSession が画面の切り替えより上で持ち、錨の operationKey が変わる（Street・Hand・Hero への裁定）・
+          Hand が終わると捨てる（#219・D146）。key は Drag の途中の状態だけを局面ごとに作り直すため。 */}
       <ChipControls
         key={operationKey(view)}
         view={view}
         hero={hero}
-        // ETIQUETTE の確認を待つ間も送れない（下書きは残す。D145・D146）。
+        // ETIQUETTE の確認を待つ間も送れない（下書きは残す。D145・D146）。送った操作の結果を待つ間も変えない。
         disabled={
           session.pending ||
           ruling?.kind === "pending" ||
-          session.etiquettePending
+          session.etiquettePending ||
+          session.turnDraft.phase !== "idle"
         }
-        // 送るのは、この卓（Hero が見ている displayed）が最新の View と同じときだけ（useHandSession の operate。D143）。
-        // 送り始めたときだけ宣言を下書きに足す（表示が古い・確認待ち・送信中で送らなかったら足さない）。
-        onSubmit={(actions) => session.operate(view, actions) === "sent"}
+        draft={session.turnDraft.draft}
+        change={session.turnDraft.change}
+        unknown={session.turnDraft.phase === "unknown"}
+        // 下書きの錨と送信の照合は、この卓（Hero が見ている displayed）で行う（D143・D146）。
+        onEdit={(change) => session.turnDraft.edit(view, change)}
+        onSubmit={(completing) => session.turnDraft.submit(view, completing)}
+        onConfirm={() => session.turnDraft.confirm(view)}
+        onResend={session.turnDraft.resend}
       />
     </>
   );

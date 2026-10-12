@@ -3,11 +3,12 @@
 // 組んだ操作は PhysicalAction の列としてサーバーへ送り、裁定は Ruling Engine が行う（D47・D91）。
 // ここでは合法性を判定せず、誤操作になる操作（手番でない操作・Oversized Chip・2 回に分けた Chip・局面に合わない宣言）の
 // 事前の警告も出さない。数値の Bet Box（Slider・Preset）は作らない（docs/06 §4）。
-import type { HeroView, PhysicalAction, SeatView } from "@proj-poker/engine";
-import { useCallback, useRef, useState, type CSSProperties } from "react";
+// 下書き（TurnDraft）はここに持たない（#219・D146）。画面の切り替えより上の useHandSession が Session ごとに持ち、この部品が外れても
+// （Home / Learn へ移る・障害のダイアログ・RULING / ETIQUETTE の欄）消えない。ここは下書きを出して、変更・送信を伝えるだけ。
+import type { Declaration, HeroView, SeatView } from "@proj-poker/engine";
+import { useCallback, useRef, type CSSProperties } from "react";
 import { useChipDrag } from "../hooks/useChipDrag.js";
 import {
-  EMPTY_DRAFT,
   completesTurn,
   declarationOf,
   declare,
@@ -23,6 +24,7 @@ import {
   type TurnDraft,
 } from "../lib/chip-ops.js";
 import { CHIP_DENOMINATIONS } from "../lib/config.js";
+import type { AnchorContext, ContextChange } from "../lib/turn-draft.js";
 import {
   ACTION_TERMS,
   formatBB,
@@ -37,11 +39,23 @@ interface ChipControlsProps {
   readonly hero: SeatView;
   /** 送信中など、操作を受け付けないとき。 */
   readonly disabled: boolean;
+  /** 出す下書き（useHandSession の turnDraft.draft）。 */
+  readonly draft: TurnDraft;
+  /** 組み始めた後に状況が変わり、もう一度の確定を待っている操作（無ければ null）。 */
+  readonly change?: ContextChange | null;
+  /** 送った操作の応答が届かず、結果が分からないか（同じ操作の再送だけを出す）。 */
+  readonly unknown?: boolean;
+  /** 下書きを変える（Chip を手に取る・出す・戻す・Bet / Raise の宣言）。 */
+  readonly onEdit: (change: (draft: TurnDraft) => TurnDraft) => void;
   /**
-   * 操作を Dealer に渡す。false は表示が最新でなかったので送らなかった（D143）ことを表し、そのときは押した宣言を下書きに足さない
-   * （送らなかった宣言が残ると、Hero が最新の卓を見て押し直した宣言より先に裁定されるため）。
+   * 下書きを Dealer に渡す。completing は宣言だけで決まる宣言（Fold / Check / Call / All-in）で、送れたときだけ操作に入る
+   * （表示が古い・状況が変わった・確認待ちで送らなかったら、下書きに残さない）。
    */
-  readonly onSubmit: (actions: readonly PhysicalAction[]) => boolean;
+  readonly onSubmit: (completing: Declaration | null) => void;
+  /** 示した状況の変化を確認して、もう一度確定する。 */
+  readonly onConfirm?: () => void;
+  /** 応答が届かなかった操作を、同じ時点・同じ操作で送り直す。 */
+  readonly onResend?: () => void;
 }
 
 /** Drag の元: Stack の Chip 1 枚か、手に取った Chip 全部。 */
@@ -62,9 +76,14 @@ export function ChipControls({
   view,
   hero,
   disabled,
+  draft,
+  change = null,
+  unknown = false,
+  onEdit,
   onSubmit,
+  onConfirm,
+  onResend,
 }: ChipControlsProps) {
-  const [draft, setDraft] = useState<TurnDraft>(EMPTY_DRAFT);
   const bettingArea = useRef<HTMLDivElement | null>(null);
   const remaining = remainingStack(hero.stack, draft);
   const held = handTotal(draft);
@@ -75,26 +94,24 @@ export function ChipControls({
 
   const onDrop = useCallback(
     (source: DragSource) =>
-      setDraft((d) =>
+      onEdit((d) =>
         source.kind === "hand"
           ? pushHand(d)
           : pushChip(d, hero.stack, source.value),
       ),
-    [hero.stack],
+    [hero.stack, onEdit],
   );
   const { drag, bind } = useChipDrag<DragSource>(bettingArea, onDrop, disabled);
 
   const onDeclare = (kind: DeclarationKind) => {
-    const next = declare(
-      draft,
-      declarationOf(kind, hero.streetCommitted, draft),
-    );
     if (completesTurn(kind)) {
       // Fold / Check / Call / All-in は宣言だけで Action が決まるので、その時点で Dealer に渡す。
-      // 手に取ったまま出していない Chip は卓に出ていないので送らない。表示が古くて送らなかったら、宣言は下書きに足さない。
-      if (!onSubmit(next.ops)) return;
+      // 手に取ったまま出していない Chip は卓に出ていないので送らない。送らなかったら、宣言は下書きに足さない（useHandSession）。
+      onSubmit({ kind });
+      return;
     }
-    setDraft(next);
+    // Bet / Raise は続けて Chip を出すので、宣言を下書きに足す（手に取った Chip の額を to 額として宣言する）。
+    onEdit((d) => declare(d, declarationOf(kind, hero.streetCommitted, d)));
   };
 
   const declaredText = declarations
@@ -124,7 +141,7 @@ export function ChipControls({
               disabled={unavailable}
               aria-label={`${formatChips(d.value)} の Chip を手に取る`}
               onClick={() =>
-                setDraft((current) => pickChip(current, hero.stack, d.value))
+                onEdit((current) => pickChip(current, hero.stack, d.value))
               }
               {...bind({ kind: "chip", value: d.value })}
             >
@@ -146,7 +163,7 @@ export function ChipControls({
               ? `手に取った Chip ${formatChips(held)} を Betting Area に出す`
               : "手に取った Chip はありません"
           }
-          onClick={() => setDraft(pushHand)}
+          onClick={() => onEdit(pushHand)}
           {...bind({ kind: "hand" })}
         >
           <span className="chip-hand__label">手元</span>
@@ -157,7 +174,7 @@ export function ChipControls({
           type="button"
           className="btn btn--ghost btn--sm chip-hand__return"
           disabled={disabled || held === 0}
-          onClick={() => setDraft(returnHand)}
+          onClick={() => onEdit(returnHand)}
         >
           戻す
         </button>
@@ -171,7 +188,7 @@ export function ChipControls({
           className="betting-area__target"
           disabled={disabled || held === 0}
           aria-label={`ベッティングエリア（Betting Area）。出した Chip ${formatChips(pushedTotal(draft))}${declaredText === "" ? "" : `、宣言 ${declaredText}`}。押すと手に取った Chip を出す`}
-          onClick={() => setDraft(pushHand)}
+          onClick={() => onEdit(pushHand)}
         >
           <span className="betting-area__label">
             ベッティングエリア（Betting Area）
@@ -206,10 +223,32 @@ export function ChipControls({
         type="button"
         className="btn btn--primary btn--md chip-controls__submit"
         disabled={disabled || draft.ops.length === 0}
-        onClick={() => onSubmit(draft.ops)}
+        onClick={() => onSubmit(null)}
       >
         確定して Dealer に渡す
       </button>
+
+      {change !== null && (
+        <ContextChangeNotice
+          change={change}
+          disabled={disabled}
+          onConfirm={onConfirm}
+        />
+      )}
+      {unknown && (
+        <div className="draft-unknown" role="status">
+          <p>
+            送った操作の結果を確かめています。届いていなければ、同じ時点の同じ操作として送り直せます。
+          </p>
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={onResend}
+          >
+            同じ操作をもう一度送る
+          </button>
+        </div>
+      )}
 
       <div
         className="declarations"
@@ -244,6 +283,96 @@ export function ChipControls({
           />
         </span>
       )}
+    </div>
+  );
+}
+
+/** 状況の 1 行（組み始めた時点 → 今）。 */
+function contextRows(
+  from: AnchorContext,
+  to: AnchorContext,
+): { readonly label: string; readonly from: number; readonly to: number }[] {
+  return [
+    {
+      label: "この Street の Bet の額",
+      from: from.currentBet,
+      to: to.currentBet,
+    },
+    {
+      label: "Hero の出し済み",
+      from: from.heroCommitted,
+      to: to.heroCommitted,
+    },
+    {
+      label: "Call に要る額",
+      from: Math.max(0, from.currentBet - from.heroCommitted),
+      to: Math.max(0, to.currentBet - to.heroCommitted),
+    },
+  ];
+}
+
+/** 送る操作の要約（出した Chip の額と宣言）。Chip・宣言は補正せず、組んだとおりに示す。 */
+function actionsSummary(change: ContextChange): string {
+  const chips = change.actions.reduce(
+    (total, op) =>
+      op.type === "declare"
+        ? total
+        : total + op.chips.reduce((a, c) => a + c, 0),
+    0,
+  );
+  const declared = change.actions.flatMap((op) =>
+    op.type === "declare" ? [termLabel(ACTION_TERMS[op.declaration.kind])] : [],
+  );
+  const parts = [
+    ...(chips > 0 ? [`出した Chip ${formatChips(chips)}`] : []),
+    ...(declared.length > 0 ? [`宣言 ${declared.join(" → ")}`] : []),
+  ];
+  return parts.join("・");
+}
+
+/**
+ * 下書きを組んだ後に卓の状況が変わったことを示し、もう一度の確定を求める（UX04-1=A・D146）。非モーダルで、確定しなければ送らない。
+ * 下書きは捨てず、Chip の枚数・宣言は補正しない（組み直すなら Chip を足す・宣言を足すこともできる）。
+ */
+function ContextChangeNotice({
+  change,
+  disabled,
+  onConfirm,
+}: {
+  readonly change: ContextChange;
+  readonly disabled: boolean;
+  readonly onConfirm: (() => void) | undefined;
+}) {
+  return (
+    <div
+      className="draft-change"
+      role="group"
+      aria-label="組んだ後に卓の状況が変わりました"
+    >
+      <p className="draft-change__title">
+        組んだ後に卓の状況が変わりました。まだ送っていません。
+      </p>
+      <dl className="draft-change__rows">
+        {contextRows(change.from, change.to).map((row) => (
+          <div key={row.label} className="draft-change__row">
+            <dt>{row.label}</dt>
+            <dd>
+              {formatChips(row.from)} → {formatChips(row.to)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="draft-change__actions">
+        送る操作: {actionsSummary(change)}
+      </p>
+      <button
+        type="button"
+        className="btn btn--primary btn--sm"
+        disabled={disabled}
+        onClick={onConfirm}
+      >
+        この内容で確定して Dealer に渡す
+      </button>
     </div>
   );
 }
