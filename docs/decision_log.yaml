@@ -1,4 +1,4 @@
-# D01〜D146の採用済み人間判断。
+# D01〜D147の採用済み人間判断。
 # このファイルは機械可読な正本として扱う。
 # choiceは壁打ち時の選択肢記号を保持し、status/decisionは日本語で記述する。
 
@@ -590,3 +590,8 @@
   choice: "UX04-1=A（状況が変わっても有効な局面なら下書きを保持し、送る前に再確認を求める）・UX04-2=A（App の層・Session ごとのメモリで持つ）・UX04-3=A（中身のあった下書きを破棄したときだけ非モーダルで通知）（#219 / PR #242 の人間判断。#219 の 2026-10-11 の人間判断のコメント）"
   status: "採用済み"
   decision: "UX-04 #219 の検証を受け、Hero の未送信の操作の下書き（TurnDraft: 手に取った Chip と、Betting Area に出した Chip・宣言）の寿命を次のとおりとする。下書きの有効性は、組み始めた時点に Hero が見ていた displayed View の operationKey（handId・Street・Hero への DEALER_RULING の数）に結びつける（錨）。CPU の Action で可視 seq が進んだだけ・Hero の手番が来ただけ・ETIQUETTE の Ack では下書きを保持する。Street・Hand の変化・Hero への新しい裁定（保留した Out-of-Turn とその解決を含む）・Hand の完了・Hero の Fold / All-in（Blind・Ante の支払いでの All-in を含む）・Session の終了や切り替えでは、下書きを破棄する。同じ Hand・Street・Hero の裁定の数のまま CPU の Bet / Raise 等で、組んだ時点の状況（currentBet・Hero の streetCommitted 等。anchorContext）が変わったときは、下書きを保持するが再確認なしには送らない。送る前に D143 のとおり displayed を authoritative に同期し、錨の operationKey と状況を再検証し、状況が変わっていればその変化を Hero に示して、もう一度明示的に確定させる。client は Chip の枚数・宣言の内容を補正せず、暗黙に送らない（裁定は今どおり Ruling Engine。D47・D91）。下書きと錨は、App Shell が画面を切り替える層より上で、Session（通常の卓 / Drill）ごとに client のメモリにだけ持ち、操作パネルの開閉・Home / Learn / Replay / Review への移動と復帰・CPU の障害（Outage）の Dialog の表示の間も有効なら保持する。ブラウザの再読み込み・プロセスの再起動を跨いだ復元は求めず（D62・D139）、未送信の下書きを Event Log・API・DB・ブラウザのストレージに記録しない（D90）。中身（手に取った Chip か出した Chip・宣言）があった下書きを無効化で破棄したときだけ、Hero の操作パネルの近くに短い非モーダルの通知を出し、空の下書きの破棄では通知しない。通知はモーダルにせず進行を妨げない（文言・表示時間は OI-012 の暫定値）。ETIQUETTE の Ack 待ちの間は下書きを保持しても送れない（D145）。stale_view を受けても自動で送り直さない。受理された Hero の操作は必ず Hero への裁定を 1 つ足して operationKey を変えるので、送った下書きはそこで捨てる。Out-of-Turn・String Bet・Chip の物理的な操作と Ruling Engine の既存の契約、stale_view（lastSeq の完全一致）、Hero に見える情報の範囲は変えず、Hero の Hidden / Future の情報を使わない。Game Engine・Event・API・DB は変えない。#215 Gate 1 は解除しない。D47・D62・D90・D91・D139・D143・D145 を具体化する。"
+
+- id: D147
+  choice: "UX11-placement=A（RULING / ETIQUETTE の欄は今の Hero 欄の操作の場所で受け入れる）（#226 の人間判断。#226 issuecomment-6111020291）"
+  status: "採用済み"
+  decision: "UX-11 #226 で実装した RULING → ETIQUETTE の欄を、Hero 欄の操作の場所に出す今の配置で受け入れる。卓の中央に出すことは必須にしない。#224 で卓の中央の演出を追加で検討するときは、Board・Pot・席・Hero の視認性、操作の判定領域（hit-test）、今の Ack の導線を壊さない形に限る。配置の可逆な寸法は OI-012 の暫定値のまま。新しいゲームの機能・Event・API・DB の採用ではなく、Ack の契約（D145）と RULING → ETIQUETTE の順序（D142）は変えない。D142・D145 の具体化。"

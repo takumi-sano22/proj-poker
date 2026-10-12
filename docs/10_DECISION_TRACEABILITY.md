@@ -1,6 +1,6 @@
 # 人間判断のトレーサビリティ
 
-D01〜D146の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
+D01〜D147の採用済み人間判断は、`decision_log.yaml` を正本として保存しています。
 
 Claude Codeはこれらを自己判断で上書きしてはいけません。
 
@@ -46,6 +46,7 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | D144 | UX-02 #217 での採用判断: Home の照会は GET /api/session/current（state と Session の種類だけ・Session ID / Hand ID / Stack / 札は返さない）、開始と同じ読み取り専用の判定から作る、ended はこのプロセスの終了だけ（再起動後は null）、未知の state は安全側、#230 の承認後に追加で拡張。UX02-1〜3=A（UX-03 #218・#230 の前提） |
 | D145 | UX-11 #226 での採用判断: ETIQUETTE の Ack の要否は DEALER_RULING の notes から決定論で導き、確認の位置は HandRuntime のメモリ（Event / DB は不変）、POST /api/hands/:handId/etiquette-ack と REST / SSE の {revision, pendingRulingSeq}（確認済みの seq の再送は今の待ちを変えずに 200・Ack の要らない / 未来の seq は stale_etiquette）、Ack 待ちの操作と次の Hand の開始は etiquette_ack_required、Outage が先で Retry 後も Ack まで止める、再起動での消失は D62 の範囲、Tournament のプレイ時間は Hand の進行中の待ちだけ。UX11-1〜5・T1=A（UX-11 #226 の本実装の前提） |
 | D146 | UX-04 #219 での採用判断: 下書きの錨は組み始めた時点の displayed の operationKey、同じ局面での状況の変化は保持して送る前に再確認（client は補正・暗黙の送信をしない）、Street / Hand / Hero の裁定・Hand の完了・Fold / All-in で破棄、App の層の Session ごとのメモリで持ち画面の移動・Outage の Dialog でも保持（Event / API / DB に入れない・再読み込みで復元しない）、中身のあった破棄だけ非モーダルで通知。UX04-1〜3=A（UX-04 #219 の本実装の前提） |
+| D147 | UX-11 #226 の欄の配置の判断: RULING → ETIQUETTE の欄は今の Hero 欄の操作の場所で受け入れ、卓の中央は必須にしない。#224 で中央の演出を検討するときは Board・Pot・席・Hero の視認性・hit-test・今の Ack の導線を壊さない。寸法は OI-012。Ack の契約（D145）と順序（D142）は不変。UX11-placement=A（#226 issuecomment-6111020291） |
 
 ### Q1〜Q29 と D 番号の対応（#216）
 
@@ -58,9 +59,9 @@ Claude Codeはこれらを自己判断で上書きしてはいけません。
 | Q12・Q24 | D139（寿命の契約は D146） | UX-04 #219 |
 | Q8・Q14・Q15・Q19・Q20・Q21・Q26 | D140 | UX-06 #221・UX-07 #222・UX-09 #224 |
 | Q9・Q16・Q22 | D141 | UX-08 #223・UX-10 #225 |
-| Q28・Q29 | D142（Ack の契約は D145） | UX-11 #226 |
+| Q28・Q29 | D142（Ack の契約は D145・欄の配置は D147） | UX-11 #226 |
 
-UX-06 の人間承認（#221 / D143）: UX06-1=A（`seq` の飛び番は表示・意味づけせず受容）、UX06-2=A（`authoritative` / `displayed` を分離し、未送信下書きを保持して送信時に同期・再検証）、UX06-3=A（現行 API 維持、client が可視 Event の時系列を再構築）。Gate 0 は PR #228 の成果への人間承認により解除済みだが、Gate 1 は他の依存条件が残り未解除。
+UX-06 の人間承認（#221 / D143）: UX06-1=A（`seq` の飛び番は表示・意味づけせず受容）、UX06-2=A（`authoritative` / `displayed` を分離し、未送信下書きを保持して送信時に同期・再検証）、UX06-3=A（現行 API 維持、client が可視 Event の時系列を再構築）。Gate 0 は PR #228 の成果への人間承認により解除済み。Gate 1 は当時は他の依存条件が残り未解除だったが、D143〜D146 と #239 の検収を経て 2026-10-11 に人間が解除した（Gate 2 は未解除）。
 
 既存の判断との関係（どれも変更ではなく具体化。旧 D の status は変えない）: D15（Dealer の進行の速度変更 / Skip）は D140 の表示演出の速度4段階で具体化し、Fast Forward（D93）とは別の契約のまま。D43（実卓寄り2D）・D60（Card / Chip の構造描画・装飾のみ画像生成）は D135 でも維持。D44（Click / Drag）は D138 で維持。D62（Hand の間の Auto Save・Hand 途中の完全復帰は求めない）は D136・D139 でも変えない。D91（Ruling の3種）・D90（裁定の Event）は D142 でも変えず、変わるのは表示と確認の流れだけ。D80（Bust と Session の終了）・D93（Replay の操作）は変えず、D140 の Replay の速度は D93 の Play / Pause に足すもの。旧 `docs/06` §1 の「Casino ゲーム的な演出より読みやすさを優先」と `docs/01` FR-LIVE-005 の速度の3段（Real Table / Normal / Fast）は D ではない docs の記述で、D135・D140 に合わせて書き換えた。
 

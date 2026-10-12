@@ -193,6 +193,7 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 - 表示順序の維持・表示演出の速度4段階・Showdown の公開 / 結果を省かない・Live / Replay の部品の共有・再接続時の同期（D140）
 - Card / Chip / Street / 勝利の効果音（BGM なし）・初期 ON・音量とミュートの保存（D141）
 - RULING の自動終了 → ETIQUETTE の明示確認 → 再開、確認待ち中の Home / Learn への移動（D142）
+- RULING → ETIQUETTE の欄は今の Hero 欄の操作の場所に出す（卓の中央は必須にしない。#224 で中央の演出を検討するときも視認性・hit-test・Ack の導線を壊さない。D147）
 
 未確定（可逆。Config / Token に暫定値を置き、Playtest で見直す。永久仕様にしない）:
 - RULING を出しておく「数秒」の値（D142。暫定値は `apps/web/src/lib/config.ts` の `RULING_OVERLAY_MS` = 2,500ms。#226）
@@ -201,14 +202,15 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 - 操作用 Chip の大きさの調整規則（基準は PC 約54px・スマホ約48〜52px。D138）と、卓上の Chip の拡大率
 - スマホで開いた Hero 操作パネルの高さの上限の正確な比率（約65〜70%。D137）と、レスポンシブの画面幅の閾値の再設計（今は 719px / 720px・1024px・359px。`docs/06` §1）
 - 効果音の既定の音量・音源・種類ごとの割り当て（D141。音源の制作は UX-08 #223、再生と設定は UX-10 #225）
+- RULING / ETIQUETTE の欄の寸法・余白（配置の場所は D147 で確定。寸法は可逆）
 - 世界観のデザイントークン（色・光・影・動き）と音声のトークンの具体値（D135・D141。トークンの置き場所は `ui-design-recipes` の `references/proj-poker.md`）
 
-技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは #215 Gate 1 で承認する）:
+技術検証で決める（検証前に採用済みの事実として書かない。人間の判断を要するものは人間が承認する。#215 Gate 1 は 2026-10-11 に解除済みで、残る UX-10 等は各 Issue で人間が承認する）:
 - UX-02（#217）: **解消済み → D144（UX02-1〜3=A の人間承認）**。Home の照会は `GET /api/session/current` で、開始と同じ読み取り専用の判定から作り、Hand・Event・CPU・Claude を動かさない（検証は PR #236・`docs/taskLog/issue-217-session-readonly-verification.md`）。`paused` 等の状態と Q43=A に関わる判定の差は #230 の設計で扱う
 - UX-04（#219）: **解消済み → D146（UX04-1〜3=A の人間承認）**。下書きの錨は組み始めた時点の displayed の `operationKey`、状況の変化は保持して送る前に再確認、画面の切り替えより上の層に Session ごとのメモリで持つ、中身のあった破棄だけ非モーダルで通知（検証は PR #242・`docs/taskLog/issue-219-draft-lifecycle-design.md`）。通知の文言・表示時間は上の OI-012 の暫定値
 - UX-06（#221）: **解消済み → D143（UX06-1〜3=A の人間承認）**。既存の `HeroView.log` 全量から client が可視 Event を順序再構築する方式を採用し、API/Event/永続化の追加はこの演出のためには行わない。seq 飛び番の残余リスクは受容するが UI に出さず、演出中の操作下書きは保持・送信前に最新表示へ同期して有効性を再検証する。Tournament Ante / BBA は UX-07 #222 のテストで確認済み。**未検証**: Hand 中 Side Pot の内訳表示は UX-09 #224 で実証する（詳細は `docs/taskLog/issue-221-live-presentation-verification.md`）。
 - UX-10（#225）: 効果音の設定の保存先（既存の BB 補助表示と同じ viewer ごとの `localStorage` が第一候補）とブラウザの自動再生の制約への対応（D141）
-- UX-11（#226）: **解消済み → D145（UX11-1〜5・T1=A の人間承認）**。Ack の要否は `DEALER_RULING` の notes から導き、確認の位置は server の `HandRuntime` のメモリに持って Event / DB は変えない。停止点は `runCpuTurns` のループの先頭、API は `POST /api/hands/:handId/etiquette-ack` と `{revision, pendingRulingSeq}`（検証は PR #240・`docs/taskLog/issue-226-etiquette-ack-design.md`）。RULING の自動で閉じる「数秒」は引き続き OI-012 の暫定値。#230 の Session の終了 / 一時中断の予約と Hand の完了後に残る Ack 待ちの扱いは #230 の設計で再確認する
+- UX-11（#226）: **解消済み → D145（UX11-1〜5・T1=A の人間承認）**。Ack の要否は `DEALER_RULING` の notes から導き、確認の位置は server の `HandRuntime` のメモリに持って Event / DB は変えない。停止点は `runCpuTurns` のループの先頭、API は `POST /api/hands/:handId/etiquette-ack` と `{revision, pendingRulingSeq}`（検証は PR #240・`docs/taskLog/issue-226-etiquette-ack-design.md`）。RULING の自動で閉じる「数秒」は引き続き OI-012 の暫定値。#230 の Session の終了 / 一時中断の予約と Hand の完了後に残る Ack 待ちの扱いは #230 の設計で再確認する。実装は server #244・client #247（#226 Closed）、欄の配置は D147（UX11-placement=A）
 
 ## すでに確定しており、Routine Implementationで再検討しない項目
 
