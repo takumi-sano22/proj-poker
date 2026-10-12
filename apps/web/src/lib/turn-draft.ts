@@ -50,7 +50,12 @@ export interface DraftSlot {
 
 /** 下書きを捨てた理由（通知の文に使う）。 */
 export type DiscardReason =
-  "street" | "hand" | "ruling" | "hand_complete" | "left_hand";
+  | "street"
+  | "hand"
+  | "ruling"
+  | "hand_complete"
+  | "left_hand"
+  | "session_ended";
 
 export interface DiscardNotice {
   /** 同じ理由が続いても別の通知として出し直すための番号。 */
@@ -160,9 +165,16 @@ export function reconcile(
   state: DraftState,
   displayed: HeroView | null,
   authoritative: HeroView | null,
+  sessionEnded = false,
 ): DraftState {
   let slot = state.slot;
   if (slot === null || displayed === null) return state;
+  // Session が終わった（CPU の障害で Session の終了を選ぶと、Hero の View は Hand の途中のまま Session だけが終わる）。下書きは持ち越さない。
+  if (sessionEnded) {
+    return slot.inFlight === null
+      ? discard(state, "session_ended")
+      : { ...state, slot: null };
+  }
   // 別の Hand に移った（送った操作の結果が分からないまま次の Hand を開いた等）。送った時点の seq は別の Hand の log と比べられないので、
   // 結果を判定せずに捨てる（中身があれば通知する）。
   if (!slot.anchorKey.startsWith(`${displayed.handId}:`)) {

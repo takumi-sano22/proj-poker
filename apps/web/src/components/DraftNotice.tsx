@@ -10,6 +10,7 @@ const REASON_TEXT: Record<DiscardReason, string> = {
   ruling: "Dealer の裁定が入ったため",
   hand_complete: "Hand が終わったため",
   left_hand: "Hero が Hand から外れたため",
+  session_ended: "Session が終わったため",
 };
 
 /** 捨てた理由ごとの通知の文。送っていないことを必ず添える。 */

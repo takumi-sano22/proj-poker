@@ -322,6 +322,13 @@ describe("無効化と通知（D146・UX04-3=A）", () => {
     expect(check.state.discarded?.reason).toBe("street");
   });
 
+  it("CPU の障害で Session の終了を選ぶと（View は Hand の途中のまま）、Session の終わりで捨てて通知する", () => {
+    const view = table().view();
+    const r = reconcile(pushed(view), view, view, true);
+    expect(r.slot).toBeNull();
+    expect(r.discarded?.reason).toBe("session_ended");
+  });
+
   it("通知は id ごとに閉じる（別の通知に変わっていれば閉じない）", () => {
     const s = pushed(table("h1").view());
     const next = table("h2").view();

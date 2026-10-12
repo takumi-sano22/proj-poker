@@ -729,9 +729,14 @@ export function useHandSession(options: HandSessionOptions = {}): HandSession {
 
   // 表示・受信が変わるたびに下書きを照合する: 有効性は Hero が見ている卓（displayed）の operationKey、送った操作の結果は最新の
   // View（authoritative）で判定する（lib/turn-draft.ts の reconcile）。画面に何を出していても（Home / Learn に移っていても）走る。
+  // Session の終わり（障害で Session の終了を選んだときは View が Hand の途中のまま）でも捨てる（D146）。
+  const sessionEnded =
+    session?.handId === handId && session?.status.state === "ended";
   useEffect(() => {
-    updateDraft((s) => reconcile(s, displayed, latestView.current));
-  }, [displayed, view, updateDraft]);
+    updateDraft((s) =>
+      reconcile(s, displayed, latestView.current, sessionEnded),
+    );
+  }, [displayed, view, sessionEnded, updateDraft]);
 
   /**
    * 下書きの操作を送る前の共通の照合。送ってよければ送る。
