@@ -23,7 +23,7 @@
 
 ## 変更ファイル
 
-`docs/decision_log.yaml`・`docs/00_DOCUMENTATION_INDEX.md`・`docs/06_UI_UX.md`・`docs/10_DECISION_TRACEABILITY.md`・`docs/11_OPEN_ITEMS.md`・
+`docs/decision_log.yaml`・`docs/00_DOCUMENTATION_INDEX.md`・`docs/03_SYSTEM_ARCHITECTURE.md`（横断 UI/UX の段落の範囲表記）・`docs/06_UI_UX.md`・`docs/10_DECISION_TRACEABILITY.md`・`docs/11_OPEN_ITEMS.md`・
 `docs/assets/casino-v2/HANDOFF.md`・`README.md`・`.claude/skills/{sync-check,test-and-review}/SKILL.md`・
 `.claude/skills/ui-design-recipes/references/proj-poker.md`・本ログ
 
