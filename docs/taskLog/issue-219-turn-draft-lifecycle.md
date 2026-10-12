@@ -57,11 +57,21 @@ D146（UX04-1〜3=A）に従い、Hero の未送信の操作の下書き（手�
 
 ## 実行した確認
 
-- `pnpm --filter @proj-poker/web test`（turn-draft 20 件・T2 の置き換え・component 4 件を含む）
-- `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm format:check`、E2E（結果は PR の Test plan）
+- `pnpm format:check` / `pnpm lint` / `pnpm typecheck` / `pnpm test`（engine 493・web 301・server 940 passed。web に turn-draft 21 件・T2 の置き換え・component 4 件を含む）
+- E2E 全体 `pnpm --filter @proj-poker/e2e e2e`: 37 passed（8.1m）。新規 `e2e/tests/turn-draft.spec.ts` 10 件（HU 卓・固定 seed・CPU の思考待ちを `BOT_THINK_DELAY_MS` で作る。障害は `page.route` だけで起こし server に注入しない）:
+  Home / Learn / Replay 往復の保持、CPU の Raise の再確認（確定まで POST なし・確定で 1 回だけ組んだとおり）、空の下書きは通知なし、Street の変化の通知、
+  応答の消失（受理済み → 通知なしで消える）、応答が届かない（同じ lastSeq・actions の再送）、stale_view（宣言は残らず自動再送なし）、Out-of-Turn（保留で消費・通知なし）、
+  ETIQUETTE の Ack 待ち（操作欄が隠れ Home 往復でも再表示・確認後の下書きの保持）、320×568（hit-test・横スクロールなし・Tab + Enter で確定）
+- 1 回目の E2E 全体の実行では etiquette-ack（SSE 再接続）・learning の 2 件が落ちたが、実行中にソースを編集して Vite が再読み込みしたためで、個別の再実行と編集を止めた全体の再実行で pass
+- 自己レビュー（reviewer agent）: P0 / P1 なし。P2（結果不明の後の再送が「適用されていないと分かる拒否」でも固定が解けない）を CONFIRMED として修正、
+  P2（E2E 未コミット）はレビュー時点の見え方で FALSE_POSITIVE（26e1d5e でコミット済み）。P3 のうち、応答の後の照合し直し・結果不明のまま別 Hand で通知しない・
+  再送の Ack 待ちの照合・別 Hand へ移ったときの案内・docs の例外の明記を修正。Drag の Drop が古い View を錨にする稀な競合は、送信の照合で捨てられるので accept
 
 ## 残課題・#227 へ引き継ぐ QA
 
 - CPU の障害（Outage）のダイアログの間の保持は、下書きが View だけで照合され障害で消えないことを純関数のテストで確かめた。実ブラウザで障害を
   決定論的に起こす手段が無い（RuleBot は失敗しない）ので、Outage の表示中・Retry / Emergency Bot の後の下書きは #227 の実機 QA で確かめる。
+- E2E で決定論的に作れなかった局面（#227 へ）: 手番外の下書きを保ったまま Hand が完了する・Fold / All-in で外れる局面の通知、Hand 途中の Review 往復
+  （入口が無い）、「応答だけ消失」で再送ボタンが見える瞬間（SSE と競合する。届かない場合はテスト済み）、Ack 待ちの前に組んでいた下書きの保持（ETIQUETTE を
+  起こす操作で下書きは消費される。Ack 待ち中は操作欄が隠れ組めない）。これらは純関数のテスト（`turn-draft.test.ts`）で規則を確かめた。
 - 通知の文言・表示時間（OI-012）は Playtest で見直す。
