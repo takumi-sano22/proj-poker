@@ -133,6 +133,7 @@ export function ChipControls({
   };
 
   // 手に取った Chip を Betting Area に出す（手元・Betting Area の Click）。出せたときだけ、手元から Betting Area へ飛ばす。
+  // 飛ばすのは一番上（最後に手に取った）の 1 枚で、色と面の額はその額面にそろえる（合計額を書くと、存在しない額面の Chip に見える）。
   // Drag で出したときは、指・カーソルに付いてきた Chip が移動を示すので飛ばさない。
   const onPushHand = () => {
     const pushed = pushHand(draft) !== draft;
@@ -141,7 +142,7 @@ export function ChipControls({
     if (pushed && top !== undefined) {
       flyChip(handPile.current, felt.current, {
         color: colorOf(top),
-        label: formatChips(held),
+        label: formatChips(top),
       });
     }
   };

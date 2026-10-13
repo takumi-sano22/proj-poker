@@ -441,10 +441,15 @@ test.describe("狭い画面（375×667・タッチ）", () => {
 
     await test.step("手番の外で組んだ下書きは、閉じても残り、閉じた欄に手元・出した Chip の額が出る。開閉は送信にしない", async () => {
       await callAndWaitForCpu(page);
+      // Hero の Call の裁定が表示に出てから組む（表示が追いつく前に組むと、錨が Call の前の局面になり、Call の裁定で捨てられる。D146）
+      await expect(
+        dockOf(page).locator(".feedback__item--ruling"),
+      ).toBeVisible();
       // Hero の手番が終わっても自動では閉じない
       await expect(toggleOf(page)).toHaveAttribute("aria-expanded", "true");
       await pickAndPush(page, 2);
       await pick(page, 1);
+      await expect(discardNotice(page)).toHaveCount(0);
       await toggleOf(page).click();
       await expect(chipControls(page)).toBeHidden();
       await expect(toggleOf(page)).toContainText("手元 1");
@@ -575,7 +580,10 @@ test.describe("狭い画面（375×667・タッチ）", () => {
           name: /^手に取った Chip .* を Betting Area に出す$/,
         })
         .focus();
+      // 飛ぶ Chip は一番上の 1 枚の額面（1）で描く（合計額 2 を書いた存在しない額面の Chip にしない）
+      const flown = page.waitForSelector(".chip-flight", { state: "attached" });
       await page.keyboard.press("Space");
+      expect(await (await flown).textContent()).toBe("1");
       await expect(pushedAmount(page)).toHaveText("2");
       await expect(handAmount(page)).toHaveText("0");
       // 手に取る 2 回・出す 1 回の演出
