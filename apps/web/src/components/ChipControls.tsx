@@ -6,8 +6,14 @@
 // 下書き（TurnDraft）はここに持たない（#219・D146）。画面の切り替えより上の useHandSession が Session ごとに持ち、この部品が外れても
 // （Home / Learn へ移る・障害のダイアログ・RULING / ETIQUETTE の欄）消えない。ここは下書きを出して、変更・送信を伝えるだけ。
 import type { Declaration, HeroView, SeatView } from "@proj-poker/engine";
-import { useCallback, useRef, type CSSProperties } from "react";
+import {
+  useCallback,
+  useRef,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import { useChipDrag } from "../hooks/useChipDrag.js";
+import { flyChip } from "../lib/chip-flight.js";
 import {
   completesTurn,
   declarationOf,
@@ -35,6 +41,8 @@ import { useShowBB } from "./BbDisplay.js";
 import { ChipPile } from "./ChipStack.js";
 
 interface ChipControlsProps {
+  /** 操作の欄の id（狭い画面の開閉 Button の aria-controls が指す）。 */
+  readonly id?: string;
   readonly view: HeroView;
   readonly hero: SeatView;
   /** 送信中など、操作を受け付けないとき。 */
@@ -72,7 +80,13 @@ const DECLARATIONS: readonly DeclarationKind[] = [
   "all_in",
 ];
 
+/** 額面の色（ChipColor）。CHIP_DENOMINATIONS に無い額面は来ない（Stack の Chip の Button はこの一覧から作る）。 */
+function colorOf(value: number): string {
+  return CHIP_DENOMINATIONS.find((d) => d.value === value)?.color ?? "white";
+}
+
 export function ChipControls({
+  id,
   view,
   hero,
   disabled,
@@ -85,6 +99,9 @@ export function ChipControls({
   onResend,
 }: ChipControlsProps) {
   const bettingArea = useRef<HTMLDivElement | null>(null);
+  // 移動の演出（Stack → 手元 → Betting Area）の行き先。演出は表示だけで、下書きは先に変える（lib/chip-flight.ts）。
+  const handPile = useRef<HTMLSpanElement | null>(null);
+  const felt = useRef<HTMLSpanElement | null>(null);
   const remaining = remainingStack(hero.stack, draft);
   const held = handTotal(draft);
   const motions = pushedMotions(draft);
@@ -102,6 +119,33 @@ export function ChipControls({
     [hero.stack, onEdit],
   );
   const { drag, bind } = useChipDrag<DragSource>(bettingArea, onDrop, disabled);
+
+  // Stack の Chip を手に取る（Click・Enter / Space）。手に取れたときだけ、その Chip を手元へ飛ばす。
+  const onPick = (value: number, e: MouseEvent<HTMLButtonElement>) => {
+    const picked = pickChip(draft, hero.stack, value) !== draft;
+    onEdit((current) => pickChip(current, hero.stack, value));
+    if (picked) {
+      flyChip(e.currentTarget.querySelector(".chip-token"), handPile.current, {
+        color: colorOf(value),
+        label: formatChips(value),
+      });
+    }
+  };
+
+  // 手に取った Chip を Betting Area に出す（手元・Betting Area の Click）。出せたときだけ、手元から Betting Area へ飛ばす。
+  // 飛ばすのは一番上（最後に手に取った）の 1 枚で、色と面の額はその額面にそろえる（合計額を書くと、存在しない額面の Chip に見える）。
+  // Drag で出したときは、指・カーソルに付いてきた Chip が移動を示すので飛ばさない。
+  const onPushHand = () => {
+    const pushed = pushHand(draft) !== draft;
+    onEdit(pushHand);
+    const top = draft.hand.at(-1);
+    if (pushed && top !== undefined) {
+      flyChip(handPile.current, felt.current, {
+        color: colorOf(top),
+        label: formatChips(top),
+      });
+    }
+  };
 
   const onDeclare = (kind: DeclarationKind) => {
     if (completesTurn(kind)) {
@@ -123,7 +167,7 @@ export function ChipControls({
     .join(" → ");
 
   return (
-    <div className="chip-controls">
+    <div id={id} className="chip-controls">
       <div
         className="chip-tray"
         role="group"
@@ -140,9 +184,7 @@ export function ChipControls({
               data-denomination={d.value}
               disabled={unavailable}
               aria-label={`${formatChips(d.value)} の Chip を手に取る`}
-              onClick={() =>
-                onEdit((current) => pickChip(current, hero.stack, d.value))
-              }
+              onClick={(e) => onPick(d.value, e)}
               {...bind({ kind: "chip", value: d.value })}
             >
               <span className={`chip-token chip--${d.color}`}>
@@ -163,11 +205,13 @@ export function ChipControls({
               ? `手に取った Chip ${formatChips(held)} を Betting Area に出す`
               : "手に取った Chip はありません"
           }
-          onClick={() => onEdit(pushHand)}
+          onClick={onPushHand}
           {...bind({ kind: "hand" })}
         >
           <span className="chip-hand__label">手元</span>
-          <ChipPile chips={draft.hand} />
+          <span ref={handPile} className="chip-hand__chips">
+            <ChipPile chips={draft.hand} />
+          </span>
           <span className="chip-hand__amount">{formatChips(held)}</span>
         </button>
         <button
@@ -179,42 +223,46 @@ export function ChipControls({
           戻す
         </button>
       </div>
+      {/* Betting Area の判定領域（Drop の矩形・Click の Button）は grid の欄いっぱいに取り、見た目のフェルトだけを小さくする
+          （D138。判定領域は隣の手元・確定・宣言の欄と grid の gap で分け、重ねない） */}
       <div
         ref={bettingArea}
-        className={`betting-area${drag?.overTarget ? " betting-area--over" : ""}`}
+        className={`betting-area${drag !== null ? " betting-area--dragging" : ""}${drag?.overTarget ? " betting-area--over" : ""}`}
       >
         <button
           type="button"
           className="betting-area__target"
           disabled={disabled || held === 0}
           aria-label={`ベッティングエリア（Betting Area）。出した Chip ${formatChips(pushedTotal(draft))}${declaredText === "" ? "" : `、宣言 ${declaredText}`}。押すと手に取った Chip を出す`}
-          onClick={() => onEdit(pushHand)}
+          onClick={onPushHand}
         >
-          <span className="betting-area__label">
-            ベッティングエリア（Betting Area）
-            {declaredText !== "" && (
-              <span className="betting-area__declared">
-                宣言: {declaredText}
+          <span ref={felt} className="betting-area__felt">
+            <span className="betting-area__label">
+              ベッティングエリア（Betting Area）
+              {declaredText !== "" && (
+                <span className="betting-area__declared">
+                  宣言: {declaredText}
+                </span>
+              )}
+            </span>
+            {motions.length === 0 ? (
+              <span className="betting-area__hint">
+                Chip をここへ（Drag / 手に取って Click）
+              </span>
+            ) : (
+              <span className="betting-area__motions">
+                {motions.map((chips, i) => (
+                  // 1 回の動作ごとに分けて置く（2 回目以降の動作が String Bet の判定に関わる）
+                  <span key={i} className="betting-area__motion">
+                    <ChipPile chips={chips} />
+                  </span>
+                ))}
+                <span className="betting-area__amount">
+                  {formatChips(pushedTotal(draft))}
+                </span>
               </span>
             )}
           </span>
-          {motions.length === 0 ? (
-            <span className="betting-area__hint">
-              Chip をここへ（Drag / 手に取って Click）
-            </span>
-          ) : (
-            <span className="betting-area__motions">
-              {motions.map((chips, i) => (
-                // 1 回の動作ごとに分けて置く（2 回目以降の動作が String Bet の判定に関わる）
-                <span key={i} className="betting-area__motion">
-                  <ChipPile chips={chips} />
-                </span>
-              ))}
-              <span className="betting-area__amount">
-                {formatChips(pushedTotal(draft))}
-              </span>
-            </span>
-          )}
         </button>
       </div>
 
@@ -276,11 +324,14 @@ export function ChipControls({
           }
           aria-hidden="true"
         >
-          <ChipPile
-            chips={
-              drag.source.kind === "hand" ? draft.hand : [drag.source.value]
-            }
-          />
+          {/* Stack の Chip は、押した Chip と同じ大きさ・額面の札で付いてくる（手元の Chip は出す枚数のまま積む） */}
+          {drag.source.kind === "chip" ? (
+            <span className={`chip-token chip--${colorOf(drag.source.value)}`}>
+              {formatChips(drag.source.value)}
+            </span>
+          ) : (
+            <ChipPile chips={draft.hand} />
+          )}
         </span>
       )}
     </div>

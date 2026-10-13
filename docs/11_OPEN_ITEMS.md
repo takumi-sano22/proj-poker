@@ -199,8 +199,8 @@ D119の暫定値（確定ではない）: `phase7_memory_v1`はObserverがその
 - RULING を出しておく「数秒」の値（D142。暫定値は `apps/web/src/lib/config.ts` の `RULING_OVERLAY_MS` = 2,500ms。#226）
 - 下書きを無効化したときの通知の文言・表示時間（D146。暫定値は `apps/web/src/components/DraftNotice.tsx` の文と `apps/web/src/lib/config.ts` の `DRAFT_DISCARD_NOTICE_MS` = 6,000ms。#219）
 - 表示演出の速度4段階ごとの所要時間（ms）・Hero の手番の到来時の自動高速化の度合い・表示待ちの step の上限・Replay の再生の速度の倍率（D140。暫定値は `apps/web/src/lib/config.ts` の `PRESENTATION_*` / `REPLAY_SPEED_SCALE`。#222）
-- 操作用 Chip の大きさの調整規則（基準は PC 約54px・スマホ約48〜52px。D138）と、卓上の Chip の拡大率
-- スマホで開いた Hero 操作パネルの高さの上限の正確な比率（約65〜70%。D137）と、レスポンシブの画面幅の閾値の再設計（今は 719px / 720px・1024px・359px。`docs/06` §1）
+- 操作用 Chip の大きさの調整規則（基準は PC 約54px・スマホ約48〜52px。D138）と、卓上の Chip の拡大率（暫定値は `apps/web/src/styles.css` の `--chip-op-d` / `--chip-op-hit`・`--chip-d`。1280px 以上 54px・1024〜1279px 52px・1023px 以下 48px、卓上 16px / 狭い画面 12px・7・8 人卓の 720px 以上は 14px。Chip の移動の演出の所要時間は `--duration-chip` = 260ms。#220）
+- スマホで開いた Hero 操作パネルの高さの上限の正確な比率（約65〜70%。D137）（暫定値は `styles.css` の狭い画面の `.dock` の `max-height: 68dvh`。#220）と、レスポンシブの画面幅の閾値の再設計（今は 719px / 720px・1024px・359px。`docs/06` §1）
 - 効果音の既定の音量・音源・種類ごとの割り当て（D141。音源の制作は UX-08 #223、再生と設定は UX-10 #225）
 - RULING / ETIQUETTE の欄の寸法・余白（配置の場所は D147 で確定。寸法は可逆）
 - 世界観のデザイントークン（色・光・影・動き）と音声のトークンの具体値（D135・D141。トークンの置き場所は `ui-design-recipes` の `references/proj-poker.md`）

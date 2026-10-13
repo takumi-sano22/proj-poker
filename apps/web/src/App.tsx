@@ -21,6 +21,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useReducer,
   useRef,
   useState,
@@ -84,6 +85,13 @@ import {
   type Area,
 } from "./lib/shell.js";
 import type { PresentationSpeed } from "./lib/presentation.js";
+import {
+  heroTurnKey,
+  initialHeroPanel,
+  nextHeroPanel,
+  panelOperable,
+} from "./lib/hero-panel.js";
+import { handTotal, pushedTotal } from "./lib/chip-ops.js";
 import { handLevelOf, tournamentEndMessage } from "./lib/tournament.js";
 import {
   canFastForward,
@@ -615,9 +623,36 @@ function HeroDock({
   const hero = heroSeatOf(view);
   const cards = hero?.holeCards ?? [];
   const folded = hero?.folded ?? false;
+  const controlsId = useId();
+  // 狭い画面では操作パネル（Chip と宣言の操作の欄）を折りたためる（D137）。開閉は表示だけの状態で、閉じても操作の欄を外さずに
+  // styles.css で隠すので、下書き・Drag の途中の状態は残る（D139・D146）。Hero の新しい手番が来たときだけ自動で開く（同じ手番の
+  // 再描画では開き直さない。lib/hero-panel.ts）。
+  const operable = panelOperable(
+    view,
+    session.sessionStatus?.state === "ended",
+    session.outage?.current != null,
+  );
+  const turnKey = operable ? heroTurnKey(view) : null;
+  const [panel, setPanel] = useState(() => initialHeroPanel(turnKey));
+  const nextPanel = nextHeroPanel(panel, turnKey);
+  if (nextPanel !== panel) setPanel(nextPanel);
+  const collapsible = narrow && operable;
+  const collapsed = collapsible && !nextPanel.expanded;
 
   return (
-    <section className="dock" aria-label="Hero">
+    <section
+      className={`dock${collapsible ? " dock--collapsible" : ""}`}
+      aria-label="Hero"
+      data-collapsed={collapsed ? "" : undefined}
+    >
+      {collapsible && (
+        <HeroPanelToggle
+          controlsId={controlsId}
+          expanded={!collapsed}
+          session={session}
+          onToggle={() => setPanel((p) => ({ ...p, expanded: !p.expanded }))}
+        />
+      )}
       <div className="dock__hero">
         <div className="dock__cards" aria-label="Hero の札（Hole Cards）">
           {cards.map((card, i) => (
@@ -658,6 +693,7 @@ function HeroDock({
           nameOf={nameOf}
           session={session}
           narrow={narrow}
+          controlsId={controlsId}
           onOpenReview={onOpenReview}
           onOpenSessionReview={onOpenSessionReview}
           drill={drill}
@@ -667,16 +703,67 @@ function HeroDock({
   );
 }
 
+/**
+ * 狭い画面の操作パネルの開閉 Button（D137）。閉じている間も、下書きがあること・再確認や送った操作の結果を待っていること・Dealer の
+ * 確認（ETIQUETTE の Ack）が要ることを短く示す。開閉は表示だけで、Ack・送信・下書きの変更にはしない（確認は欄の「確認しました」だけ。D145）。
+ */
+function HeroPanelToggle({
+  controlsId,
+  expanded,
+  session,
+  onToggle,
+}: {
+  readonly controlsId: string;
+  readonly expanded: boolean;
+  readonly session: HandSession;
+  readonly onToggle: () => void;
+}) {
+  const { draft, change, phase } = session.turnDraft;
+  const held = handTotal(draft);
+  const pushed = pushedTotal(draft);
+  const badges = [
+    ...(session.etiquettePending ? ["Dealer の確認が必要"] : []),
+    ...(phase !== "idle" ? ["送った操作の結果待ち"] : []),
+    ...(change !== null ? ["もう一度の確定が必要"] : []),
+    ...(held > 0 ? [`手元 ${formatChips(held)}`] : []),
+    ...(pushed > 0 ? [`出した Chip ${formatChips(pushed)}`] : []),
+  ];
+  return (
+    <button
+      type="button"
+      className="dock__toggle"
+      aria-expanded={expanded}
+      aria-controls={controlsId}
+      onClick={onToggle}
+    >
+      <span className="dock__toggle-label">
+        {expanded ? "操作の欄を閉じる" : "操作の欄を開く"}
+      </span>
+      {badges.length > 0 && (
+        <span className="dock__toggle-badges">
+          {badges.map((badge) => (
+            <span key={badge} className="dock__toggle-badge">
+              {badge}
+            </span>
+          ))}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function DockBody({
   view,
   nameOf,
   session,
   narrow,
+  controlsId,
   onOpenReview,
   onOpenSessionReview,
   drill,
 }: ViewProps & {
   readonly narrow: boolean;
+  readonly controlsId: string;
   readonly onOpenReview: OpenReview;
   readonly onOpenSessionReview: OpenSessionReview;
   readonly drill: DrillMode | null;
@@ -846,6 +933,7 @@ function DockBody({
           Hand が終わると捨てる（#219・D146）。key は Drag の途中の状態だけを局面ごとに作り直すため。 */}
       <ChipControls
         key={operationKey(view)}
+        id={controlsId}
         view={view}
         hero={hero}
         // ETIQUETTE の確認を待つ間も送れない（下書きは残す。D145・D146）。送った操作の結果を待つ間も変えない。

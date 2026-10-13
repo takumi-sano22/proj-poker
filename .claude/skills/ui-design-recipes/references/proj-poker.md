@@ -80,8 +80,8 @@
 | レイヤー | 置き場所 | 守ること |
 | --- | --- | --- |
 | App Shell（Home / Play / Learn）【実装済み #218】 | `components/AppShell.tsx`・`lib/shell.ts`。`App.tsx` の画面の状態の上に Shell を置く | 起動時は Home。Home は読み取り専用の照会だけ（UX-02 #217・`hooks/useCurrentSession.ts`）。Learn / Replay の戻り先と閲覧位置を保持。席が見出しと重ならないことを `e2e/tests/app-shell.spec.ts` が測る |
-| 右の情報パネル（PC） / 折りたためる Hero 操作パネル（スマホ）【未実装 #220】 | 既存の進行ログ・Note / Tag・Tournament の欄・`App.tsx` の `HeroDock` を組み替える（UX-05 #220） | HUD を足さない（D32）。スマホは手番で自動で開き、高さの上限は画面の約65〜70%で内部スクロール |
-| Chip の操作と移動の演出【下書きの寿命は実装済み #219・UI の改修と移動の演出は未実装 #220 / #224】 | `ChipControls.tsx`・`useChipDrag.ts`。下書きは `useHandSession` の `turnDraft`（規則は `lib/turn-draft.ts`）、再確認の欄は `.draft-change`、捨てた通知は `DraftNotice.tsx` | Click / Drag の両方。ドロップの判定領域を他の操作と重ねない。下書きは折りたたみ・画面の移動で失わない（D146）。再確認・結果不明の欄は操作の grid の幅いっぱいに操作の行の下へ置き、Button と重ねない |
+| 右の情報パネル（PC）【折りたたみは未実装】 / 折りたためる Hero 操作パネル（スマホ）【実装済み #220】 | `App.tsx` の `HeroDock`（`.dock--collapsible`・`data-collapsed`・開閉 Button `.dock__toggle`）と `lib/hero-panel.ts`（自動で開く規則・`panelOperable`）。閉じると `.chip-controls` だけを CSS で隠す | HUD を足さない（D32）。スマホは手番で自動で開き、高さの上限は画面の約65〜70%で内部スクロール |
+| Chip の操作と移動の演出【実装済み #219・#220。Board / Pot 等の演出は #224】 | `ChipControls.tsx`・`useChipDrag.ts`・移動の演出 `lib/chip-flight.ts`（`--duration-chip`）。操作用 Chip は `--chip-op-d` / `--chip-op-hit`、Betting Area は判定領域 `.betting-area__target` と見た目 `.betting-area__felt` を分ける。下書きは `useHandSession` の `turnDraft`（規則は `lib/turn-draft.ts`）、再確認の欄は `.draft-change`、捨てた通知は `DraftNotice.tsx` | Click / Drag の両方。ドロップの判定領域を他の操作と重ねない。下書きは折りたたみ・画面の移動で失わない（D146）。再確認・結果不明の欄は操作の grid の幅いっぱいに操作の行の下へ置き、Button と重ねない |
 | Presentation Controller【実装済み #222】 | `hooks/usePresentation.ts`・`lib/presentation.ts`・`components/PresentationControls.tsx`。Live と Replay（`useReplay.ts`）で step の区切りを共有 | Hero に見える View / Event だけ。authoritative と displayed を分ける・順序を保つ・速度4段階（所要時間は `lib/config.ts` の `PRESENTATION_*`）・Showdown の内容を省かない・再接続でキューを捨てる。Fast Forward と別 |
 | Dealer の通知（RULING → ETIQUETTE）【実装済み #226】 | `components/DealerOverlay.tsx`・`hooks/useDealerOverlay.ts`・`lib/dealer-overlay.ts`。**Hero 欄の操作の場所**に出す（D147） | RULING を数秒（`RULING_OVERLAY_MS`）→ 自動で閉じる → ETIQUETTE を明示確認 → 再開。3 分類を混ぜない（色は `--color-feedback-*`）。欄を出す間は操作の欄を CSS で隠すが外さない（下書きを消さない）。CPU 障害のダイアログ（`OutageDialog.tsx`）が先。卓の中央に演出を足す（#224）ときも Board・Pot・席・Hero の視認性・hit-test・この Ack の導線を壊さない |
 | 効果音と設定【未実装 #225】 | 表示設定（`lib/display-settings.ts` と同じ viewer の保存が第一候補。UX-10 #225） | 既定 ON・自動再生の制約を尊重・音量とミュートを保存。Event Log に入れない |
@@ -123,6 +123,7 @@
 
 ## 既知のずれ
 
-- （未解決。D137 で方針は決まったが未実装）狭い画面（719px 以下）は、Hero 欄が画面の高さの大半を占める（#179 で詰めた後の Hero の手番の欄の高さ: 320×568 で 422px〔74%〕・375×667 で 369px〔55%〕。RULING が出ると 320×568 で 541px〔95%〕・375×667 で 469px〔70%〕）。画面下に固定した欄の上に見える卓は 1〜3 割なので、Hero の席・Board・Pot を見るには欄の上で卓をスクロールする（7・8 人卓も同じ）。RULING の文（4 行前後）・宣言 Button 2 段・Chip・手元・Betting Area は、どれも省くと操作か裁定の情報が欠け、44px の押せる大きさも保つ必要があるので、CSS の詰め方ではこれ以上低くできない。さらに低くするには、狭い画面で欄を固定しない・Chip の操作を畳む、などの UX の変更（人間判断）が要る。この人間判断は D137（スマホは Hero 操作パネルを折りたためる形にし、Hero の手番で自動で開く・開いた高さの上限は画面の約65〜70%で内部スクロール）で済み、実装は UX-05（#220）。それまでは下の数値のまま。E2E は「欄が画面の高さに収まる」（全部の操作を同時に見られる）までを測る。
+- （解消 #220）狭い画面（719px 以下）で Hero 欄が画面の高さの大半を占めていた（#179 で詰めた後の Hero の手番の欄: 320×568 で 422px〔74%〕、RULING で 541px〔95%〕）。D137 に従い、操作パネルを折りたためるようにし（閉じると 172px）、開いた高さの上限を約 68% にして欄の中でスクロールする。E2E は `e2e/tests/hero-panel.spec.ts`（2〜8 人卓 × 320×568・375×667・720×600・1280×720・1280×900）。
+- 8 人卓の 720×600 で左側の席の面が約 1px 重なる（既存。#252）。
 - 作法・学習の補足を開くと、Hero 欄はさらに 1 項目ぶん高くなる（720×600 で約 326px になり、Hero の席・Board・Pot が同時には収まらない。320×568 では欄が画面より高くなり、ページの一番上では宣言 Button の下端が、それ以外では札と裁定の上端が画面の外に出る）。開いたときだけで、閉じれば戻る。
 - ライトテーマは無い（ダークのみ）。
