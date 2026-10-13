@@ -103,6 +103,8 @@
   /* 動き */
   --duration-fast: 120ms;
   --duration-base: 200ms;
+  /* Stack → 手元 → Betting Area の Chip の移動の演出（#220・D138。lib/chip-flight.ts が読む。OI-012 の暫定値） */
+  --duration-chip: 260ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* 寸法。席と Bet は卓の中心から --dir-x / --dir-y（単位円）の向きに、ここで決めた半径だけ離す */
@@ -111,8 +113,11 @@
   --seat-ry: 44%;
   --bet-rx: 27%;
   --bet-ry: 25%;
-  --chip-d: 14px;
+  --chip-d: 16px;
   --chip-step: 3px;
+  /* 操作用の Chip（Stack の Chip の Button）の面と押せる大きさ（D138: PC 約 54px・スマホ約 48〜52px。OI-012 の暫定値） */
+  --chip-op-d: 54px;
+  --chip-op-hit: 56px;
   --card-sm-w: 30px;
   --card-md-w: 46px;
   --card-lg-w: 64px;
@@ -120,10 +125,29 @@
   color-scheme: dark;
 }
 
+/* 1023px 以下は操作用の Chip を約 48px にする（D138 のスマホの基準。720〜1023px も Hero 欄が横いっぱいで、Betting Area の欄を残す）。
+   移動の演出・Drag で付いてくる Chip も同じ大きさにするので :root で切り替える */
+@media (max-width: 1023px) {
+  :root {
+    --chip-op-d: 48px;
+    --chip-op-hit: 50px;
+  }
+}
+
+/* 1024〜1279px（小さい PC）は、Hero の札・Stack の右の操作の欄が約 720px しかなく、54px の Chip 5 枚と確定 Button の間で Betting Area の
+   欄が潰れて文字が縦に割れた（1024×768 の RULING で Hero 欄が 501px）。Chip を約 52px にし、確定 Button を 1023px 以下と同じ幅に詰める */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  :root {
+    --chip-op-d: 52px;
+    --chip-op-hit: 52px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --duration-fast: 0ms;
     --duration-base: 0ms;
+    --duration-chip: 0ms;
   }
 }
 
@@ -932,12 +956,20 @@ input {
   border-radius: 5px;
 }
 
+/* 卓の上の Chip（席の Stack・Bet の積み）は 16px（狭い画面は 12px）に少し大きくした（#220・D138。拡大率は OI-012 の暫定値）。7・8 人卓の
+   広い画面は、720×600 で隣の席の面が重なったので従来の 14px のまま */
+@media (min-width: 720px) {
+  .table:is([data-seat-count="7"], [data-seat-count="8"]) {
+    --chip-d: 14px;
+  }
+}
+
 @media (max-width: 719px) {
   :root {
     /* 縦長の卓では左右の席が画面外へ出ないよう横の半径を詰め、縦に広げる */
     --seat-rx: calc(50% - 46px);
     --seat-ry: 49%;
-    --chip-d: 11px;
+    --chip-d: 12px;
     --chip-step: 2px;
     --card-sm-w: 24px;
     --card-md-w: 34px;
@@ -1722,7 +1754,74 @@ input {
   .dock {
     padding-top: 8px;
     padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    /* 開いた高さの上限は画面の高さの約 68%（D137 の 65〜70%。OI-012 の暫定値）。超える分は欄の中でスクロールする */
+    max-height: 68vh;
+    max-height: 68dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
+}
+
+/* 狭い画面の操作パネルの開閉 Button（#220・D137）。Hero 欄の 1 行目に横いっぱいで置き、Hero の札・Stack と案内を 2 行目へ送る */
+.dock__toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 44px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border-interactive);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-raised);
+  color: var(--color-on-surface);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock__toggle-label::before {
+  content: "▾";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.dock__toggle[aria-expanded="false"] .dock__toggle-label::before {
+  transform: rotate(180deg);
+}
+
+.dock__toggle-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dock__toggle-badge {
+  padding: 0 8px;
+  border: 1px solid var(--color-feedback-ruling);
+  border-radius: 999px;
+  color: var(--color-on-surface);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1023px) {
+  .dock--collapsible > .dock__toggle {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .dock--collapsible > .dock__hero,
+  .dock--collapsible .dock__controls > .dock__message {
+    grid-row: 2;
+  }
+}
+
+/* 閉じている間は Chip と宣言の操作の欄だけを隠す。外さずに隠すので、下書き・Drag の途中の状態は残る（D139・D146）。RULING / ETIQUETTE の
+   欄・裁定の Feedback・案内・失敗の通知・下書きを捨てた通知は閉じても出す（Ack の「確認しました」へ届く。D145・D147） */
+.dock[data-collapsed] .chip-controls {
+  display: none;
 }
 
 /* 中間幅（720〜1023px）は、手番の案内（と User Read の入口）も 1 行目の右へ置く。右の列に収まるので、Hero 欄が 1 行ぶん低くなる（#163） */
@@ -1993,10 +2092,14 @@ input {
 
 /* Stack の Chip・手元・Betting Area・確定・宣言を 1 つの grid に置く。広い画面では卓の側の操作を 1 行に並べ、Hero 欄を低く保つ */
 .chip-controls {
+  /* 手元・Betting Area に積む Chip は卓の上の Chip より大きく描く（出した枚数・額面を読めるように。D138） */
+  --chip-d: 20px;
+  --chip-step: 3px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    "tray tray hand"
+    "tray tray tray"
+    "hand hand hand"
     "area area submit"
     "decl decl decl";
   align-items: center;
@@ -2070,18 +2173,15 @@ input {
   flex-basis: 100%;
 }
 
-/* 5 枚の Chip と手元が 1 行に収まらない幅（320px など）では、手元を次の行に回す（重ねない） */
-@media (max-width: 359px) {
+/* 狭い画面（719px 以下）は、約 48px の Chip 5 枚で 1 行を使うので、手元を次の行に回す（重ねない。720px 以上は 1 行に並べる） */
+@media (max-width: 719px) {
   .chip-controls {
-    grid-template-areas:
-      "tray tray tray"
-      "hand hand hand"
-      "area area submit"
-      "decl decl decl";
+    --chip-d: 16px;
+    --chip-step: 2px;
   }
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   .chip-controls__submit {
     max-width: 112px;
     padding: 4px 10px;
@@ -2099,8 +2199,8 @@ input {
 .chip-button {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: var(--chip-op-hit);
+  height: var(--chip-op-hit);
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -2119,13 +2219,14 @@ input {
 .chip-token {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border: 3px dashed var(--chip-edge);
+  width: var(--chip-op-d);
+  height: var(--chip-op-d);
+  border: 4px dashed var(--chip-edge);
   border-radius: 50%;
   background: var(--chip-face);
   color: var(--chip-edge);
-  font-size: 12px;
+  font-size: 15px;
+  line-height: 1;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   box-shadow:
@@ -2174,6 +2275,12 @@ input {
   -webkit-user-select: none;
 }
 
+.chip-hand__chips {
+  display: inline-flex;
+  align-items: flex-end;
+  min-height: var(--chip-d);
+}
+
 .chip-hand__pile:disabled {
   cursor: default;
   color: var(--color-on-surface-muted);
@@ -2202,14 +2309,32 @@ input {
   min-width: 0;
 }
 
+/* 判定領域（Click の Button・Drop の矩形 .betting-area）は欄いっぱい。見た目のフェルト（.betting-area__felt）だけを小さくする（D138） */
 .betting-area__target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  border: 1px dashed transparent;
+  border-radius: var(--radius-aside);
+  background: transparent;
+  color: var(--color-on-felt);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.betting-area__felt {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 4px 12px;
   width: 100%;
-  min-height: 48px;
+  max-width: 300px;
+  min-height: 44px;
   padding: 4px 12px;
   border: 2px dashed rgba(243, 248, 244, 0.35);
   border-radius: var(--radius-aside);
@@ -2218,9 +2343,6 @@ input {
     var(--color-felt-center),
     var(--color-felt-edge)
   );
-  color: var(--color-on-felt);
-  text-align: left;
-  cursor: pointer;
   transition:
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
@@ -2231,7 +2353,12 @@ input {
   cursor: default;
 }
 
-.betting-area--over .betting-area__target {
+/* Drag の間は、落とせる範囲（判定領域）の縁を出す。上に来たらフェルトを金の縁で示す */
+.betting-area--dragging .betting-area__target {
+  border-color: rgba(243, 248, 244, 0.35);
+}
+
+.betting-area--over .betting-area__felt {
   border-color: var(--color-brand-400);
   box-shadow: var(--shadow-turn);
 }
@@ -2298,16 +2425,9 @@ input {
     line-height: 1.3;
   }
 
-  /* 狭い画面では Chip を少し小さくし、5 枚と手元を 1 行に収める */
-  .chip-button {
-    width: 40px;
-    height: 44px;
-  }
-
   .chip-token {
-    width: 36px;
-    height: 36px;
-    font-size: 11px;
+    border-width: 3px;
+    font-size: 14px;
   }
 
   .dock__cards .card--lg {
@@ -2324,7 +2444,7 @@ input {
   }
 
   /* Betting Area の名前と案内は 2 行に収め（215px 前後の幅で 4 行に割れていた）、Hero 欄を低くする（#5） */
-  .betting-area__target {
+  .betting-area__felt {
     gap: 2px 8px;
     padding: 4px 10px;
   }
@@ -2378,12 +2498,25 @@ input {
 
 /* Drag 中に指・カーソルへ付いてくる Chip（押した位置の少し上に出し、指で隠さない） */
 .chip-drag-ghost {
+  /* 手元の Chip の積みは大きめの Chip で描く（Stack の Chip は操作用の Chip と同じ大きさの札） */
+  --chip-d: 28px;
+  --chip-step: 4px;
   position: fixed;
   z-index: 50;
   left: var(--x);
   top: var(--y);
   pointer-events: none;
-  transform: translate(-50%, -120%) scale(1.6);
+  transform: translate(-50%, -110%);
+  filter: drop-shadow(0 4px 6px rgba(var(--ink), 0.5));
+}
+
+/* Chip の移動の演出（lib/chip-flight.ts）。押す・Drop の判定に関わらないよう pointer-events を持たない */
+.chip-flight {
+  position: fixed;
+  z-index: 60;
+  margin: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
   filter: drop-shadow(0 4px 6px rgba(var(--ink), 0.5));
 }
 
@@ -3681,6 +3814,7 @@ input {
 .app--presentation-none {
   --duration-fast: 0ms;
   --duration-base: 0ms;
+  --duration-chip: 0ms;
 }
 
 /* Board の札は出たときに置く動きを付け、Flop の 3 枚は順に出す（D140 Q14）。所要時間はトークンなので、演出なし・
